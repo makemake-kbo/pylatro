@@ -70,7 +70,7 @@ class StartingParams:
     hands: int = 4
     reroll_cost: int = 5
     joker_slots: int = 5
-    ante_scaling: int = 1
+    ante_scaling: float = 1
     consumable_slots: int = 2
     no_faces: bool = False
     erratic_suits_and_ranks: bool = False
@@ -92,6 +92,8 @@ class CurrentRound:
     ancient_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades"})
     castle_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades"})
     used_packs: list[str] = field(default_factory=list)
+    round_dollars: int = 0
+    most_played_poker_hand: str = "High Card"
 
 
 @dataclass(slots=True)
@@ -192,14 +194,31 @@ class RunState:
     skips: int = 0
     dollars: int = 0
     bankrupt_at: int = 0
-    blind_on_deck: str = "Small"
+    blind_on_deck: str | None = None
     current_voucher: str | None = None
     tags: list[str] = field(default_factory=list)
     joker_keys: list[str] = field(default_factory=list)
     consumable_keys: list[str] = field(default_factory=list)
     deck_cards: list[PlayingCard] = field(default_factory=list)
     hands: dict[str, dict[str, Any]] = field(default_factory=dict)
-    won_ante: int = 8
+    win_ante: int = 8
+    round: int = 0
+    won: bool = False
+    interest_amount: int = 1
+    perishable_rounds: int = 5
+    rental_rate: int = 3
+    consumeable_buffer: int = 0
+    joker_buffer: int = 0
+    max_jokers: int = 0
+    starting_deck_size: int = 52
+    ecto_minus: float = 1
+    tag_tally: int = 0
+    hands_played: int = 0
+    unused_discards: int = 0
+    last_tarot_planet: str | None = None
+    previous_round: dict[str, Any] = field(default_factory=lambda: {"dollars": 4})
+    round_bonus: dict[str, int] = field(default_factory=lambda: {"next_hands": 0, "discards": 0})
+    cards_played: dict[str, dict[str, Any]] = field(init=False)
     first_shop_buffoon: bool = False
     pack: PackState | None = None
 
@@ -207,6 +226,10 @@ class RunState:
         self.pseudorandom = PseudorandomState(self.seed)
         self.bosses_used = {key: 0 for key, blind in self.data.blinds.items() if blind.get("boss")}
         self.hands = deepcopy(self.data.hands)
+        self.cards_played = {
+            rank: {"suits": {}, "total": 0}
+            for rank in ("Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King")
+        }
 
     def has_joker(self, name: str) -> bool:
         return any(self.data.centers[key]["name"] == name for key in self.joker_keys)

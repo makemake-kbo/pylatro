@@ -33,7 +33,7 @@ def get_blind_amount(ante: int, scaling: int | None = None) -> int:
 
 
 def select_blind(state: RunState, blind_type: str | None = None) -> None:
-    blind_type = blind_type or state.blind_on_deck
+    blind_type = blind_type or state.blind_on_deck or "Small"
     blind_key = state.round_resets.blind_choices[blind_type]
     state.round_resets.blind = state.data.blinds[blind_key]
     state.round_resets.blind_states[blind_type] = "Current"

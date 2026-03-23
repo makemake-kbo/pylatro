@@ -118,8 +118,8 @@ def get_new_boss(state: RunState) -> str:
         if (
             not boss.get("showdown")
             and boss["min"] <= ante
-            and (ante % state.won_ante != 0 or state.round_resets.ante < 2)
-        ) or (boss.get("showdown") and ante % state.won_ante == 0 and state.round_resets.ante >= 2):
+            and (ante % state.win_ante != 0 or state.round_resets.ante < 2)
+        ) or (boss.get("showdown") and ante % state.win_ante == 0 and state.round_resets.ante >= 2):
             eligible[key] = True
 
     for key in list(eligible):

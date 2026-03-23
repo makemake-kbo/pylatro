@@ -139,6 +139,7 @@ def create_run_state(seed: str, stake: int = 1, deck_key: str = "b_red", data: G
     game_data = data or load_game_data()
     state = RunState(data=game_data, seed=seed, stake=stake, deck_key=deck_key)
     _apply_deck(state)
+    state.blind_on_deck = "Small"
 
     state.round_resets.hands = state.starting_params.hands
     state.round_resets.discards = state.starting_params.discards

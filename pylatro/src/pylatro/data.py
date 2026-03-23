@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from .upstream import UPSTREAM_ROOT, get_lua_bridge
@@ -142,7 +141,20 @@ def _build_pools(
             if proto_set == "Joker" and value.get("rarity") and not value.get("demo"):
                 rarity_pools[int(value["rarity"])].append(value)
 
-    for pool_name in ("Joker", "Tarot", "Planet", "Tarot_Planet", "Spectral", "Voucher", "Booster", "Consumeables", "Enhanced", "Stake", "Tag", "Seal"):
+    for pool_name in (
+        "Joker",
+        "Tarot",
+        "Planet",
+        "Tarot_Planet",
+        "Spectral",
+        "Voucher",
+        "Booster",
+        "Consumeables",
+        "Enhanced",
+        "Stake",
+        "Tag",
+        "Seal",
+    ):
         center_pools[pool_name].sort(key=lambda item: item["order"])
     center_pools["Back"].sort(key=lambda item: item["order"] - (100 if item.get("unlocked") else 0))
     center_pools["Demo"].sort(key=lambda item: item["order"] + (1000 if item.get("set") == "Joker" else 0))

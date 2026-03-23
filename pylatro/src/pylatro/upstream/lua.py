@@ -72,7 +72,8 @@ class LuaBridge:
         return self.to_python(self.runtime.globals()["_pylatro_shuffle_indices"](length, seed))
 
     def eval_table(self, source: str) -> Any:
-        return self.runtime.eval(f"function() return {source} end")()
+        factory = self.runtime.eval(f"function() return {source} end")
+        return factory()  # type: ignore[operator]
 
     def to_python(self, value: Any) -> Any:
         value_type = lua_type(value)

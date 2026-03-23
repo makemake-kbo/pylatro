@@ -1,29 +1,35 @@
 from __future__ import annotations
 
 import ctypes
+import os
 from functools import lru_cache
 from pathlib import Path
 
-
-LUAJIT_DYLIB = Path(
-    "/Users/makemake/Library/Application Support/Steam/steamapps/common/Balatro/Balatro.app/Contents/Frameworks/Lua.framework/Versions/A/Lua"
+_DEFAULT_LUAJIT_DYLIB = Path(
+    "/Users/makemake/Library/Application Support/Steam/steamapps/common/"
+    "Balatro/Balatro.app/Contents/Frameworks/Lua.framework/Versions/A/Lua"
 )
 
-_lua = ctypes.CDLL(str(LUAJIT_DYLIB))
-_lua.luaL_newstate.restype = ctypes.c_void_p
-_lua.luaL_openlibs.argtypes = [ctypes.c_void_p]
-_lua.luaL_loadstring.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-_lua.luaL_loadstring.restype = ctypes.c_int
-_lua.lua_pcall.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
-_lua.lua_pcall.restype = ctypes.c_int
-_lua.lua_close.argtypes = [ctypes.c_void_p]
-_lua.lua_tonumber.argtypes = [ctypes.c_void_p, ctypes.c_int]
-_lua.lua_tonumber.restype = ctypes.c_double
-_lua.lua_tointeger.argtypes = [ctypes.c_void_p, ctypes.c_int]
-_lua.lua_tointeger.restype = ctypes.c_longlong
-_lua.lua_tolstring.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_size_t)]
-_lua.lua_tolstring.restype = ctypes.c_char_p
-_lua.lua_settop.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+@lru_cache(maxsize=1)
+def _get_lua_lib() -> ctypes.CDLL:
+    path = os.environ.get("PYLATRO_LUAJIT_PATH") or str(_DEFAULT_LUAJIT_DYLIB)
+    lib = ctypes.CDLL(path)
+    lib.luaL_newstate.restype = ctypes.c_void_p
+    lib.luaL_openlibs.argtypes = [ctypes.c_void_p]
+    lib.luaL_loadstring.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.luaL_loadstring.restype = ctypes.c_int
+    lib.lua_pcall.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    lib.lua_pcall.restype = ctypes.c_int
+    lib.lua_close.argtypes = [ctypes.c_void_p]
+    lib.lua_tonumber.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.lua_tonumber.restype = ctypes.c_double
+    lib.lua_tointeger.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.lua_tointeger.restype = ctypes.c_longlong
+    lib.lua_tolstring.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_size_t)]
+    lib.lua_tolstring.restype = ctypes.c_char_p
+    lib.lua_settop.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    return lib
 
 
 class LuaJITBridge:
@@ -94,51 +100,54 @@ class LuaJITBridge:
         return [int(part) for part in result.split(",")] if result else []
 
     def _eval_number(self, script: str) -> float:
-        state = self._new_state()
+        lua = _get_lua_lib()
+        state = self._new_state(lua)
         try:
-            self._execute(state, script)
-            return float(_lua.lua_tonumber(state, -1))
+            self._execute(lua, state, script)
+            return float(lua.lua_tonumber(state, -1))
         finally:
-            _lua.lua_close(state)
+            lua.lua_close(state)
 
     def _eval_integer(self, script: str) -> int:
-        state = self._new_state()
+        lua = _get_lua_lib()
+        state = self._new_state(lua)
         try:
-            self._execute(state, script)
-            return int(_lua.lua_tointeger(state, -1))
+            self._execute(lua, state, script)
+            return int(lua.lua_tointeger(state, -1))
         finally:
-            _lua.lua_close(state)
+            lua.lua_close(state)
 
     def _eval_string(self, script: str) -> str:
-        state = self._new_state()
+        lua = _get_lua_lib()
+        state = self._new_state(lua)
         try:
-            self._execute(state, script)
+            self._execute(lua, state, script)
             size = ctypes.c_size_t()
-            raw = _lua.lua_tolstring(state, -1, ctypes.byref(size))
+            raw = lua.lua_tolstring(state, -1, ctypes.byref(size))
             return ctypes.string_at(raw, size.value).decode("utf-8")
         finally:
-            _lua.lua_close(state)
+            lua.lua_close(state)
 
     @staticmethod
-    def _new_state() -> ctypes.c_void_p:
-        state = _lua.luaL_newstate()
+    def _new_state(lua: ctypes.CDLL) -> ctypes.c_void_p:
+        state = lua.luaL_newstate()
         if not state:
             raise MemoryError("Failed to create LuaJIT state")
-        _lua.luaL_openlibs(state)
+        lua.luaL_openlibs(state)
         return state
 
     @staticmethod
-    def _error_string(state: ctypes.c_void_p) -> str:
+    def _error_string(lua: ctypes.CDLL, state: ctypes.c_void_p) -> str:
         size = ctypes.c_size_t()
-        raw = _lua.lua_tolstring(state, -1, ctypes.byref(size))
+        raw = lua.lua_tolstring(state, -1, ctypes.byref(size))
         return ctypes.string_at(raw, size.value).decode("utf-8") if raw else "unknown LuaJIT error"
 
-    def _execute(self, state: ctypes.c_void_p, script: str) -> None:
+    def _execute(self, lua: ctypes.CDLL, state: ctypes.c_void_p, script: str) -> None:
         encoded = script.encode("utf-8")
-        if _lua.luaL_loadstring(state, encoded) != 0:
-            raise RuntimeError(self._error_string(state))
-        if _lua.lua_pcall(state, 0, 1, 0) != 0:
-            raise RuntimeError(self._error_string(state))
+        if lua.luaL_loadstring(state, encoded) != 0:
+            raise RuntimeError(self._error_string(lua, state))
+        if lua.lua_pcall(state, 0, 1, 0) != 0:
+            raise RuntimeError(self._error_string(lua, state))
 
 
 @lru_cache(maxsize=1)

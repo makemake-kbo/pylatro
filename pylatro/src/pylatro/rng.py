@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import pi
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from .upstream import get_luajit_bridge
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+KT = TypeVar("KT")
+VT = TypeVar("VT")
 
 
 def pseudohash(text: str) -> float:
@@ -63,17 +69,17 @@ class PseudorandomState:
         self.draws_since_seed += 1
         return result
 
-    def pseudorandom_element(self, values: Sequence[Any] | dict[Any, Any], seed: float) -> tuple[Any, Any]:
+    def pseudorandom_element(self, values: Sequence[VT] | dict[KT, VT], seed: float) -> tuple[VT, KT | int]:
         items = _sorted_items(values)
         if not items:
             raise ValueError("Cannot choose an element from an empty collection")
         selected = int(self.pseudorandom(seed, 1, len(items))) - 1
         return items[selected][1], items[selected][0]
 
-    def pseudoshuffle(self, values: list[Any], seed: float) -> list[Any]:
+    def pseudoshuffle(self, values: list[VT], seed: float) -> list[VT]:
         working = list(values)
         if working and isinstance(working[0], dict) and "sort_id" in working[0]:
-            working.sort(key=lambda item: item["sort_id"])
+            working.sort(key=lambda item: item["sort_id"])  # type: ignore[index]
         order = get_luajit_bridge().shuffle_indices(len(working), seed)
         self._record_seed(seed, max(len(working) - 1, 0))
         return [working[index - 1] for index in order]
@@ -83,8 +89,10 @@ class PseudorandomState:
         self.draws_since_seed = draws
 
 
-def _sorted_items(values: Sequence[Any] | dict[Any, Any]) -> list[tuple[Any, Any]]:
-    items = list(values.items()) if isinstance(values, dict) else list(enumerate(values, start=1))
+def _sorted_items[KT, VT](values: Sequence[VT] | dict[KT, VT]) -> list[tuple[KT | int, VT]]:
+    items: list[tuple[Any, Any]] = (
+        list(values.items()) if isinstance(values, dict) else list(enumerate(values, start=1))
+    )
     if items and isinstance(items[0][1], dict) and "sort_id" in items[0][1]:
         items.sort(key=lambda item: item[1]["sort_id"])
     else:
@@ -92,7 +100,7 @@ def _sorted_items(values: Sequence[Any] | dict[Any, Any]) -> list[tuple[Any, Any
     return items
 
 
-def pseudorandom_element(values: Sequence[Any] | dict[Any, Any], seed: float) -> tuple[Any, Any]:
+def pseudorandom_element[KT, VT](values: Sequence[VT] | dict[KT, VT], seed: float) -> tuple[VT, KT | int]:
     items = _sorted_items(values)
     if not items:
         raise ValueError("Cannot choose an element from an empty collection")
@@ -100,9 +108,9 @@ def pseudorandom_element(values: Sequence[Any] | dict[Any, Any], seed: float) ->
     return items[selected][1], items[selected][0]
 
 
-def pseudoshuffle(values: list[Any], seed: float) -> list[Any]:
+def pseudoshuffle[VT](values: list[VT], seed: float) -> list[VT]:
     working = list(values)
     if working and isinstance(working[0], dict) and "sort_id" in working[0]:
-        working.sort(key=lambda item: item["sort_id"])
+        working.sort(key=lambda item: item["sort_id"])  # type: ignore[index]
     order = get_luajit_bridge().shuffle_indices(len(working), seed)
     return [working[index - 1] for index in order]

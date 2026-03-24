@@ -10,4 +10,7 @@ The current implementation includes:
 - Balatro-compatible pseudohash / pseudoseed state handling
 - headless run initialization with stake modifiers and deck effects
 - blind, voucher, tag, boss, shop, reroll, and pack generation logic
+- ante progression through endless mode with Balatro-style `nan` overflow behavior in very large blind amounts
+- headless hand evaluation and scoring for a growing subset of card, edition, deck, and joker interactions
+- joker instance tracking with preserved in-run order for copy and position-sensitive effects
 - differential and behavior tests over the deterministic core

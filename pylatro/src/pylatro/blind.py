@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from math import floor, log10
+from math import floor, fmod, isinf, isnan, log10
 from typing import TYPE_CHECKING
 
 from .pool import get_new_boss, get_next_tag_key, get_next_voucher_key
+from .runtime import apply_end_of_round
 
 if TYPE_CHECKING:
     from .models import RunState
 
 
-def get_blind_amount(ante: int, scaling: int | None = None) -> int:
+def get_blind_amount(ante: int, scaling: int | None = None) -> int | float:
     k = 0.75
     scaling = scaling or 1
     if scaling == 1:
@@ -27,8 +28,20 @@ def get_blind_amount(ante: int, scaling: int | None = None) -> int:
         return amounts[ante - 1]
 
     a, b, c, d = amounts[7], 1.6, ante - 8, 1 + 0.2 * (ante - 8)
-    amount = floor(a * (b + (k * c) ** d) ** c)
-    amount -= amount % (10 ** floor(log10(amount) - 1))
+    raw_amount = a * (b + (k * c) ** d) ** c
+    if isinf(raw_amount) or isnan(raw_amount):
+        return float("nan")
+
+    amount = float(floor(raw_amount))
+    if isinf(amount) or isnan(amount):
+        return float("nan")
+
+    magnitude = 10 ** floor(log10(amount) - 1)
+    amount -= fmod(amount, magnitude)
+    if isnan(amount):
+        return float("nan")
+    if amount.is_integer() and amount <= 9_007_199_254_740_992:
+        return int(amount)
     return amount
 
 
@@ -83,6 +96,7 @@ def reset_blinds(state: RunState) -> None:
 
 
 def cash_out(state: RunState) -> None:
+    apply_end_of_round(state)
     state.current_round.jokers_purchased = 0
     state.current_round.discards_left = max(0, state.round_resets.discards)
     state.current_round.hands_left = max(1, state.round_resets.hands)
@@ -92,7 +106,19 @@ def cash_out(state: RunState) -> None:
     state.pack = None
     state.current_round.used_packs = []
     if state.round_resets.blind_states["Boss"] == "Defeated":
+        most_played = max(
+            ((hand["played"], -hand["order"], name) for name, hand in state.hands.items()),
+            default=(0, 0, "High Card"),
+        )[2]
+        state.current_round.most_played_poker_hand = most_played
+        if state.round_resets.ante == state.win_ante:
+            state.won = True
+        state.round_resets.ante += 1
         state.round_resets.blind_ante = state.round_resets.ante
+        for hand in state.hands.values():
+            hand["played_this_round"] = 0
+        for card in state.deck_cards:
+            card.played_this_ante = False
         state.current_voucher = get_next_voucher_key(state)
         state.round_resets.blind_tags["Small"] = get_next_tag_key(state)
         state.round_resets.blind_tags["Big"] = get_next_tag_key(state)

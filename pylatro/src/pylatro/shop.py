@@ -1,8 +1,19 @@
 from __future__ import annotations
 
 from ._helpers import _apply_voucher_to_run, _as_dict, _calculate_cost
+from .instances import add_consumable, add_joker
 from .models import POKER_HANDS, PackState, PlayingCard, RunState, ShopCard, ShopState
 from .pool import create_card_spec, get_pack, poll_edition
+from .runtime import (
+    add_playing_cards,
+    apply_end_shop,
+    apply_open_booster,
+    apply_playing_card_added,
+    apply_reroll_shop,
+    apply_skip_booster,
+    sell_consumable,
+    sell_joker,
+)
 
 
 def create_shop_card(state: RunState) -> ShopCard:
@@ -88,7 +99,9 @@ def reroll_shop(state: RunState) -> list[ShopCard]:
     final_free = state.current_round.free_rerolls > 0
     state.current_round.free_rerolls = max(state.current_round.free_rerolls - 1, 0)
     state.calculate_reroll_cost(skip_increment=final_free)
-    return refresh_shop(state)
+    refreshed = refresh_shop(state)
+    apply_reroll_shop(state)
+    return refreshed
 
 
 def buy_shop_card(state: RunState, index: int) -> ShopCard:
@@ -99,19 +112,62 @@ def buy_shop_card(state: RunState, index: int) -> ShopCard:
         if not card.front_key:
             raise ValueError("Playing card purchases require a front key")
         front = state.data.cards[card.front_key]
-        state.deck_cards.append(
-            PlayingCard(
-                front_key=card.front_key,
-                suit=front["suit"],
-                rank=card.front_key[2],
-                center_key=card.center_key,
-                edition_key=next(iter(card.edition)) if card.edition else None,
-            )
+        created = PlayingCard(
+            front_key=card.front_key,
+            suit=front["suit"],
+            rank=card.front_key[2],
+            center_key=card.center_key,
+            edition_key=next(iter(card.edition)) if card.edition else None,
         )
+        state.deck_cards.append(created)
+        apply_playing_card_added(state, [created])
     elif center.get("consumeable"):
-        state.consumable_keys.append(card.center_key)
+        add_consumable(state, card.center_key, edition=card.edition)
     else:
-        state.joker_keys.append(card.center_key)
+        add_joker(
+            state,
+            card.center_key,
+            edition=card.edition,
+            eternal=card.eternal,
+            perishable=card.perishable,
+            rental=card.rental,
+        )
+    return card
+
+
+def claim_pack_card(state: RunState, index: int) -> ShopCard:
+    if state.pack is None:
+        raise ValueError("No active pack")
+    card = state.pack.cards.pop(index)
+    center = state.data.centers[card.center_key]
+    if center.get("set") in {"Default", "Enhanced"}:
+        if not card.front_key:
+            raise ValueError("Playing card pack reward requires a front key")
+        front = state.data.cards[card.front_key]
+        created = PlayingCard(
+            front_key=card.front_key,
+            suit=front["suit"],
+            rank=card.front_key[2],
+            center_key=card.center_key,
+            edition_key=next(iter(card.edition)) if card.edition else None,
+            seal=card.seal,
+        )
+        add_playing_cards(state, [created], area="draw")
+    elif center.get("consumeable"):
+        add_consumable(state, card.center_key, edition=card.edition)
+    else:
+        add_joker(
+            state,
+            card.center_key,
+            edition=card.edition,
+            eternal=card.eternal,
+            perishable=card.perishable,
+            rental=card.rental,
+        )
+
+    state.pack.choices_remaining = max(0, state.pack.choices_remaining - 1)
+    if state.pack.choices_remaining == 0:
+        state.pack = None
     return card
 
 
@@ -206,7 +262,28 @@ def open_booster_pack(state: RunState, index: int) -> PackState:
         cards=cards,
         source_slot=booster.booster_pos,
     )
+    apply_open_booster(state)
     return state.pack
+
+
+def close_pack(state: RunState, *, skipped: bool = False) -> None:
+    if state.pack is None:
+        return
+    if skipped and state.pack.cards:
+        apply_skip_booster(state)
+    state.pack = None
+
+
+def finish_shop(state: RunState) -> list[str]:
+    return apply_end_shop(state)
+
+
+def sell_owned_joker(state: RunState, index: int):
+    return sell_joker(state, index)
+
+
+def sell_owned_consumable(state: RunState, index: int):
+    return sell_consumable(state, index)
 
 
 def redeem_voucher(state: RunState, voucher_key: str) -> None:

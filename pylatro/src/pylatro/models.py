@@ -82,6 +82,8 @@ class CurrentRound:
     hands_played: int = 0
     discards_left: int = 0
     discards_used: int = 0
+    hand_size: int = 0
+    first_hand_drawn: bool = False
     reroll_cost: int = 5
     reroll_cost_increase: int = 0
     free_rerolls: int = 0
@@ -122,6 +124,15 @@ class PlayingCard:
     center_key: str = "c_base"
     edition_key: str | None = None
     seal: str | None = None
+    perma_bonus: int = 0
+    debuff: bool = False
+    shattered: bool = False
+    destroyed: bool = False
+    played_this_ante: bool = False
+    discarded: bool = False
+    face_down: bool = False
+    forced_selection: bool = False
+    times_played: int = 0
 
     @property
     def is_face(self) -> bool:
@@ -162,6 +173,52 @@ class PackState:
 
 
 @dataclass(slots=True)
+class ConsumableInstance:
+    center_key: str
+    edition: dict[str, bool] | None = None
+    extra_value: int = 0
+    sell_cost: int = 1
+
+
+@dataclass(slots=True)
+class JokerInstance:
+    center_key: str
+    edition: dict[str, bool] | None = None
+    eternal: bool = False
+    perishable: bool = False
+    perish_tally: int | None = None
+    rental: bool = False
+    debuff: bool = False
+    mult: int = 0
+    h_mult: int = 0
+    h_x_mult: float = 0
+    h_dollars: int = 0
+    p_dollars: int = 0
+    t_mult: int = 0
+    t_chips: int = 0
+    x_mult: float = 1
+    h_size: int = 0
+    d_size: int = 0
+    extra: Any = None
+    extra_value: int = 0
+    type: str = ""
+    hands_played_at_create: int = 0
+    invis_rounds: int = 0
+    caino_xmult: float = 1
+    yorick_discards: int = 0
+    loyalty_remaining: int = 0
+    driver_tally: int = 0
+    stone_tally: int = 0
+    steel_tally: int = 0
+    to_do_poker_hand: str | None = None
+    blueprint_compat: str | None = None
+    money: int = 0
+    sell_cost: int = 1
+    getting_sliced: bool = False
+    nine_tally: int = 0
+
+
+@dataclass(slots=True)
 class RunState:
     data: GameData
     seed: str
@@ -198,8 +255,14 @@ class RunState:
     current_voucher: str | None = None
     tags: list[str] = field(default_factory=list)
     joker_keys: list[str] = field(default_factory=list)
+    jokers: list[JokerInstance] = field(default_factory=list)
+    consumables: list[ConsumableInstance] = field(default_factory=list)
     consumable_keys: list[str] = field(default_factory=list)
     deck_cards: list[PlayingCard] = field(default_factory=list)
+    draw_pile: list[PlayingCard] = field(default_factory=list)
+    hand_cards: list[PlayingCard] = field(default_factory=list)
+    discard_pile: list[PlayingCard] = field(default_factory=list)
+    play_cards: list[PlayingCard] = field(default_factory=list)
     hands: dict[str, dict[str, Any]] = field(default_factory=dict)
     win_ante: int = 8
     round: int = 0
@@ -218,9 +281,19 @@ class RunState:
     last_tarot_planet: str | None = None
     previous_round: dict[str, Any] = field(default_factory=lambda: {"dollars": 4})
     round_bonus: dict[str, int] = field(default_factory=lambda: {"next_hands": 0, "discards": 0})
+    dollar_buffer: int = 0
+    last_hand_played: str | None = None
+    consumeable_usage: dict[str, dict[str, Any]] = field(default_factory=dict)
+    consumeable_usage_total: dict[str, int] = field(
+        default_factory=lambda: {"tarot": 0, "planet": 0, "spectral": 0, "tarot_planet": 0, "all": 0}
+    )
     cards_played: dict[str, dict[str, Any]] = field(init=False)
     first_shop_buffoon: bool = False
     pack: PackState | None = None
+    subhash: str = ""
+    blind_disabled: bool = False
+    blind_triggered: bool = False
+    blind_prepped: bool = False
 
     def __post_init__(self) -> None:
         self.pseudorandom = PseudorandomState(self.seed)
@@ -232,6 +305,8 @@ class RunState:
         }
 
     def has_joker(self, name: str) -> bool:
+        if self.jokers:
+            return any(self.data.centers[joker.center_key]["name"] == name for joker in self.jokers)
         return any(self.data.centers[key]["name"] == name for key in self.joker_keys)
 
     def calculate_reroll_cost(self, skip_increment: bool = False) -> None:

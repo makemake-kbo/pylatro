@@ -37,12 +37,14 @@ def test_boss_reroll_and_cash_out_regenerate_round_structure() -> None:
     cash_out(state)
 
     assert old_boss == "bl_manacle"
-    assert state.round_resets.blind_choices["Boss"] == "bl_hook"
+    assert state.round_resets.ante == 2
+    assert state.round_resets.blind_ante == 2
+    assert state.round_resets.blind_choices["Boss"] == "bl_house"
     assert state.round_resets.blind_states == {
         "Small": "Upcoming",
         "Big": "Upcoming",
         "Boss": "Upcoming",
     }
     assert state.blind_on_deck == "Small"
-    assert state.current_voucher == "v_wasteful"
-    assert state.round_resets.blind_tags == {"Small": "tag_skip", "Big": "tag_voucher"}
+    assert state.current_voucher == "v_magic_trick"
+    assert state.round_resets.blind_tags == {"Small": "tag_juggle", "Big": "tag_ethereal"}

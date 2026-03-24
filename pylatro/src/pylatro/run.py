@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ._helpers import _apply_voucher_to_run, _as_dict
 from .data import GameData, load_game_data
+from .instances import add_consumable
 from .models import PlayingCard, RunState
 from .pool import get_new_boss, get_next_tag_key, get_next_voucher_key
 
@@ -32,7 +33,7 @@ def _apply_deck(state: RunState) -> None:
         state.used_vouchers[voucher_key] = True
         _apply_voucher_to_run(state, voucher_key)
     for consumable_key in config.get("consumables", []):
-        state.consumable_keys.append(consumable_key)
+        add_consumable(state, consumable_key)
 
     if hands := config.get("hands"):
         state.starting_params.hands += hands
@@ -154,6 +155,8 @@ def create_run_state(seed: str, stake: int = 1, deck_key: str = "b_red", data: G
     state.round_resets.blind_tags["Big"] = get_next_tag_key(state)
 
     _build_starting_deck(state)
+    state.draw_pile = list(state.deck_cards)
+    state.current_round.hand_size = state.starting_params.hand_size
     state.current_round.discards_left = state.round_resets.discards
     state.current_round.hands_left = state.round_resets.hands
     return state

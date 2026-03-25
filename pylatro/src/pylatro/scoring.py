@@ -596,6 +596,8 @@ def _evaluate_joker(
             return {"x_mult": float(joker.extra if isinstance(joker.extra, (int, float)) else 1)}
         if name == "Triboulet" and _card_id(state, other_card) in {12, 13}:
             return {"x_mult": float(joker.extra if isinstance(joker.extra, (int, float)) else 1)}
+        if name == "Wee Joker" and _card_id(state, other_card) == 2 and isinstance(joker.extra, dict):
+            joker.extra["chips"] = int(joker.extra.get("chips", 0) or 0) + int(joker.extra.get("chip_mod", 0) or 0)
         return None
 
     if phase == "individual_hand" and other_card is not None:
@@ -758,6 +760,8 @@ def _evaluate_joker(
                 return {"mult": float(mult * factor)}
     if name == "Caino" and joker.caino_xmult > 1:
         return {"x_mult": float(joker.caino_xmult)}
+    if name == "Matador" and state.blind_triggered and isinstance(joker.extra, int):
+        return {"dollars": float(joker.extra)}
     return None
 
 
@@ -766,6 +770,7 @@ def score_hand(
     full_hand: list[PlayingCard],
     *,
     held_hand: list[PlayingCard] | None = None,
+    hand_debuffed: bool = False,
 ) -> ScoreResult:
     held_cards = list(held_hand or [])
     state.dollar_buffer = 0
@@ -776,6 +781,19 @@ def score_hand(
     state.hands[scoring_name]["played_this_round"] += 1
     state.hands[scoring_name]["visible"] = True
     state.last_hand_played = scoring_name
+
+    if hand_debuffed:
+        return ScoreResult(
+            hand_name=scoring_name,
+            display_name=display_name,
+            poker_hands=poker_hands,
+            scoring_cards=list(full_hand),
+            held_cards=held_cards,
+            chips=0,
+            mult=0,
+            total=0,
+            dollars=0,
+        )
 
     if state.has_joker("Splash"):
         scoring_cards = list(full_hand)
@@ -805,6 +823,9 @@ def score_hand(
 
     hand_chips = _mod_chips(state, float(state.hands[scoring_name]["chips"]))
     mult = _mod_mult(float(state.hands[scoring_name]["mult"]))
+
+    # Apply modify_hand (The Flint)
+    mult, hand_chips = _modify_hand(state, full_hand, poker_hands, mult, hand_chips)
 
     for card in scoring_cards:
         if _card_effect(state, card) != "Stone Card":
@@ -1040,6 +1061,25 @@ def _evaluate_planet_consumable(
     if state.used_vouchers.get("v_observatory") and _as_dict(center.get("config")).get("hand_type") == scoring_name:
         return {"x_mult": float(state.data.centers["v_observatory"]["config"]["extra"])}
     return None
+
+
+def _modify_hand(
+    state: RunState,
+    cards: list[PlayingCard],
+    poker_hands: dict,
+    mult: float,
+    hand_chips: float,
+) -> tuple[float, float]:
+    """Apply blind modify_hand effects (e.g. The Flint halving)."""
+    if state.blind_disabled:
+        return mult, hand_chips
+    blind = state.round_resets.blind or {}
+    blind_name = str(blind.get("name", ""))
+    if blind_name == "The Flint":
+        state.blind_triggered = True
+        mult = max(floor(mult * 0.5 + 0.5), 1)
+        hand_chips = max(floor(hand_chips * 0.5 + 0.5), 0)
+    return mult, hand_chips
 
 
 def _level_up_hand(state: RunState, hand_name: str, amount: int = 1) -> None:

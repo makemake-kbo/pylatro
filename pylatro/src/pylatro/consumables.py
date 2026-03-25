@@ -56,9 +56,11 @@ def can_use_consumable(
     if name in {"Ectoplasm", "Hex"}:
         return bool(_eligible_editionless_jokers(state))
     if name in {"The Emperor", "The High Priestess"}:
-        return len(state.consumables) < consumable_limit(state)
+        # Using the card frees a slot, so allow if we're at capacity with the consumable in our area
+        return len(state.consumables) < consumable_limit(state) or item in state.consumables
     if name == "The Fool":
-        return len(state.consumables) < consumable_limit(state) and bool(state.last_tarot_planet and state.last_tarot_planet != "c_fool")
+        has_target = bool(state.last_tarot_planet and state.last_tarot_planet != "c_fool")
+        return (len(state.consumables) < consumable_limit(state) or item in state.consumables) and has_target
     if name in {"Judgement", "The Soul", "Wraith"}:
         return len(state.jokers) < joker_limit(state)
     if name in {"Familiar", "Grim", "Incantation", "Immolate", "Sigil", "Ouija"}:
@@ -67,8 +69,6 @@ def can_use_consumable(
         required_min = int(config.get("min_highlighted", 1) or 1)
         required_max = int(config.get("max_highlighted", 0) or 0)
         return required_min <= len(cards) <= required_max
-    if name == "The Wheel of Fortune":
-        return bool(jokers)
     return True
 
 

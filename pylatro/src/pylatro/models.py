@@ -294,6 +294,8 @@ class RunState:
     blind_disabled: bool = False
     blind_triggered: bool = False
     blind_prepped: bool = False
+    eye_hands: dict[str, bool] = field(default_factory=dict)
+    mouth_only_hand: str | bool = False
 
     def __post_init__(self) -> None:
         self.pseudorandom = PseudorandomState(self.seed)

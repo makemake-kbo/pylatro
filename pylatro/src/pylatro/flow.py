@@ -7,7 +7,7 @@ from .blind import select_blind
 from .instances import sync_all_jokers
 from .models import PlayingCard
 from .runtime import apply_setting_blind
-from .scoring import RANK_TO_ID, RANK_TO_NOMINAL, SUIT_TO_NOMINAL, ScoreResult, get_poker_hand_info, resolve_after_hand, score_hand
+from .scoring import POKER_HAND_ORDER, RANK_TO_ID, RANK_TO_NOMINAL, SUIT_TO_NOMINAL, ScoreResult, get_poker_hand_info, resolve_after_hand, score_hand
 from .runtime import add_generated_consumable
 
 if TYPE_CHECKING:
@@ -143,6 +143,8 @@ def play_cards(state: RunState, cards: Iterable[PlayingCard | int]) -> PlayResul
     if _blind_name(state) in {"The Fish", "Crimson Heart"} and not state.blind_disabled:
         state.blind_prepped = True
 
+    _press_play(state, selected)
+
     for card in selected:
         _remove_exact(state.hand_cards, card)
         card.times_played += 1
@@ -151,8 +153,13 @@ def play_cards(state: RunState, cards: Iterable[PlayingCard | int]) -> PlayResul
         card.forced_selection = False
         state.play_cards.append(card)
 
+    # Check debuff_hand before scoring
+    play_list = list(state.play_cards)
+    hand_name_pre, _, poker_hands_pre, _ = get_poker_hand_info(state, play_list)
+    hand_debuffed = _debuff_hand(state, play_list, hand_name_pre, poker_hands_pre)
+
     held_hand = list(state.hand_cards)
-    result = score_hand(state, list(state.play_cards), held_hand=held_hand)
+    result = score_hand(state, list(state.play_cards), held_hand=held_hand, hand_debuffed=hand_debuffed)
     state.hands_played += 1
     state.current_round.hands_played += 1
 
@@ -193,19 +200,34 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
     )
 
     blind_name = _blind_name(state)
+    blind = state.round_resets.blind or {}
     if blind_name == "The Water":
         state.current_round.discards_left = 0
     elif blind_name == "The Needle":
         state.current_round.hands_left = 1
     elif blind_name == "The Manacle":
         state.current_round.hand_size = max(0, state.current_round.hand_size - 1)
+    elif blind_name == "The Eye":
+        state.eye_hands = {h: False for h in POKER_HAND_ORDER}
+    elif blind_name == "The Mouth":
+        state.mouth_only_hand = False
+    elif blind_name == "Amber Acorn" and state.jokers:
+        for joker in state.jokers:
+            joker.debuff = True
+        if len(state.jokers) > 1:
+            state.jokers = state.pseudorandom.pseudoshuffle(
+                list(state.jokers),
+                state.pseudorandom.pseudoseed("aajk"),
+            )
 
     for card in state.deck_cards:
         card.discarded = False
         card.forced_selection = False
         card.face_down = False
+        _debuff_card(state, card)
     for joker in state.jokers:
-        joker.debuff = False
+        if blind_name != "Amber Acorn":
+            joker.debuff = False
 
 
 def _fold_areas_back_into_deck(state: RunState) -> None:
@@ -351,6 +373,12 @@ def _discard_effect(
             state.dollars += int(joker.extra if isinstance(joker.extra, int) else 0)
     elif name == "Hit the Road" and not card.debuff and card.rank == "J" and isinstance(joker.extra, (int, float)):
         joker.x_mult += float(joker.extra)
+    elif name == "Ramen" and isinstance(joker.extra, (int, float)):
+        if joker.x_mult - float(joker.extra) <= 1:
+            from .instances import remove_joker as _remove_joker
+            _remove_joker(state, joker)
+        else:
+            joker.x_mult -= float(joker.extra)
 
     if last and name == "Green Joker" and isinstance(joker.extra, dict):
         joker.mult = max(0, joker.mult - int(joker.extra.get("discard_sub", 0) or 0))
@@ -390,6 +418,113 @@ def _remove_exact(cards: list[PlayingCard], card: PlayingCard) -> None:
         if candidate is card:
             cards.pop(index)
             return
+
+
+def _debuff_card(state: RunState, card: PlayingCard) -> None:
+    """Apply blind-based debuffs to a playing card, matching Lua Blind:debuff_card."""
+    blind = state.round_resets.blind or {}
+    blind_name = str(blind.get("name", ""))
+    debuff = blind.get("debuff") or {}
+
+    if state.blind_disabled:
+        card.debuff = False
+        return
+
+    if blind_name == "Verdant Leaf":
+        card.debuff = True
+        return
+
+    if debuff and not state.blind_disabled:
+        if debuff.get("suit") and _is_suit_raw(card, str(debuff["suit"])):
+            card.debuff = True
+            return
+        if debuff.get("is_face") == "face" and _is_face(state, card):
+            card.debuff = True
+            return
+        if blind_name == "The Pillar" and card.played_this_ante:
+            card.debuff = True
+            return
+
+    card.debuff = False
+
+
+def _is_suit_raw(card: PlayingCard, suit: str) -> bool:
+    """Check card suit for boss blind debuff (raw check, no joker interaction)."""
+    return card.suit == suit
+
+
+def _debuff_hand(state: RunState, cards: list[PlayingCard], hand_name: str, poker_hands: dict, *, check: bool = False) -> bool:
+    """Check if a hand is debuffed by the current blind. Returns True if debuffed."""
+    if state.blind_disabled:
+        return False
+    blind = state.round_resets.blind or {}
+    blind_name = str(blind.get("name", ""))
+    debuff = blind.get("debuff") or {}
+
+    if debuff:
+        state.blind_triggered = False
+        if debuff.get("hand") and poker_hands.get(debuff["hand"]):
+            if any(poker_hands[debuff["hand"]]):
+                state.blind_triggered = True
+                return True
+        if debuff.get("h_size_ge") and len(cards) < int(debuff["h_size_ge"]):
+            state.blind_triggered = True
+            return True
+        if debuff.get("h_size_le") and len(cards) > int(debuff["h_size_le"]):
+            state.blind_triggered = True
+            return True
+        if blind_name == "The Eye":
+            if state.eye_hands.get(hand_name):
+                state.blind_triggered = True
+                return True
+            if not check:
+                state.eye_hands[hand_name] = True
+        if blind_name == "The Mouth":
+            if state.mouth_only_hand and state.mouth_only_hand != hand_name:
+                state.blind_triggered = True
+                return True
+            if not check:
+                state.mouth_only_hand = hand_name
+
+    if blind_name == "The Arm":
+        state.blind_triggered = False
+        if state.hands[hand_name]["level"] > 1:
+            state.blind_triggered = True
+            if not check:
+                _level_up_hand(state, hand_name, -1)
+    if blind_name == "The Ox":
+        state.blind_triggered = False
+        if hand_name == state.current_round.most_played_poker_hand:
+            state.blind_triggered = True
+            if not check:
+                state.dollars = max(0, state.dollars - state.dollars)  # zero out
+
+    return False
+
+
+def _press_play(state: RunState, play_cards_list: list[PlayingCard]) -> None:
+    """Pre-scoring side effects from boss blinds."""
+    if state.blind_disabled:
+        return
+    blind_name = _blind_name(state)
+    if blind_name == "The Hook" and state.hand_cards:
+        available = list(state.hand_cards)
+        for _ in range(min(2, len(available))):
+            if not available:
+                break
+            chosen, idx = state.pseudorandom.pseudorandom_element(
+                available,
+                state.pseudorandom.pseudoseed("hook"),
+            )
+            _remove_exact(state.hand_cards, chosen)
+            chosen.discarded = True
+            state.discard_pile.append(chosen)
+            available = [c for c in available if c is not chosen]
+        state.blind_triggered = True
+    if blind_name == "The Tooth":
+        for _ in play_cards_list:
+            state.dollars = max(0, state.dollars - 1)
+        state.blind_triggered = True
 
 
 def _blind_name(state: RunState) -> str:

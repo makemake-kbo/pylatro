@@ -486,4 +486,328 @@ function oracle.start_blind(state, blind_type)
     return state
 end
 
+-- Hand evaluation helpers (must match Python's scoring.py)
+local rank_to_id = {
+    ["2"] = 2, ["3"] = 3, ["4"] = 4, ["5"] = 5, ["6"] = 6,
+    ["7"] = 7, ["8"] = 8, ["9"] = 9, ["T"] = 10, ["J"] = 11,
+    ["Q"] = 12, ["K"] = 13, ["A"] = 14,
+}
+
+local function card_id(card)
+    return rank_to_id[card.rank]
+end
+
+local function get_x_same(num, hand)
+    local vals = {}
+    for i = 0, 14 do vals[i] = {} end
+    for i = #hand, 1, -1 do
+        local curr = { hand[i] }
+        for j = 1, #hand do
+            if i ~= j and card_id(hand[i]) == card_id(hand[j]) then
+                curr[#curr + 1] = hand[j]
+            end
+        end
+        if #curr == num then
+            vals[card_id(curr[1])] = curr
+        end
+    end
+    local result = {}
+    for i = 14, 0, -1 do
+        if #vals[i] > 0 then
+            result[#result + 1] = vals[i]
+        end
+    end
+    return result
+end
+
+local function get_flush(hand)
+    local required = 5
+    if #hand > 5 or #hand < required then return {} end
+    for _, suit in ipairs({"Spades", "Hearts", "Clubs", "Diamonds"}) do
+        local cards = {}
+        for _, card in ipairs(hand) do
+            if card.suit == suit then
+                cards[#cards + 1] = card
+            end
+        end
+        if #cards >= required then
+            return { cards }
+        end
+    end
+    return {}
+end
+
+local function get_straight(hand)
+    local required = 5
+    if #hand > 5 or #hand < required then return {} end
+
+    local ids = {}
+    for _, card in ipairs(hand) do
+        local cid = card_id(card)
+        if cid > 1 and cid < 15 then
+            if not ids[cid] then ids[cid] = {} end
+            ids[cid][#ids[cid] + 1] = card
+        end
+    end
+
+    local straight_cards = {}
+    local straight_length = 0
+    local straight = false
+    for j = 1, 14 do
+        local actual = j == 1 and 14 or j
+        if ids[actual] then
+            straight_length = straight_length + 1
+            for _, c in ipairs(ids[actual]) do
+                straight_cards[#straight_cards + 1] = c
+            end
+        else
+            straight_length = 0
+            if not straight then
+                straight_cards = {}
+            end
+            if straight then
+                break
+            end
+        end
+        if straight_length >= required then
+            straight = true
+        end
+    end
+    if not straight then return {} end
+    return { straight_cards }
+end
+
+local function get_highest(hand, centers)
+    if #hand == 0 then return {} end
+    local highest = hand[1]
+    local highest_nom = card_nominal(highest, centers)
+    for i = 2, #hand do
+        local nom = card_nominal(hand[i], centers)
+        if nom > highest_nom then
+            highest = hand[i]
+            highest_nom = nom
+        end
+    end
+    return { { highest } }
+end
+
+local poker_hand_order = {
+    "Flush Five", "Flush House", "Five of a Kind", "Straight Flush",
+    "Four of a Kind", "Full House", "Flush", "Straight",
+    "Three of a Kind", "Two Pair", "Pair", "High Card",
+}
+
+local function evaluate_poker_hand(hand, centers)
+    local results = {
+        ["Flush Five"] = {},
+        ["Flush House"] = {},
+        ["Five of a Kind"] = {},
+        ["Straight Flush"] = {},
+        ["Four of a Kind"] = {},
+        ["Full House"] = {},
+        ["Flush"] = {},
+        ["Straight"] = {},
+        ["Three of a Kind"] = {},
+        ["Two Pair"] = {},
+        ["Pair"] = {},
+        ["High Card"] = {},
+    }
+
+    local _5 = get_x_same(5, hand)
+    local _4 = get_x_same(4, hand)
+    local _3 = get_x_same(3, hand)
+    local _2 = get_x_same(2, hand)
+    local _flush = get_flush(hand)
+    local _straight = get_straight(hand)
+    local _highest = get_highest(hand, centers)
+
+    if #_5 > 0 and #_flush > 0 then
+        results["Flush Five"] = _5
+    end
+    if #_3 > 0 and #_2 > 0 and #_flush > 0 then
+        local combined = {}
+        for _, c in ipairs(_3[1]) do combined[#combined + 1] = c end
+        for _, c in ipairs(_2[1]) do combined[#combined + 1] = c end
+        results["Flush House"] = { combined }
+    end
+    if #_5 > 0 then
+        results["Five of a Kind"] = _5
+    end
+    if #_flush > 0 and #_straight > 0 then
+        local flush_cards = {}
+        for _, c in ipairs(_flush[1]) do flush_cards[#flush_cards + 1] = c end
+        local straight_cards = {}
+        for _, c in ipairs(_straight[1]) do straight_cards[#straight_cards + 1] = c end
+        local ret = {}
+        for _, c in ipairs(flush_cards) do ret[#ret + 1] = c end
+        for _, c in ipairs(straight_cards) do
+            local found = false
+            for _, fc in ipairs(flush_cards) do
+                if c == fc then found = true; break end
+            end
+            if not found then ret[#ret + 1] = c end
+        end
+        results["Straight Flush"] = { ret }
+    end
+    if #_4 > 0 then
+        results["Four of a Kind"] = _4
+    end
+    if #_3 > 0 and #_2 > 0 then
+        local combined = {}
+        for _, c in ipairs(_3[1]) do combined[#combined + 1] = c end
+        for _, c in ipairs(_2[1]) do combined[#combined + 1] = c end
+        results["Full House"] = { combined }
+    end
+    if #_flush > 0 then
+        results["Flush"] = _flush
+    end
+    if #_straight > 0 then
+        results["Straight"] = _straight
+    end
+    if #_3 > 0 then
+        results["Three of a Kind"] = _3
+    end
+    if #_2 == 2 or (#_3 == 1 and #_2 == 1) then
+        local second_pair = #_2 > 1 and _2[2] or _3[1]
+        local combined = {}
+        for _, c in ipairs(_2[1]) do combined[#combined + 1] = c end
+        for _, c in ipairs(second_pair) do combined[#combined + 1] = c end
+        results["Two Pair"] = { combined }
+    end
+    if #_2 > 0 then
+        results["Pair"] = _2
+    end
+    if #_highest > 0 then
+        results["High Card"] = _highest
+    end
+
+    -- Backfill lower hands from higher ones (match Python)
+    if #results["Five of a Kind"] > 0 then
+        local cards = results["Five of a Kind"][1]
+        results["Four of a Kind"] = { { cards[1], cards[2], cards[3], cards[4] } }
+    end
+    if #results["Four of a Kind"] > 0 then
+        local cards = results["Four of a Kind"][1]
+        results["Three of a Kind"] = { { cards[1], cards[2], cards[3] } }
+    end
+    if #results["Three of a Kind"] > 0 then
+        local cards = results["Three of a Kind"][1]
+        results["Pair"] = { { cards[1], cards[2] } }
+    end
+
+    return results
+end
+
+local function get_poker_hand_info(hand, centers)
+    local poker_hands = evaluate_poker_hand(hand, centers)
+    local text = "High Card"
+    local scoring_hand = #poker_hands["High Card"] > 0 and poker_hands["High Card"][1] or {}
+
+    for _, hand_name in ipairs(poker_hand_order) do
+        if #poker_hands[hand_name] > 0 then
+            text = hand_name
+            scoring_hand = poker_hands[hand_name][1]
+            break
+        end
+    end
+
+    return text, scoring_hand
+end
+
+function oracle.play_hand(state, card_indices)
+    G.GAME = state
+    local data = state.data
+
+    -- Convert card_indices from Python list/lupa table to a proper Lua array
+    local indices = {}
+    if type(card_indices) == "table" then
+        for _, v in ipairs(card_indices) do
+            indices[#indices + 1] = v
+        end
+    else
+        -- lupa userdata: iterate with python protocol
+        for v in python.iter(card_indices) do
+            indices[#indices + 1] = v
+        end
+    end
+
+    -- Move selected cards from hand_cards to play_cards (1-indexed)
+    -- Collect cards first, then remove (in reverse order to preserve indices)
+    local selected = {}
+    for _, idx in ipairs(indices) do
+        selected[#selected + 1] = state.hand_cards[idx]
+    end
+
+    -- Sort indices in descending order to remove from end first
+    local sorted_indices = {}
+    for _, idx in ipairs(indices) do sorted_indices[#sorted_indices + 1] = idx end
+    table.sort(sorted_indices, function(a, b) return a > b end)
+    for _, idx in ipairs(sorted_indices) do
+        table.remove(state.hand_cards, idx)
+    end
+
+    -- Update card tracking and move to play_cards
+    for _, card in ipairs(selected) do
+        card.times_played = card.times_played + 1
+        card.played_this_ante = true
+        card.discarded = false
+        card.forced_selection = false
+        state.play_cards[#state.play_cards + 1] = card
+    end
+
+    -- Decrement hands_left, increment counters
+    state.current_round.hands_left = math.max(0, state.current_round.hands_left - 1)
+
+    -- Evaluate poker hand
+    local play_list = {}
+    for _, card in ipairs(state.play_cards) do play_list[#play_list + 1] = card end
+    local hand_name, scoring_hand = get_poker_hand_info(play_list, data.centers)
+
+    -- Update hand played counts (match Python's score_hand)
+    state.hands[hand_name].played = state.hands[hand_name].played + 1
+    state.hands[hand_name].played_this_round = state.hands[hand_name].played_this_round + 1
+    state.hands[hand_name].visible = true
+
+    -- Score: base chips/mult from hand level + card chip bonuses
+    local hand_chips = state.hands[hand_name].chips
+    local mult = state.hands[hand_name].mult
+
+    -- For each scoring card, add rank_to_nominal chip bonus
+    for _, card in ipairs(scoring_hand) do
+        hand_chips = hand_chips + (rank_to_nominal[card.rank] or 0)
+    end
+
+    local total = math.floor(hand_chips * mult)
+
+    -- Increment global counters
+    state.hands_played = state.hands_played + 1
+    state.current_round.hands_played = state.current_round.hands_played + 1
+
+    -- Move played cards to discard_pile
+    while #state.play_cards > 0 do
+        local card = table.remove(state.play_cards, 1)
+        card.face_down = false
+        state.discard_pile[#state.discard_pile + 1] = card
+    end
+
+    -- Draw replacement cards from draw_pile to hand_cards (only if hand is empty)
+    if #state.hand_cards == 0 and #state.draw_pile > 0 then
+        local hand_size = state.current_round.hand_size
+        local hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+        for i = 1, hand_space do
+            local card = state.draw_pile[#state.draw_pile]
+            state.draw_pile[#state.draw_pile] = nil
+            card.discarded = false
+            card.forced_selection = false
+            card.face_down = false
+            state.hand_cards[#state.hand_cards + 1] = card
+        end
+
+        -- Sort hand after drawing
+        sort_hand(state.hand_cards, data.centers)
+    end
+
+    return state
+end
+
 return oracle

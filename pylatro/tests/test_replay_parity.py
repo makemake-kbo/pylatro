@@ -133,3 +133,28 @@ def test_substep_parity_start_blind():
     lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
     diffs = diff_snapshots(py_snap, lua_snap)
     assert diffs == [], f"Divergences: {diffs}"
+
+
+# --- Task 6: Substep parity — play_hand ---
+
+def test_substep_parity_play_hand():
+    """Scoring a hand produces same result in Python and Lua."""
+    from pylatro.upstream.oracle_bridge import (
+        OracleBridge, diff_snapshots, snapshot_from_run_state, snapshot_from_lua_state,
+    )
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+
+    from pylatro.flow import start_blind, play_cards
+    start_blind(py_state, "Small")
+    play_cards(py_state, [0, 1, 2, 3, 4])
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+    lua_raw = bridge.step(lua_raw, "play_hand", card_indices=[1, 2, 3, 4, 5])
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"

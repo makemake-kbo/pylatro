@@ -1,37 +1,48 @@
 # Joker Porting & Parity Completion Design
 
 **Date:** 2026-03-25
-**Status:** Draft
+**Status:** Draft (Revised after coverage audit)
 
 ## Overview
 
-Complete pylatro's Balatro parity by porting all 76 remaining joker effects and verifying existing systems (boss blinds, endless mode, shop/consumables) against the Lua oracle. Work is split into two parallel streams to maximize throughput.
+Complete pylatro's Balatro parity by porting the 22 remaining joker effects and verifying existing systems (boss blinds, endless mode, shop/consumables/vouchers) against the Lua oracle. Work is split into two parallel streams.
 
-## Current State
+## Current State (Verified by Audit)
 
-- **Jokers:** 76/152 implemented (50%). All simple scoring jokers and many stateful jokers done. Missing: suit-based scoring (Greedy/Lusty/Wrathful/Gluttonous), hand-type bonuses (Jolly/Mad/etc.), stat modifiers (Four Fingers, Shortcut, Smeared), scaling jokers (Yorick, Ramen), and card creation jokers (Certificate, DNA, Sixth Sense).
+- **Jokers:** 113/135 implemented (83.7%). Missing 22 jokers — all are simple scoring or stat-modifier jokers.
 - **Boss blinds:** 28/28 implemented. Need oracle verification.
 - **Shop/Consumables:** Fully implemented. Need bot to exercise paths for parity testing.
+- **Consumable branches:** Not yet audited against every upstream Tarot/Planet/Spectral branch (per AGENT_HANDOFF.md).
+- **Voucher interactions:** Not yet verified for parity.
+- **Round resolution:** Missing loss detection, saved-from-loss, bankruptcy logic.
 - **Endless mode:** Scaling implemented. Showdown mechanics and full parity unverified.
 - **The Serpent:** 3-card draw implemented in flow.py:51-54. Needs oracle verification.
 
-## Stream 1: Systematic Joker Porting
+## Stream 1: Port 22 Missing Jokers
 
-### Approach
+### Missing Jokers (Complete List)
 
-Port all 76 missing jokers in 5 batches of ~15. Each batch is oracle-validated before the next begins. Jokers are grouped by complexity to catch integration issues early.
+All 22 missing jokers fall into two categories: suit-based scoring, hand-type scoring, hand-type x_mult, and stat modifiers.
 
-### Batch 1 — Simple Scoring Jokers (16 jokers)
+#### Group A — Suit-Based Scoring (4 jokers)
 
-Flat chips/mult based on suit, hand type, or static conditions. Ports from `Card:calculate_joker` to `scoring.py`.
+Per-card scoring hooks in the `individual` card context of `_evaluate_joker` in `scoring.py`. These fire per matching card scored.
 
 | Joker | Effect | Target Module |
 |-------|--------|---------------|
-| Greedy Joker | +3 mult per Diamond scored | scoring.py |
-| Lusty Joker | +3 mult per Heart scored | scoring.py |
-| Wrathful Joker | +3 mult per Spade scored | scoring.py |
-| Gluttonous Joker | +3 mult per Club scored | scoring.py |
+| Greedy Joker | +3 mult per Diamond scored | scoring.py (individual_play) |
+| Lusty Joker | +3 mult per Heart scored | scoring.py (individual_play) |
+| Wrathful Joker | +3 mult per Spade scored | scoring.py (individual_play) |
+| Gluttonous Joker | +3 mult per Club scored | scoring.py (individual_play) |
+
+#### Group B — Hand-Type Chips/Mult (9 jokers)
+
+Flat bonuses when the played hand contains a specific poker hand type. Joker-main context in scoring.
+
+| Joker | Effect | Target Module |
+|-------|--------|---------------|
 | Jolly Joker | +8 mult if hand contains Pair | scoring.py |
+| Zany Joker | +12 mult if hand contains Three of a Kind | scoring.py |
 | Mad Joker | +10 mult if hand contains Two Pair | scoring.py |
 | Crazy Joker | +12 mult if hand contains Straight | scoring.py |
 | Droll Joker | +10 mult if hand contains Flush | scoring.py |
@@ -40,99 +51,43 @@ Flat chips/mult based on suit, hand type, or static conditions. Ports from `Card
 | Clever Joker | +80 chips if hand contains Two Pair | scoring.py |
 | Devious Joker | +100 chips if hand contains Straight | scoring.py |
 | Crafty Joker | +80 chips if hand contains Flush | scoring.py |
-| Duo | x2 mult if hand contains Pair | scoring.py |
-| Trio | x3 mult if hand contains Three of a Kind | scoring.py |
-| Family | x4 mult if hand contains Four of a Kind | scoring.py |
-| Order | x3 mult if hand contains Straight | scoring.py |
-| Tribe | x2 mult if hand contains Flush | scoring.py |
 
-### Batch 2 — Stat Modifier / Passive Jokers (15 jokers)
+#### Group C — Hand-Type X_Mult (5 jokers)
 
-Jokers that modify hand size, discards, evaluation rules, or have passive money effects. These touch `scoring.py`, `runtime.py`, `flow.py`, and `instances.py`.
+Multiplicative bonuses when hand contains a specific type.
+
+| Joker | Effect | Target Module |
+|-------|--------|---------------|
+| The Duo | x2 mult if hand contains Pair | scoring.py |
+| The Trio | x3 mult if hand contains Three of a Kind | scoring.py |
+| The Family | x4 mult if hand contains Four of a Kind | scoring.py |
+| The Order | x3 mult if hand contains Straight | scoring.py |
+| The Tribe | x2 mult if hand contains Flush | scoring.py |
+
+#### Group D — Stat Modifiers (3 jokers)
+
+Modify hand size or discards when added to the joker roster.
 
 | Joker | Effect | Target Module |
 |-------|--------|---------------|
 | Juggler | +1 hand size | instances.py (on add) |
 | Drunkard | +1 discard per round | instances.py (on add) |
-| Troubadour | +2 hand size, -1 hand per round | instances.py (on add) |
 | Merry Andy | +3 discards, -1 hand size | instances.py (on add) |
-| Four Fingers | Flushes/Straights need only 4 cards | scoring.py (eval change) |
-| Shortcut | Straights allow gaps of 1 | scoring.py (eval change) |
-| Smeared | Hearts=Diamonds, Clubs=Spades for suit checks | scoring.py (eval change) |
-| Splash | Every played card scores | scoring.py (scoring change) |
-| Pareidolia | All cards count as face cards | scoring.py (eval change) |
-| Oops | All probabilities doubled | runtime.py (probability hook) |
-| Credit Card | Go up to -$20 in debt | runtime.py (money check) |
-| To the Moon | +$1 interest per $5 held (end of round) | runtime.py |
-| Faceless Joker | Earn $5 if 3+ face cards discarded | runtime.py (discard hook) |
-| Mail-In Rebate | Earn $5 when target rank discarded | runtime.py (discard hook) |
-| Ring Master | No limit on edition types | instances.py |
 
-### Batch 3 — Scaling / Stateful Jokers (15 jokers)
-
-Jokers that track state across hands/rounds and change over time. Touch `scoring.py`, `runtime.py`.
-
-| Joker | Effect | Target Module |
-|-------|--------|---------------|
-| Hit the Road | x_mult per Jack discarded this round | scoring.py + runtime.py |
-| Yorick | x_mult, activates after N discards | scoring.py + runtime.py |
-| Glass Joker | x0.75 mult per glass card destroyed | scoring.py |
-| Flash Card | +2 mult per shop reroll | scoring.py (already has runtime hook) |
-| Red Card | +3 mult per booster skipped | scoring.py (already has runtime hook) |
-| Hologram | x0.25 mult per card added to deck | scoring.py (already has runtime hook) |
-| Ramen | x2 mult, -0.01 per card discarded, self-destructs at 1 | scoring.py + runtime.py |
-| Popcorn | +20 mult, -4 per round, self-destructs at 0 | scoring.py (already has runtime hook) |
-| Rocket | +$8 end of round, +$4 per boss defeated | runtime.py (already implemented) |
-| Mr. Bones | Prevents death if $5+ held | runtime.py (already has end-of-round hook) |
-| Throwback | x_mult per blind skipped this run | scoring.py |
-| Ticket (Golden Ticket) | Gold cards earn $4 when scored | scoring.py |
-| Burnt Joker | Upgrades discarded poker hand level | runtime.py (discard hook) |
-| Satellite | $1 per unique planet used (end of round) | runtime.py (already implemented) |
-| Delayed Gratification | $2 per discard remaining (if unused) | runtime.py (already implemented) |
-
-### Batch 4 — Card Creation / Mutation Jokers (15 jokers)
-
-Jokers that create cards, modify the deck, or interact with consumables. Touch `runtime.py`, `flow.py`, `consumables.py`.
-
-| Joker | Effect | Target Module |
-|-------|--------|---------------|
-| Certificate | Random playing card with seal on blind start | runtime.py (blind start hook) |
-| Sixth Sense | Destroy first 6 played, create spectral if only card | runtime.py + flow.py |
-| Hallucination | Chance to create tarot when opening booster | runtime.py (pack open hook) |
-| Astronomer | All planet cards cost $0 | shop.py (cost modifier) |
-| Trading Card | Discard earns $3, destroys random card | runtime.py (discard hook) |
-| DNA | First hand of round: copy first played card to hand | flow.py (play hook) |
-| Chaos the Clown | Free reroll each shop visit | shop.py (already implemented, needs scoring stub) |
-| Perkeo | End of shop: create negative copy of consumable | runtime.py (already implemented) |
-| Campfire | x_mult, resets on boss blind | scoring.py + runtime.py (already has reset) |
-| Turtle Bean | +5 hand size, -1 per round, self-destructs | instances.py + runtime.py (already has hook) |
-| Invisible Joker | After 2 rounds, sell to duplicate joker | runtime.py (already has hooks) |
-| Egg | +$3 sell value per round | runtime.py (already implemented) |
-| Gift Card | +$1 sell value to all jokers/consumables per round | runtime.py (already implemented) |
-| Golden Joker | $4 at end of round | runtime.py (already implemented) |
-| Cloud 9 | $1 per 9 in full deck at end of round | runtime.py (already implemented) |
-
-### Batch 5 — Remaining Jokers
-
-Any jokers not covered in batches 1-4. Final cleanup batch.
-
-### Porting Protocol Per Joker
+### Porting Protocol
 
 1. Read the Lua branch in `Card:calculate_joker` (vendor/balatro_lua/card.lua)
-2. Identify which hook(s) the joker uses (scoring, end_of_round, discard, blind_start, etc.)
-3. Port to the appropriate Python function, matching exact values/conditions/RNG calls
-4. For jokers needing instance state: update `JokerInstance` fields in `instances.py` if needed
+2. Identify which hook the joker uses (individual_play, joker_main, instance init)
+3. Port to the appropriate Python function, matching exact values and conditions
+4. For stat modifiers: update `add_joker()` in `instances.py` to apply effects on addition
 5. Run existing tests to ensure no regressions
-6. At end of batch: run oracle parity tests with seeds that trigger these jokers
+6. Run oracle parity tests with seeds that trigger these jokers
 
-### Evaluation Rule Changes (Batch 2 — Special Handling)
+### Implementation Notes
 
-Four Fingers, Shortcut, Smeared, Splash, and Pareidolia modify how poker hands are *evaluated*, not just scored. These require changes to `evaluate_poker_hand()` and/or the scoring card selection logic in `scoring.py`. Implementation approach:
-
-- Add joker-aware flags to the evaluation context (e.g., `four_fingers=True`)
-- Pass these flags from `score_hand()` based on active jokers
-- Modify evaluation functions to respect flags
-- This matches how upstream Lua checks `next(find_joker("Four Fingers"))` inline
+- **Suit-based jokers (Group A)** fire in the `individual` card scoring context, not the joker-main context. They must be added to the per-card evaluation loop in `scoring.py`, matching the upstream `Card:calculate_joker` `individual` context.
+- **Hand-type jokers (Groups B & C)** check whether the evaluated hand *contains* the target type (e.g., a Full House contains both Pair and Three of a Kind). Use `next(poker_hands["Pair"])` style checks matching upstream.
+- **Stat modifier jokers (Group D)** apply their effects when added and remove them when sold/destroyed. Mirror existing patterns (e.g., Troubadour, Stuntman) in `instances.py`.
 
 ## Stream 2: Parity Verification + Bot Wiring
 
@@ -147,13 +102,18 @@ Current bot:
 Enhanced bot:
 - play first 5, discard first 2 once
 - open booster packs and claim first card (instead of skipping)
-- use consumables when eligible (select first N hand cards as targets)
+- use consumables when eligible (target: first N hand cards by index, deterministic)
 - buy first affordable card (joker or consumable)
-- sell oldest joker when at capacity and shop has better option
 - finish shop
 ```
 
-The bot must make identical decisions in both Python and Lua. Keep it deterministic and simple — no heuristics, just fixed rules applied to sorted game state.
+**Bot decision rules must be exact:**
+- Consumable targeting: select hand cards by index (first 1-5 depending on consumable requirement)
+- Pack claiming: always claim card at index 0
+- No selling logic (keeps it simple and deterministic)
+- All decisions based on sorted/indexed state, no heuristics
+
+The bot must make identical decisions in both Python and Lua.
 
 ### Oracle Parity Test Expansion
 
@@ -162,8 +122,23 @@ The bot must make identical decisions in both Python and Lua. Keep it determinis
 **Target:**
 - All 3 seeds (AAAAAAAA, BBBBBBBB, 12345678) through ante 8
 - At least 1 seed through ante 12+ (endless mode verification)
+- At least 1 seed with non-default deck variant (per AGENT_HANDOFF.md recommendation)
 - Snapshot comparison at every substep: start_blind, play_hand, discard, cash_out, shop actions
-- New substep types: open_pack, claim_card, use_consumable, sell_joker
+- New substep types: open_pack, claim_card, use_consumable
+
+### Consumable Parity Audit
+
+Per AGENT_HANDOFF.md, the consumable implementation "is not yet audited against every Tarot/Planet/Spectral branch." Stream 2 should:
+- Enumerate all branches in upstream `Card:use_consumeable` and `Card:can_use_consumeable`
+- Cross-reference against `consumables.py` implementation
+- Fix any missing or divergent branches found
+
+### Voucher Parity Verification
+
+Per AGENT_HANDOFF.md, voucher interactions need verification:
+- Enumerate all voucher effects in upstream code
+- Cross-reference against `_helpers.py` and `shop.py` implementations
+- Fix any divergences
 
 ### Boss Blind Verification
 
@@ -187,6 +162,14 @@ Already implemented. Verify:
 - Interacts correctly with hand size modifiers
 - Disabled when blind is disabled (Chicot, etc.)
 
+### Round Resolution Gaps
+
+Per AGENT_HANDOFF.md, these are missing:
+- Loss detection (player fails to beat blind)
+- Saved-from-loss mechanics (Mr. Bones, etc.)
+- Bankruptcy logic
+- These should be addressed as divergences are found during parity testing
+
 ### Divergence Fix Protocol
 
 1. Identify exact substep where snapshots diverge
@@ -202,33 +185,30 @@ Already implemented. Verify:
 
 | Module | Stream 1 Changes | Stream 2 Changes |
 |--------|------------------|-------------------|
-| scoring.py | Add ~50 joker scoring hooks, modify eval for Four Fingers/etc. | None |
-| runtime.py | Add ~20 joker runtime hooks | Fix any divergences found |
-| instances.py | Add joker init state for new jokers | None |
-| flow.py | Add joker play/discard hooks (DNA, Sixth Sense) | Fix any Serpent/draw divergences |
-| shop.py | Astronomer cost modifier | Fix any shop divergences |
+| scoring.py | Add 18 joker scoring hooks (Groups A, B, C) | None |
+| instances.py | Add 3 joker stat modifiers (Group D) | None |
+| runtime.py | None | Fix any divergences found |
+| flow.py | None | Fix any Serpent/draw/round-resolution divergences |
+| shop.py | None | Fix any shop/voucher divergences |
+| consumables.py | None | Fix any consumable divergences |
 | blind.py | None | Fix any boss blind divergences |
 | test_replay_parity.py | None | Enhanced bot + new parity tests |
-
-### Merge Conflict Mitigation
-
-- Stream 1 adds new `elif name == "..."` branches in existing match structures
-- Stream 2 only modifies existing logic when divergences are found
-- Conflict risk is low since they touch different sections of the same files
 
 ### Non-Goals
 
 - UI/rendering code
 - Network/multiplayer
 - Save/load state
-- Joker purchase AI (bot buys first affordable, that's it)
+- Smart joker purchase AI (bot buys first affordable, that's it)
 - Performance optimization (correctness first)
 
 ## Success Criteria
 
-1. All 152 jokers have effect implementations (scoring, runtime, or both as appropriate)
+1. All 135 jokers have effect implementations (scoring, runtime, instance init, or combination as appropriate)
 2. All 3 test seeds pass full ante 1-8 parity against Lua oracle
 3. At least 1 seed passes ante 9-12+ endless parity
 4. Bot exercises shop, consumable, and pack paths in parity tests
-5. No regressions on existing 31 tests
-6. All boss blinds verified against oracle (at least 1 encounter each)
+5. Consumable branches audited and verified against upstream
+6. Voucher interactions verified against upstream
+7. No regressions on existing 31 tests
+8. All boss blinds verified against oracle (at least 1 encounter each)

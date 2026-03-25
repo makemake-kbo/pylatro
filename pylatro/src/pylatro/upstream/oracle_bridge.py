@@ -87,6 +87,7 @@ _SIGNATURES: dict[str, list[str]] = {
     "reroll_shop": [],
     "skip_blind": [],
     "finish_shop": [],
+    "defeat_blind": [],
 }
 
 
@@ -216,6 +217,8 @@ def snapshot_from_run_state(state: Any) -> dict[str, Any]:
         },
         "blind_disabled": state.blind_disabled,
         "blind_triggered": state.blind_triggered,
+        "blind_states": dict(state.round_resets.blind_states),
+        "blind_on_deck": getattr(state, "blind_on_deck", "Small"),
     }
 
 
@@ -267,6 +270,8 @@ def snapshot_from_lua_state(lua_state: dict[str, Any]) -> dict[str, Any]:
         },
         "blind_disabled": bool(lua_state.get("blind_disabled", False)),
         "blind_triggered": bool(lua_state.get("blind_triggered", False)),
+        "blind_states": {k: str(v) for k, v in (_safe(rr, "blind_states", {}) if isinstance(_safe(rr, "blind_states", {}), dict) else {}).items()},
+        "blind_on_deck": str(lua_state.get("blind_on_deck", "Small")),
     }
 
 

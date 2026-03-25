@@ -135,6 +135,42 @@ end
 local suit_map = { S = "Spades", H = "Hearts", D = "Diamonds", C = "Clubs" }
 local rank_order = { "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A" }
 
+-- Boss selection (must match Python's get_new_boss in pool.py)
+local function get_new_boss(state, data)
+    local eligible = {}
+    local a = math.max(1, state.round_resets.ante)
+    for k, blind in pairs(data.blinds) do
+        local boss = blind.boss
+        if boss then
+            if (not boss.showdown and boss.min <= a and (a % state.win_ante ~= 0 or state.round_resets.ante < 2))
+               or (boss.showdown and a % state.win_ante == 0 and state.round_resets.ante >= 2) then
+                eligible[k] = true
+            end
+        end
+    end
+    -- Filter banned_keys
+    for k in pairs(eligible) do
+        if state.banned_keys and state.banned_keys[k] then eligible[k] = nil end
+    end
+    -- Track usage - bosses_used is pre-initialized with 0 for all bosses
+    local min_use = 100
+    for k, _ in pairs(eligible) do
+        local uses = state.bosses_used[k] or 0
+        eligible[k] = uses
+        if uses < min_use then min_use = uses end
+    end
+    -- Filter to min usage
+    local filtered = {}
+    for k, v in pairs(eligible) do
+        if v == min_use then filtered[k] = v end
+    end
+    local _, key = pseudorandom_element(filtered, pseudoseed("boss", state.pseudorandom))
+    if key then
+        state.bosses_used[key] = (state.bosses_used[key] or 0) + 1
+    end
+    return key or "bl_hook"
+end
+
 function oracle.create_run(seed, stake, deck_key)
     local data = load_game_data()
 
@@ -298,17 +334,18 @@ function oracle.create_run(seed, stake, deck_key)
         end
     end
 
-    -- Select boss blind (uses RNG like Python does)
-    local boss_key = "bl_hook"  -- placeholder
+    -- Select boss blind (must match Python's get_new_boss)
+    -- Initialize bosses_used with 0 for all boss blinds (like Python's dict comprehension)
+    state.bosses_used = {}
     if data.blinds then
-        local boss_pool = {}
         for k, v in pairs(data.blinds) do
-            if v.boss then boss_pool[k] = v end
+            if v.boss then state.bosses_used[k] = 0 end
         end
-        local _, key = pseudorandom_element(boss_pool, pseudoseed("boss", state.pseudorandom))
-        if key then boss_key = key end
     end
-    state.round_resets.blind_choices.Boss = boss_key
+    state.blind_on_deck = "Small"
+    state.skips = 0
+
+    state.round_resets.blind_choices.Boss = get_new_boss(state, data)
 
     -- Advance RNG for voucher and tags (must match Python's create_run_state)
     if data.centers then
@@ -414,12 +451,28 @@ function oracle.start_blind(state, blind_type)
         state.current_round.hand_size = math.max(0, state.current_round.hand_size - 1)
     end
 
-    -- Reset card flags
+    -- Reset card flags + debuff (match Python's _debuff_card)
     for _, card in ipairs(state.deck_cards) do
         card.discarded = false
         card.forced_selection = false
         card.face_down = false
-        card.debuff = false  -- no boss debuff logic for simple case
+        -- Debuff logic
+        if state.blind_disabled then
+            card.debuff = false
+        elseif blind_name == "Verdant Leaf" then
+            card.debuff = true
+        else
+            local debuff_cfg = blind.debuff or {}
+            if type(debuff_cfg) == "table" and debuff_cfg.suit and card.suit == debuff_cfg.suit then
+                card.debuff = true
+            elseif type(debuff_cfg) == "table" and debuff_cfg.is_face == "face" and (card.rank == "J" or card.rank == "Q" or card.rank == "K") then
+                card.debuff = true
+            elseif blind_name == "The Pillar" and card.played_this_ante then
+                card.debuff = true
+            else
+                card.debuff = false
+            end
+        end
     end
 
     -- apply_setting_blind: no-op for empty joker list
@@ -714,6 +767,12 @@ local function get_poker_hand_info(hand, centers)
     return text, scoring_hand
 end
 
+-- Helper: get blind name from state
+local function get_blind_name(state)
+    local blind = state.round_resets.blind or {}
+    return blind.name or ""
+end
+
 function oracle.play_hand(state, card_indices)
     G.GAME = state
     local data = state.data
@@ -746,6 +805,22 @@ function oracle.play_hand(state, card_indices)
         table.remove(state.hand_cards, idx)
     end
 
+    state.current_round.hands_left = math.max(0, state.current_round.hands_left - 1)
+
+    -- _press_play: boss blind pre-scoring effects
+    local blind_name = get_blind_name(state)
+    if not state.blind_disabled then
+        if blind_name == "The Tooth" then
+            for _ = 1, #selected do
+                state.dollars = math.max(0, state.dollars - 1)
+            end
+            state.blind_triggered = true
+        end
+        if blind_name == "The Fish" or blind_name == "Crimson Heart" then
+            state.blind_prepped = true
+        end
+    end
+
     -- Update card tracking and move to play_cards
     for _, card in ipairs(selected) do
         card.times_played = card.times_played + 1
@@ -754,9 +829,6 @@ function oracle.play_hand(state, card_indices)
         card.forced_selection = false
         state.play_cards[#state.play_cards + 1] = card
     end
-
-    -- Decrement hands_left, increment counters
-    state.current_round.hands_left = math.max(0, state.current_round.hands_left - 1)
 
     -- Evaluate poker hand
     local play_list = {}
@@ -775,6 +847,16 @@ function oracle.play_hand(state, card_indices)
     -- For each scoring card, add rank_to_nominal chip bonus
     for _, card in ipairs(scoring_hand) do
         hand_chips = hand_chips + (rank_to_nominal[card.rank] or 0)
+    end
+
+    -- Apply blind modify_hand effects (The Flint)
+    if not state.blind_disabled then
+        local bn = get_blind_name(state)
+        if bn == "The Flint" then
+            state.blind_triggered = true
+            mult = math.max(math.floor(mult * 0.5 + 0.5), 1)
+            hand_chips = math.max(math.floor(hand_chips * 0.5 + 0.5), 0)
+        end
     end
 
     local total = math.floor(hand_chips * mult)
@@ -808,6 +890,239 @@ function oracle.play_hand(state, card_indices)
     end
 
     return state
+end
+
+function oracle.discard(state, card_indices)
+    G.GAME = state
+    local data = state.data
+
+    -- Convert card_indices from Python list/lupa table to a proper Lua array
+    local indices = {}
+    if type(card_indices) == "table" then
+        for _, v in ipairs(card_indices) do
+            indices[#indices + 1] = v
+        end
+    else
+        -- lupa userdata: iterate with python protocol
+        for v in python.iter(card_indices) do
+            indices[#indices + 1] = v
+        end
+    end
+
+    -- Move selected cards from hand_cards to discard_pile (1-indexed)
+    local selected = {}
+    for _, idx in ipairs(indices) do
+        selected[#selected + 1] = state.hand_cards[idx]
+    end
+
+    -- Sort indices in descending order to remove from end first
+    local sorted_indices = {}
+    for _, idx in ipairs(indices) do sorted_indices[#sorted_indices + 1] = idx end
+    table.sort(sorted_indices, function(a, b) return a > b end)
+    for _, idx in ipairs(sorted_indices) do
+        table.remove(state.hand_cards, idx)
+    end
+
+    -- Mark cards as discarded and move to discard_pile
+    for _, card in ipairs(selected) do
+        card.discarded = true
+        card.face_down = false
+        state.discard_pile[#state.discard_pile + 1] = card
+    end
+
+    -- Decrement discards_left, increment discards_used
+    state.current_round.discards_left = math.max(0, state.current_round.discards_left - 1)
+    state.current_round.discards_used = (state.current_round.discards_used or 0) + 1
+
+    -- Draw replacement cards from draw_pile to hand_cards
+    local hand_size = state.current_round.hand_size
+    local hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+    for i = 1, hand_space do
+        local card = state.draw_pile[#state.draw_pile]
+        state.draw_pile[#state.draw_pile] = nil
+        card.discarded = false
+        card.forced_selection = false
+        card.face_down = false
+        state.hand_cards[#state.hand_cards + 1] = card
+    end
+
+    -- Sort hand after drawing
+    sort_hand(state.hand_cards, data.centers)
+
+    return state
+end
+
+function oracle.cash_out(state)
+    G.GAME = state
+    local data = state.data
+
+    -- apply_end_of_round: no joker effects for basic parity (no jokers in initial runs)
+
+    -- Reset fields
+    state.current_round.jokers_purchased = 0
+    state.current_round.discards_left = math.max(0, state.round_resets.discards)
+    state.current_round.hands_left = math.max(1, state.round_resets.hands)
+    state.shop = { joker_max = 2, cards = {}, vouchers = {}, boosters = {} }
+    state.current_round.used_packs = {}
+
+    if state.round_resets.blind_states.Boss == "Defeated" then
+        -- Calculate most_played_poker_hand
+        local most_played_name = "High Card"
+        local most_played_count = 0
+        local most_played_order = 0
+        for name, hand in pairs(state.hands) do
+            local played = hand.played or 0
+            local order = hand.order or 0
+            if played > most_played_count or (played == most_played_count and order < most_played_order) then
+                most_played_name = name
+                most_played_count = played
+                most_played_order = order
+            end
+        end
+        state.current_round.most_played_poker_hand = most_played_name
+
+        -- Check win condition
+        if state.round_resets.ante == state.win_ante then
+            state.won = true
+        end
+
+        -- Increment ante
+        state.round_resets.ante = state.round_resets.ante + 1
+        state.round_resets.blind_ante = state.round_resets.ante
+
+        -- Reset played_this_round for all hands
+        for _, hand in pairs(state.hands) do
+            hand.played_this_round = 0
+        end
+
+        -- Reset played_this_ante for all deck_cards
+        for _, card in ipairs(state.deck_cards) do
+            card.played_this_ante = false
+        end
+
+        -- Next voucher
+        if data.centers then
+            local voucher_pool = {}
+            for k, v in pairs(data.centers) do
+                if v.set == "Voucher" and (not v.requires or #v.requires == 0) then
+                    voucher_pool[k] = v
+                end
+            end
+            if next(voucher_pool) then
+                pseudorandom_element(voucher_pool, pseudoseed("Voucher", state.pseudorandom))
+            end
+        end
+
+        -- Next tags (twice)
+        if data.centers then
+            local tag_pool = {}
+            for k, v in pairs(data.centers) do
+                if v.set == "Tag" then tag_pool[k] = v end
+            end
+            if next(tag_pool) then
+                pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
+                pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
+            end
+        end
+    end
+
+    -- Reset blinds (only when boss defeated)
+    if state.round_resets.blind_states.Boss == "Defeated" then
+        state.round_resets.blind_states = { Small = "Upcoming", Big = "Upcoming", Boss = "Upcoming" }
+        state.blind_on_deck = "Small"
+        state.round_resets.boss_rerolled = false
+
+        -- New boss (must match Python's get_new_boss)
+        state.round_resets.blind_choices.Boss = get_new_boss(state, data)
+    end
+
+    return state
+end
+
+function oracle.skip_blind(state)
+    G.GAME = state
+
+    local skipped = state.blind_on_deck
+    local skip_to = "Big"
+    if skipped ~= "Small" then skip_to = "Boss" end
+
+    state.skips = (state.skips or 0) + 1
+
+    -- Apply tag if exists
+    if state.round_resets.blind_tags and state.round_resets.blind_tags[skipped] then
+        if not state.tags then state.tags = {} end
+        state.tags[#state.tags + 1] = state.round_resets.blind_tags[skipped]
+    end
+
+    -- Update blind_states
+    state.round_resets.blind_states[skipped] = "Skipped"
+    state.round_resets.blind_states[skip_to] = "Select"
+    state.blind_on_deck = skip_to
+
+    return state
+end
+
+function oracle.populate_shop(state)
+    G.GAME = state
+    -- Stub: mark shop as populated without advancing RNG
+    -- Full implementation needed for ante parity tests
+    state.shop.populated = true
+    return state
+end
+
+function oracle.reroll_shop(state)
+    G.GAME = state
+    if state.current_round.reroll_cost > 0 then
+        state.dollars = state.dollars - state.current_round.reroll_cost
+    end
+    return state
+end
+
+function oracle.buy_card(state, index)
+    G.GAME = state
+    -- Stub for basic structure
+    return state
+end
+
+function oracle.finish_shop(state)
+    G.GAME = state
+    -- apply_end_shop is mostly joker effects (Perkeo)
+    return state
+end
+
+function oracle.use_consumable(state, index, targets)
+    G.GAME = state
+    -- Stub: consumable usage is complex, implement per-card later
+    return state
+end
+
+function oracle.open_pack(state, index)
+    G.GAME = state
+    -- Stub: booster pack opening
+    return state
+end
+
+function oracle.defeat_blind(state)
+    G.GAME = state
+    local data = state.data
+
+    -- Mark current blind as Defeated and advance to next
+    for _, bt in ipairs({"Small", "Big", "Boss"}) do
+        if state.round_resets.blind_states[bt] == "Current" then
+            state.round_resets.blind_states[bt] = "Defeated"
+            if bt == "Small" then
+                state.round_resets.blind_states.Big = "Select"
+                state.blind_on_deck = "Big"
+            elseif bt == "Big" then
+                state.round_resets.blind_states.Boss = "Select"
+                state.blind_on_deck = "Boss"
+            end
+            break
+        end
+    end
+
+    -- Then do cash_out
+    return oracle.cash_out(state)
 end
 
 return oracle

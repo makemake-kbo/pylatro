@@ -202,6 +202,43 @@ function oracle.create_run(seed, stake, deck_key)
     }
     G.GAME = state
 
+    -- Apply deck config (must match Python's _apply_deck)
+    local deck_center = data.centers and data.centers[state.deck_key]
+    if deck_center and deck_center.config then
+        local cfg = deck_center.config
+        if cfg.discards then
+            state.starting_params.discards = state.starting_params.discards + cfg.discards
+        end
+        if cfg.hands then
+            state.starting_params.hands = state.starting_params.hands + cfg.hands
+        end
+        if cfg.dollars then
+            state.starting_params.dollars = state.starting_params.dollars + cfg.dollars
+        end
+        if cfg.hand_size then
+            state.starting_params.hand_size = state.starting_params.hand_size + cfg.hand_size
+        end
+        if cfg.joker_slot then
+            state.starting_params.joker_slots = state.starting_params.joker_slots + cfg.joker_slot
+        end
+        if cfg.consumable_slot then
+            state.starting_params.consumable_slots = state.starting_params.consumable_slots + cfg.consumable_slot
+        end
+        if cfg.ante_scaling then
+            state.starting_params.ante_scaling = cfg.ante_scaling
+        end
+    end
+
+    -- Apply starting_params to round_resets and state
+    state.round_resets.hands = state.starting_params.hands
+    state.round_resets.discards = state.starting_params.discards
+    state.round_resets.reroll_cost = state.starting_params.reroll_cost
+    state.dollars = state.starting_params.dollars
+    state.current_round.reroll_cost = state.starting_params.reroll_cost
+    state.current_round.discards_left = state.round_resets.discards
+    state.current_round.hands_left = state.round_resets.hands
+    state.current_round.hand_size = state.starting_params.hand_size
+
     -- Build starting deck (52 cards, sorted)
     local card_keys = {}
     for _, suit in ipairs({"C", "D", "H", "S"}) do
@@ -272,6 +309,179 @@ function oracle.create_run(seed, stake, deck_key)
         if key then boss_key = key end
     end
     state.round_resets.blind_choices.Boss = boss_key
+
+    -- Advance RNG for voucher and tags (must match Python's create_run_state)
+    if data.centers then
+        local voucher_pool = {}
+        for k, v in pairs(data.centers) do
+            if v.set == "Voucher" and not v.requires then
+                voucher_pool[k] = v
+            end
+        end
+        if next(voucher_pool) then
+            pseudorandom_element(voucher_pool, pseudoseed("Voucher", state.pseudorandom))
+        end
+    end
+
+    if data.centers then
+        local tag_pool = {}
+        for k, v in pairs(data.centers) do
+            if v.set == "Tag" then
+                tag_pool[k] = v
+            end
+        end
+        if next(tag_pool) then
+            pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
+            pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
+        end
+    end
+
+    return state
+end
+
+-- Nominal value for hand sorting (must match Python's _card_nominal)
+local rank_to_nominal = {
+    ["2"] = 2, ["3"] = 3, ["4"] = 4, ["5"] = 5, ["6"] = 6,
+    ["7"] = 7, ["8"] = 8, ["9"] = 9, ["T"] = 10, ["J"] = 10,
+    ["Q"] = 10, ["K"] = 10, ["A"] = 11,
+}
+local suit_to_nominal = { Diamonds = 0.01, Clubs = 0.02, Hearts = 0.03, Spades = 0.04 }
+
+local function card_nominal(card, centers)
+    local base = rank_to_nominal[card.rank] or 0
+    local face_nominal = 0
+    if card.rank == "J" then face_nominal = 0.1
+    elseif card.rank == "Q" then face_nominal = 0.2
+    elseif card.rank == "K" then face_nominal = 0.3
+    elseif card.rank == "A" then face_nominal = 0.4
+    end
+    local suit_nom = suit_to_nominal[card.suit] or 0
+    local center = centers and centers[card.center_key]
+    local suit_mult = 1
+    if center and center.effect == "Stone Card" then suit_mult = -1000 end
+    return base + suit_nom * suit_mult + suit_nom * 0.0001 * suit_mult + face_nominal
+end
+
+local function sort_hand(hand_cards, centers)
+    table.sort(hand_cards, function(a, b)
+        return card_nominal(a, centers) > card_nominal(b, centers)
+    end)
+end
+
+function oracle.start_blind(state, blind_type)
+    G.GAME = state
+    blind_type = blind_type or "Small"
+    local data = state.data
+
+    -- select_blind: look up blind from choices
+    local blind_key = state.round_resets.blind_choices[blind_type]
+    state.round_resets.blind = data.blinds[blind_key]
+
+    -- select_blind: reset current_round fields
+    state.round_resets.blind_states[blind_type] = "Current"
+    state.shop = { joker_max = 2, cards = {}, vouchers = {}, boosters = {} }
+    state.current_round.discards_left = math.max(0, state.round_resets.discards)
+    state.current_round.hands_left = math.max(1, state.round_resets.hands)
+    state.current_round.hands_played = 0
+    state.current_round.discards_used = 0
+    state.current_round.reroll_cost_increase = 0
+    state.current_round.used_packs = {}
+    state.current_round.free_rerolls = 0
+    state.current_round.dollars = 0
+
+    -- _reset_for_blind
+    local ante = state.round_resets.ante or 1
+    local subhash_suffix = "S"
+    if blind_type == "Big" then subhash_suffix = "B"
+    elseif blind_type ~= "Small" then subhash_suffix = "L"
+    end
+    state.subhash = tostring(ante) .. subhash_suffix
+    state.blind_disabled = false
+    state.blind_triggered = false
+    state.blind_prepped = false
+    state.current_round.first_hand_drawn = false
+    state.current_round.hand_size = math.max(0,
+        state.starting_params.hand_size + (state.round_resets.temp_handsize or 0))
+
+    local blind = state.round_resets.blind or {}
+    local blind_name = blind.name or ""
+
+    if blind_name == "The Water" then
+        state.current_round.discards_left = 0
+    elseif blind_name == "The Needle" then
+        state.current_round.hands_left = 1
+    elseif blind_name == "The Manacle" then
+        state.current_round.hand_size = math.max(0, state.current_round.hand_size - 1)
+    end
+
+    -- Reset card flags
+    for _, card in ipairs(state.deck_cards) do
+        card.discarded = false
+        card.forced_selection = false
+        card.face_down = false
+        card.debuff = false  -- no boss debuff logic for simple case
+    end
+
+    -- apply_setting_blind: no-op for empty joker list
+
+    -- _fold_areas_back_into_deck
+    if #state.hand_cards > 0 then
+        for _, card in ipairs(state.hand_cards) do
+            state.discard_pile[#state.discard_pile + 1] = card
+        end
+        state.hand_cards = {}
+    end
+    if #state.play_cards > 0 then
+        for _, card in ipairs(state.play_cards) do
+            if not card.destroyed and not card.shattered then
+                state.discard_pile[#state.discard_pile + 1] = card
+            end
+        end
+        state.play_cards = {}
+    end
+    if #state.discard_pile > 0 then
+        local new_draw = {}
+        for _, card in ipairs(state.discard_pile) do
+            new_draw[#new_draw + 1] = card
+        end
+        for _, card in ipairs(state.draw_pile) do
+            new_draw[#new_draw + 1] = card
+        end
+        state.draw_pile = new_draw
+        state.discard_pile = {}
+    end
+    -- Filter out destroyed/shattered
+    local filtered = {}
+    for _, card in ipairs(state.draw_pile) do
+        if not card.destroyed and not card.shattered then
+            filtered[#filtered + 1] = card
+        end
+    end
+    state.draw_pile = filtered
+
+    -- Shuffle draw_pile
+    local shuffle_seed = pseudoseed("nr" .. tostring(ante), state.pseudorandom)
+    pseudoshuffle(state.draw_pile, shuffle_seed)
+
+    -- draw_to_hand
+    local hand_size = state.current_round.hand_size
+    local hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+    for i = 1, hand_space do
+        local card = state.draw_pile[#state.draw_pile]
+        state.draw_pile[#state.draw_pile] = nil
+        card.discarded = false
+        card.forced_selection = false
+        card.face_down = false  -- no boss blind flip logic for simple case
+        state.hand_cards[#state.hand_cards + 1] = card
+    end
+
+    -- Sort hand (matches Python's _sort_hand)
+    sort_hand(state.hand_cards, data.centers)
+
+    -- _first_hand_drawn: no-op for empty joker list
+    state.current_round.first_hand_drawn = true
+
+    -- _drawn_to_hand: no-op for simple blinds with no jokers
 
     return state
 end

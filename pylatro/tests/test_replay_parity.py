@@ -110,3 +110,26 @@ def test_snapshot_from_run_state_basic():
     assert snap["dollars"] == 4
     assert snap["deck_cards_count"] == 52
     assert snap["ante"] == 1
+
+
+# --- Task 5: Substep parity — start_blind ---
+
+def test_substep_parity_start_blind():
+    """After start_blind, Python and Lua have identical state."""
+    from pylatro.upstream.oracle_bridge import (
+        OracleBridge, diff_snapshots, snapshot_from_run_state, snapshot_from_lua_state,
+    )
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+
+    from pylatro.flow import start_blind
+    start_blind(py_state, "Small")
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"

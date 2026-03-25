@@ -790,26 +790,41 @@ function oracle.play_hand(state, card_indices)
         end
     end
 
-    -- Move selected cards from hand_cards to play_cards (1-indexed)
-    -- Collect cards first, then remove (in reverse order to preserve indices)
+    -- Collect selected cards (before removing from hand, for _press_play)
     local selected = {}
     for _, idx in ipairs(indices) do
         selected[#selected + 1] = state.hand_cards[idx]
     end
 
-    -- Sort indices in descending order to remove from end first
-    local sorted_indices = {}
-    for _, idx in ipairs(indices) do sorted_indices[#sorted_indices + 1] = idx end
-    table.sort(sorted_indices, function(a, b) return a > b end)
-    for _, idx in ipairs(sorted_indices) do
-        table.remove(state.hand_cards, idx)
-    end
-
     state.current_round.hands_left = math.max(0, state.current_round.hands_left - 1)
 
-    -- _press_play: boss blind pre-scoring effects
+    -- _press_play: boss blind pre-scoring effects (runs BEFORE cards removed from hand)
     local blind_name = get_blind_name(state)
     if not state.blind_disabled then
+        if blind_name == "The Hook" and #state.hand_cards > 0 then
+            local available = {}
+            for _, c in ipairs(state.hand_cards) do available[#available + 1] = c end
+            for _ = 1, math.min(2, #available) do
+                if #available == 0 then break end
+                local chosen, idx = pseudorandom_element(available, pseudoseed("hook", state.pseudorandom))
+                -- Remove from hand_cards
+                for i = #state.hand_cards, 1, -1 do
+                    if state.hand_cards[i] == chosen then
+                        table.remove(state.hand_cards, i)
+                        break
+                    end
+                end
+                chosen.discarded = true
+                state.discard_pile[#state.discard_pile + 1] = chosen
+                -- Remove from available
+                local new_available = {}
+                for _, c in ipairs(available) do
+                    if c ~= chosen then new_available[#new_available + 1] = c end
+                end
+                available = new_available
+            end
+            state.blind_triggered = true
+        end
         if blind_name == "The Tooth" then
             for _ = 1, #selected do
                 state.dollars = math.max(0, state.dollars - 1)
@@ -821,8 +836,27 @@ function oracle.play_hand(state, card_indices)
         end
     end
 
-    -- Update card tracking and move to play_cards
+    -- NOW remove selected cards from hand_cards (after _press_play)
+    -- Remove by identity (like Python's _remove_exact), not by index,
+    -- because _press_play (e.g. The Hook) may have already removed some
+    -- Track which cards were actually still in hand (not already discarded by Hook)
+    local actually_played = {}
     for _, card in ipairs(selected) do
+        local found = false
+        for i = #state.hand_cards, 1, -1 do
+            if state.hand_cards[i] == card then
+                table.remove(state.hand_cards, i)
+                found = true
+                break
+            end
+        end
+        if found then
+            actually_played[#actually_played + 1] = card
+        end
+    end
+
+    -- Update card tracking and move to play_cards (only cards not already discarded by Hook)
+    for _, card in ipairs(actually_played) do
         card.times_played = card.times_played + 1
         card.played_this_ante = true
         card.discarded = false
@@ -856,6 +890,14 @@ function oracle.play_hand(state, card_indices)
             state.blind_triggered = true
             mult = math.max(math.floor(mult * 0.5 + 0.5), 1)
             hand_chips = math.max(math.floor(hand_chips * 0.5 + 0.5), 0)
+        end
+        -- The Ox: playing the most played hand sets money to $0
+        if bn == "The Ox" then
+            state.blind_triggered = false
+            if hand_name == (state.current_round.most_played_poker_hand or "High Card") then
+                state.blind_triggered = true
+                state.dollars = 0
+            end
         end
     end
 

@@ -37,3 +37,4 @@ pythonVersion = "3.12"
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

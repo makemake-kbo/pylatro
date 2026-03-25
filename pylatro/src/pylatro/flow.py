@@ -146,7 +146,10 @@ def play_cards(state: RunState, cards: Iterable[PlayingCard | int]) -> PlayResul
     _press_play(state, selected)
 
     for card in selected:
-        _remove_exact(state.hand_cards, card)
+        removed = _remove_exact(state.hand_cards, card)
+        if not removed:
+            # Card was already removed by _press_play (e.g. The Hook discarded it)
+            continue
         card.times_played += 1
         card.played_this_ante = True
         card.discarded = False
@@ -413,11 +416,12 @@ def _destroy_playing_card(state: RunState, card: PlayingCard) -> None:
     _remove_exact(state.play_cards, card)
 
 
-def _remove_exact(cards: list[PlayingCard], card: PlayingCard) -> None:
+def _remove_exact(cards: list[PlayingCard], card: PlayingCard) -> bool:
     for index, candidate in enumerate(cards):
         if candidate is card:
             cards.pop(index)
-            return
+            return True
+    return False
 
 
 def _debuff_card(state: RunState, card: PlayingCard) -> None:

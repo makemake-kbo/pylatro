@@ -295,3 +295,17 @@ def test_ante_parity(target_ante):
     lua_raw = bridge.create_run("AAAAAAAA")
 
     _run_bot_until_ante(py_state, bridge, lua_raw, target_ante)
+
+
+# --- Task 9: Full run parity ---
+
+@pytest.mark.slow
+@pytest.mark.parametrize("seed", ["AAAAAAAA", "BBBBBBBB", "12345678"])
+def test_full_run_parity(seed):
+    """Full run from ante 1 through ante 10 with parity checking."""
+    data = load_game_data()
+    py_state = create_run_state(seed, data=data)
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run(seed)
+
+    _run_bot_until_ante(py_state, bridge, lua_raw, target_ante=10, max_steps=1000)

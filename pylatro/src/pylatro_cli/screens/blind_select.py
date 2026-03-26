@@ -60,6 +60,16 @@ class BlindSelectScreen(Screen):
                 panel = self._make_panel(blind_type, i)
                 yield panel
 
+    def on_mount(self) -> None:
+        """Auto-focus the current selectable blind."""
+        state = self.app.controller.state
+        if state is None:
+            return
+        for i, blind_type in enumerate(("Small", "Big", "Boss")):
+            if state.round_resets.blind_states.get(blind_type) == "Select":
+                self.focus_idx = i
+                break
+
     def _make_panel(self, blind_type: str, idx: int) -> BlindPanel:
         ctrl = self.app.controller
         state = ctrl.state

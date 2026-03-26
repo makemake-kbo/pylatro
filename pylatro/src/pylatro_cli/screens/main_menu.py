@@ -23,6 +23,12 @@ TITLE_ART = r"""
 """
 
 
+STAKE_NAMES = [
+    "White", "Red", "Green", "Blue",
+    "Purple", "Orange", "Gold", "Black",
+]
+
+
 class NewRunModal(Screen):
     """Modal dialog for starting a new run."""
 
@@ -73,7 +79,7 @@ class NewRunModal(Screen):
             yield Label("Deck:")
             yield Button(self._deck_name(), id="deck-btn", variant="default")
             yield Label("Stake:")
-            yield Button(f"Stake {self._stake}", id="stake-btn", variant="default")
+            yield Button(f"{STAKE_NAMES[self._stake - 1]} Stake", id="stake-btn", variant="default")
             yield Button("Start Run", id="start-btn", variant="primary")
             yield Button("Cancel", id="cancel-btn", variant="default")
 
@@ -87,7 +93,7 @@ class NewRunModal(Screen):
                 event.button.label = self._deck_name()
             case "stake-btn":
                 self._stake = (self._stake % 8) + 1
-                event.button.label = f"Stake {self._stake}"
+                event.button.label = f"{STAKE_NAMES[self._stake - 1]} Stake"
             case "start-btn":
                 self._start_run()
             case "cancel-btn":

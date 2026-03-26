@@ -75,6 +75,8 @@ class GameController:
         result = pylatro.play_cards(self.state, cards)
         self.round_score += result.score.total
         pylatro.resolve_after_hand(self.state)
+        if not self.blind_beaten():
+            pylatro.draw_to_hand(self.state)
         if self.blind_beaten():
             pass  # caller transitions to shop
         elif self.state.current_round.hands_left <= 0:

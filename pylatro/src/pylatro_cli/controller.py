@@ -108,6 +108,15 @@ class GameController:
 
     def cash_out(self) -> None:
         assert self.state is not None
+        # Mark the beaten blind as defeated and advance to the next
+        blind_order = ("Small", "Big", "Boss")
+        for i, bt in enumerate(blind_order):
+            if self.state.round_resets.blind_states.get(bt) == "Current":
+                self.state.round_resets.blind_states[bt] = "Defeated"
+                if i + 1 < len(blind_order):
+                    self.state.round_resets.blind_states[blind_order[i + 1]] = "Select"
+                    self.state.blind_on_deck = blind_order[i + 1]
+                break
         pylatro.cash_out(self.state)
         if self.state.round_resets.ante > self.state.win_ante:
             self.phase = GamePhase.GAME_WON

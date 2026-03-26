@@ -921,15 +921,29 @@ function oracle.start_blind(state, blind_type)
     local shuffle_seed = pseudoseed("nr" .. tostring(ante), state.pseudorandom)
     pseudoshuffle(state.draw_pile, shuffle_seed)
 
-    -- draw_to_hand
+    -- draw_to_hand: determine face-down status per card (_stay_flipped logic)
     local hand_size = state.current_round.hand_size
     local hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+    local is_first_draw = (state.current_round.hands_played == 0 and state.current_round.discards_used == 0)
     for i = 1, hand_space do
         local card = state.draw_pile[#state.draw_pile]
         state.draw_pile[#state.draw_pile] = nil
         card.discarded = false
         card.forced_selection = false
-        card.face_down = false  -- no boss blind flip logic for simple case
+        -- _stay_flipped logic (matches Python's flow.py)
+        local stay_flipped = false
+        if not state.blind_disabled then
+            if blind_name == "The Wheel" then
+                stay_flipped = pseudorandom("wheel") < (state.probabilities and state.probabilities.normal or 1) / 7
+            elseif blind_name == "The House" and is_first_draw then
+                stay_flipped = true
+            elseif blind_name == "The Mark" then
+                stay_flipped = (card.rank == "J" or card.rank == "Q" or card.rank == "K")
+            elseif blind_name == "The Fish" and state.blind_prepped then
+                stay_flipped = true
+            end
+        end
+        card.face_down = stay_flipped
         state.hand_cards[#state.hand_cards + 1] = card
     end
 
@@ -939,7 +953,25 @@ function oracle.start_blind(state, blind_type)
     -- _first_hand_drawn: no-op for empty joker list
     state.current_round.first_hand_drawn = true
 
-    -- _drawn_to_hand: no-op for simple blinds with no jokers
+    -- _drawn_to_hand: Cerulean Bell forced_selection (no jokers = skip Crimson Heart)
+    if not state.blind_disabled then
+        if blind_name == "Cerulean Bell" then
+            -- Force one random card to be selected
+            local already_forced = false
+            for _, c in ipairs(state.hand_cards) do
+                if c.forced_selection then already_forced = true; break end
+            end
+            if not already_forced and #state.hand_cards > 0 then
+                for _, c in ipairs(state.hand_cards) do
+                    c.forced_selection = false
+                end
+                local forced, _ = pseudorandom_element(state.hand_cards,
+                    pseudoseed("cerulean_bell", state.pseudorandom))
+                if forced then forced.forced_selection = true end
+            end
+        end
+    end
+    state.blind_prepped = false
 
     return state
 end
@@ -1321,19 +1353,56 @@ function oracle.play_hand(state, card_indices)
 
     -- Draw replacement cards from draw_pile to hand_cards (only if hand is empty)
     if #state.hand_cards == 0 and #state.draw_pile > 0 then
+        local bn = get_blind_name(state)
         local hand_size = state.current_round.hand_size
-        local hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+        -- The Serpent: after first play, draw at most 3 cards (hands_played already incremented)
+        local hand_space
+        if bn == "The Serpent" and not state.blind_disabled and state.current_round.hands_played > 0 then
+            hand_space = math.min(#state.draw_pile, 3)
+        else
+            hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+        end
         for i = 1, hand_space do
             local card = state.draw_pile[#state.draw_pile]
             state.draw_pile[#state.draw_pile] = nil
             card.discarded = false
             card.forced_selection = false
-            card.face_down = false
+            -- _stay_flipped for redrawn cards
+            local stay_flipped = false
+            if not state.blind_disabled then
+                if bn == "The Wheel" then
+                    stay_flipped = pseudorandom("wheel") < (state.probabilities and state.probabilities.normal or 1) / 7
+                elseif bn == "The Mark" then
+                    stay_flipped = (card.rank == "J" or card.rank == "Q" or card.rank == "K")
+                elseif bn == "The Fish" and state.blind_prepped then
+                    stay_flipped = true
+                end
+            end
+            card.face_down = stay_flipped
             state.hand_cards[#state.hand_cards + 1] = card
         end
 
         -- Sort hand after drawing
         sort_hand(state.hand_cards, data.centers)
+
+        -- _drawn_to_hand: Cerulean Bell forced_selection for redrawn cards
+        if not state.blind_disabled then
+            if bn == "Cerulean Bell" then
+                local already_forced = false
+                for _, c in ipairs(state.hand_cards) do
+                    if c.forced_selection then already_forced = true; break end
+                end
+                if not already_forced and #state.hand_cards > 0 then
+                    for _, c in ipairs(state.hand_cards) do
+                        c.forced_selection = false
+                    end
+                    local forced, _ = pseudorandom_element(state.hand_cards,
+                        pseudoseed("cerulean_bell", state.pseudorandom))
+                    if forced then forced.forced_selection = true end
+                end
+            end
+        end
+        state.blind_prepped = false
     end
 
     return state
@@ -1383,8 +1452,15 @@ function oracle.discard(state, card_indices)
 
     -- Draw replacement cards from draw_pile to hand_cards
     local hand_size = state.current_round.hand_size
-    local hand_space = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
-    for i = 1, hand_space do
+    local bn_discard = get_blind_name(state)
+    -- The Serpent: after first discard, draw at most 3 cards (discards_used already incremented)
+    local hand_space_discard
+    if bn_discard == "The Serpent" and not state.blind_disabled and state.current_round.discards_used > 0 then
+        hand_space_discard = math.min(#state.draw_pile, 3)
+    else
+        hand_space_discard = math.min(#state.draw_pile, math.max(0, hand_size - #state.hand_cards))
+    end
+    for i = 1, hand_space_discard do
         local card = state.draw_pile[#state.draw_pile]
         state.draw_pile[#state.draw_pile] = nil
         card.discarded = false
@@ -1672,7 +1748,31 @@ end
 
 function oracle.finish_shop(state)
     G.GAME = state
-    -- apply_end_shop is mostly joker effects (Perkeo)
+    -- apply_end_shop: Perkeo effect
+    -- For each non-debuffed Perkeo joker, if consumables exist and there is room,
+    -- duplicate a random consumable with negative edition.
+    local consumable_slots = state.starting_params.consumable_slots or 2
+    for _, joker in ipairs(state.jokers) do
+        if not joker.debuff then
+            local center = state.data.centers[joker.center_key]
+            if center and center.name == "Perkeo" then
+                local num_cons = #state.consumables
+                if num_cons > 0 and num_cons < consumable_slots then
+                    local chosen, _ = pseudorandom_element(
+                        state.consumables,
+                        pseudoseed("perkeo", state.pseudorandom)
+                    )
+                    if chosen then
+                        state.consumables[#state.consumables + 1] = {
+                            center_key = chosen.center_key,
+                            edition = { negative = true },
+                            sell_cost = chosen.sell_cost or 1,
+                        }
+                    end
+                end
+            end
+        end
+    end
     return state
 end
 

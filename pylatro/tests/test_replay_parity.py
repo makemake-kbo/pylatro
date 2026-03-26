@@ -499,15 +499,36 @@ def _run_bot_until_ante(py_state, bridge, lua_raw, target_ante: int, max_steps=5
     pytest.fail(f"Did not reach ante {target_ante + 1} within {max_steps} steps")
 
 
+@pytest.mark.parametrize("seed", ["AAAAAAAA", "BBBBBBBB", "12345678"])
 @pytest.mark.parametrize("target_ante", range(1, 9))
-def test_ante_parity(target_ante):
+def test_ante_parity(seed, target_ante):
     """Full ante cycle produces identical state in Python and Lua."""
+    data = load_game_data()
+    py_state = create_run_state(seed, data=data)
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run(seed)
+    _run_bot_until_ante(py_state, bridge, lua_raw, target_ante)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("deck_key", ["b_red", "b_blue", "b_yellow", "b_green"])
+def test_deck_variant_parity(deck_key):
+    """Non-default deck variant through ante 4."""
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data, deck_key=deck_key)
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA", deck_key=deck_key)
+    _run_bot_until_ante(py_state, bridge, lua_raw, target_ante=4)
+
+
+@pytest.mark.slow
+def test_endless_mode_parity():
+    """Endless mode (ante 9-12) produces identical state."""
     data = load_game_data()
     py_state = create_run_state("AAAAAAAA", data=data)
     bridge = OracleBridge()
     lua_raw = bridge.create_run("AAAAAAAA")
-
-    _run_bot_until_ante(py_state, bridge, lua_raw, target_ante)
+    _run_bot_until_ante(py_state, bridge, lua_raw, target_ante=12, max_steps=2000)
 
 
 # --- Task 3: Substep parity — open_pack ---

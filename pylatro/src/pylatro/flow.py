@@ -445,9 +445,11 @@ def _debuff_card(state: RunState, card: PlayingCard) -> None:
         if debuff.get("is_face") == "face" and _is_face(state, card):
             card.debuff = True
             return
-        if blind_name == "The Pillar" and card.played_this_ante:
-            card.debuff = True
-            return
+
+    # The Pillar debuffs cards played this ante (independent of debuff config)
+    if blind_name == "The Pillar" and card.played_this_ante:
+        card.debuff = True
+        return
 
     card.debuff = False
 

@@ -83,6 +83,8 @@ _SIGNATURES: dict[str, list[str]] = {
     "populate_shop": [],
     "buy_card": ["index"],
     "use_consumable": ["index", "targets"],
+    "add_consumable": ["center_key"],
+    "add_joker": ["center_key"],
     "open_pack": ["index"],
     "claim_card": ["index"],
     "close_pack": [],

@@ -1678,7 +1678,31 @@ end
 
 function oracle.use_consumable(state, index, targets)
     G.GAME = state
-    -- Stub: consumable usage is complex, implement per-card later
+    local cons = table.remove(state.consumables, index)
+    if not cons then return state end
+
+    local center = state.data.centers[cons.center_key]
+    if not center then return state end
+
+    -- Track usage (matches _register_consumable_use in consumables.py)
+    if center.set == "Planet" or center.set == "Tarot" or center.set == "Spectral" then
+        state.last_tarot_planet = cons.center_key
+    end
+    state.consumeable_usage_total = (state.consumeable_usage_total or 0) + 1
+
+    -- Planet cards: level up the associated hand
+    if center.set == "Planet" then
+        local config = center.config or {}
+        local hand_name = config.hand_type
+        if hand_name and state.hands[hand_name] then
+            state.hands[hand_name].level = state.hands[hand_name].level + 1
+        end
+    elseif center.name == "Black Hole" then
+        for hand_name, hand in pairs(state.hands) do
+            hand.level = hand.level + 1
+        end
+    end
+
     return state
 end
 
@@ -1953,6 +1977,54 @@ function oracle.defeat_blind(state)
 
     -- Then do cash_out
     return oracle.cash_out(state)
+end
+
+function oracle.add_consumable(state, center_key)
+    G.GAME = state
+    local center = state.data.centers[center_key]
+    state.consumables[#state.consumables + 1] = {
+        center_key = center_key,
+        edition = nil,
+        sell_cost = math.max(1, math.floor((center.cost or 0) / 2)),
+    }
+    return state
+end
+
+function oracle.add_joker(state, center_key)
+    G.GAME = state
+    local center = state.data.centers[center_key]
+    local config = center.config or {}
+    local extra = config.extra
+    if type(extra) == "table" then
+        local copy = {}
+        for k, v in pairs(extra) do copy[k] = v end
+        extra = copy
+    end
+    local joker = {
+        center_key = center_key,
+        mult = tonumber(config.mult) or 0,
+        x_mult = tonumber(config.Xmult) or 1,
+        t_mult = tonumber(config.t_mult) or 0,
+        t_chips = tonumber(config.t_chips) or 0,
+        extra = extra,
+        type = config.type or "",
+        h_size = tonumber(config.h_size) or 0,
+        d_size = tonumber(config.d_size) or 0,
+        sell_cost = math.max(1, math.floor((center.cost or 0) / 2)),
+    }
+    state.jokers[#state.jokers + 1] = joker
+    if not state.joker_keys then state.joker_keys = {} end
+    state.joker_keys[#state.joker_keys + 1] = center_key
+    -- Apply stat modifiers
+    if joker.h_size ~= 0 then
+        state.starting_params.hand_size = state.starting_params.hand_size + joker.h_size
+        state.current_round.hand_size = state.current_round.hand_size + joker.h_size
+    end
+    if joker.d_size > 0 then
+        state.round_resets.discards = state.round_resets.discards + joker.d_size
+        state.current_round.discards_left = state.current_round.discards_left + joker.d_size
+    end
+    return state
 end
 
 return oracle

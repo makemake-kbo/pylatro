@@ -275,6 +275,32 @@ def test_substep_parity_buy_card():
         "Buy did not execute — test is vacuous. Try a different seed or give the bot more money."
 
 
+# --- Task 4: Substep parity — use_consumable ---
+
+def test_substep_parity_use_consumable():
+    """Using a consumable produces identical state in Python and Lua."""
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+    from pylatro.flow import start_blind
+    from pylatro.consumables import use_consumable
+    from pylatro.instances import add_consumable
+
+    start_blind(py_state, "Small")
+    add_consumable(py_state, "c_mercury")  # Mercury = levels up Pair
+    use_consumable(py_state, 0, hand_targets=[])
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+    lua_raw = bridge.step(lua_raw, "add_consumable", center_key="c_mercury")
+    lua_raw = bridge.step(lua_raw, "use_consumable", index=1, targets={})
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"
+
+
 # --- Task 8: Bot strategy and ante parity ---
 
 def _next_blind_to_start(state) -> str | None:

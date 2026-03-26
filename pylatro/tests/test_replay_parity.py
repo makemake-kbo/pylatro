@@ -275,6 +275,41 @@ def test_substep_parity_buy_card():
         "Buy did not execute — test is vacuous. Try a different seed or give the bot more money."
 
 
+# --- Task 5: Substep parity — finish_shop ---
+
+def test_substep_parity_finish_shop():
+    """finish_shop produces identical state in Python and Lua."""
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+    from pylatro.flow import start_blind, play_cards
+    from pylatro.blind import cash_out
+    from pylatro.shop import populate_shop, finish_shop
+
+    start_blind(py_state, "Small")
+    for _ in range(4):
+        play_cards(py_state, list(range(min(5, len(py_state.hand_cards)))))
+    py_state.round_resets.blind_states["Small"] = "Defeated"
+    py_state.round_resets.blind_states["Big"] = "Select"
+    py_state.blind_on_deck = "Big"
+    cash_out(py_state)
+    populate_shop(py_state)
+    finish_shop(py_state)
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+    for _ in range(4):
+        lua_raw = bridge.step(lua_raw, "play_hand", card_indices=[1, 2, 3, 4, 5])
+    lua_raw = bridge.step(lua_raw, "defeat_blind")
+    lua_raw = bridge.step(lua_raw, "populate_shop")
+    lua_raw = bridge.step(lua_raw, "finish_shop")
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"
+
+
 # --- Task 4: Substep parity — use_consumable ---
 
 def test_substep_parity_use_consumable():
@@ -317,23 +352,65 @@ def _round_active(state) -> bool:
     return any(v == "Current" for v in state.round_resets.blind_states.values())
 
 
+def _shop_populated(state) -> bool:
+    """True if the shop has been populated this phase."""
+    return bool(state.shop.cards or state.shop.boosters or state.shop.vouchers)
+
+
 def auto_action(state) -> tuple[str, dict]:
-    """Deterministic bot: play first 5 cards, discard once, cash out, skip shop."""
-    # Check if we need to start a blind
+    """Deterministic bot: play hands, use shop, buy cards, open packs, use consumables."""
+    from pylatro.consumables import can_use_consumable
+
+    # 1. If a blind is ready to start -> start_blind
     next_blind = _next_blind_to_start(state)
-    if next_blind and not _round_active(state):
+    if next_blind and not _round_active(state) and _shop_populated(state) is False and state.pack is None:
         return ("start_blind", {"blind_type": next_blind})
 
-    # In a round: discard once then play hands
-    if state.current_round.hands_left > 0 and state.hand_cards:
+    # Also start blind if shop is done (next blind available, not in round, shop populated already finished)
+    if next_blind and not _round_active(state) and state.pack is None and not _shop_populated(state):
+        return ("start_blind", {"blind_type": next_blind})
+
+    # 2. In a round and hands remaining -> discard once, then play hands
+    if _round_active(state) and state.current_round.hands_left > 0 and state.hand_cards:
         if state.current_round.discards_left > 0 and state.current_round.discards_used == 0:
             return ("discard", {"cards": list(range(min(2, len(state.hand_cards))))})
         return ("play_hand", {"cards": list(range(min(5, len(state.hand_cards))))})
 
-    # Round complete: defeat blind and cash out
+    # 3. Round active but no hands -> defeat_blind
     if _round_active(state):
         return ("defeat_blind", {})
 
+    # 4. Shop not populated -> populate_shop
+    if not _shop_populated(state) and state.pack is None:
+        return ("populate_shop", {})
+
+    # 5. Pack is open with cards -> claim_card (index 0)
+    if state.pack is not None and state.pack.cards:
+        return ("claim_card", {"index": 0})
+
+    # 6. Pack is open but empty -> close_pack
+    if state.pack is not None and not state.pack.cards:
+        return ("close_pack", {})
+
+    # 7. Consumables exist and first is usable -> use_consumable
+    if state.consumables:
+        targets = list(range(min(3, len(state.hand_cards))))
+        if can_use_consumable(state, 0, hand_targets=targets):
+            return ("use_consumable", {"index": 0, "targets": targets})
+
+    # 8. Shop has affordable cards -> buy_card (index 0)
+    if state.shop.cards:
+        for i, card in enumerate(state.shop.cards):
+            if state.dollars >= card.cost:
+                return ("buy_card", {"index": i})
+
+    # 9. Shop has affordable boosters -> open_pack (index 0)
+    if state.shop.boosters:
+        for i, booster in enumerate(state.shop.boosters):
+            if state.dollars >= booster.cost:
+                return ("open_pack", {"index": i})
+
+    # 10. Otherwise -> finish_shop
     return ("finish_shop", {})
 
 
@@ -355,7 +432,11 @@ def _execute_python_action(state, action: str, kwargs: dict):
     """Dispatch an action to the Python engine."""
     from pylatro.flow import start_blind, play_cards, discard_cards
     from pylatro.blind import cash_out
-    from pylatro.shop import finish_shop
+    from pylatro.shop import (
+        populate_shop, buy_shop_card, open_booster_pack,
+        claim_pack_card, close_pack, finish_shop,
+    )
+    from pylatro.consumables import use_consumable
 
     if action == "start_blind":
         start_blind(state, kwargs.get("blind_type"))
@@ -366,6 +447,18 @@ def _execute_python_action(state, action: str, kwargs: dict):
     elif action == "defeat_blind":
         _defeat_current_blind(state)
         cash_out(state)
+    elif action == "populate_shop":
+        populate_shop(state)
+    elif action == "buy_card":
+        buy_shop_card(state, kwargs["index"])
+    elif action == "open_pack":
+        open_booster_pack(state, kwargs["index"])
+    elif action == "claim_card":
+        claim_pack_card(state, kwargs["index"])
+    elif action == "close_pack":
+        close_pack(state)
+    elif action == "use_consumable":
+        use_consumable(state, kwargs["index"], hand_targets=kwargs.get("targets", []))
     elif action == "finish_shop":
         finish_shop(state)
     else:
@@ -376,6 +469,13 @@ def _convert_kwargs_for_lua(action: str, kwargs: dict) -> dict:
     """Convert Python kwargs to Lua-compatible (0-indexed -> 1-indexed)."""
     if action in ("play_hand", "discard") and "cards" in kwargs:
         return {"card_indices": [i + 1 for i in kwargs["cards"]]}
+    if action in ("buy_card", "open_pack", "claim_card"):
+        return {"index": kwargs["index"] + 1}  # 0-indexed -> 1-indexed
+    if action == "use_consumable":
+        result = {"index": kwargs["index"] + 1}
+        if "targets" in kwargs:
+            result["targets"] = [i + 1 for i in kwargs["targets"]]
+        return result
     return kwargs
 
 

@@ -1,0 +1,153 @@
+"""Top-level BalatroAgent nn.Module."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import torch
+import torch.nn as nn
+
+from .action_heads import BlindSelectHead, ConsumableHead, HandPlayHead, PackHead, ShopHead
+from .backbone import TransformerBackbone
+from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from .distributions import MaskedCategorical
+from .embeddings import ContentEmbeddingLayer
+from .value_head import ValueHead
+from .vocab import Vocab
+
+
+@dataclass
+class AgentConfig:
+    d_model: int = 256
+    n_layers: int = 8
+    n_heads: int = 8
+    d_ff: int = 1024
+    dropout: float = 0.1
+    max_seq_len: int = MAX_SEQ_LEN
+
+
+class BalatroAgent(nn.Module):
+    def __init__(self, config: AgentConfig, vocab: Vocab):
+        super().__init__()
+        self.config = config
+        d = config.d_model
+
+        self.embedding = ContentEmbeddingLayer(vocab, d)
+        self.backbone = TransformerBackbone(
+            n_layers=config.n_layers,
+            d_model=d,
+            n_heads=config.n_heads,
+            d_ff=config.d_ff,
+            dropout=config.dropout,
+        )
+
+        # Action heads
+        self.blind_select_head = BlindSelectHead(d)
+        self.hand_play_head = HandPlayHead(d)
+        self.shop_head = ShopHead(d)
+        self.consumable_head = ConsumableHead(d)
+        self.pack_head = PackHead(d)
+
+        # Value head
+        self.value_head = ValueHead(d)
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
+        attention_mask: torch.Tensor,
+        action_mask: torch.Tensor,
+        sub_phase: SubPhase | list[SubPhase] | None = None,
+    ) -> tuple[MaskedCategorical, dict[str, torch.Tensor]]:
+        """
+        Args:
+            tokens: (batch, MAX_SEQ_LEN, TOKEN_DIM) int
+            token_types: (batch, MAX_SEQ_LEN) int
+            scalars: (batch, SCALAR_DIM) float
+            attention_mask: (batch, MAX_SEQ_LEN) int — 1=real, 0=pad
+            action_mask: (batch, NUM_ACTIONS) int — 1=valid
+            sub_phase: SubPhase or list of SubPhase per batch element
+        Returns:
+            (action_distribution, value_dict)
+        """
+        # Embed
+        x = self.embedding(tokens, token_types, scalars)
+
+        # Backbone — padding_mask for MHA should be True where padded
+        padding_mask = (attention_mask == 0)
+        x = self.backbone(x, padding_mask=padding_mask)
+
+        # Route to appropriate head
+        if sub_phase is None:
+            # Infer from scalars (phase is at index 7)
+            phase_ids = scalars[:, 7].long()
+            sub_phase_list = [self._phase_id_to_sub_phase(pid.item()) for pid in phase_ids]
+        elif isinstance(sub_phase, SubPhase):
+            sub_phase_list = [sub_phase] * tokens.shape[0]
+        else:
+            sub_phase_list = sub_phase
+
+        logits = self._compute_logits(x, attention_mask, sub_phase_list)
+
+        # Value prediction
+        value_dict = self.value_head(x, attention_mask)
+
+        # Build masked distribution
+        dist = MaskedCategorical(logits, action_mask.float())
+        return dist, value_dict
+
+    def _compute_logits(
+        self,
+        backbone_out: torch.Tensor,
+        attention_mask: torch.Tensor,
+        sub_phases: list[SubPhase],
+    ) -> torch.Tensor:
+        """Compute logits by routing each batch element to the correct head."""
+        batch = backbone_out.shape[0]
+        device = backbone_out.device
+
+        # For efficiency, batch by sub-phase type
+        phase_groups: dict[SubPhase, list[int]] = {}
+        for i, sp in enumerate(sub_phases):
+            phase_groups.setdefault(sp, []).append(i)
+
+        logits = torch.full((batch, NUM_ACTIONS), -1e8, device=device)
+
+        for sp, indices in phase_groups.items():
+            idx = torch.tensor(indices, device=device)
+            bo = backbone_out[idx]
+            am = attention_mask[idx]
+
+            if sp == SubPhase.BLIND_SELECT:
+                head_logits = self.blind_select_head(bo, am)
+            elif sp == SubPhase.CHOOSE_ACTION:
+                head_logits = self.hand_play_head(bo, am, select_mode=False)
+            elif sp == SubPhase.SELECT_CARDS:
+                head_logits = self.hand_play_head(bo, am, select_mode=True)
+            elif sp == SubPhase.SHOP:
+                head_logits = self.shop_head(bo, am)
+            elif sp == SubPhase.CONSUMABLE_TARGET:
+                head_logits = self.consumable_head(bo, am)
+            elif sp == SubPhase.BOOSTER_PACK:
+                head_logits = self.pack_head(bo, am)
+            else:
+                continue
+
+            logits[idx] = head_logits
+
+        return logits
+
+    @staticmethod
+    def _phase_id_to_sub_phase(phase_id: int) -> SubPhase:
+        return [
+            SubPhase.BLIND_SELECT,
+            SubPhase.CHOOSE_ACTION,
+            SubPhase.SELECT_CARDS,
+            SubPhase.SHOP,
+            SubPhase.BOOSTER_PACK,
+            SubPhase.CONSUMABLE_TARGET,
+        ][min(phase_id, 5)]
+
+    def count_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

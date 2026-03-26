@@ -16,6 +16,11 @@ dependencies = [
 cli = [
     "textual>=1.0",
 ]
+agent = [
+    "torch>=2.0",
+    "gymnasium>=1.0",
+    "numpy>=1.26",
+]
 
 [project.scripts]
 pylatro = "pylatro_cli.__main__:main"
@@ -30,7 +35,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pylatro", "src/pylatro_cli"]
+packages = ["src/pylatro", "src/pylatro_cli", "src/pylatro_agent"]
 
 [tool.ruff]
 target-version = "py312"

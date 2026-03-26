@@ -224,6 +224,57 @@ def test_substep_parity_populate_shop():
     assert diffs == [], f"Divergences: {diffs}"
 
 
+def test_substep_parity_buy_card():
+    """Buying a shop card produces identical state in Python and Lua."""
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+    from pylatro.flow import start_blind, play_cards
+    from pylatro.blind import cash_out
+    from pylatro.shop import populate_shop, buy_shop_card
+
+    start_blind(py_state, "Small")
+    for _ in range(4):
+        play_cards(py_state, list(range(min(5, len(py_state.hand_cards)))))
+    py_state.round_resets.blind_states["Small"] = "Defeated"
+    py_state.round_resets.blind_states["Big"] = "Select"
+    py_state.blind_on_deck = "Big"
+    cash_out(py_state)
+    populate_shop(py_state)
+    # Find the first affordable card (may not be index 0)
+    py_buy_index = None
+    for i, c in enumerate(py_state.shop.cards):
+        if py_state.dollars >= c.cost:
+            py_buy_index = i
+            break
+    if py_buy_index is not None:
+        buy_shop_card(py_state, py_buy_index)
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+    for _ in range(4):
+        lua_raw = bridge.step(lua_raw, "play_hand", card_indices=[1, 2, 3, 4, 5])
+    lua_raw = bridge.step(lua_raw, "defeat_blind")
+    lua_raw = bridge.step(lua_raw, "populate_shop")
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    # Find same affordable card in Lua (1-indexed)
+    lua_buy_index = None
+    for i, sc in enumerate(lua_snap.get("shop_cards", [])):
+        if lua_snap["dollars"] >= sc.get("cost", 999):
+            lua_buy_index = i + 1  # 1-indexed
+            break
+    if lua_buy_index is not None:
+        lua_raw = bridge.step(lua_raw, "buy_card", index=lua_buy_index)
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"
+    # Verify the buy actually happened (not a vacuous pass)
+    assert py_snap["dollars"] < 4 or len(py_snap.get("jokers", [])) > 0 or len(py_snap.get("consumable_keys", [])) > 0, \
+        "Buy did not execute — test is vacuous. Try a different seed or give the bot more money."
+
+
 # --- Task 8: Bot strategy and ante parity ---
 
 def _next_blind_to_start(state) -> str | None:

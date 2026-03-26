@@ -598,6 +598,7 @@ function oracle.create_run(seed, stake, deck_key)
         discard_pile = {},
         play_cards = {},
         jokers = {},
+        joker_keys = {},
         consumables = {},
         used_vouchers = {},
         used_jokers = {},
@@ -1542,7 +1543,130 @@ end
 
 function oracle.buy_card(state, index)
     G.GAME = state
-    -- Stub for basic structure
+    local data = state.data
+
+    -- Pop card from shop (1-indexed)
+    local card = table.remove(state.shop.cards, index)
+    if not card then return state end
+
+    state.dollars = state.dollars - card.cost
+    local center = data.centers[card.center_key]
+
+    if center.set == "Default" or center.set == "Enhanced" then
+        -- Playing card: add to deck_cards
+        local suit_letter = card.front_key:sub(1, 1)
+        local suit_map = { S = "Spades", H = "Hearts", D = "Diamonds", C = "Clubs" }
+        local new_card = {
+            front_key = card.front_key,
+            suit = suit_map[suit_letter] or "",
+            rank = card.front_key:sub(3, 3),
+            center_key = card.center_key,
+            debuff = false, destroyed = false, shattered = false,
+            played_this_ante = false, discarded = false, face_down = false,
+            forced_selection = false, times_played = 0, perma_bonus = 0,
+        }
+        state.deck_cards[#state.deck_cards + 1] = new_card
+    elseif center.consumeable then
+        -- Consumable: add to consumables
+        local cost = card.cost
+        local cons = {
+            center_key = card.center_key,
+            edition = card.edition,
+            sell_cost = math.max(1, math.floor(cost / 2)),
+        }
+        state.consumables[#state.consumables + 1] = cons
+    else
+        -- Joker: create joker instance and add
+        local config = center.config or {}
+        local extra = config.extra
+        -- Shallow copy if extra is a table
+        if type(extra) == "table" then
+            local copy = {}
+            for k, v in pairs(extra) do copy[k] = v end
+            extra = copy
+        end
+
+        local cost = card.cost
+        local joker = {
+            center_key = card.center_key,
+            edition = card.edition,
+            eternal = card.eternal or false,
+            perishable = card.perishable or false,
+            rental = card.rental or false,
+            mult = tonumber(config.mult) or 0,
+            h_mult = tonumber(config.h_mult) or 0,
+            h_x_mult = tonumber(config.h_x_mult) or 0,
+            h_dollars = tonumber(config.h_dollars) or 0,
+            p_dollars = tonumber(config.p_dollars) or 0,
+            t_mult = tonumber(config.t_mult) or 0,
+            t_chips = tonumber(config.t_chips) or 0,
+            x_mult = tonumber(config.Xmult) or 1,
+            h_size = tonumber(config.h_size) or 0,
+            d_size = tonumber(config.d_size) or 0,
+            extra = extra,
+            type = tostring(config.type or ""),
+            hands_played_at_create = state.hands_played,
+            sell_cost = math.max(1, math.floor(cost / 2)),
+        }
+
+        state.jokers[#state.jokers + 1] = joker
+        if not state.joker_keys then state.joker_keys = {} end
+        state.joker_keys[#state.joker_keys + 1] = card.center_key
+
+        -- Apply stat modifiers (matching instances.py add_joker)
+        if joker.d_size > 0 then
+            state.round_resets.discards = state.round_resets.discards + joker.d_size
+            state.current_round.discards_left = state.current_round.discards_left + joker.d_size
+        end
+        if joker.h_size ~= 0 then
+            state.starting_params.hand_size = state.starting_params.hand_size + joker.h_size
+            state.current_round.hand_size = state.current_round.hand_size + joker.h_size
+        end
+
+        local name = center.name
+        if name == "Credit Card" and type(joker.extra) == "number" then
+            state.bankrupt_at = (state.bankrupt_at or 0) - joker.extra
+        elseif name == "Chaos the Clown" then
+            state.current_round.free_rerolls = (state.current_round.free_rerolls or 0) + 1
+        elseif name == "Oops! All 6s" then
+            for k, v in pairs(state.probabilities) do
+                state.probabilities[k] = v * 2
+            end
+        elseif name == "To the Moon" and type(joker.extra) == "number" then
+            state.interest_amount = (state.interest_amount or 5) + joker.extra
+        elseif name == "Troubadour" and type(joker.extra) == "table" then
+            local h_size = tonumber(joker.extra.h_size) or 0
+            local h_plays = tonumber(joker.extra.h_plays) or 0
+            state.starting_params.hand_size = state.starting_params.hand_size + h_size
+            state.round_resets.hands = state.round_resets.hands + h_plays
+            state.current_round.hand_size = state.current_round.hand_size + h_size
+        elseif name == "Stuntman" and type(joker.extra) == "table" then
+            local h_size = tonumber(joker.extra.h_size) or 0
+            state.starting_params.hand_size = state.starting_params.hand_size - h_size
+            state.current_round.hand_size = state.current_round.hand_size - h_size
+        elseif name == "Turtle Bean" and type(joker.extra) == "table" then
+            local h_size = tonumber(joker.extra.h_size) or 0
+            state.starting_params.hand_size = state.starting_params.hand_size + h_size
+            state.current_round.hand_size = state.current_round.hand_size + h_size
+        elseif name == "To Do List" then
+            -- RNG call: pseudorandom_element on visible hands (matches Python instances.py)
+            local visible_hands = {}
+            for hand_name, hand in pairs(state.hands) do
+                if hand.visible then
+                    visible_hands[#visible_hands + 1] = hand_name
+                end
+            end
+            if #visible_hands > 0 then
+                local seed = pseudoseed("to_do", state.pseudorandom)
+                local hand_name = pseudorandom_element(visible_hands, seed)
+                joker.to_do_poker_hand = hand_name
+            end
+        end
+        if card.edition and type(card.edition) == "table" and card.edition.negative then
+            state.starting_params.joker_slots = state.starting_params.joker_slots + 1
+        end
+    end
+
     return state
 end
 

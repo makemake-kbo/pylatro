@@ -50,7 +50,16 @@ function pseudorandom_element(_t, seed)
     if keys[1] and keys[1].v and type(keys[1].v) == 'table' and keys[1].v.sort_id then
         table.sort(keys, function(a, b) return a.v.sort_id < b.v.sort_id end)
     else
-        table.sort(keys, function(a, b) return tostring(a.k) < tostring(b.k) end)
+        -- Check if all keys are sequential integers (array-style table)
+        local all_numeric = true
+        for _, entry in ipairs(keys) do
+            if type(entry.k) ~= "number" then all_numeric = false; break end
+        end
+        if all_numeric then
+            table.sort(keys, function(a, b) return a.k < b.k end)
+        else
+            table.sort(keys, function(a, b) return tostring(a.k) < tostring(b.k) end)
+        end
     end
     local idx = math.random(#keys)
     local key = keys[idx].k
@@ -171,6 +180,407 @@ local function get_new_boss(state, data)
     return key or "bl_hook"
 end
 
+-- Pool building helpers (must match Python's pool.py logic)
+local function build_center_pools(data)
+    data.center_pools = {
+        Booster = {}, Default = {}, Enhanced = {}, Edition = {},
+        Joker = {}, Tarot = {}, Planet = {}, Tarot_Planet = {},
+        Spectral = {}, Consumeables = {}, Voucher = {}, Back = {},
+        Tag = {}, Seal = {}, Stake = {}, Demo = {},
+    }
+    data.joker_rarity_pools = { {}, {}, {}, {} }
+
+    for k, v in pairs(data.centers) do
+        v.key = k
+        local set = v.set
+        if set == "Joker" then
+            data.center_pools.Joker[#data.center_pools.Joker + 1] = v
+        end
+        if set and v.demo and v.pos then
+            data.center_pools.Demo[#data.center_pools.Demo + 1] = v
+        end
+        if not v.wip then
+            if set and set ~= "Joker" and not v.skip_pool and not v.omit then
+                if data.center_pools[set] then
+                    data.center_pools[set][#data.center_pools[set] + 1] = v
+                end
+            end
+            if set == "Tarot" or set == "Planet" then
+                data.center_pools.Tarot_Planet[#data.center_pools.Tarot_Planet + 1] = v
+            end
+            if v.consumeable then
+                data.center_pools.Consumeables[#data.center_pools.Consumeables + 1] = v
+            end
+            if set == "Joker" and v.rarity and not v.demo then
+                local r = math.floor(v.rarity)
+                if r >= 1 and r <= 4 then
+                    data.joker_rarity_pools[r][#data.joker_rarity_pools[r] + 1] = v
+                end
+            end
+        end
+    end
+
+    -- Sort pools by order (matches Python's _build_pools)
+    local function by_order(a, b) return (a.order or 0) < (b.order or 0) end
+    for _, pool_name in ipairs({
+        "Joker", "Tarot", "Planet", "Tarot_Planet", "Spectral",
+        "Voucher", "Booster", "Consumeables", "Enhanced", "Stake", "Tag", "Seal",
+    }) do
+        table.sort(data.center_pools[pool_name], by_order)
+    end
+    for _, pool in ipairs(data.joker_rarity_pools) do
+        table.sort(pool, by_order)
+    end
+end
+
+-- get_current_pool: build filtered pool for a card type (matches Python's pool.py:9-85)
+local function get_current_pool(state, card_type, append, rarity, legendary)
+    local data = state.data
+    local pool_key
+    local starting_pool
+
+    if card_type == "Joker" then
+        local rarity_roll = rarity or
+            pseudorandom("rarity" .. tostring(state.round_resets.ante) .. (append or ""))
+        local rarity_index
+        if legendary then
+            rarity_index = 4
+        elseif rarity_roll > 0.95 then
+            rarity_index = 3
+        elseif rarity_roll > 0.7 then
+            rarity_index = 2
+        else
+            rarity_index = 1
+        end
+        starting_pool = data.joker_rarity_pools[rarity_index]
+        pool_key = "Joker" .. tostring(rarity_index) .. (legendary and "" or (append or ""))
+    else
+        starting_pool = data.center_pools[card_type]
+        pool_key = card_type .. (append or "")
+    end
+
+    local pool = {}
+    local pool_size = 0
+    for _, proto in ipairs(starting_pool) do
+        local add = false
+        if card_type == "Enhanced" then
+            add = true
+        elseif card_type == "Tag" then
+            add = (not proto.requires or (data.centers[proto.requires] and data.centers[proto.requires].discovered))
+                and (not proto.min_ante or proto.min_ante <= state.round_resets.ante)
+        elseif not (state.used_jokers[proto.key] and true) and (proto.unlocked ~= false or proto.rarity == 4) then
+            if proto.set == "Voucher" then
+                if not state.used_vouchers[proto.key] then
+                    add = true
+                    if proto.requires then
+                        if type(proto.requires) == "table" then
+                            for _, req in ipairs(proto.requires) do
+                                if not state.used_vouchers[req] then add = false end
+                            end
+                        elseif type(proto.requires) == "string" then
+                            if not state.used_vouchers[proto.requires] then add = false end
+                        end
+                    end
+                    for _, voucher in ipairs(state.shop.vouchers) do
+                        if voucher.center_key == proto.key then add = false end
+                    end
+                end
+            elseif proto.set == "Planet" then
+                local config = type(proto.config) == "table" and proto.config or {}
+                if config.softlock then
+                    add = state.hands[config.hand_type] and state.hands[config.hand_type].played > 0
+                else
+                    add = true
+                end
+            elseif proto.enhancement_gate then
+                add = false
+                for _, card in ipairs(state.deck_cards) do
+                    if card.center_key == proto.enhancement_gate then add = true; break end
+                end
+            else
+                add = true
+            end
+            if proto.name == "Black Hole" or proto.name == "The Soul" then
+                add = false
+            end
+        end
+
+        if proto.no_pool_flag and state.pool_flags[proto.no_pool_flag] then
+            add = false
+        end
+        if proto.yes_pool_flag and not state.pool_flags[proto.yes_pool_flag] then
+            add = false
+        end
+        if add and not state.banned_keys[proto.key] then
+            pool[#pool + 1] = proto.key
+            pool_size = pool_size + 1
+        else
+            pool[#pool + 1] = "UNAVAILABLE"
+        end
+    end
+
+    if pool_size == 0 then
+        local fallback = {
+            Tarot = "c_strength", Tarot_Planet = "c_strength",
+            Planet = "c_pluto", Spectral = "c_incantation",
+            Joker = "j_joker", Voucher = "v_blank", Tag = "tag_handy",
+        }
+        pool = { fallback[card_type] or "j_joker" }
+    end
+    local suffix = legendary and "" or tostring(state.round_resets.ante)
+    return pool, pool_key .. suffix
+end
+
+-- _pick_pool_key: pick a non-UNAVAILABLE key from pool (matches Python's pool.py:88-97)
+local function pick_pool_key(state, pool, pool_key)
+    local center, _ = pseudorandom_element(pool, pseudoseed(pool_key, state.pseudorandom))
+    local reroll = 1
+    while center == "UNAVAILABLE" do
+        reroll = reroll + 1
+        center, _ = pseudorandom_element(pool, pseudoseed(pool_key .. "_resample" .. tostring(reroll), state.pseudorandom))
+    end
+    return center
+end
+
+-- get_next_voucher_key: matches Python's pool.py:100-102
+local function get_next_voucher_key(state)
+    local pool, pool_key = get_current_pool(state, "Voucher")
+    return pick_pool_key(state, pool, pool_key)
+end
+
+-- get_next_tag_key: matches Python's pool.py:105-107
+local function get_next_tag_key(state, append)
+    local pool, pool_key = get_current_pool(state, "Tag", append)
+    return pick_pool_key(state, pool, pool_key)
+end
+
+-- poll_edition: matches Python's pool.py:173-200
+local function poll_edition(state, key, mod, no_negative)
+    key = key or "edition_generic"
+    mod = mod or 1
+    local edition_poll = pseudorandom(pseudoseed(key, state.pseudorandom))
+    if edition_poll > 1 - 0.003 * mod and not no_negative then
+        return { negative = true }
+    end
+    if edition_poll > 1 - 0.006 * state.edition_rate * mod then
+        return { polychrome = true }
+    end
+    if edition_poll > 1 - 0.02 * state.edition_rate * mod then
+        return { holo = true }
+    end
+    if edition_poll > 1 - 0.04 * state.edition_rate * mod then
+        return { foil = true }
+    end
+    return nil
+end
+
+-- _apply_joker_stickers: matches Python's pool.py:203-233
+local function apply_joker_stickers(state, center, source)
+    local eternal = false
+    local perishable = false
+    local rental = false
+
+    if state.modifiers.all_eternal and center.eternal_compat then
+        eternal = true
+    end
+
+    if source == "shop" or source == "pack" then
+        local eternal_key = (source == "pack" and "packetper" or "etperpoll") .. tostring(state.round_resets.ante)
+        local eternal_poll = pseudorandom(eternal_key)
+        if state.modifiers.enable_eternals_in_shop and eternal_poll > 0.7 and center.eternal_compat and not perishable then
+            eternal = true
+        elseif state.modifiers.enable_perishables_in_shop and eternal_poll > 0.4 and eternal_poll <= 0.7 and center.perishable_compat and not eternal then
+            perishable = true
+        end
+
+        local rental_key = (source == "pack" and "packssjr" or "ssjr") .. tostring(state.round_resets.ante)
+        if state.modifiers.enable_rentals_in_shop and pseudorandom(rental_key) > 0.7 then
+            rental = true
+        end
+    end
+
+    return eternal, perishable, rental
+end
+
+-- _edition_cost helper
+local function edition_cost(edition)
+    if not edition then return 0 end
+    local c = 0
+    if edition.holo then c = c + 3 end
+    if edition.foil then c = c + 2 end
+    if edition.polychrome then c = c + 5 end
+    if edition.negative then c = c + 5 end
+    return c
+end
+
+-- _calculate_cost: matches Python's _helpers.py:33-53
+local function calculate_cost(state, center, edition, rental)
+    local base_cost = math.max(1, center.cost or 1)
+    local cost = math.max(1, math.floor(
+        (base_cost + state.inflation + edition_cost(edition) + 0.5) * (100 - state.discount_percent) / 100
+    ))
+    if center.set == "Booster" and state.modifiers.booster_ante_scaling then
+        cost = cost + state.round_resets.ante - 1
+    end
+    if rental then cost = 1 end
+    return cost
+end
+
+-- _mark_center_used: matches Python's _helpers.py:29-30
+local function mark_center_used(state, center_key)
+    state.used_jokers[center_key] = true
+end
+
+-- create_card_spec: matches Python's pool.py:236-303
+local function create_card_spec(state, card_type, forced_key, append, source, soulable)
+    local requested_type = card_type
+    local data = state.data
+
+    -- Soul check (only for soulable cards)
+    if not forced_key and soulable and not state.banned_keys.c_soul then
+        if (card_type == "Tarot" or card_type == "Spectral" or card_type == "Tarot_Planet") then
+            if not (state.used_jokers.c_soul) then
+                if pseudorandom("soul_" .. card_type .. tostring(state.round_resets.ante)) > 0.997 then
+                    forced_key = "c_soul"
+                end
+            end
+        end
+        if (card_type == "Planet" or card_type == "Spectral") then
+            if not (state.used_jokers.c_black_hole) then
+                if pseudorandom("soul_" .. card_type .. tostring(state.round_resets.ante)) > 0.997 then
+                    forced_key = "c_black_hole"
+                end
+            end
+        end
+    end
+
+    if card_type == "Base" then
+        forced_key = "c_base"
+    end
+
+    local center_key
+    local center
+    if forced_key and not state.banned_keys[forced_key] then
+        center_key = forced_key
+        center = data.centers[center_key]
+        if center and center.set and center.set ~= "Default" then
+            card_type = center.set
+        else
+            card_type = requested_type
+        end
+    else
+        local pool, pool_key = get_current_pool(state, card_type, append)
+        center_key = pick_pool_key(state, pool, pool_key)
+        center = data.centers[center_key]
+    end
+
+    local front_key = nil
+    if card_type == "Base" or card_type == "Enhanced" then
+        _, front_key = pseudorandom_element(
+            data.cards,
+            pseudoseed("front" .. (append or "") .. tostring(state.round_resets.ante), state.pseudorandom)
+        )
+    end
+
+    local ed = nil
+    local eternal = false
+    local perishable = false
+    local rental = false
+    if card_type == "Joker" then
+        eternal, perishable, rental = apply_joker_stickers(state, center, source)
+        ed = poll_edition(state, "edi" .. (append or "") .. tostring(state.round_resets.ante))
+    end
+
+    mark_center_used(state, center_key)
+
+    return {
+        center_key = center_key,
+        card_type = card_type,
+        cost = calculate_cost(state, center, ed, rental),
+        base_cost = math.max(1, center.cost or 1),
+        front_key = front_key,
+        edition = ed,
+        seal = nil,
+        eternal = eternal,
+        perishable = perishable,
+        rental = rental,
+    }
+end
+
+-- create_shop_card: matches Python's shop.py:19-62
+local function create_shop_card(state)
+    local total_rate = state.joker_rate + state.tarot_rate + state.planet_rate
+        + state.playing_card_rate + state.spectral_rate
+    local polled_rate = pseudorandom(pseudoseed("cdt" .. tostring(state.round_resets.ante), state.pseudorandom)) * total_rate
+    local running = 0.0
+
+    -- Determine card types in order
+    local playing_card_type = "Base"
+    if state.used_vouchers.v_illusion and pseudorandom("illusion") > 0.6 then
+        playing_card_type = "Enhanced"
+    end
+
+    local card_types = {
+        { "Joker", state.joker_rate },
+        { "Tarot", state.tarot_rate },
+        { "Planet", state.planet_rate },
+        { playing_card_type, state.playing_card_rate },
+        { "Spectral", state.spectral_rate },
+    }
+
+    for _, ct in ipairs(card_types) do
+        local ctype, value = ct[1], ct[2]
+        if running < polled_rate and polled_rate <= running + value then
+            local card = create_card_spec(state, ctype, nil, "sho", "shop", false)
+            -- Post-creation illusion edition for Base/Enhanced
+            if (ctype == "Base" or ctype == "Enhanced") and state.used_vouchers.v_illusion then
+                if pseudorandom("illusion") > 0.8 then
+                    local edition_poll = pseudorandom("illusion")
+                    if edition_poll > 1 - 0.15 then
+                        card.edition = { polychrome = true }
+                    elseif edition_poll > 0.5 then
+                        card.edition = { holo = true }
+                    else
+                        card.edition = { foil = true }
+                    end
+                    card.cost = calculate_cost(state, state.data.centers[card.center_key], card.edition, card.rental)
+                end
+            end
+            return card
+        end
+        running = running + value
+    end
+    error("Shop card selection failed")
+end
+
+-- get_pack: matches Python's pool.py:142-170
+local function get_pack(state, key)
+    if not state.first_shop_buffoon and not state.banned_keys.p_buffoon_normal_1 then
+        state.first_shop_buffoon = true
+        return "p_buffoon_normal_" .. tostring(math.random(1, 2))
+    end
+
+    local cumulative = 0.0
+    for _, proto in ipairs(state.data.center_pools.Booster) do
+        if not state.banned_keys[proto.key] then
+            cumulative = cumulative + (proto.weight or 1)
+        end
+    end
+
+    local poll = pseudorandom(pseudoseed((key or "pack_generic") .. tostring(state.round_resets.ante), state.pseudorandom)) * cumulative
+    local current = 0.0
+    for _, proto in ipairs(state.data.center_pools.Booster) do
+        if state.banned_keys[proto.key] then goto continue end
+        local weight = proto.weight or 1
+        current = current + weight
+        if current >= poll then
+            return proto.key
+        end
+        ::continue::
+    end
+    error("Booster selection failed")
+end
+
 function oracle.create_run(seed, stake, deck_key)
     local data = load_game_data()
 
@@ -190,10 +600,22 @@ function oracle.create_run(seed, stake, deck_key)
         jokers = {},
         consumables = {},
         used_vouchers = {},
+        used_jokers = {},
         banned_keys = {},
         pool_flags = {},
         tags = {},
         probabilities = { normal = 1 },
+        modifiers = {},
+        joker_rate = 20,
+        tarot_rate = 4,
+        planet_rate = 4,
+        playing_card_rate = 0,
+        spectral_rate = 0,
+        edition_rate = 1,
+        inflation = 0,
+        discount_percent = 0,
+        first_shop_buffoon = false,
+        current_voucher = nil,
         current_round = {
             hands_left = 4,
             hands_played = 0,
@@ -334,6 +756,9 @@ function oracle.create_run(seed, stake, deck_key)
         end
     end
 
+    -- Build center pools (must happen before pool operations)
+    build_center_pools(data)
+
     -- Select boss blind (must match Python's get_new_boss)
     -- Initialize bosses_used with 0 for all boss blinds (like Python's dict comprehension)
     state.bosses_used = {}
@@ -347,31 +772,10 @@ function oracle.create_run(seed, stake, deck_key)
 
     state.round_resets.blind_choices.Boss = get_new_boss(state, data)
 
-    -- Advance RNG for voucher and tags (must match Python's create_run_state)
-    if data.centers then
-        local voucher_pool = {}
-        for k, v in pairs(data.centers) do
-            if v.set == "Voucher" and not v.requires then
-                voucher_pool[k] = v
-            end
-        end
-        if next(voucher_pool) then
-            pseudorandom_element(voucher_pool, pseudoseed("Voucher", state.pseudorandom))
-        end
-    end
-
-    if data.centers then
-        local tag_pool = {}
-        for k, v in pairs(data.centers) do
-            if v.set == "Tag" then
-                tag_pool[k] = v
-            end
-        end
-        if next(tag_pool) then
-            pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
-            pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
-        end
-    end
+    -- Get voucher and tags using proper pool functions (must match Python's create_run_state)
+    state.current_voucher = get_next_voucher_key(state)
+    state.round_resets.blind_tags.Small = get_next_tag_key(state)
+    state.round_resets.blind_tags.Big = get_next_tag_key(state)
 
     return state
 end
@@ -1042,30 +1446,12 @@ function oracle.cash_out(state)
             card.played_this_ante = false
         end
 
-        -- Next voucher
-        if data.centers then
-            local voucher_pool = {}
-            for k, v in pairs(data.centers) do
-                if v.set == "Voucher" and (not v.requires or #v.requires == 0) then
-                    voucher_pool[k] = v
-                end
-            end
-            if next(voucher_pool) then
-                pseudorandom_element(voucher_pool, pseudoseed("Voucher", state.pseudorandom))
-            end
-        end
+        -- Next voucher (using proper pool function, matches Python)
+        state.current_voucher = get_next_voucher_key(state)
 
-        -- Next tags (twice)
-        if data.centers then
-            local tag_pool = {}
-            for k, v in pairs(data.centers) do
-                if v.set == "Tag" then tag_pool[k] = v end
-            end
-            if next(tag_pool) then
-                pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
-                pseudorandom_element(tag_pool, pseudoseed("Tag", state.pseudorandom))
-            end
-        end
+        -- Next tags (twice, using proper pool function, matches Python)
+        state.round_resets.blind_tags.Small = get_next_tag_key(state)
+        state.round_resets.blind_tags.Big = get_next_tag_key(state)
     end
 
     -- Reset blinds (only when boss defeated)
@@ -1106,9 +1492,43 @@ end
 
 function oracle.populate_shop(state)
     G.GAME = state
-    -- Stub: mark shop as populated without advancing RNG
-    -- Full implementation needed for ante parity tests
-    state.shop.populated = true
+    local data = state.data
+
+    -- refresh_shop: generate shop cards (matches Python's populate_shop + refresh_shop)
+    if #state.shop.cards == 0 then
+        for _ = 1, state.shop.joker_max do
+            state.shop.cards[#state.shop.cards + 1] = create_shop_card(state)
+        end
+    end
+
+    -- Voucher (matches Python: if not shop.vouchers and current_voucher)
+    if #state.shop.vouchers == 0 and state.current_voucher then
+        local voucher = create_card_spec(state, "Voucher", state.current_voucher, nil, nil, false)
+        voucher.shop_voucher = true
+        state.shop.vouchers = { voucher }
+    end
+
+    -- Boosters (matches Python's populate_shop booster logic)
+    if #state.shop.boosters == 0 then
+        local boosters = {}
+        -- Ensure used_packs has 2 entries
+        if not state.current_round.used_packs then state.current_round.used_packs = {} end
+        while #state.current_round.used_packs < 2 do
+            state.current_round.used_packs[#state.current_round.used_packs + 1] = ""
+        end
+        for index = 1, 2 do
+            if state.current_round.used_packs[index] == "" then
+                state.current_round.used_packs[index] = get_pack(state, "shop_pack")
+            end
+            if state.current_round.used_packs[index] ~= "USED" then
+                local booster = create_card_spec(state, "Booster", state.current_round.used_packs[index], nil, nil, false)
+                booster.booster_pos = index
+                boosters[#boosters + 1] = booster
+            end
+        end
+        state.shop.boosters = boosters
+    end
+
     return state
 end
 

@@ -219,6 +219,9 @@ def snapshot_from_run_state(state: Any) -> dict[str, Any]:
         "blind_triggered": state.blind_triggered,
         "blind_states": dict(state.round_resets.blind_states),
         "blind_on_deck": getattr(state, "blind_on_deck", "Small"),
+        "shop_cards": [{"center_key": c.center_key, "cost": c.cost} for c in state.shop.cards],
+        "shop_vouchers": [c.center_key for c in state.shop.vouchers],
+        "shop_boosters": [c.center_key for c in state.shop.boosters],
     }
 
 
@@ -272,6 +275,19 @@ def snapshot_from_lua_state(lua_state: dict[str, Any]) -> dict[str, Any]:
         "blind_triggered": bool(lua_state.get("blind_triggered", False)),
         "blind_states": {k: str(v) for k, v in (_safe(rr, "blind_states", {}) if isinstance(_safe(rr, "blind_states", {}), dict) else {}).items()},
         "blind_on_deck": str(lua_state.get("blind_on_deck", "Small")),
+        "shop_cards": [
+            {"center_key": c.get("center_key", "") if isinstance(c, dict) else "",
+             "cost": int(c.get("cost", 0)) if isinstance(c, dict) else 0}
+            for c in (lua_state.get("shop", {}).get("cards", []) if isinstance(lua_state.get("shop"), dict) else [])
+        ] if isinstance(lua_state.get("shop", {}).get("cards", []) if isinstance(lua_state.get("shop"), dict) else [], list) else [],
+        "shop_vouchers": [
+            c.get("center_key", "") if isinstance(c, dict) else ""
+            for c in (lua_state.get("shop", {}).get("vouchers", []) if isinstance(lua_state.get("shop"), dict) else [])
+        ] if isinstance(lua_state.get("shop", {}).get("vouchers", []) if isinstance(lua_state.get("shop"), dict) else [], list) else [],
+        "shop_boosters": [
+            c.get("center_key", "") if isinstance(c, dict) else ""
+            for c in (lua_state.get("shop", {}).get("boosters", []) if isinstance(lua_state.get("shop"), dict) else [])
+        ] if isinstance(lua_state.get("shop", {}).get("boosters", []) if isinstance(lua_state.get("shop"), dict) else [], list) else [],
     }
 
 

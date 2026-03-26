@@ -188,6 +188,42 @@ def test_substep_parity_discard():
     assert diffs == [], f"Divergences: {diffs}"
 
 
+# --- Task 1: Substep parity — populate_shop ---
+
+def test_substep_parity_populate_shop():
+    """After populate_shop, Python and Lua have identical shop state."""
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+
+    from pylatro.flow import start_blind, play_cards
+    from pylatro.blind import cash_out
+    from pylatro.shop import populate_shop
+
+    # Play through Small blind
+    start_blind(py_state, "Small")
+    for _ in range(4):
+        play_cards(py_state, list(range(min(5, len(py_state.hand_cards)))))
+    # Defeat and cash out
+    py_state.round_resets.blind_states["Small"] = "Defeated"
+    py_state.round_resets.blind_states["Big"] = "Select"
+    py_state.blind_on_deck = "Big"
+    cash_out(py_state)
+    populate_shop(py_state)
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+    for _ in range(4):
+        lua_raw = bridge.step(lua_raw, "play_hand", card_indices=[1, 2, 3, 4, 5])
+    lua_raw = bridge.step(lua_raw, "defeat_blind")
+    lua_raw = bridge.step(lua_raw, "populate_shop")
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"
+
+
 # --- Task 8: Bot strategy and ante parity ---
 
 def _next_blind_to_start(state) -> str | None:

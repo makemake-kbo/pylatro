@@ -35,6 +35,7 @@ class SupervisedConfig:
     max_epochs: int = 10
     value_loss_coeff: float = 0.5
     save_dir: str = "checkpoints/supervised"
+    log_dir: str = "runs/supervised"
     device: str = "cpu"
 
 
@@ -95,6 +96,8 @@ def train_supervised(
     if agent_config is None:
         agent_config = AgentConfig()
 
+    from torch.utils.tensorboard import SummaryWriter
+
     device = torch.device(config.device)
     model = BalatroAgent(agent_config, vocab).to(device)
     optimizer = AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
@@ -103,6 +106,11 @@ def train_supervised(
     logger.info("Generating training data from heuristic agent...")
     records = generate_training_data(config.num_games, data=data, vocab=vocab)
     logger.info(f"Generated {len(records)} training records")
+
+    wins = sum(1 for r in records if r["won"])
+    unique_games = config.num_games
+    win_games = len({id(r) for r in records if r["won"]})  # approximate
+    logger.info(f"Heuristic win rate (approx): {wins / max(len(records), 1):.3f} of records from winning games")
 
     # Shuffle and batch
     n = len(records)
@@ -113,10 +121,16 @@ def train_supervised(
     save_path = Path(config.save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 
+    writer = SummaryWriter(config.log_dir)
+    writer.add_scalar("data/num_records", n, 0)
+    writer.add_scalar("data/num_games", config.num_games, 0)
+
     global_step = 0
     for epoch in range(config.max_epochs):
         indices = np.random.permutation(n)
         epoch_loss = 0.0
+        epoch_action_loss = 0.0
+        epoch_value_loss = 0.0
         epoch_action_correct = 0
         epoch_count = 0
 
@@ -144,7 +158,7 @@ def train_supervised(
 
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
 
             # Warmup
@@ -158,17 +172,45 @@ def train_supervised(
             # Track accuracy
             predicted = dist.logits.argmax(dim=-1)
             correct = (predicted == batch["actions"]).sum().item()
+            batch_acc = correct / len(batch_records)
+
             epoch_action_correct += correct
             epoch_count += len(batch_records)
             epoch_loss += loss.item() * len(batch_records)
+            epoch_action_loss += action_loss.item() * len(batch_records)
+            epoch_value_loss += value_loss.item() * len(batch_records)
+
+            # Per-step TensorBoard logging
+            writer.add_scalar("train/loss", loss.item(), global_step)
+            writer.add_scalar("train/action_loss", action_loss.item(), global_step)
+            writer.add_scalar("train/value_loss", value_loss.item(), global_step)
+            writer.add_scalar("train/accuracy", batch_acc, global_step)
+            writer.add_scalar("train/grad_norm", grad_norm.item(), global_step)
+            writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
+            writer.add_scalar("train/entropy", dist.entropy().mean().item(), global_step)
+            writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean().item(), global_step)
+
             global_step += 1
 
         avg_loss = epoch_loss / max(epoch_count, 1)
+        avg_action_loss = epoch_action_loss / max(epoch_count, 1)
+        avg_value_loss = epoch_value_loss / max(epoch_count, 1)
         accuracy = epoch_action_correct / max(epoch_count, 1)
-        logger.info(f"Epoch {epoch + 1}/{config.max_epochs}: loss={avg_loss:.4f}, accuracy={accuracy:.4f}")
+
+        writer.add_scalar("epoch/loss", avg_loss, epoch + 1)
+        writer.add_scalar("epoch/action_loss", avg_action_loss, epoch + 1)
+        writer.add_scalar("epoch/value_loss", avg_value_loss, epoch + 1)
+        writer.add_scalar("epoch/accuracy", accuracy, epoch + 1)
+
+        logger.info(
+            f"Epoch {epoch + 1}/{config.max_epochs}: "
+            f"loss={avg_loss:.4f}, action_loss={avg_action_loss:.4f}, "
+            f"value_loss={avg_value_loss:.4f}, accuracy={accuracy:.4f}"
+        )
 
         torch.save(model.state_dict(), save_path / f"supervised_epoch{epoch + 1}.pt")
 
+    writer.close()
     return model
 
 

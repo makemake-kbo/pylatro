@@ -39,6 +39,7 @@ class PPOConfig:
     lr: float = 3e-4
     device: str = "cpu"
     save_dir: str = "checkpoints/ppo"
+    log_dir: str = "runs/ppo"
     eval_interval: int = 10
     eval_games: int = 20
 
@@ -72,12 +73,22 @@ def train_ppo(
         obs, _ = env.reset()
         obs_list.append(obs)
 
+    from torch.utils.tensorboard import SummaryWriter
+
     save_path = Path(config.save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
+
+    writer = SummaryWriter(config.log_dir)
 
     total_steps = 0
     update_count = 0
     entropy_coeff = config.entropy_coeff
+    episode_rewards: list[float] = []
+    episode_lengths: list[int] = []
+    episode_wins: list[bool] = []
+    # Track per-env episode accumulators
+    env_ep_reward = [0.0] * config.num_envs
+    env_ep_length = [0] * config.num_envs
 
     while total_steps < config.total_timesteps:
         buffer = RolloutBuffer(gamma=config.gamma, gae_lambda=config.gae_lambda)
@@ -108,9 +119,16 @@ def train_ppo(
 
                 # Update reward in buffer
                 buffer.rewards[-config.num_envs + i] = reward
+                env_ep_reward[i] += reward
+                env_ep_length[i] += 1
 
                 if done:
                     buffer.dones[-config.num_envs + i] = True
+                    episode_rewards.append(env_ep_reward[i])
+                    episode_lengths.append(env_ep_length[i])
+                    episode_wins.append(info.get("won", False))
+                    env_ep_reward[i] = 0.0
+                    env_ep_length[i] = 0
                     obs, _ = env.reset(seed=total_steps + i)
 
                 obs_list[i] = obs
@@ -130,6 +148,11 @@ def train_ppo(
 
         # PPO update
         model.train()
+        update_policy_losses = []
+        update_value_losses = []
+        update_entropies = []
+        update_clip_fracs = []
+
         for ppo_epoch in range(config.ppo_epochs):
             batches = buffer.get_batches(config.mini_batch_size, device)
             for batch in batches:
@@ -160,17 +183,44 @@ def train_ppo(
                 nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
                 optimizer.step()
 
+                # Track for logging
+                with torch.no_grad():
+                    clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
+                update_policy_losses.append(policy_loss.item())
+                update_value_losses.append(value_loss.item())
+                update_entropies.append(entropy.item())
+                update_clip_fracs.append(clip_frac)
+
         entropy_coeff *= config.entropy_decay
         update_count += 1
 
+        # TensorBoard: per-update metrics
+        writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
+        writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
+        writer.add_scalar("ppo/entropy", np.mean(update_entropies), update_count)
+        writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
+        writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
+        writer.add_scalar("ppo/total_steps", total_steps, update_count)
+
+        # TensorBoard: episode stats (from completed episodes this rollout)
+        if episode_rewards:
+            recent = episode_rewards[-100:]
+            recent_wins = episode_wins[-100:]
+            writer.add_scalar("rollout/ep_reward_mean", np.mean(recent), update_count)
+            writer.add_scalar("rollout/ep_length_mean", np.mean(episode_lengths[-100:]), update_count)
+            writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
+            writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
+
         if update_count % config.eval_interval == 0:
             win_rate = evaluate_model(model, data, vocab, config.eval_games, device)
+            writer.add_scalar("eval/win_rate", win_rate, update_count)
             logger.info(
                 f"Update {update_count}, steps {total_steps}: "
                 f"win_rate={win_rate:.3f}, entropy_coeff={entropy_coeff:.5f}"
             )
             torch.save(model.state_dict(), save_path / f"ppo_update{update_count}.pt")
 
+    writer.close()
     return model
 
 

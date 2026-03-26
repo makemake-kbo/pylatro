@@ -1,0 +1,223 @@
+/* Balatro TUI Global Stylesheet */
+
+Screen {
+    background: #1a1a2e;
+    color: #ecf0f1;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 24;
+    background: #1c1c3a;
+    border-right: solid #5c5c8a;
+    padding: 1;
+}
+
+.sidebar-right {
+    width: 22;
+    background: #1c1c3a;
+    border-left: solid #5c5c8a;
+    padding: 1;
+}
+
+/* Card row */
+.card-row {
+    height: auto;
+    layout: horizontal;
+    align: center middle;
+    padding: 1 0;
+}
+
+/* Action buttons */
+.action-btn {
+    min-width: 14;
+    margin: 0 1;
+    text-align: center;
+}
+
+.btn-play {
+    background: #2980b9;
+    color: #ecf0f1;
+}
+
+.btn-play:hover {
+    background: #3498db;
+}
+
+.btn-discard {
+    background: #c0392b;
+    color: #ecf0f1;
+}
+
+.btn-discard:hover {
+    background: #e74c3c;
+}
+
+.btn-sort {
+    background: #7f8c8d;
+    color: #ecf0f1;
+}
+
+.btn-buy {
+    background: #27ae60;
+    color: #ecf0f1;
+}
+
+.btn-sell {
+    background: #e67e22;
+    color: #ecf0f1;
+}
+
+.btn-reroll {
+    background: #8e44ad;
+    color: #ecf0f1;
+}
+
+.btn-skip {
+    background: #95a5a6;
+    color: #1a1a2e;
+}
+
+.btn-disabled {
+    background: #4a4a6a;
+    color: #636e72;
+}
+
+/* Score display */
+.chips-text {
+    color: #42a5f5;
+}
+
+.mult-text {
+    color: #ef5350;
+}
+
+.gold-text {
+    color: #ffc107;
+}
+
+/* Panels */
+.panel {
+    background: #1c1c3a;
+    border: solid #5c5c8a;
+    padding: 1;
+    margin: 1;
+}
+
+.panel-title {
+    text-align: center;
+    text-style: bold;
+    color: #ecf0f1;
+    margin-bottom: 1;
+}
+
+/* Blind select panels */
+.blind-panel {
+    width: 1fr;
+    height: auto;
+    background: #1c1c3a;
+    border: solid #5c5c8a;
+    padding: 1;
+    margin: 1;
+}
+
+.blind-panel-selected {
+    border: heavy #f1c40f;
+}
+
+/* Shop */
+.shop-zone {
+    layout: horizontal;
+    height: auto;
+    padding: 1;
+}
+
+.shop-item {
+    width: auto;
+    margin: 0 1;
+    padding: 1;
+    background: #1c1c3a;
+    border: solid #5c5c8a;
+}
+
+.shop-item-affordable {
+    border: solid #27ae60;
+}
+
+.shop-item-unaffordable {
+    border: solid #c0392b;
+    opacity: 0.7;
+}
+
+/* Joker / consumable bars */
+.item-bar {
+    layout: horizontal;
+    height: 3;
+    padding: 0 1;
+}
+
+.item-slot {
+    width: auto;
+    min-width: 12;
+    margin: 0 1;
+    padding: 0 1;
+    background: #2c2c54;
+    border: solid #5c5c8a;
+}
+
+/* Progress bar */
+.progress-container {
+    height: 1;
+    margin: 0 1;
+}
+
+.progress-fill {
+    background: #42a5f5;
+}
+
+.progress-empty {
+    background: #4a4a6a;
+}
+
+/* Main menu */
+.menu-container {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+.menu-title {
+    text-align: center;
+    color: #e74c3c;
+    text-style: bold;
+    margin-bottom: 2;
+}
+
+.menu-btn {
+    min-width: 20;
+    margin: 1 0;
+    text-align: center;
+}
+
+/* Modals */
+.modal-overlay {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.modal-content {
+    width: 60;
+    height: auto;
+    max-height: 80%;
+    background: #1c1c3a;
+    border: heavy #5c5c8a;
+    padding: 2;
+}
+
+/* Hand label */
+.hand-label {
+    text-align: center;
+    text-style: bold;
+    color: #f1c40f;
+    height: 1;
+}

@@ -12,15 +12,25 @@ dependencies = [
     "lupa>=2.1",
 ]
 
+[project.optional-dependencies]
+cli = [
+    "textual>=1.0",
+]
+
+[project.scripts]
+pylatro = "pylatro_cli.__main__:main"
+
 [dependency-groups]
 dev = [
     "basedpyright>=1.22",
     "pytest>=8.3.5",
+    "pytest-asyncio>=1.0",
     "ruff>=0.9",
+    "textual-dev>=1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pylatro"]
+packages = ["src/pylatro", "src/pylatro_cli"]
 
 [tool.ruff]
 target-version = "py312"
@@ -38,3 +48,4 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+asyncio_mode = "auto"

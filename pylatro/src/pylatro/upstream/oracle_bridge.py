@@ -84,6 +84,8 @@ _SIGNATURES: dict[str, list[str]] = {
     "buy_card": ["index"],
     "use_consumable": ["index", "targets"],
     "open_pack": ["index"],
+    "claim_card": ["index"],
+    "close_pack": [],
     "reroll_shop": [],
     "skip_blind": [],
     "finish_shop": [],

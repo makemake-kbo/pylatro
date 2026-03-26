@@ -1684,7 +1684,251 @@ end
 
 function oracle.open_pack(state, index)
     G.GAME = state
-    -- Stub: booster pack opening
+    local data = state.data
+
+    -- Pop booster from shop (1-indexed)
+    local booster = table.remove(state.shop.boosters, index)
+    if not booster then return state end
+
+    state.dollars = state.dollars - booster.cost
+
+    -- Mark used_packs slot as USED
+    if booster.booster_pos then
+        while #state.current_round.used_packs < booster.booster_pos do
+            state.current_round.used_packs[#state.current_round.used_packs + 1] = ""
+        end
+        state.current_round.used_packs[booster.booster_pos] = "USED"
+    end
+
+    local center = data.centers[booster.center_key]
+    local name = center.name or ""
+    local config = type(center.config) == "table" and center.config or {}
+    local size = config.extra or 0
+    local choices = config.choose or 1
+
+    local cards = {}
+    for card_index = 1, size do
+        local card
+        if name:find("Arcana") then
+            if state.used_vouchers.v_omen_globe and pseudorandom("omen_globe") > 0.8 then
+                card = create_card_spec(state, "Spectral", nil, "ar2", "pack", true)
+            else
+                card = create_card_spec(state, "Tarot", nil, "ar1", "pack", true)
+            end
+        elseif name:find("Celestial") then
+            local forced_key = nil
+            if state.used_vouchers.v_telescope and card_index == 1 then
+                -- Find most played visible hand
+                local hand_name = nil
+                local hand_tally = 0
+                -- Use POKER_HANDS order
+                local poker_hands_order = {
+                    "Royal Flush", "Straight Flush", "Four of a Kind",
+                    "Full House", "Flush", "Straight", "Three of a Kind",
+                    "Two Pair", "Pair", "High Card",
+                    "Flush Five", "Flush House", "Five of a Kind",
+                }
+                for _, nk in ipairs(poker_hands_order) do
+                    local hand = state.hands[nk]
+                    if hand and hand.visible and hand.played > hand_tally then
+                        hand_name = nk
+                        hand_tally = hand.played
+                    end
+                end
+                if hand_name then
+                    for _, proto in ipairs(data.center_pools.Planet) do
+                        local pc = type(proto.config) == "table" and proto.config or {}
+                        if pc.hand_type == hand_name then
+                            forced_key = proto.key
+                            break
+                        end
+                    end
+                end
+            end
+            card = create_card_spec(state, "Planet", forced_key, "pl1", "pack", true)
+        elseif name:find("Spectral") then
+            card = create_card_spec(state, "Spectral", nil, "spe", "pack", true)
+        elseif name:find("Standard") then
+            local base_type
+            if pseudorandom("stdset" .. tostring(state.round_resets.ante)) > 0.6 then
+                base_type = "Enhanced"
+            else
+                base_type = "Base"
+            end
+            card = create_card_spec(state, base_type, nil, "sta", "pack", true)
+            card.edition = poll_edition(state, "standard_edition" .. tostring(state.round_resets.ante), 2, true)
+            local seal_poll = pseudorandom("stdseal" .. tostring(state.round_resets.ante))
+            if seal_poll > 1 - 0.02 * 10 then
+                local seal_type = pseudorandom("stdsealtype" .. tostring(state.round_resets.ante))
+                if seal_type > 0.75 then
+                    card.seal = "Red"
+                elseif seal_type > 0.5 then
+                    card.seal = "Blue"
+                elseif seal_type > 0.25 then
+                    card.seal = "Gold"
+                else
+                    card.seal = "Purple"
+                end
+            end
+        elseif name:find("Buffoon") then
+            card = create_card_spec(state, "Joker", nil, "buf", "pack", true)
+        else
+            error("Unknown booster pack: " .. name)
+        end
+
+        -- Recalculate cost if edition or rental
+        if card.edition or card.rental then
+            card.cost = calculate_cost(state, data.centers[card.center_key], card.edition, card.rental)
+        end
+        cards[#cards + 1] = card
+    end
+
+    state.pack = {
+        booster_key = booster.center_key,
+        cards = cards,
+        choices_remaining = choices,
+        source_slot = booster.booster_pos,
+    }
+
+    -- apply_open_booster: joker effects (no-op if no jokers)
+    return state
+end
+
+function oracle.claim_card(state, index)
+    G.GAME = state
+    local data = state.data
+
+    if not state.pack then return state end
+
+    local card = table.remove(state.pack.cards, index)
+    if not card then return state end
+
+    local center = data.centers[card.center_key]
+
+    if center.set == "Default" or center.set == "Enhanced" then
+        -- Playing card: add to deck_cards and draw_pile
+        local suit_letter = card.front_key:sub(1, 1)
+        local sm = { S = "Spades", H = "Hearts", D = "Diamonds", C = "Clubs" }
+        local new_card = {
+            front_key = card.front_key,
+            suit = sm[suit_letter] or "",
+            rank = card.front_key:sub(3, 3),
+            center_key = card.center_key,
+            seal = card.seal,
+            debuff = false, destroyed = false, shattered = false,
+            played_this_ante = false, discarded = false, face_down = false,
+            forced_selection = false, times_played = 0, perma_bonus = 0,
+        }
+        state.deck_cards[#state.deck_cards + 1] = new_card
+        state.draw_pile[#state.draw_pile + 1] = new_card
+    elseif center.consumeable then
+        -- Consumable
+        local cons = {
+            center_key = card.center_key,
+            edition = card.edition,
+            sell_cost = math.max(1, math.floor(card.cost / 2)),
+        }
+        state.consumables[#state.consumables + 1] = cons
+    else
+        -- Joker
+        local config = center.config or {}
+        local extra = config.extra
+        if type(extra) == "table" then
+            local copy = {}
+            for k, v in pairs(extra) do copy[k] = v end
+            extra = copy
+        end
+
+        local joker = {
+            center_key = card.center_key,
+            edition = card.edition,
+            eternal = card.eternal or false,
+            perishable = card.perishable or false,
+            rental = card.rental or false,
+            mult = tonumber(config.mult) or 0,
+            h_mult = tonumber(config.h_mult) or 0,
+            h_x_mult = tonumber(config.h_x_mult) or 0,
+            h_dollars = tonumber(config.h_dollars) or 0,
+            p_dollars = tonumber(config.p_dollars) or 0,
+            t_mult = tonumber(config.t_mult) or 0,
+            t_chips = tonumber(config.t_chips) or 0,
+            x_mult = tonumber(config.Xmult) or 1,
+            h_size = tonumber(config.h_size) or 0,
+            d_size = tonumber(config.d_size) or 0,
+            extra = extra,
+            type = tostring(config.type or ""),
+            hands_played_at_create = state.hands_played,
+            sell_cost = math.max(1, math.floor(card.cost / 2)),
+        }
+
+        state.jokers[#state.jokers + 1] = joker
+        if not state.joker_keys then state.joker_keys = {} end
+        state.joker_keys[#state.joker_keys + 1] = card.center_key
+
+        -- Apply stat modifiers (same as buy_card)
+        if joker.d_size > 0 then
+            state.round_resets.discards = state.round_resets.discards + joker.d_size
+            state.current_round.discards_left = state.current_round.discards_left + joker.d_size
+        end
+        if joker.h_size ~= 0 then
+            state.starting_params.hand_size = state.starting_params.hand_size + joker.h_size
+            state.current_round.hand_size = state.current_round.hand_size + joker.h_size
+        end
+
+        local cname = center.name
+        if cname == "Credit Card" and type(joker.extra) == "number" then
+            state.bankrupt_at = (state.bankrupt_at or 0) - joker.extra
+        elseif cname == "Chaos the Clown" then
+            state.current_round.free_rerolls = (state.current_round.free_rerolls or 0) + 1
+        elseif cname == "Oops! All 6s" then
+            for k, v in pairs(state.probabilities) do
+                state.probabilities[k] = v * 2
+            end
+        elseif cname == "To the Moon" and type(joker.extra) == "number" then
+            state.interest_amount = (state.interest_amount or 5) + joker.extra
+        elseif cname == "Troubadour" and type(joker.extra) == "table" then
+            local h_size = tonumber(joker.extra.h_size) or 0
+            local h_plays = tonumber(joker.extra.h_plays) or 0
+            state.starting_params.hand_size = state.starting_params.hand_size + h_size
+            state.round_resets.hands = state.round_resets.hands + h_plays
+            state.current_round.hand_size = state.current_round.hand_size + h_size
+        elseif cname == "Stuntman" and type(joker.extra) == "table" then
+            local h_size = tonumber(joker.extra.h_size) or 0
+            state.starting_params.hand_size = state.starting_params.hand_size - h_size
+            state.current_round.hand_size = state.current_round.hand_size - h_size
+        elseif cname == "Turtle Bean" and type(joker.extra) == "table" then
+            local h_size = tonumber(joker.extra.h_size) or 0
+            state.starting_params.hand_size = state.starting_params.hand_size + h_size
+            state.current_round.hand_size = state.current_round.hand_size + h_size
+        elseif cname == "To Do List" then
+            local visible_hands = {}
+            for hand_name, hand in pairs(state.hands) do
+                if hand.visible then
+                    visible_hands[#visible_hands + 1] = hand_name
+                end
+            end
+            if #visible_hands > 0 then
+                local seed = pseudoseed("to_do", state.pseudorandom)
+                local hand_name = pseudorandom_element(visible_hands, seed)
+                joker.to_do_poker_hand = hand_name
+            end
+        end
+        if card.edition and type(card.edition) == "table" and card.edition.negative then
+            state.starting_params.joker_slots = state.starting_params.joker_slots + 1
+        end
+    end
+
+    state.pack.choices_remaining = math.max(0, state.pack.choices_remaining - 1)
+    if state.pack.choices_remaining == 0 then
+        state.pack = nil
+    end
+
+    return state
+end
+
+function oracle.close_pack(state)
+    G.GAME = state
+    state.pack = nil
     return state
 end
 

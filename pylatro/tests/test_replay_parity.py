@@ -384,6 +384,51 @@ def test_ante_parity(target_ante):
     _run_bot_until_ante(py_state, bridge, lua_raw, target_ante)
 
 
+# --- Task 3: Substep parity — open_pack ---
+
+def test_substep_parity_open_pack():
+    """Opening a booster pack and claiming a card produces identical state."""
+    data = load_game_data()
+    py_state = create_run_state("AAAAAAAA", data=data)
+    from pylatro.flow import start_blind, play_cards
+    from pylatro.blind import cash_out
+    from pylatro.shop import populate_shop, open_booster_pack, claim_pack_card, close_pack
+
+    start_blind(py_state, "Small")
+    for _ in range(4):
+        play_cards(py_state, list(range(min(5, len(py_state.hand_cards)))))
+    py_state.round_resets.blind_states["Small"] = "Defeated"
+    py_state.round_resets.blind_states["Big"] = "Select"
+    py_state.blind_on_deck = "Big"
+    cash_out(py_state)
+    populate_shop(py_state)
+
+    if py_state.shop.boosters and py_state.dollars >= py_state.shop.boosters[0].cost:
+        open_booster_pack(py_state, 0)
+        if py_state.pack and py_state.pack.cards:
+            claim_pack_card(py_state, 0)
+        if py_state.pack:
+            close_pack(py_state)
+
+    bridge = OracleBridge()
+    lua_raw = bridge.create_run("AAAAAAAA")
+    lua_raw = bridge.step(lua_raw, "start_blind", blind_type="Small")
+    for _ in range(4):
+        lua_raw = bridge.step(lua_raw, "play_hand", card_indices=[1, 2, 3, 4, 5])
+    lua_raw = bridge.step(lua_raw, "defeat_blind")
+    lua_raw = bridge.step(lua_raw, "populate_shop")
+    lua_snap_pre = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    if lua_snap_pre.get("shop_boosters"):
+        lua_raw = bridge.step(lua_raw, "open_pack", index=1)  # 1-indexed
+        lua_raw = bridge.step(lua_raw, "claim_card", index=1)
+        lua_raw = bridge.step(lua_raw, "close_pack")
+
+    py_snap = snapshot_from_run_state(py_state)
+    lua_snap = snapshot_from_lua_state(bridge.snapshot(lua_raw))
+    diffs = diff_snapshots(py_snap, lua_snap)
+    assert diffs == [], f"Divergences: {diffs}"
+
+
 # --- Task 9: Full run parity ---
 
 @pytest.mark.slow

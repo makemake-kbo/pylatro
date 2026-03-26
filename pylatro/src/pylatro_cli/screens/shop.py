@@ -88,8 +88,7 @@ class ShopScreen(Screen):
     }
     """
 
-    # Zone: 0=cards, 1=boosters, 2=vouchers
-    zone: reactive[int] = reactive(0)
+    # Flat cursor across all shop items (cards, then boosters, then vouchers)
     cursor: reactive[int] = reactive(0)
 
     def compose(self) -> ComposeResult:
@@ -127,15 +126,15 @@ class ShopScreen(Screen):
         self.query_one("#shop-header", Static).update(f"Shop — ${state.dollars}")
 
         # Cards
-        items_text = self._render_shop_items(state.shop.cards, state.dollars)
+        items_text = self._render_shop_items(state.shop.cards, state.dollars, 0)
         self.query_one("#shop-items-display", Static).update(items_text)
 
         # Boosters
-        boosters_text = self._render_shop_items(state.shop.boosters, state.dollars)
+        boosters_text = self._render_shop_items(state.shop.boosters, state.dollars, 1)
         self.query_one("#shop-boosters-display", Static).update(boosters_text)
 
         # Vouchers
-        vouchers_text = self._render_shop_items(state.shop.vouchers, state.dollars)
+        vouchers_text = self._render_shop_items(state.shop.vouchers, state.dollars, 2)
         self.query_one("#shop-vouchers-display", Static).update(vouchers_text)
 
         # Reroll button cost
@@ -146,7 +145,30 @@ class ShopScreen(Screen):
         self.query_one("#shop-joker-bar", JokerBar).update_jokers(state.jokers, state.data)
         self.query_one("#shop-consumable-bar", ConsumableBar).update_consumables(state.consumables, state.data)
 
-    def _render_shop_items(self, items: list, dollars: int) -> Text:
+    def _all_items(self) -> list:
+        """Flat list of all shop items across zones."""
+        state = self._ctrl().state
+        if state is None:
+            return []
+        return list(state.shop.cards) + list(state.shop.boosters) + list(state.shop.vouchers)
+
+    def _zone_and_local_index(self) -> tuple[int, int]:
+        """Convert flat cursor to (zone, local_index)."""
+        state = self._ctrl().state
+        if state is None:
+            return 0, 0
+        n_cards = len(state.shop.cards)
+        n_boosters = len(state.shop.boosters)
+        pos = self.cursor
+        if pos < n_cards:
+            return 0, pos
+        pos -= n_cards
+        if pos < n_boosters:
+            return 1, pos
+        pos -= n_boosters
+        return 2, pos
+
+    def _render_shop_items(self, items: list, dollars: int, zone_id: int) -> Text:
         if not items:
             return Text("  (empty)", style=BALATRO_PALETTE["text_muted"])
 
@@ -154,14 +176,14 @@ class ShopScreen(Screen):
         state = ctrl.state
         t = Text()
 
-        zone_items = self._current_zone_items()
+        current_zone, local_cursor = self._zone_and_local_index()
+
         for i, item in enumerate(items):
             center = state.data.centers.get(item.center_key, {})
             name = center.get("name", item.center_key)
             affordable = dollars >= item.cost
 
-            # Check if this item is focused
-            is_focused = (items is zone_items) and (i == self.cursor)
+            is_focused = (zone_id == current_zone) and (i == local_cursor)
 
             if is_focused:
                 t.append(" >> ", style=BALATRO_PALETTE["card_selected"])
@@ -178,24 +200,6 @@ class ShopScreen(Screen):
 
         return t
 
-    def _current_zone_items(self) -> list:
-        state = self._ctrl().state
-        if state is None:
-            return []
-        match self.zone:
-            case 0:
-                return state.shop.cards
-            case 1:
-                return state.shop.boosters
-            case 2:
-                return state.shop.vouchers
-        return []
-
-    def watch_zone(self, value: int) -> None:
-        self.cursor = 0
-        if self.is_mounted:
-            self._refresh_display()
-
     def watch_cursor(self, value: int) -> None:
         if self.is_mounted:
             self._refresh_display()
@@ -205,17 +209,18 @@ class ShopScreen(Screen):
             self.cursor -= 1
 
     def action_cursor_right(self) -> None:
-        items = self._current_zone_items()
-        if self.cursor < len(items) - 1:
+        all_items = self._all_items()
+        if self.cursor < len(all_items) - 1:
             self.cursor += 1
 
     def action_cursor_up(self) -> None:
-        if self.zone > 0:
-            self.zone -= 1
+        if self.cursor > 0:
+            self.cursor -= 1
 
     def action_cursor_down(self) -> None:
-        if self.zone < 2:
-            self.zone += 1
+        all_items = self._all_items()
+        if self.cursor < len(all_items) - 1:
+            self.cursor += 1
 
     def action_buy_item(self) -> None:
         ctrl = self._ctrl()
@@ -223,31 +228,37 @@ class ShopScreen(Screen):
         if state is None:
             return
 
-        items = self._current_zone_items()
-        if not items or self.cursor >= len(items):
+        all_items = self._all_items()
+        if not all_items or self.cursor >= len(all_items):
             return
 
-        item = items[self.cursor]
+        item = all_items[self.cursor]
+        zone, local_idx = self._zone_and_local_index()
 
         if state.dollars < item.cost:
             self.notify("Not enough money!", severity="warning")
             return
 
         try:
-            if self.zone == 2:  # Voucher
+            if zone == 2:  # Voucher
                 ctrl.buy_voucher(item.center_key)
-            elif self.zone == 1:  # Booster
-                pack = ctrl.open_pack(self.cursor)
+            elif zone == 1:  # Booster
+                pack = ctrl.open_pack(local_idx)
                 from .booster_pack import BoosterPackScreen
 
                 self.app.push_screen(BoosterPackScreen())
                 return
             else:
-                ctrl.buy_card(self.cursor)
+                ctrl.buy_card(local_idx)
 
             self.notify(f"Bought {state.data.centers.get(item.center_key, {}).get('name', item.center_key)}")
         except Exception as e:
             self.notify(f"Cannot buy: {e}", severity="error")
+
+        # Clamp cursor after item removal
+        all_items = self._all_items()
+        if self.cursor >= len(all_items):
+            self.cursor = max(0, len(all_items) - 1)
 
         self._refresh_display()
 

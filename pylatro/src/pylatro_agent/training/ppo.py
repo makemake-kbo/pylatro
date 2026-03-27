@@ -105,25 +105,21 @@ def train_ppo(
 
                 actions = dist.sample()
                 log_probs = dist.log_prob(actions)
-                values = value_dict["win_prob"]
+                values = value_dict["expected_score"]
 
             for i, env in enumerate(envs):
                 action = actions[i].item()
                 value = values[i].item()
                 log_prob = log_probs[i].item()
 
-                buffer.add(obs_list[i], action, 0.0, value, log_prob, False)
-
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
 
-                # Update reward in buffer
-                buffer.rewards[-config.num_envs + i] = reward
+                buffer.add(obs_list[i], action, reward, value, log_prob, done)
                 env_ep_reward[i] += reward
                 env_ep_length[i] += 1
 
                 if done:
-                    buffer.dones[-config.num_envs + i] = True
                     episode_rewards.append(env_ep_reward[i])
                     episode_lengths.append(env_ep_length[i])
                     episode_wins.append(info.get("won", False))
@@ -141,7 +137,7 @@ def train_ppo(
                 batch["tokens"], batch["token_types"], batch["scalars"],
                 batch["attention_mask"], batch["action_mask"],
             )
-            last_values = value_dict["win_prob"].cpu().numpy()
+            last_values = value_dict["expected_score"].cpu().numpy()
 
         # Average last values for buffer computation
         buffer.compute_returns_and_advantages(last_value=float(last_values.mean()))
@@ -173,8 +169,8 @@ def train_ppo(
                 surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
-                # Value loss
-                value_loss = F.mse_loss(value_dict["win_prob"], batch["returns"].clamp(0, 1))
+                # Value loss — use unbounded expected_score head for PPO value
+                value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
                 loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
 

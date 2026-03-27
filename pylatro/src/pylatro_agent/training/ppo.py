@@ -25,23 +25,23 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PPOConfig:
     num_envs: int = 32
-    rollout_length: int = 256
+    rollout_length: int = 512
     total_timesteps: int = 1_000_000
     ppo_epochs: int = 4
     mini_batch_size: int = 64
     gamma: float = 0.995
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.2
-    entropy_coeff: float = 0.01
+    entropy_coeff: float = 0.005
     entropy_decay: float = 0.9999
     value_loss_coeff: float = 0.5
     max_grad_norm: float = 1.0
-    lr: float = 3e-4
+    lr: float = 1e-4
     device: str = "cpu"
     save_dir: str = "checkpoints/ppo"
     log_dir: str = "runs/ppo"
-    eval_interval: int = 10
-    eval_games: int = 20
+    eval_interval: int = 50
+    eval_games: int = 10
 
 
 def train_ppo(
@@ -91,7 +91,7 @@ def train_ppo(
     env_ep_length = [0] * config.num_envs
 
     while total_steps < config.total_timesteps:
-        buffer = RolloutBuffer(gamma=config.gamma, gae_lambda=config.gae_lambda)
+        buffer = RolloutBuffer(num_envs=config.num_envs, gamma=config.gamma, gae_lambda=config.gae_lambda)
 
         # Collect rollouts
         model.eval()
@@ -115,7 +115,7 @@ def train_ppo(
                 obs, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
 
-                buffer.add(obs_list[i], action, reward, value, log_prob, done)
+                buffer.add(i, obs_list[i], action, reward, value, log_prob, done)
                 env_ep_reward[i] += reward
                 env_ep_length[i] += 1
 
@@ -130,17 +130,16 @@ def train_ppo(
                 obs_list[i] = obs
                 total_steps += 1
 
-        # Compute last values for GAE
+        # Compute per-env last values for GAE bootstrap
         with torch.no_grad():
             batch = _obs_list_to_batch(obs_list, device)
             _, value_dict = model(
                 batch["tokens"], batch["token_types"], batch["scalars"],
                 batch["attention_mask"], batch["action_mask"],
             )
-            last_values = value_dict["expected_score"].cpu().numpy()
+            last_values = value_dict["expected_score"].cpu().numpy().tolist()
 
-        # Average last values for buffer computation
-        buffer.compute_returns_and_advantages(last_value=float(last_values.mean()))
+        buffer.compute_returns_and_advantages(last_values=last_values)
 
         # PPO update
         model.train()

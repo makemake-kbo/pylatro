@@ -31,11 +31,9 @@ def default_reward(
         blind_beaten: bool — whether blind was beaten before this step
         hands_left: int — hands_left before this step
         dollars: int — dollars before this step
+        in_shop: bool — whether we were in shop phase before this step
     """
     reward = 0.0
-
-    # Per-step cost
-    reward -= 0.001
 
     if terminated:
         if won:
@@ -44,42 +42,33 @@ def default_reward(
             reward -= 10.0
         return reward
 
-    # Beat a blind (transition from not beaten to beaten)
-    prev_beaten = prev_state_info.get("blind_beaten", False)
-    curr_blind = state.round_resets.blind
-    if curr_blind is not None:
-        from pylatro import get_blind_amount
-        from math import floor
-        ante = state.round_resets.ante
-        scaling = min(state.stake, 3)
-        base = get_blind_amount(ante, scaling)
-        mult = curr_blind.get("mult", 1)
-        target = floor(base * mult)
-    else:
-        target = 0
-
-    # Check if we just beat the blind via round_score exceeding target
-    # We use the prev_state_info to detect transitions
     prev_ante = prev_state_info.get("ante", 1)
     curr_ante = state.round_resets.ante
 
-    # Ante advanced (boss beaten)
+    # Ante advanced (boss beaten) — biggest non-terminal signal
     if curr_ante > prev_ante:
-        reward += 0.5
+        reward += 1.0
 
-    # Hands remaining bonus after beating blind
-    prev_hands = prev_state_info.get("hands_left", 0)
-    curr_hands = state.current_round.hands_left
-    if not prev_beaten and prev_state_info.get("round_score", 0) < target:
-        # Did not just beat a blind
-        pass
+    # Beat a blind (transition into shop from hand play)
+    prev_in_shop = prev_state_info.get("in_shop", False)
+    curr_in_shop = not bool(state.round_resets.blind) or state.round_resets.blind_states.get(
+        state.blind_on_deck or "Small", ""
+    ) in ("Defeated", "Skipped")
+    prev_beaten = prev_state_info.get("blind_beaten", False)
+    if not prev_beaten and not prev_in_shop:
+        # We were playing a blind. Check if we just beat it.
+        # Detect via hands_left — if prev had hands and now we're in shop, we beat it
+        if prev_state_info.get("hands_left", 0) > 0 and curr_ante == prev_ante:
+            # Hands remaining efficiency bonus (only on blind-beat transition)
+            # Can't easily detect the exact transition here, so we skip mid-blind bonuses
+            pass
 
-    # Interest earned bonus
-    prev_dollars = prev_state_info.get("dollars", 0)
-    dollar_gain = state.dollars - prev_dollars
-    if dollar_gain > 0:
-        interest_tier = min(state.dollars // 5, state.interest_cap // 5)
-        reward += 0.05 * interest_tier
+    # Interest earned — only reward *actual* interest at cash_out (shop entry).
+    # Detect by checking if we just entered shop (dollars jumped from interest).
+    # We approximate: reward at ante advance based on savings tier.
+    if curr_ante > prev_ante:
+        interest_tier = min(prev_state_info.get("dollars", 0) // 5, state.interest_cap // 5)
+        reward += 0.1 * min(interest_tier, 5)
 
     return reward
 

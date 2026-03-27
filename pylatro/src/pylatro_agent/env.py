@@ -115,12 +115,15 @@ class BalatroEnv(gymnasium.Env):
 
         try:
             self._execute_action(decoded)
-        except Exception:
-            # Invalid action — penalize and terminate
-            terminated = True
-            reward = -10.0
+        except Exception as e:
+            # Invalid action — log and give small penalty, but don't terminate.
+            # Masking should prevent this; if it happens it's a bug to investigate.
+            import logging
+            logging.getLogger(__name__).warning(f"Action {action} raised {type(e).__name__}: {e}")
+            reward = -1.0
             obs = self._build_obs()
-            return self._obs_to_dict(obs), reward, terminated, truncated, {"error": "invalid_action"}
+            info = {"sub_phase": self._sub_phase, "error": str(e)}
+            return self._obs_to_dict(obs), reward, False, False, info
 
         # Check terminal conditions
         if self._controller.phase == GamePhase.GAME_OVER:
@@ -349,4 +352,5 @@ class BalatroEnv(gymnasium.Env):
             "blind_beaten": self._controller.blind_beaten() if self._controller.phase == GamePhase.HAND_PLAY else False,
             "hands_left": state.current_round.hands_left,
             "dollars": state.dollars,
+            "in_shop": self._controller.phase == GamePhase.SHOP,
         }

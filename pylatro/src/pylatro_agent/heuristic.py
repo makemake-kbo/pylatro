@@ -53,6 +53,27 @@ class HeuristicAgent:
                 if center.get("set") == "Planet" and can_use_consumable(state, cons):
                     return ActionRange.USE_CONSUMABLE
 
+        # Check if current hand has a real poker hand (pair or better)
+        hand = state.hand_cards
+        has_good_hand = False
+        if hand:
+            best = self._find_best_hand(state, hand)
+            cards = [hand[i] for i in best]
+            try:
+                result = evaluate_poker_hand(state, cards)
+                for hname in ["Flush Five", "Flush House", "Five of a Kind", "Straight Flush",
+                              "Four of a Kind", "Full House", "Flush", "Straight",
+                              "Three of a Kind", "Two Pair", "Pair"]:
+                    if result.get(hname) and any(result[hname]):
+                        has_good_hand = True
+                        break
+            except Exception:
+                pass
+
+        # Discard first if hand is weak and we have discards
+        if not has_good_hand and mask[ActionRange.DISCARD] and state.current_round.discards_left > 0:
+            return ActionRange.DISCARD
+
         # Play if we can
         if mask[ActionRange.PLAY_HAND]:
             return ActionRange.PLAY_HAND
@@ -127,10 +148,10 @@ class HeuristicAgent:
                             best_hand_name = hand_name
                         break
 
-        if not best_indices and hand:
-            # Fallback: pick highest card
-            best_idx = max(range(len(hand)), key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
-            best_indices = {best_idx}
+        # If only High Card, play the 5 highest-value cards for max chips
+        if best_hand_name == "High Card" or not best_indices:
+            ranked = sorted(range(len(hand)), key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+            best_indices = set(ranked[:max_cards])
 
         return best_indices
 

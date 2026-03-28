@@ -14,3 +14,113 @@ The current implementation includes:
 - headless hand evaluation and scoring for a growing subset of card, edition, deck, and joker interactions
 - joker instance tracking with preserved in-run order for copy and position-sensitive effects
 - differential and behavior tests over the deterministic core
+
+---
+
+## Pylatro Agent
+
+Transformer-based RL agent that learns to play Balatro via supervised pretraining from a heuristic agent, then PPO fine-tuning.
+
+### Architecture
+
+- **Model**: 8-layer transformer encoder (~10M params), d_model=256, 8 heads
+- **Observation**: Tokenized game state (cards, jokers, shop, blinds) + scalar features
+- **Action space**: Flat `Discrete(71)` with masking across 6 sub-phases
+- **Training**: Supervised imitation learning → PPO reinforcement learning
+
+### Setup
+
+```bash
+uv sync --extra agent
+```
+
+### Training
+
+#### Phase 1: Supervised Pretraining
+
+Generates games from a rule-based heuristic agent and trains the model to imitate it.
+
+```bash
+# Quick test (100 games, 3 epochs)
+uv run python train.py supervised --games 100 --epochs 3 --device mps
+
+# Full pretraining (5000 games, 10 epochs)
+uv run python train.py supervised --games 5000 --epochs 10 --device mps
+```
+
+Checkpoints saved to `checkpoints/supervised/`. TensorBoard logs in `runs/supervised/`.
+
+#### Phase 2: PPO Fine-Tuning
+
+Reinforcement learning from self-play, starting from the pretrained checkpoint.
+
+```bash
+# From pretrained checkpoint
+uv run python train.py ppo \
+  --pretrained checkpoints/supervised/supervised_epoch10.pt \
+  --envs 16 --steps 4000000 --device mps
+
+# Shorter run for testing
+uv run python train.py ppo \
+  --pretrained checkpoints/supervised/supervised_epoch5.pt \
+  --envs 8 --steps 500000 --device mps
+```
+
+Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
+
+#### Monitoring
+
+```bash
+tensorboard --logdir runs/
+```
+
+### Playing
+
+#### Trained model
+
+```bash
+# Evaluate a checkpoint over 20 games
+uv run python play.py --checkpoint checkpoints/ppo/ppo_update100.pt --games 20
+
+# Evaluate supervised checkpoint
+uv run python play.py --checkpoint checkpoints/supervised/supervised_epoch10.pt --games 50
+```
+
+#### Heuristic baseline
+
+```bash
+uv run python play.py --heuristic --games 50
+```
+
+#### Options
+
+```
+--games N       Number of games to play (default: 10)
+--seed N        Starting random seed (default: 0)
+--device DEV    cpu, mps, or cuda (default: auto-detect)
+```
+
+### Agent Structure
+
+```
+src/pylatro_agent/
+├── agent.py              # Top-level BalatroAgent nn.Module
+├── env.py                # Gymnasium environment wrapping GameController
+├── heuristic.py          # Rule-based agent for pretraining data
+├── action.py             # Action encoding/decoding
+├── masks.py              # Valid action mask computation
+├── reward.py             # Reward shaping functions
+├── tokenizer.py          # RunState → token/scalar arrays
+├── vocab.py              # Vocabulary built from GameData
+├── constants.py          # Action layout, dimensions, sub-phases
+├── embeddings.py         # Per-token-type embedding layers
+├── backbone.py           # Transformer encoder
+├── action_heads.py       # Per-sub-phase action heads
+├── value_head.py         # Win prob + expected score prediction
+├── distributions.py      # Masked categorical distribution
+└── training/
+    ├── supervised.py     # Phase 1: imitation learning
+    ├── ppo.py            # Phase 2: PPO training
+    ├── rollout_buffer.py # Experience storage for PPO
+    └── self_play.py      # Phase 3: self-play (WIP)
+```

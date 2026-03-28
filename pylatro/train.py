@@ -60,7 +60,7 @@ def main():
         train_ppo(
             PPOConfig(
                 num_envs=args.envs,
-                rollout_length=512,
+                rollout_length=2048,
                 total_timesteps=args.steps,
                 mini_batch_size=min(32, args.batch),
                 device=device,

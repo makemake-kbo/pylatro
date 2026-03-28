@@ -25,16 +25,16 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PPOConfig:
     num_envs: int = 32
-    rollout_length: int = 512
+    rollout_length: int = 2048
     total_timesteps: int = 1_000_000
     ppo_epochs: int = 4
     mini_batch_size: int = 64
     gamma: float = 0.995
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1
-    entropy_coeff: float = 0.03
+    entropy_coeff: float = 0.003
     entropy_decay: float = 0.9999
-    entropy_floor: float = 0.005
+    entropy_floor: float = 0.001
     value_loss_coeff: float = 0.5
     max_grad_norm: float = 0.5
     lr: float = 2e-5
@@ -197,6 +197,13 @@ def train_ppo(
         writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
+
+        # Value/advantage diagnostics — critical for debugging PPO
+        if buffer._flat_returns is not None and len(buffer._flat_returns) > 0:
+            writer.add_scalar("debug/returns_mean", float(np.mean(buffer._flat_returns)), update_count)
+            writer.add_scalar("debug/returns_std", float(np.std(buffer._flat_returns)), update_count)
+            writer.add_scalar("debug/advantages_mean", float(np.mean(buffer._flat_advantages)), update_count)
+            writer.add_scalar("debug/advantages_std", float(np.std(buffer._flat_advantages)), update_count)
 
         # TensorBoard: episode stats (from completed episodes this rollout)
         if episode_rewards:

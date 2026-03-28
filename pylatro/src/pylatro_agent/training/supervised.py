@@ -43,8 +43,13 @@ def generate_training_data(
     num_games: int,
     data: GameData | None = None,
     vocab: Vocab | None = None,
+    min_blinds_beaten: int = 2,
 ) -> list[dict[str, Any]]:
-    """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples."""
+    """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
+
+    Only keeps games where at least min_blinds_beaten blinds were beaten,
+    filtering out low-quality games that would teach bad strategy.
+    """
     if data is None:
         data = load_game_data()
     if vocab is None:
@@ -52,12 +57,16 @@ def generate_training_data(
 
     agent = HeuristicAgent()
     records: list[dict[str, Any]] = []
+    games_kept = 0
+    games_total = 0
 
-    for game_idx in range(num_games):
-        env = BalatroEnv(seed=game_idx, data=data, vocab=vocab)
+    seed = 0
+    while games_kept < num_games:
+        env = BalatroEnv(seed=seed, data=data, vocab=vocab)
         obs, info = env.reset()
         done = False
         game_records: list[dict[str, Any]] = []
+        blinds_beaten = 0
 
         while not done:
             mask = obs["action_mask"]
@@ -72,15 +81,31 @@ def generate_training_data(
             game_records.append({"obs": obs, "action": action})
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
+            if env._blind_just_beaten:
+                blinds_beaten += 1
 
+        seed += 1
+        games_total += 1
         won = info.get("won", False)
-        for rec in game_records:
-            rec["won"] = won
-            records.append(rec)
 
-        if (game_idx + 1) % 100 == 0:
-            logger.info(f"Generated {game_idx + 1}/{num_games} games, {len(records)} records")
+        # Filter: only keep games that beat enough blinds
+        if blinds_beaten >= min_blinds_beaten or won:
+            games_kept += 1
+            for rec in game_records:
+                rec["won"] = won
+                rec["blinds_beaten"] = blinds_beaten
+                records.append(rec)
 
+        if games_total % 200 == 0:
+            logger.info(
+                f"Played {games_total} games, kept {games_kept}/{num_games}, "
+                f"{len(records)} records (filter rate: {games_kept/games_total:.0%})"
+            )
+
+    logger.info(
+        f"Done: played {games_total} games to get {games_kept} quality games "
+        f"({len(records)} records, keep rate: {games_kept/games_total:.0%})"
+    )
     return records
 
 

@@ -60,6 +60,9 @@ def default_reward(
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         reward += 0.1 * min(interest_tier, 5)
 
+    # Small per-step cost to discourage looping (toggling cards without confirming)
+    reward -= 0.001
+
     return reward
 
 

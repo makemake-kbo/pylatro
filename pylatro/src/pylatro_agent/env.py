@@ -35,7 +35,7 @@ class BalatroEnv(gymnasium.Env):
         stake: int = 1,
         deck_key: str = "b_red",
         objective: str = "win",
-        max_steps: int = 10000,
+        max_steps: int = 2000,
         reward_fn: RewardFn | None = None,
         data: GameData | None = None,
         vocab: Vocab | None = None,

@@ -53,34 +53,41 @@ class HeuristicAgent:
                 if center.get("set") == "Planet" and can_use_consumable(state, cons):
                     return ActionRange.USE_CONSUMABLE
 
-        # Check if current hand has a real poker hand (pair or better)
         hand = state.hand_cards
-        has_good_hand = False
-        if hand:
-            best = self._find_best_hand(state, hand)
-            cards = [hand[i] for i in best]
-            try:
-                result = evaluate_poker_hand(state, cards)
-                for hname in ["Flush Five", "Flush House", "Five of a Kind", "Straight Flush",
-                              "Four of a Kind", "Full House", "Flush", "Straight",
-                              "Three of a Kind", "Two Pair", "Pair"]:
-                    if result.get(hname) and any(result[hname]):
-                        has_good_hand = True
-                        break
-            except Exception:
-                pass
+        can_discard = mask[ActionRange.DISCARD] and state.current_round.discards_left > 0
+        hand_quality = self._evaluate_hand_quality(state, hand) if hand else 0
 
-        # Discard first if hand is weak and we have discards
-        if not has_good_hand and mask[ActionRange.DISCARD] and state.current_round.discards_left > 0:
+        # Strong hands (two pair+, flush, straight): play immediately
+        # Weak hands with discards left: try to improve
+        # Pair only: play if no discards, otherwise discard to try for better
+        if hand_quality < 2 and can_discard:
             return ActionRange.DISCARD
 
         # Play if we can
         if mask[ActionRange.PLAY_HAND]:
             return ActionRange.PLAY_HAND
-        # Otherwise discard
         if mask[ActionRange.DISCARD]:
             return ActionRange.DISCARD
         return self._random_valid(mask)
+
+    def _evaluate_hand_quality(self, state: RunState, hand: list[PlayingCard]) -> int:
+        """Rate the best hand quality: 0=high card, 1=pair, 2=two pair, 3+=better."""
+        quality_map = {
+            "Flush Five": 8, "Flush House": 7, "Five of a Kind": 6,
+            "Straight Flush": 5, "Four of a Kind": 4, "Full House": 3,
+            "Flush": 3, "Straight": 3, "Three of a Kind": 2, "Two Pair": 2,
+            "Pair": 1, "High Card": 0,
+        }
+        best = self._find_best_hand(state, hand)
+        cards = [hand[i] for i in best]
+        try:
+            result = evaluate_poker_hand(state, cards)
+            for hname, quality in quality_map.items():
+                if result.get(hname) and any(result[hname]):
+                    return quality
+        except Exception:
+            pass
+        return 0
 
     def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
         """Pick cards forming the best poker hand, then confirm."""
@@ -93,8 +100,16 @@ class HeuristicAgent:
         if pending == "play":
             best_cards = self._find_best_hand(state, hand)
         else:
-            # For discard, select lowest-value cards (up to 5)
-            best_cards = self._find_worst_cards(state, hand, max_discard=min(5, len(hand)))
+            # For discard, find cards NOT in our best potential hand and discard those
+            keep = self._find_best_hand(state, hand)
+            discard = set(range(len(hand))) - keep
+            # Cap at 5 discards, prioritize discarding worst cards
+            if len(discard) > 5:
+                worst = self._find_worst_cards(state, hand, max_discard=5)
+                discard = discard & worst
+                if not discard:
+                    discard = worst
+            best_cards = discard if discard else self._find_worst_cards(state, hand, max_discard=min(3, len(hand)))
 
         best_indices = set(best_cards)
 
@@ -156,8 +171,46 @@ class HeuristicAgent:
         return best_indices
 
     def _find_worst_cards(self, state: RunState, hand: list[PlayingCard], max_discard: int) -> set[int]:
-        """Find indices of least valuable cards to discard."""
-        ranked = sorted(range(len(hand)), key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
+        """Find indices of cards to discard — keep cards that contribute to potential hands."""
+        # Score each card by how useful it is for building hands
+        from collections import Counter
+
+        suits = [c.suit for c in hand]
+        ranks = [c.rank for c in hand]
+        suit_counts = Counter(suits)
+        rank_counts = Counter(ranks)
+
+        # Score each card: higher = more worth keeping
+        keep_scores: list[float] = []
+        for i, card in enumerate(hand):
+            score = 0.0
+            # Base value from rank
+            score += RANK_TO_NOMINAL.get(card.rank, 0) * 0.1
+
+            # Flush potential: cards in the most common suit get a big bonus
+            suit_n = suit_counts[card.suit]
+            if suit_n >= 4:
+                score += 20.0  # near-flush — strongly keep
+            elif suit_n >= 3:
+                score += 8.0
+
+            # Pair/trips potential: cards with matching ranks
+            rank_n = rank_counts[card.rank]
+            if rank_n >= 3:
+                score += 25.0  # trips or better — always keep
+            elif rank_n >= 2:
+                score += 15.0  # pair — keep
+
+            # Straight potential: check for connected cards
+            nominal = RANK_TO_NOMINAL.get(card.rank, 0)
+            nearby = sum(1 for r in ranks if abs(RANK_TO_NOMINAL.get(r, 0) - nominal) <= 4 and r != card.rank)
+            if nearby >= 3:
+                score += 5.0
+
+            keep_scores.append(score)
+
+        # Discard the lowest-scored cards
+        ranked = sorted(range(len(hand)), key=lambda i: keep_scores[i])
         return set(ranked[:max_discard])
 
     def _shop(self, state: RunState, mask: np.ndarray) -> int:

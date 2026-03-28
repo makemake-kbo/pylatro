@@ -65,6 +65,7 @@ class BalatroEnv(gymnasium.Env):
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
         self._round_score: int = 0
+        self._blind_just_beaten: bool = False
 
         # Gymnasium spaces
         self.observation_space = spaces.Dict({
@@ -98,6 +99,7 @@ class BalatroEnv(gymnasium.Env):
         self._pending_consumable_hand_targets = ()
         self._pending_consumable_joker_targets = ()
         self._round_score = 0
+        self._blind_just_beaten = False
         self._prev_info = self._capture_state_info()
 
         obs = self._build_obs()
@@ -108,6 +110,7 @@ class BalatroEnv(gymnasium.Env):
 
         self._prev_info = self._capture_state_info()
         self._step_count += 1
+        self._blind_just_beaten = False
 
         decoded = decode_action(action)
         terminated = False
@@ -135,7 +138,10 @@ class BalatroEnv(gymnasium.Env):
 
         won = self._controller.phase == GamePhase.GAME_WON
         state = self._controller.state
-        reward = self._reward_fn(state, self._prev_info, terminated, won)
+        curr_info = self._capture_state_info()
+        curr_info["blind_just_beaten"] = self._blind_just_beaten
+        curr_info["hands_left"] = state.current_round.hands_left
+        reward = self._reward_fn(state, self._prev_info, curr_info, terminated, won)
 
         obs = self._build_obs()
         info = {
@@ -219,6 +225,7 @@ class BalatroEnv(gymnasium.Env):
                 result = ctrl.play_selected(indices)
                 self._round_score += result.score.total
                 if ctrl.blind_beaten():
+                    self._blind_just_beaten = True
                     ctrl.cash_out()
                     if ctrl.phase == GamePhase.GAME_WON:
                         return

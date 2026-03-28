@@ -119,7 +119,7 @@ class HeuristicAgent:
         """Find indices of cards forming the best 5-card poker hand."""
         best_hand_name = "High Card"
         best_indices: set[int] = set()
-        best_score = -1
+        best_score = float("-inf")
 
         hand_order = [
             "Flush Five", "Flush House", "Five of a Kind", "Straight Flush",

@@ -32,8 +32,9 @@ class PPOConfig:
     gamma: float = 0.995
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.2
-    entropy_coeff: float = 0.005
+    entropy_coeff: float = 0.01
     entropy_decay: float = 0.9999
+    entropy_floor: float = 0.003
     value_loss_coeff: float = 0.5
     max_grad_norm: float = 1.0
     lr: float = 1e-4
@@ -186,7 +187,7 @@ def train_ppo(
                 update_entropies.append(entropy.item())
                 update_clip_fracs.append(clip_frac)
 
-        entropy_coeff *= config.entropy_decay
+        entropy_coeff = max(entropy_coeff * config.entropy_decay, config.entropy_floor)
         update_count += 1
 
         # TensorBoard: per-update metrics

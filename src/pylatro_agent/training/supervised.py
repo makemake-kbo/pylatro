@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,39 +36,43 @@ class SupervisedConfig:
     warmup_steps: int = 1000
     max_epochs: int = 10
     value_loss_coeff: float = 0.5
+    num_workers: int = 0  # 0 = auto-detect (all available cores)
     save_dir: str = "checkpoints/supervised"
     log_dir: str = "runs/supervised"
     device: str = "cpu"
 
 
-def generate_training_data(
-    num_games: int,
-    data: GameData | None = None,
-    vocab: Vocab | None = None,
-    min_blinds_beaten: int = 2,
-) -> list[dict[str, Any]]:
-    """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
+_shared_counter: multiprocessing.Value | None = None
+_shared_target: int = 0
 
-    Only keeps games where at least min_blinds_beaten blinds were beaten,
-    filtering out low-quality games that would teach bad strategy.
-    """
-    if data is None:
-        data = load_game_data()
-    if vocab is None:
-        vocab = build_vocab(data)
 
+def _init_worker(counter: multiprocessing.Value, target: int) -> None:
+    """Pool initializer — store shared state in each worker process."""
+    global _shared_counter, _shared_target
+    _shared_counter = counter
+    _shared_target = target
+
+
+def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
+    """Worker function for parallel game generation. Must be module-level for pickling."""
+    seed_start, min_ante = args
+    data = load_game_data()
+    vocab = build_vocab(data)
     agent = HeuristicAgent()
     records: list[dict[str, Any]] = []
-    games_kept = 0
-    games_total = 0
+    seed = seed_start
 
-    seed = 0
-    while games_kept < num_games:
+    while True:
+        # Check shared counter before starting a new game
+        with _shared_counter.get_lock():
+            if _shared_counter.value >= _shared_target:
+                break
+
         env = BalatroEnv(seed=seed, data=data, vocab=vocab)
         obs, info = env.reset()
         done = False
         game_records: list[dict[str, Any]] = []
-        blinds_beaten = 0
+        max_ante = 1
 
         while not done:
             mask = obs["action_mask"]
@@ -81,31 +87,73 @@ def generate_training_data(
             game_records.append({"obs": obs, "action": action})
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            if env._blind_just_beaten:
-                blinds_beaten += 1
+            max_ante = max(max_ante, env.state.round_resets.ante)
 
         seed += 1
-        games_total += 1
         won = info.get("won", False)
 
-        # Filter: only keep games that beat enough blinds
-        if blinds_beaten >= min_blinds_beaten or won:
-            games_kept += 1
+        if max_ante >= min_ante or won:
+            with _shared_counter.get_lock():
+                if _shared_counter.value >= _shared_target:
+                    break
+                _shared_counter.value += 1
             for rec in game_records:
                 rec["won"] = won
-                rec["blinds_beaten"] = blinds_beaten
+                rec["max_ante"] = max_ante
                 records.append(rec)
 
-        if games_total % 200 == 0:
-            logger.info(
-                f"Played {games_total} games, kept {games_kept}/{num_games}, "
-                f"{len(records)} records (filter rate: {games_kept/games_total:.0%})"
-            )
+    return records
 
-    logger.info(
-        f"Done: played {games_total} games to get {games_kept} quality games "
-        f"({len(records)} records, keep rate: {games_kept/games_total:.0%})"
-    )
+
+def _get_num_workers(num_workers: int) -> int:
+    """Resolve worker count: 0 means use all available cores."""
+    if num_workers > 0:
+        return num_workers
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count() or 1
+
+
+def generate_training_data(
+    num_games: int,
+    data: GameData | None = None,
+    vocab: Vocab | None = None,
+    min_ante: int = 5,
+    num_workers: int = 0,
+) -> list[dict[str, Any]]:
+    """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
+
+    Only keeps games that reached at least min_ante (default 5),
+    filtering out low-quality games that would teach bad strategy.
+
+    Games are generated in parallel across num_workers processes
+    (default: all available CPU cores). All workers share a global counter
+    and stop as soon as the target number of games is reached.
+    """
+    num_workers = _get_num_workers(num_workers)
+    logger.info(f"Generating {num_games} games across {num_workers} workers (min_ante={min_ante})")
+
+    # Non-overlapping seed ranges per worker (1M apart)
+    worker_args = [(i * 1_000_000, min_ante) for i in range(num_workers)]
+
+    if num_workers == 1:
+        # Single worker — use shared state in-process
+        global _shared_counter, _shared_target
+        _shared_counter = multiprocessing.Value("i", 0)
+        _shared_target = num_games
+        records = _generate_games_worker(worker_args[0])
+    else:
+        counter = multiprocessing.Value("i", 0)
+        with multiprocessing.Pool(
+            num_workers, initializer=_init_worker, initargs=(counter, num_games)
+        ) as pool:
+            results = pool.map(_generate_games_worker, worker_args)
+        records = []
+        for r in results:
+            records.extend(r)
+
+    logger.info(f"Generated {len(records)} training records from {num_games} games")
     return records
 
 
@@ -129,7 +177,7 @@ def train_supervised(
 
     logger.info(f"Model parameters: {model.count_parameters():,}")
     logger.info("Generating training data from heuristic agent...")
-    records = generate_training_data(config.num_games, data=data, vocab=vocab)
+    records = generate_training_data(config.num_games, data=data, vocab=vocab, num_workers=config.num_workers)
     logger.info(f"Generated {len(records)} training records")
 
     wins = sum(1 for r in records if r["won"])
@@ -271,7 +319,7 @@ def _collate_batch(records: list[dict], device: torch.device) -> dict[str, torch
         ),
         "value_target": torch.tensor(
             [
-                10.0 if r["won"] else (-10.0 + min(r.get("blinds_beaten", 0), 6) * 1.0)
+                10.0 if r["won"] else (-10.0 + min(r.get("max_ante", 1), 8) * 1.0)
                 for r in records
             ],
             dtype=torch.float32, device=device,

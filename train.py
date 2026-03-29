@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--d-model", type=int, default=256, help="Model dimension (default: 256)")
     parser.add_argument("--n-layers", type=int, default=8, help="Transformer layers (default: 8)")
     parser.add_argument("--checkpoint-dir", type=str, default=None, help="Base dir for checkpoints (default: checkpoints/<phase>)")
+    parser.add_argument("--workers", type=int, default=0, help="CPU workers for game generation (default: all cores)")
     parser.add_argument("--log-dir", type=str, default=None, help="Base dir for TensorBoard logs (default: runs/<phase>)")
     args = parser.parse_args()
 
@@ -55,6 +56,7 @@ def main():
                 num_games=args.games,
                 batch_size=args.batch,
                 max_epochs=args.epochs,
+                num_workers=args.workers,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/supervised",
                 log_dir=log_dir or "runs/supervised",

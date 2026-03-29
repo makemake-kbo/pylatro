@@ -120,7 +120,7 @@ def generate_training_data(
     num_games: int,
     data: GameData | None = None,
     vocab: Vocab | None = None,
-    min_ante: int = 3,
+    min_ante: int = 4,
     num_workers: int = 0,
 ) -> list[dict[str, Any]]:
     """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.

@@ -242,7 +242,8 @@ def train_ppo(
                 f"Update {update_count}, steps {total_steps}: "
                 f"win_rate={win_rate:.3f}, entropy_coeff={entropy_coeff:.5f}"
             )
-            torch.save(model.state_dict(), save_path / f"ppo_update{update_count}.pt")
+            save_model = model.module if isinstance(model, nn.DataParallel) else model
+            torch.save(save_model.state_dict(), save_path / f"ppo_update{update_count}.pt")
 
     writer.close()
     return model

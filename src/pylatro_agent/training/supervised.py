@@ -177,7 +177,8 @@ def train_supervised(
         model = nn.DataParallel(model)
     optimizer = AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
-    logger.info(f"Model parameters: {model.count_parameters():,}")
+    base_model = model.module if isinstance(model, nn.DataParallel) else model
+    logger.info(f"Model parameters: {base_model.count_parameters():,}")
     logger.info("Generating training data from heuristic agent...")
     records = generate_training_data(config.num_games, data=data, vocab=vocab, num_workers=config.num_workers)
     logger.info(f"Generated {len(records)} training records")
@@ -290,7 +291,8 @@ def train_supervised(
             f"value_loss={avg_value_loss:.4f}, accuracy={accuracy:.4f}"
         )
 
-        torch.save(model.state_dict(), save_path / f"supervised_epoch{epoch + 1}.pt")
+        save_model = model.module if isinstance(model, nn.DataParallel) else model
+        torch.save(save_model.state_dict(), save_path / f"supervised_epoch{epoch + 1}.pt")
 
     writer.close()
     return model

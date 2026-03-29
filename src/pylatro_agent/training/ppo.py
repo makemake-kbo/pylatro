@@ -1,4 +1,4 @@
-"""Phase 2: PPO training loop."""
+"""Phase 2: PPO training loop with vectorized environments."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from torch.optim import AdamW
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
+from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..distributions import MaskedCategorical
 from ..env import BalatroEnv
 from ..vocab import Vocab, build_vocab
@@ -27,18 +28,40 @@ def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: 
     """Load checkpoint, handling DataParallel prefix mismatch."""
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
-    # If checkpoint has "module." prefix but model doesn't expect it, strip it
     has_module_prefix = any(k.startswith("module.") for k in state_dict.keys())
     is_wrapped = isinstance(model, nn.DataParallel)
 
     if has_module_prefix and not is_wrapped:
-        # Strip "module." prefix
         state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
     elif not has_module_prefix and is_wrapped:
-        # Add "module." prefix
         state_dict = {f"module.{k}": v for k, v in state_dict.items()}
 
     model.load_state_dict(state_dict)
+
+
+def _make_env(seed: int, stake: int, data: GameData, vocab: Vocab):
+    """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
+    def _thunk():
+        return BalatroEnv(seed=seed, stake=stake, data=data, vocab=vocab)
+    return _thunk
+
+
+def _make_vectorized_envs(
+    num_envs: int,
+    data: GameData,
+    vocab: Vocab,
+    stake: int = 1,
+    use_async: bool = True,
+):
+    """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
+    import gymnasium
+
+    env_fns = [_make_env(i, stake, data, vocab) for i in range(num_envs)]
+
+    if use_async and num_envs > 1:
+        return gymnasium.vector.AsyncVectorEnv(env_fns)
+    else:
+        return gymnasium.vector.SyncVectorEnv(env_fns)
 
 
 @dataclass
@@ -62,6 +85,7 @@ class PPOConfig:
     log_dir: str = "runs/ppo"
     eval_interval: int = 50
     eval_games: int = 10
+    async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
 
 
 def train_ppo(
@@ -70,7 +94,7 @@ def train_ppo(
     pretrained_path: str | None = None,
     data: GameData | None = None,
 ) -> BalatroAgent:
-    """Run PPO training."""
+    """Run PPO training with vectorized environments."""
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
@@ -78,6 +102,7 @@ def train_ppo(
         agent_config = AgentConfig()
 
     device = torch.device(config.device)
+    use_pin_memory = device.type == "cuda"
     model = BalatroAgent(agent_config, vocab).to(device)
 
     if pretrained_path:
@@ -89,18 +114,21 @@ def train_ppo(
 
     optimizer = AdamW(model.parameters(), lr=config.lr)
 
-    # Create environments
-    envs = [BalatroEnv(seed=i, data=data, vocab=vocab) for i in range(config.num_envs)]
-    obs_list = []
-    for env in envs:
-        obs, _ = env.reset()
-        obs_list.append(obs)
+    # Create vectorized environments
+    vec_env = _make_vectorized_envs(
+        config.num_envs, data, vocab,
+        use_async=config.async_envs,
+    )
+    obs_dict, _ = vec_env.reset()
+
+    # Pre-allocate obs tensors for batched inference
+    obs_buf = _ObsBuffer(config.num_envs, device)
+    obs_buf.update(obs_dict)
 
     from torch.utils.tensorboard import SummaryWriter
 
     save_path = Path(config.save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
-
     writer = SummaryWriter(config.log_dir)
 
     total_steps = 0
@@ -109,63 +137,82 @@ def train_ppo(
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
-    # Track per-env episode accumulators
-    env_ep_reward = [0.0] * config.num_envs
-    env_ep_length = [0] * config.num_envs
+    # Per-env accumulators (vectorized envs auto-reset, so we track manually)
+    env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
+    env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
 
     while total_steps < config.total_timesteps:
-        buffer = RolloutBuffer(num_envs=config.num_envs, gamma=config.gamma, gae_lambda=config.gae_lambda)
+        buffer = RolloutBuffer(
+            num_envs=config.num_envs,
+            rollout_length=config.rollout_length,
+            gamma=config.gamma,
+            gae_lambda=config.gae_lambda,
+        )
 
-        # Collect rollouts
+        # === Collect rollouts (vectorized) ===
         model.eval()
         for step in range(config.rollout_length):
             with torch.no_grad():
-                batch = _obs_list_to_batch(obs_list, device)
                 logits, value_dict = model(
-                    batch["tokens"], batch["token_types"], batch["scalars"],
-                    batch["attention_mask"], batch["action_mask"],
+                    obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
+                    obs_buf.attention_mask, obs_buf.action_mask,
                 )
-                dist = MaskedCategorical(logits, batch["action_mask"])
-
+                dist = MaskedCategorical(logits, obs_buf.action_mask)
                 actions = dist.sample()
                 log_probs = dist.log_prob(actions)
                 values = value_dict["expected_score"]
 
-            for i, env in enumerate(envs):
-                action = actions[i].item()
-                value = values[i].item()
-                log_prob = log_probs[i].item()
+            actions_np = actions.cpu().numpy()
+            log_probs_np = log_probs.cpu().numpy()
+            values_np = values.cpu().numpy()
 
-                obs, reward, terminated, truncated, info = env.step(action)
-                done = terminated or truncated
+            # Step all envs at once
+            next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
+            dones = terminated | truncated
 
-                buffer.add(i, obs_list[i], action, reward, value, log_prob, done)
-                env_ep_reward[i] += reward
-                env_ep_length[i] += 1
+            # Store transition (using pre-step obs from obs_buf)
+            buffer.add_batch(
+                step=step,
+                obs=obs_buf.as_numpy_dict(),
+                actions=actions_np,
+                rewards=rewards.astype(np.float32),
+                values=values_np,
+                log_probs=log_probs_np,
+                dones=dones,
+            )
 
-                if done:
-                    episode_rewards.append(env_ep_reward[i])
-                    episode_lengths.append(env_ep_length[i])
-                    episode_wins.append(info.get("won", False))
-                    env_ep_reward[i] = 0.0
-                    env_ep_length[i] = 0
-                    obs, _ = env.reset(seed=total_steps + i)
+            # Track per-env episode stats
+            env_ep_reward += rewards
+            env_ep_length += 1
 
-                obs_list[i] = obs
-                total_steps += 1
+            # Handle completed episodes (vectorized envs auto-reset)
+            for i in np.where(dones)[0]:
+                episode_rewards.append(float(env_ep_reward[i]))
+                episode_lengths.append(int(env_ep_length[i]))
+                # final_info is in infos for auto-reset envs
+                final_info = infos.get("final_info", [None] * config.num_envs)
+                if final_info[i] is not None:
+                    episode_wins.append(final_info[i].get("won", False))
+                else:
+                    episode_wins.append(infos.get("won", [False] * config.num_envs)[i] if "won" in infos else False)
+                env_ep_reward[i] = 0.0
+                env_ep_length[i] = 0
 
-        # Compute per-env last values for GAE bootstrap
+            # Update obs buffer with new observations
+            obs_buf.update(next_obs_dict)
+            total_steps += config.num_envs
+
+        # Bootstrap values for GAE
         with torch.no_grad():
-            batch = _obs_list_to_batch(obs_list, device)
             _, value_dict = model(
-                batch["tokens"], batch["token_types"], batch["scalars"],
-                batch["attention_mask"], batch["action_mask"],
-            )  # logits unused here
-            last_values = value_dict["expected_score"].cpu().numpy().tolist()
+                obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
+                obs_buf.attention_mask, obs_buf.action_mask,
+            )
+            last_values = value_dict["expected_score"].cpu().numpy()
 
         buffer.compute_returns_and_advantages(last_values=last_values)
 
-        # PPO update
+        # === PPO update ===
         model.train()
         update_policy_losses = []
         update_value_losses = []
@@ -173,7 +220,7 @@ def train_ppo(
         update_clip_fracs = []
 
         for ppo_epoch in range(config.ppo_epochs):
-            batches = buffer.get_batches(config.mini_batch_size, device)
+            batches = buffer.get_batches(config.mini_batch_size, device, pin_memory=use_pin_memory)
             for batch in batches:
                 logits, value_dict = model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
@@ -193,7 +240,7 @@ def train_ppo(
                 surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
-                # Value loss — use unbounded expected_score head for PPO value
+                # Value loss
                 value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
                 loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
@@ -203,7 +250,6 @@ def train_ppo(
                 nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
                 optimizer.step()
 
-                # Track for logging
                 with torch.no_grad():
                     clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
                 update_policy_losses.append(policy_loss.item())
@@ -214,7 +260,7 @@ def train_ppo(
         entropy_coeff = max(entropy_coeff * config.entropy_decay, config.entropy_floor)
         update_count += 1
 
-        # TensorBoard: per-update metrics
+        # TensorBoard logging
         writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
         writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
         writer.add_scalar("ppo/entropy", np.mean(update_entropies), update_count)
@@ -222,14 +268,14 @@ def train_ppo(
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
 
-        # Value/advantage diagnostics — critical for debugging PPO
-        if buffer._flat_returns is not None and len(buffer._flat_returns) > 0:
-            writer.add_scalar("debug/returns_mean", float(np.mean(buffer._flat_returns)), update_count)
-            writer.add_scalar("debug/returns_std", float(np.std(buffer._flat_returns)), update_count)
-            writer.add_scalar("debug/advantages_mean", float(np.mean(buffer._flat_advantages)), update_count)
-            writer.add_scalar("debug/advantages_std", float(np.std(buffer._flat_advantages)), update_count)
+        flat_returns = buffer._flat_returns
+        if len(flat_returns) > 0:
+            writer.add_scalar("debug/returns_mean", float(np.mean(flat_returns)), update_count)
+            writer.add_scalar("debug/returns_std", float(np.std(flat_returns)), update_count)
+            flat_adv = buffer._flat_advantages
+            writer.add_scalar("debug/advantages_mean", float(np.mean(flat_adv)), update_count)
+            writer.add_scalar("debug/advantages_std", float(np.std(flat_adv)), update_count)
 
-        # TensorBoard: episode stats (from completed episodes this rollout)
         if episode_rewards:
             recent = episode_rewards[-100:]
             recent_wins = episode_wins[-100:]
@@ -248,8 +294,56 @@ def train_ppo(
             save_model = model.module if isinstance(model, nn.DataParallel) else model
             torch.save(save_model.state_dict(), save_path / f"ppo_update{update_count}.pt")
 
+    vec_env.close()
     writer.close()
     return model
+
+
+class _ObsBuffer:
+    """Pre-allocated GPU/device tensors for batched observations.
+
+    Avoids re-creating tensors every step by writing into existing storage.
+    """
+
+    def __init__(self, num_envs: int, device: torch.device) -> None:
+        self.num_envs = num_envs
+        self.device = device
+        self.tokens = torch.zeros(num_envs, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long, device=device)
+        self.token_types = torch.zeros(num_envs, MAX_SEQ_LEN, dtype=torch.long, device=device)
+        self.scalars = torch.zeros(num_envs, SCALAR_DIM, dtype=torch.float32, device=device)
+        self.attention_mask = torch.zeros(num_envs, MAX_SEQ_LEN, dtype=torch.long, device=device)
+        self.action_mask = torch.zeros(num_envs, NUM_ACTIONS, dtype=torch.float32, device=device)
+
+        # Numpy views for writing from env output (CPU side)
+        self._np_tokens = np.zeros((num_envs, MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int64)
+        self._np_token_types = np.zeros((num_envs, MAX_SEQ_LEN), dtype=np.int64)
+        self._np_scalars = np.zeros((num_envs, SCALAR_DIM), dtype=np.float32)
+        self._np_attention_mask = np.zeros((num_envs, MAX_SEQ_LEN), dtype=np.int64)
+        self._np_action_mask = np.zeros((num_envs, NUM_ACTIONS), dtype=np.float32)
+
+    def update(self, obs_dict: dict) -> None:
+        """Copy vectorized env output into pre-allocated tensors."""
+        np.copyto(self._np_tokens, obs_dict["tokens"])
+        np.copyto(self._np_token_types, obs_dict["token_types"])
+        np.copyto(self._np_scalars, obs_dict["scalars"])
+        np.copyto(self._np_attention_mask, obs_dict["attention_mask"])
+        np.copyto(self._np_action_mask, obs_dict["action_mask"])
+
+        self.tokens.copy_(torch.from_numpy(self._np_tokens))
+        self.token_types.copy_(torch.from_numpy(self._np_token_types))
+        self.scalars.copy_(torch.from_numpy(self._np_scalars))
+        self.attention_mask.copy_(torch.from_numpy(self._np_attention_mask))
+        self.action_mask.copy_(torch.from_numpy(self._np_action_mask))
+
+    def as_numpy_dict(self) -> dict:
+        """Return current numpy arrays (for storing in rollout buffer)."""
+        return {
+            "tokens": self._np_tokens,
+            "token_types": self._np_token_types,
+            "scalars": self._np_scalars,
+            "attention_mask": self._np_attention_mask,
+            "action_mask": self._np_action_mask,
+        }
 
 
 def evaluate_model(
@@ -285,16 +379,6 @@ def evaluate_model(
             wins += 1
 
     return wins / max(num_games, 1)
-
-
-def _obs_list_to_batch(obs_list: list[dict], device: torch.device) -> dict[str, torch.Tensor]:
-    return {
-        "tokens": torch.tensor(np.array([o["tokens"] for o in obs_list]), dtype=torch.long, device=device),
-        "token_types": torch.tensor(np.array([o["token_types"] for o in obs_list]), dtype=torch.long, device=device),
-        "scalars": torch.tensor(np.array([o["scalars"] for o in obs_list]), dtype=torch.float32, device=device),
-        "attention_mask": torch.tensor(np.array([o["attention_mask"] for o in obs_list]), dtype=torch.long, device=device),
-        "action_mask": torch.tensor(np.array([o["action_mask"] for o in obs_list]), dtype=torch.float32, device=device),
-    }
 
 
 def _single_obs_to_batch(obs: dict, device: torch.device) -> dict[str, torch.Tensor]:

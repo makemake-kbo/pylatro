@@ -1,152 +1,209 @@
-"""Experience storage for PPO training with correct per-env GAE."""
+"""Experience storage for PPO training with pre-allocated arrays and correct per-env GAE."""
 
 from __future__ import annotations
-
-from dataclasses import dataclass, field
 
 import numpy as np
 import torch
 
-
-@dataclass
-class EnvTrajectory:
-    """Stores one environment's trajectory within a rollout."""
-    tokens: list[np.ndarray] = field(default_factory=list)
-    token_types: list[np.ndarray] = field(default_factory=list)
-    scalars: list[np.ndarray] = field(default_factory=list)
-    attention_masks: list[np.ndarray] = field(default_factory=list)
-    action_masks: list[np.ndarray] = field(default_factory=list)
-    actions: list[int] = field(default_factory=list)
-    rewards: list[float] = field(default_factory=list)
-    values: list[float] = field(default_factory=list)
-    log_probs: list[float] = field(default_factory=list)
-    dones: list[bool] = field(default_factory=list)
-
-    def add(self, obs: dict, action: int, reward: float, value: float, log_prob: float, done: bool) -> None:
-        self.tokens.append(obs["tokens"])
-        self.token_types.append(obs["token_types"])
-        self.scalars.append(obs["scalars"])
-        self.attention_masks.append(obs["attention_mask"])
-        self.action_masks.append(obs["action_mask"])
-        self.actions.append(action)
-        self.rewards.append(reward)
-        self.values.append(value)
-        self.log_probs.append(log_prob)
-        self.dones.append(done)
-
-    def __len__(self) -> int:
-        return len(self.actions)
+from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 
 
-@dataclass
 class RolloutBuffer:
-    """Stores per-env trajectories and computes GAE correctly per environment."""
+    """Pre-allocated rollout storage with per-env GAE computation.
 
-    num_envs: int = 1
-    gamma: float = 0.995
-    gae_lambda: float = 0.95
+    All observation/action data is stored in flat pre-allocated numpy arrays
+    indexed by (env_idx * rollout_length + step). This avoids per-step Python
+    list appends and makes batch construction a single numpy fancy-index.
+    """
 
-    envs: list[EnvTrajectory] = field(default_factory=list)
+    def __init__(
+        self,
+        num_envs: int,
+        rollout_length: int,
+        gamma: float = 0.995,
+        gae_lambda: float = 0.95,
+    ) -> None:
+        self.num_envs = num_envs
+        self.rollout_length = rollout_length
+        self.gamma = gamma
+        self.gae_lambda = gae_lambda
+        self.total_size = num_envs * rollout_length
 
-    # Flattened after compute_returns_and_advantages
-    _flat_tokens: list[np.ndarray] = field(default_factory=list)
-    _flat_token_types: list[np.ndarray] = field(default_factory=list)
-    _flat_scalars: list[np.ndarray] = field(default_factory=list)
-    _flat_attention_masks: list[np.ndarray] = field(default_factory=list)
-    _flat_action_masks: list[np.ndarray] = field(default_factory=list)
-    _flat_actions: list[int] = field(default_factory=list)
-    _flat_log_probs: list[float] = field(default_factory=list)
-    _flat_advantages: np.ndarray | None = None
-    _flat_returns: np.ndarray | None = None
+        # Pre-allocate observation arrays — shape: (total, ...)
+        self.tokens = np.zeros((self.total_size, MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16)
+        self.token_types = np.zeros((self.total_size, MAX_SEQ_LEN), dtype=np.int8)
+        self.scalars = np.zeros((self.total_size, SCALAR_DIM), dtype=np.float32)
+        self.attention_masks = np.zeros((self.total_size, MAX_SEQ_LEN), dtype=np.int8)
+        self.action_masks = np.zeros((self.total_size, NUM_ACTIONS), dtype=np.float32)
 
-    def __post_init__(self):
-        if not self.envs:
-            self.envs = [EnvTrajectory() for _ in range(self.num_envs)]
+        # Pre-allocate action/value arrays — shape: (total,)
+        self.actions = np.zeros(self.total_size, dtype=np.int64)
+        self.rewards = np.zeros(self.total_size, dtype=np.float32)
+        self.values = np.zeros(self.total_size, dtype=np.float32)
+        self.log_probs = np.zeros(self.total_size, dtype=np.float32)
+        self.dones = np.zeros(self.total_size, dtype=np.bool_)
 
-    def add(self, env_idx: int, obs: dict, action: int, reward: float, value: float, log_prob: float, done: bool) -> None:
-        self.envs[env_idx].add(obs, action, reward, value, log_prob, done)
+        # Computed after rollout
+        self.advantages = np.zeros(self.total_size, dtype=np.float32)
+        self.returns = np.zeros(self.total_size, dtype=np.float32)
 
-    def compute_returns_and_advantages(self, last_values: list[float]) -> None:
-        """Compute GAE advantages per env, then flatten for batching.
+        # Write pointer per env
+        self._step_counts = np.zeros(num_envs, dtype=np.int64)
+
+    def _index(self, env_idx: int, step: int) -> int:
+        return env_idx * self.rollout_length + step
+
+    def add(
+        self,
+        env_idx: int,
+        obs: dict,
+        action: int,
+        reward: float,
+        value: float,
+        log_prob: float,
+        done: bool,
+    ) -> None:
+        """Store one transition for one environment."""
+        step = self._step_counts[env_idx]
+        idx = self._index(env_idx, step)
+
+        self.tokens[idx] = obs["tokens"]
+        self.token_types[idx] = obs["token_types"]
+        self.scalars[idx] = obs["scalars"]
+        self.attention_masks[idx] = obs["attention_mask"]
+        self.action_masks[idx] = obs["action_mask"]
+        self.actions[idx] = action
+        self.rewards[idx] = reward
+        self.values[idx] = value
+        self.log_probs[idx] = log_prob
+        self.dones[idx] = done
+
+        self._step_counts[env_idx] = step + 1
+
+    def add_batch(
+        self,
+        step: int,
+        obs: dict,
+        actions: np.ndarray,
+        rewards: np.ndarray,
+        values: np.ndarray,
+        log_probs: np.ndarray,
+        dones: np.ndarray,
+    ) -> None:
+        """Store one timestep for all environments at once (vectorized)."""
+        indices = np.arange(self.num_envs) * self.rollout_length + step
+
+        self.tokens[indices] = obs["tokens"]
+        self.token_types[indices] = obs["token_types"]
+        self.scalars[indices] = obs["scalars"]
+        self.attention_masks[indices] = obs["attention_mask"]
+        self.action_masks[indices] = obs["action_mask"]
+        self.actions[indices] = actions
+        self.rewards[indices] = rewards
+        self.values[indices] = values
+        self.log_probs[indices] = log_probs
+        self.dones[indices] = dones
+
+        self._step_counts[:] = step + 1
+
+    def compute_returns_and_advantages(self, last_values: np.ndarray | list[float]) -> None:
+        """Compute GAE advantages per env, storing into pre-allocated arrays.
 
         Args:
-            last_values: bootstrap value for each env (one per env).
+            last_values: bootstrap value for each env (length num_envs).
         """
-        all_advantages = []
-        all_returns = []
+        last_values = np.asarray(last_values, dtype=np.float32)
 
-        for env_idx, traj in enumerate(self.envs):
-            n = len(traj.rewards)
-            if n == 0:
-                continue
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            end = start + n
 
-            advantages = np.zeros(n, dtype=np.float32)
+            env_rewards = self.rewards[start:end]
+            env_values = self.values[start:end]
+            env_dones = self.dones[start:end]
+
             last_gae = 0.0
-
             for t in reversed(range(n)):
+                idx = start + t
                 if t == n - 1:
                     next_value = last_values[env_idx]
                 else:
-                    next_value = traj.values[t + 1]
+                    next_value = env_values[t + 1]
 
-                next_non_terminal = 1.0 - float(traj.dones[t])
-                delta = traj.rewards[t] + self.gamma * next_value * next_non_terminal - traj.values[t]
+                next_non_terminal = 1.0 - float(env_dones[t])
+                delta = env_rewards[t] + self.gamma * next_value * next_non_terminal - env_values[t]
                 last_gae = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae
-                advantages[t] = last_gae
+                self.advantages[idx] = last_gae
 
-            returns = advantages + np.array(traj.values, dtype=np.float32)
+            self.returns[start:end] = self.advantages[start:end] + env_values[:n]
 
-            # Flatten into combined lists
-            self._flat_tokens.extend(traj.tokens)
-            self._flat_token_types.extend(traj.token_types)
-            self._flat_scalars.extend(traj.scalars)
-            self._flat_attention_masks.extend(traj.attention_masks)
-            self._flat_action_masks.extend(traj.action_masks)
-            self._flat_actions.extend(traj.actions)
-            self._flat_log_probs.extend(traj.log_probs)
-            all_advantages.append(advantages)
-            all_returns.append(returns)
+    def get_batches(
+        self,
+        batch_size: int,
+        device: torch.device,
+        pin_memory: bool = False,
+    ) -> list[dict[str, torch.Tensor]]:
+        """Return shuffled mini-batches as tensors.
 
-        self._flat_advantages = np.concatenate(all_advantages) if all_advantages else np.array([], dtype=np.float32)
-        self._flat_returns = np.concatenate(all_returns) if all_returns else np.array([], dtype=np.float32)
-
-    def get_batches(self, batch_size: int, device: torch.device) -> list[dict[str, torch.Tensor]]:
-        """Yield shuffled mini-batches as tensors."""
-        n = len(self._flat_actions)
+        Uses numpy fancy indexing on pre-allocated arrays — no Python list
+        comprehensions over individual transitions.
+        """
+        # Determine valid range (in case envs didn't all fill rollout_length)
+        valid_indices = []
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            valid_indices.append(np.arange(start, start + n))
+        all_indices = np.concatenate(valid_indices)
+        n = len(all_indices)
         if n == 0:
             return []
-        indices = np.random.permutation(n)
+
+        shuffled = np.random.permutation(all_indices)
 
         batches = []
         for start in range(0, n, batch_size):
             end = min(start + batch_size, n)
-            idx = indices[start:end]
+            idx = shuffled[start:end]
 
             batch = {
-                "tokens": torch.tensor(np.array([self._flat_tokens[i] for i in idx]), dtype=torch.int64, device=device),
-                "token_types": torch.tensor(np.array([self._flat_token_types[i] for i in idx]), dtype=torch.long, device=device),
-                "scalars": torch.tensor(np.array([self._flat_scalars[i] for i in idx]), dtype=torch.float32, device=device),
-                "attention_mask": torch.tensor(np.array([self._flat_attention_masks[i] for i in idx]), dtype=torch.long, device=device),
-                "action_mask": torch.tensor(np.array([self._flat_action_masks[i] for i in idx]), dtype=torch.float32, device=device),
-                "actions": torch.tensor([self._flat_actions[i] for i in idx], dtype=torch.long, device=device),
-                "old_log_probs": torch.tensor([self._flat_log_probs[i] for i in idx], dtype=torch.float32, device=device),
-                "advantages": torch.tensor(self._flat_advantages[idx], dtype=torch.float32, device=device),
-                "returns": torch.tensor(self._flat_returns[idx], dtype=torch.float32, device=device),
+                "tokens": torch.as_tensor(self.tokens[idx].astype(np.int64), device=device),
+                "token_types": torch.as_tensor(self.token_types[idx].astype(np.int64), device=device),
+                "scalars": torch.as_tensor(self.scalars[idx], device=device),
+                "attention_mask": torch.as_tensor(self.attention_masks[idx].astype(np.int64), device=device),
+                "action_mask": torch.as_tensor(self.action_masks[idx], device=device),
+                "actions": torch.as_tensor(self.actions[idx], device=device),
+                "old_log_probs": torch.as_tensor(self.log_probs[idx], device=device),
+                "advantages": torch.as_tensor(self.advantages[idx], device=device),
+                "returns": torch.as_tensor(self.returns[idx], device=device),
             }
+
+            if pin_memory and device.type == "cpu":
+                batch = {k: v.pin_memory() for k, v in batch.items()}
+
             batches.append(batch)
         return batches
 
     def total_transitions(self) -> int:
-        return sum(len(t) for t in self.envs)
+        return int(self._step_counts.sum())
 
-    def clear(self) -> None:
-        self.envs = [EnvTrajectory() for _ in range(self.num_envs)]
-        self._flat_tokens.clear()
-        self._flat_token_types.clear()
-        self._flat_scalars.clear()
-        self._flat_attention_masks.clear()
-        self._flat_action_masks.clear()
-        self._flat_actions.clear()
-        self._flat_log_probs.clear()
-        self._flat_advantages = None
-        self._flat_returns = None
+    @property
+    def _flat_returns(self) -> np.ndarray:
+        """Compatibility property for logging."""
+        valid = []
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            valid.append(self.returns[start:start + n])
+        return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
+
+    @property
+    def _flat_advantages(self) -> np.ndarray:
+        """Compatibility property for logging."""
+        valid = []
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            valid.append(self.advantages[start:start + n])
+        return np.concatenate(valid) if valid else np.array([], dtype=np.float32)

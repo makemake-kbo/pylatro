@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--checkpoint-dir", type=str, default=None, help="Base dir for checkpoints (default: checkpoints/<phase>)")
     parser.add_argument("--workers", type=int, default=0, help="CPU workers for game generation (default: all cores)")
     parser.add_argument("--log-dir", type=str, default=None, help="Base dir for TensorBoard logs (default: runs/<phase>)")
+    parser.add_argument("--sync-envs", action="store_true", help="Use SyncVectorEnv instead of AsyncVectorEnv for PPO")
     args = parser.parse_args()
 
     device = args.device
@@ -75,6 +76,7 @@ def main():
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/ppo",
                 log_dir=log_dir or "runs/ppo",
+                async_envs=not args.sync_envs,
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

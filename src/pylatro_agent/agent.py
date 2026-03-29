@@ -10,7 +10,7 @@ import torch.nn as nn
 from .action_heads import BlindSelectHead, ConsumableHead, HandPlayHead, PackHead, ShopHead
 from .backbone import TransformerBackbone
 from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
-from .distributions import MaskedCategorical
+from .distributions import MaskedCategorical  # noqa: F401 — re-exported for callers
 from .embeddings import ContentEmbeddingLayer
 from .value_head import ValueHead
 from .vocab import Vocab
@@ -59,7 +59,7 @@ class BalatroAgent(nn.Module):
         attention_mask: torch.Tensor,
         action_mask: torch.Tensor,
         sub_phase: SubPhase | list[SubPhase] | None = None,
-    ) -> tuple[MaskedCategorical, dict[str, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """
         Args:
             tokens: (batch, MAX_SEQ_LEN, TOKEN_DIM) int
@@ -93,9 +93,9 @@ class BalatroAgent(nn.Module):
         # Value prediction
         value_dict = self.value_head(x, attention_mask)
 
-        # Build masked distribution
-        dist = MaskedCategorical(logits, action_mask.float())
-        return dist, value_dict
+        # Return raw logits — callers construct MaskedCategorical.
+        # This is necessary for nn.DataParallel which can only gather tensors.
+        return logits, value_dict
 
     def _compute_logits(
         self,

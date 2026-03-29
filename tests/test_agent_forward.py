@@ -9,6 +9,7 @@ import torch
 from pylatro import load_game_data
 from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from pylatro_agent.distributions import MaskedCategorical
 from pylatro_agent.vocab import build_vocab
 
 
@@ -36,11 +37,13 @@ def test_forward_shapes(model):
     attention_mask = torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long)
     action_mask = torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32)
 
-    dist, value_dict = model(
+    logits, value_dict = model(
         tokens, token_types, scalars, attention_mask, action_mask,
         sub_phase=SubPhase.BLIND_SELECT,
     )
+    dist = MaskedCategorical(logits, action_mask)
 
+    assert logits.shape == (batch_size, NUM_ACTIONS)
     assert dist.probs.shape == (batch_size, NUM_ACTIONS)
     assert value_dict["win_prob"].shape == (batch_size,)
     assert value_dict["expected_score"].shape == (batch_size,)
@@ -59,10 +62,11 @@ def test_forward_valid_distribution(model):
     action_mask[0, 0] = 1  # BLIND_PLAY
     action_mask[0, 1] = 1  # BLIND_SKIP
 
-    dist, _ = model(
+    logits, _ = model(
         tokens, token_types, scalars, attention_mask, action_mask,
         sub_phase=SubPhase.BLIND_SELECT,
     )
+    dist = MaskedCategorical(logits, action_mask)
 
     probs = dist.probs[0]
     # Only masked actions should have non-zero probability
@@ -80,10 +84,11 @@ def test_forward_sample(model):
     attention_mask = torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long)
     action_mask = torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32)
 
-    dist, _ = model(
+    logits, _ = model(
         tokens, token_types, scalars, attention_mask, action_mask,
         sub_phase=SubPhase.CHOOSE_ACTION,
     )
+    dist = MaskedCategorical(logits, action_mask)
 
     actions = dist.sample()
     assert actions.shape == (batch_size,)
@@ -109,10 +114,11 @@ def test_mixed_subphase_batch(model):
 
     sub_phases = [SubPhase.BLIND_SELECT, SubPhase.CHOOSE_ACTION, SubPhase.SHOP]
 
-    dist, value_dict = model(
+    logits, value_dict = model(
         tokens, token_types, scalars, attention_mask, action_mask,
         sub_phase=sub_phases,
     )
+    dist = MaskedCategorical(logits, action_mask)
 
     assert dist.probs.shape == (batch_size, NUM_ACTIONS)
     actions = dist.sample()

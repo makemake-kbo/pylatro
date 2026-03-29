@@ -15,6 +15,7 @@ from torch.optim import AdamW
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
+from ..distributions import MaskedCategorical
 from ..env import BalatroEnv
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
@@ -120,10 +121,11 @@ def train_ppo(
         for step in range(config.rollout_length):
             with torch.no_grad():
                 batch = _obs_list_to_batch(obs_list, device)
-                dist, value_dict = model(
+                logits, value_dict = model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
                     batch["attention_mask"], batch["action_mask"],
                 )
+                dist = MaskedCategorical(logits, batch["action_mask"])
 
                 actions = dist.sample()
                 log_probs = dist.log_prob(actions)
@@ -158,7 +160,7 @@ def train_ppo(
             _, value_dict = model(
                 batch["tokens"], batch["token_types"], batch["scalars"],
                 batch["attention_mask"], batch["action_mask"],
-            )
+            )  # logits unused here
             last_values = value_dict["expected_score"].cpu().numpy().tolist()
 
         buffer.compute_returns_and_advantages(last_values=last_values)
@@ -173,10 +175,11 @@ def train_ppo(
         for ppo_epoch in range(config.ppo_epochs):
             batches = buffer.get_batches(config.mini_batch_size, device)
             for batch in batches:
-                dist, value_dict = model(
+                logits, value_dict = model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
                     batch["attention_mask"], batch["action_mask"],
                 )
+                dist = MaskedCategorical(logits, batch["action_mask"])
 
                 new_log_probs = dist.log_prob(batch["actions"])
                 entropy = dist.entropy().mean()
@@ -268,10 +271,11 @@ def evaluate_model(
         while not done:
             with torch.no_grad():
                 batch = _single_obs_to_batch(obs, device)
-                dist, _ = model(
+                logits, _ = model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
                     batch["attention_mask"], batch["action_mask"],
                 )
+                dist = MaskedCategorical(logits, batch["action_mask"])
                 action = dist.sample().item()
 
             obs, reward, terminated, truncated, info = env.step(action)

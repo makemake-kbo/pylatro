@@ -51,10 +51,12 @@ def play_model(checkpoint: str, num_games: int, seed: int, device: str, d_model:
                 batch["token_types"] = batch["token_types"].long()
                 batch["attention_mask"] = batch["attention_mask"].long()
                 batch["action_mask"] = batch["action_mask"].float()
-                dist, _ = model(
+                from pylatro_agent.distributions import MaskedCategorical
+                logits, _ = model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
                     batch["attention_mask"], batch["action_mask"],
                 )
+                dist = MaskedCategorical(logits, batch["action_mask"])
                 action = dist.sample().item()
 
             obs, reward, terminated, truncated, info = env.step(action)

@@ -19,6 +19,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
+from ..distributions import MaskedCategorical
 from ..constants import SubPhase
 from ..env import BalatroEnv
 from ..heuristic import HeuristicAgent
@@ -217,13 +218,14 @@ def train_supervised(
             batch_records = [records[i] for i in batch_idx]
 
             batch = _collate_batch(batch_records, device)
-            dist, value_dict = model(
+            logits, value_dict = model(
                 batch["tokens"], batch["token_types"], batch["scalars"],
                 batch["attention_mask"], batch["action_mask"],
             )
+            dist = MaskedCategorical(logits, batch["action_mask"])
 
             # Action loss: cross-entropy
-            action_loss = F.cross_entropy(dist.logits, batch["actions"])
+            action_loss = F.cross_entropy(logits, batch["actions"])
 
             # Value loss: BCE on win prediction + MSE on expected_score
             win_loss = F.binary_cross_entropy(

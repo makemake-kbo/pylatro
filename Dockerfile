@@ -1,23 +1,17 @@
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# System deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-venv python3.12-dev curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+# Install uv (manages its own Python)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
 # Copy project files
 COPY pyproject.toml uv.lock .python-version ./
 COPY src/ src/
-COPY train.py play.py main.py ./
+COPY train.py play.py main.py README.md ./
 
 # Install dependencies (agent extras include torch + tensorboard)
 RUN uv sync --extra agent --no-dev

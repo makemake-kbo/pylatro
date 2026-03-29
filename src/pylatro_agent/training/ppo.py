@@ -22,6 +22,24 @@ from .rollout_buffer import RolloutBuffer
 logger = logging.getLogger(__name__)
 
 
+def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
+    """Load checkpoint, handling DataParallel prefix mismatch."""
+    state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
+
+    # If checkpoint has "module." prefix but model doesn't expect it, strip it
+    has_module_prefix = any(k.startswith("module.") for k in state_dict.keys())
+    is_wrapped = isinstance(model, nn.DataParallel)
+
+    if has_module_prefix and not is_wrapped:
+        # Strip "module." prefix
+        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+    elif not has_module_prefix and is_wrapped:
+        # Add "module." prefix
+        state_dict = {f"module.{k}": v for k, v in state_dict.items()}
+
+    model.load_state_dict(state_dict)
+
+
 @dataclass
 class PPOConfig:
     num_envs: int = 32
@@ -62,8 +80,11 @@ def train_ppo(
     model = BalatroAgent(agent_config, vocab).to(device)
 
     if pretrained_path:
-        model.load_state_dict(torch.load(pretrained_path, map_location=device, weights_only=True))
+        _load_checkpoint_compatible(model, pretrained_path, device)
         logger.info(f"Loaded pretrained model from {pretrained_path}")
+
+    if config.device == "cuda" and torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
 
     optimizer = AdamW(model.parameters(), lr=config.lr)
 

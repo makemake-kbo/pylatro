@@ -173,6 +173,8 @@ def train_supervised(
 
     device = torch.device(config.device)
     model = BalatroAgent(agent_config, vocab).to(device)
+    if config.device == "cuda" and torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
     optimizer = AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
     logger.info(f"Model parameters: {model.count_parameters():,}")

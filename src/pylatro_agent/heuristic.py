@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from itertools import combinations
 
 import numpy as np
 
 from pylatro import can_use_consumable, evaluate_poker_hand
 from pylatro.models import PlayingCard, RunState
-from pylatro.scoring import RANK_TO_NOMINAL
+from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL, _card_effect, _card_id, _is_suit
 
 from .action import ActionType, encode_action
 from .constants import ActionRange, SubPhase
@@ -131,19 +132,225 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _find_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
-        """Find indices of cards forming the best 5-card poker hand."""
-        best_hand_name = "High Card"
-        best_indices: set[int] = set()
-        best_score = float("-inf")
+        """Find indices of cards forming the best 5-card poker hand.
 
+        Uses direct card analysis instead of brute-forcing all combinations
+        through the full scoring pipeline.
+        """
+        if not hand:
+            return set()
+
+        max_cards = min(5, len(hand))
+        has_stone = False
+
+        # Pre-compute card IDs and group by rank/suit (one pass)
+        card_ids: list[int] = []
+        by_rank: dict[int, list[int]] = {}  # card_id -> [indices]
+        by_suit: dict[str, list[int]] = {}  # suit -> [indices]
+        for i, card in enumerate(hand):
+            effect = _card_effect(state, card)
+            if effect == "Stone Card":
+                has_stone = True
+                cid = -id(card)
+            else:
+                cid = RANK_TO_ID[card.rank]
+            card_ids.append(cid)
+            if cid > 0:
+                by_rank.setdefault(cid, []).append(i)
+
+            # Suit grouping — handle Wild Card
+            if effect == "Stone Card":
+                pass  # stone cards have no suit
+            else:
+                is_wild = (state.data.centers.get(card.center_key, {}).get("effect", "") == "Wild Card")
+                if is_wild:
+                    for s in ("Spades", "Hearts", "Clubs", "Diamonds"):
+                        by_suit.setdefault(s, []).append(i)
+                else:
+                    by_suit.setdefault(card.suit, []).append(i)
+                    # Smeared Joker: red suits count as both red, black as both black
+                    if state.has_joker("Smeared Joker"):
+                        if card.suit in ("Hearts", "Diamonds"):
+                            other = "Diamonds" if card.suit == "Hearts" else "Hearts"
+                        else:
+                            other = "Clubs" if card.suit == "Spades" else "Spades"
+                        by_suit.setdefault(other, []).append(i)
+
+        four_fingers = state.has_joker("Four Fingers")
+        flush_req = 4 if four_fingers else 5
+        straight_req = 4 if four_fingers else 5
+
+        # If stone cards or exotic jokers present, fall back to brute force
+        # (rare case — doesn't affect typical performance)
+        if has_stone or state.has_joker("Shortcut") or state.has_joker("Pareidolia"):
+            return self._find_best_hand_brute(state, hand, max_cards)
+
+        # --- Rank-based groups (sorted high to low) ---
+        groups = sorted(by_rank.items(), key=lambda x: x[0], reverse=True)
+        groups_by_size: dict[int, list[tuple[int, list[int]]]] = {}
+        for cid, indices in groups:
+            n = len(indices)
+            for sz in range(1, n + 1):
+                groups_by_size.setdefault(sz, []).append((cid, indices))
+
+        def _best_of(indices_set: set[int]) -> float:
+            """Score for tiebreaking: sum of nominals."""
+            return sum(RANK_TO_NOMINAL.get(hand[i].rank, 0) for i in indices_set)
+
+        # --- Flush detection ---
+        flush_suit: str | None = None
+        flush_indices: list[int] | None = None
+        for suit, idxs in by_suit.items():
+            # Deduplicate (wild cards may appear multiple times)
+            unique = list(dict.fromkeys(idxs))
+            if len(unique) >= flush_req:
+                # Pick highest-value cards
+                unique.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+                flush_indices = unique[:5]
+                flush_suit = suit
+                break
+
+        # --- Straight detection ---
+        def _find_straight() -> set[int] | None:
+            # Check descending windows of card IDs
+            sorted_ranks = sorted(by_rank.keys(), reverse=True)
+            # Ace-low: also add 1 if 14 exists
+            rank_set = set(sorted_ranks)
+            if 14 in rank_set:
+                rank_set.add(1)
+
+            for high in range(14, 0, -1):
+                run: list[int] = []
+                for r in range(high, high - straight_req - 1, -1):
+                    if r < 1:
+                        break
+                    actual = 14 if r == 1 else r
+                    if actual in by_rank:
+                        run.append(actual)
+                    else:
+                        break
+                if len(run) >= straight_req:
+                    result: set[int] = set()
+                    for r in run[:5]:
+                        result.add(by_rank[r][0])  # pick one card per rank
+                    return result
+            return None
+
+        straight_indices = _find_straight()
+
+        # --- Try hands from best to worst ---
+
+        # Five of a Kind (rare without special jokers, but check)
+        if 5 in groups_by_size:
+            cid, idxs = groups_by_size[5][0]
+            chosen = set(idxs[:5])
+            if flush_indices and chosen <= set(flush_indices):
+                return chosen  # Flush Five
+            return chosen  # Five of a Kind
+
+        # Four of a Kind
+        if 4 in groups_by_size:
+            best_four: set[int] | None = None
+            best_four_score = -1.0
+            for cid, idxs in groups_by_size[4]:
+                s = set(idxs[:4])
+                sc = _best_of(s)
+                if sc > best_four_score:
+                    best_four = s
+                    best_four_score = sc
+
+            # Check for Straight Flush first (ranks higher than Four of a Kind)
+            if flush_indices and straight_indices:
+                sf_set = set(flush_indices) & straight_indices
+                if len(sf_set) >= straight_req:
+                    return set(list(sf_set)[:5])
+                # Try to build straight flush from flush cards
+                flush_set = set(flush_indices) if flush_indices else set()
+                if straight_indices and len(flush_set & straight_indices) >= straight_req:
+                    return set(list(flush_set & straight_indices)[:5])
+
+            # Full House (four of a kind + any pair makes full house available,
+            # but four of a kind beats full house, so just return four)
+            # Actually check: Full House (3+2) might lose to Four of a Kind
+            # Four of a Kind > Full House, so return four
+            if best_four is not None:
+                return best_four
+
+        # Straight Flush
+        if flush_indices and straight_indices:
+            # Check if we can form a straight from flush-suit cards only
+            if flush_suit:
+                flush_only_by_rank: dict[int, int] = {}
+                for i in dict.fromkeys(by_suit.get(flush_suit, [])):
+                    cid = card_ids[i]
+                    if cid > 0 and cid not in flush_only_by_rank:
+                        flush_only_by_rank[cid] = i
+                if 14 in flush_only_by_rank:
+                    flush_only_by_rank.setdefault(1, flush_only_by_rank[14])
+                for high in range(14, 0, -1):
+                    run: list[int] = []
+                    for r in range(high, high - straight_req - 1, -1):
+                        if r < 1:
+                            break
+                        actual = 14 if r == 1 else r
+                        if actual in flush_only_by_rank:
+                            run.append(flush_only_by_rank[actual])
+                        else:
+                            break
+                    if len(run) >= straight_req:
+                        return set(run[:5])
+
+        # Full House (3 + 2)
+        if 3 in groups_by_size and 2 in groups_by_size:
+            trips = groups_by_size[3]
+            pairs = groups_by_size[2]
+            best_trip_cid, best_trip_idxs = trips[0]
+            # Find a pair that doesn't overlap with the trips
+            for pair_cid, pair_idxs in pairs:
+                if pair_cid != best_trip_cid:
+                    return set(best_trip_idxs[:3]) | set(pair_idxs[:2])
+            # Two sets of trips — use second as pair
+            if len(trips) >= 2:
+                return set(best_trip_idxs[:3]) | set(trips[1][1][:2])
+
+        # Flush
+        if flush_indices:
+            return set(flush_indices[:5])
+
+        # Straight
+        if straight_indices:
+            return straight_indices
+
+        # Three of a Kind
+        if 3 in groups_by_size:
+            return set(groups_by_size[3][0][1][:3])
+
+        # Two Pair
+        if 2 in groups_by_size and len(groups_by_size[2]) >= 2:
+            p1 = groups_by_size[2][0][1][:2]
+            p2 = groups_by_size[2][1][1][:2]
+            return set(p1) | set(p2)
+
+        # Pair
+        if 2 in groups_by_size:
+            return set(groups_by_size[2][0][1][:2])
+
+        # High Card — play the highest-value cards
+        ranked = sorted(range(len(hand)), key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+        return set(ranked[:max_cards])
+
+    def _find_best_hand_brute(self, state: RunState, hand: list[PlayingCard], max_cards: int) -> set[int]:
+        """Brute-force fallback for hands with Stone Cards or exotic jokers."""
         hand_order = [
             "Flush Five", "Flush House", "Five of a Kind", "Straight Flush",
             "Four of a Kind", "Full House", "Flush", "Straight",
             "Three of a Kind", "Two Pair", "Pair", "High Card",
         ]
         hand_rank = {name: i for i, name in enumerate(hand_order)}
+        best_hand_name = "High Card"
+        best_indices: set[int] = set()
+        best_score = float("-inf")
 
-        max_cards = min(5, len(hand))
         for size in range(max_cards, 0, -1):
             for combo in combinations(range(len(hand)), size):
                 cards = [hand[i] for i in combo]
@@ -151,11 +358,9 @@ class HeuristicAgent:
                     result = evaluate_poker_hand(state, cards)
                 except Exception:
                     continue
-
                 for hand_name in hand_order:
                     if result.get(hand_name) and any(result[hand_name]):
                         rank = hand_rank[hand_name]
-                        # Lower rank = better hand
                         score = -rank * 10000 + sum(RANK_TO_NOMINAL.get(c.rank, 0) for c in cards)
                         if score > best_score:
                             best_score = score
@@ -163,11 +368,9 @@ class HeuristicAgent:
                             best_hand_name = hand_name
                         break
 
-        # If only High Card, play the 5 highest-value cards for max chips
         if best_hand_name == "High Card" or not best_indices:
             ranked = sorted(range(len(hand)), key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
             best_indices = set(ranked[:max_cards])
-
         return best_indices
 
     def _find_worst_cards(self, state: RunState, hand: list[PlayingCard], max_discard: int) -> set[int]:

@@ -226,15 +226,12 @@ def _p_dollars(state: RunState, card: PlayingCard) -> int:
 
 
 def _get_x_same(state: RunState, num: int, hand: list[PlayingCard]) -> list[list[PlayingCard]]:
-    vals: list[list[PlayingCard]] = [[] for _ in range(15)]
-    for i in range(len(hand) - 1, -1, -1):
-        curr = [hand[i]]
-        for j in range(len(hand)):
-            if i != j and _card_id(state, hand[i]) == _card_id(state, hand[j]):
-                curr.append(hand[j])
-        if len(curr) == num:
-            vals[_card_id(state, curr[0])] = curr
-    return [cards for cards in reversed(vals) if cards]
+    # Group cards by card_id in one pass (O(n) instead of O(n²))
+    groups: dict[int, list[PlayingCard]] = {}
+    for card in reversed(hand):
+        cid = _card_id(state, card)
+        groups.setdefault(cid, []).append(card)
+    return [cards for cid in sorted(groups, reverse=True) if len(cards := groups[cid]) == num]
 
 
 def _get_flush(state: RunState, hand: list[PlayingCard]) -> list[list[PlayingCard]]:

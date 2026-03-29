@@ -296,6 +296,7 @@ class RunState:
     blind_prepped: bool = False
     eye_hands: dict[str, bool] = field(default_factory=dict)
     mouth_only_hand: str | bool = False
+    _joker_name_cache: tuple[list[str], int, frozenset[str]] | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.pseudorandom = PseudorandomState(self.seed)
@@ -307,9 +308,14 @@ class RunState:
         }
 
     def has_joker(self, name: str) -> bool:
-        if self.jokers:
-            return any(self.data.centers[joker.center_key]["name"] == name for joker in self.jokers)
-        return any(self.data.centers[key]["name"] == name for key in self.joker_keys)
+        cache = getattr(self, "_joker_name_cache", None)
+        keys = self.joker_keys
+        if cache is None or cache[0] is not keys or cache[1] != len(keys):
+            names = frozenset(self.data.centers[k]["name"] for k in keys)
+            self._joker_name_cache = (keys, len(keys), names)
+        else:
+            names = cache[2]
+        return name in names
 
     def calculate_reroll_cost(self, skip_increment: bool = False) -> None:
         if self.current_round.free_rerolls < 0:

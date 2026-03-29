@@ -71,7 +71,7 @@ def main():
                 num_envs=args.envs,
                 rollout_length=2048,
                 total_timesteps=args.steps,
-                mini_batch_size=min(32, args.batch),
+                mini_batch_size=args.batch,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/ppo",
                 log_dir=log_dir or "runs/ppo",

@@ -8,9 +8,7 @@ version = "0.1.0"
 description = "Headless Python recreation of Balatro core logic"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "lupa>=2.1",
-]
+dependencies = []
 
 [project.optional-dependencies]
 cli = [

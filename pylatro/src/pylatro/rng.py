@@ -1,16 +1,65 @@
 from __future__ import annotations
 
+import random as _random_mod
 from dataclasses import dataclass, field
-from math import pi
+from math import floor, pi
 from typing import TYPE_CHECKING, Any, TypeVar
-
-from .upstream import get_luajit_bridge
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 KT = TypeVar("KT")
 VT = TypeVar("VT")
+
+# Module-level reusable RNG instance (re-seeded before every draw).
+_rng = _random_mod.Random()
+
+
+def _seeded_random(seed: float, minimum: int | None = None, maximum: int | None = None) -> float | int:
+    _rng.seed(seed)
+    if minimum is not None and maximum is not None:
+        return _rng.randint(minimum, maximum)
+    return _rng.random()
+
+
+def _seeded_random_after(seed: float, draws_before: int, minimum: int | None = None, maximum: int | None = None) -> float | int:
+    _rng.seed(seed)
+    for _ in range(draws_before):
+        _rng.random()
+    if minimum is not None and maximum is not None:
+        return _rng.randint(minimum, maximum)
+    return _rng.random()
+
+
+def _seeded_random_string(length: int, seed: float) -> tuple[str, int]:
+    _rng.seed(seed)
+    count = 0
+
+    def draw(*args: int) -> float | int:
+        nonlocal count
+        count += 1
+        if args:
+            return _rng.randint(args[0], args[1])
+        return _rng.random()
+
+    chars: list[str] = []
+    for _ in range(length):
+        if draw() > 0.7:
+            chars.append(chr(draw(ord("1"), ord("9"))))
+        elif draw() > 0.45:
+            chars.append(chr(draw(ord("A"), ord("N"))))
+        else:
+            chars.append(chr(draw(ord("P"), ord("Z"))))
+    return "".join(chars).upper(), count
+
+
+def _seeded_shuffle_indices(length: int, seed: float) -> list[int]:
+    _rng.seed(seed)
+    out = list(range(1, length + 1))
+    for i in range(length, 1, -1):
+        j = _rng.randint(1, i)
+        out[i - 1], out[j - 1] = out[j - 1], out[i - 1]
+    return out
 
 
 def pseudohash(text: str) -> float:
@@ -48,23 +97,23 @@ class PseudorandomState:
 
     def pseudorandom(self, seed: str | float, minimum: int | None = None, maximum: int | None = None) -> float | int:
         actual_seed = self.pseudoseed(seed) if isinstance(seed, str) else seed
-        result = get_luajit_bridge().random(actual_seed, minimum, maximum)
+        result = _seeded_random(actual_seed, minimum, maximum)
         self._record_seed(actual_seed, 1)
         return result
 
     def random_string(self, length: int, seed: float) -> str:
-        result, draws = get_luajit_bridge().random_string(length, seed)
+        result, draws = _seeded_random_string(length, seed)
         self._record_seed(seed, draws)
         return result
 
     def random_without_seed(self, minimum: int | None = None, maximum: int | None = None) -> float | int:
         if self.last_seed is None:
             raise RuntimeError("Balatro RNG continuation requested before any seeded draw")
-        result = get_luajit_bridge().random(
+        result = _seeded_random_after(
             self.last_seed,
+            self.draws_since_seed,
             minimum,
             maximum,
-            draws_before=self.draws_since_seed,
         )
         self.draws_since_seed += 1
         return result
@@ -80,7 +129,7 @@ class PseudorandomState:
         working = list(values)
         if working and isinstance(working[0], dict) and "sort_id" in working[0]:
             working.sort(key=lambda item: item["sort_id"])  # type: ignore[index]
-        order = get_luajit_bridge().shuffle_indices(len(working), seed)
+        order = _seeded_shuffle_indices(len(working), seed)
         self._record_seed(seed, max(len(working) - 1, 0))
         return [working[index - 1] for index in order]
 
@@ -104,7 +153,7 @@ def pseudorandom_element[KT, VT](values: Sequence[VT] | dict[KT, VT], seed: floa
     items = _sorted_items(values)
     if not items:
         raise ValueError("Cannot choose an element from an empty collection")
-    selected = int(get_luajit_bridge().random(seed, 1, len(items))) - 1
+    selected = int(_seeded_random(seed, 1, len(items))) - 1
     return items[selected][1], items[selected][0]
 
 
@@ -112,5 +161,5 @@ def pseudoshuffle[VT](values: list[VT], seed: float) -> list[VT]:
     working = list(values)
     if working and isinstance(working[0], dict) and "sort_id" in working[0]:
         working.sort(key=lambda item: item["sort_id"])  # type: ignore[index]
-    order = get_luajit_bridge().shuffle_indices(len(working), seed)
+    order = _seeded_shuffle_indices(len(working), seed)
     return [working[index - 1] for index in order]

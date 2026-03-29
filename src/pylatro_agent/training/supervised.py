@@ -119,12 +119,12 @@ def generate_training_data(
     num_games: int,
     data: GameData | None = None,
     vocab: Vocab | None = None,
-    min_ante: int = 3,
+    min_ante: int = 5,
     num_workers: int = 0,
 ) -> list[dict[str, Any]]:
     """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
 
-    Only keeps games that reached at least min_ante (default 3),
+    Only keeps games that reached at least min_ante (default 5),
     filtering out low-quality games that would teach bad strategy.
 
     Games are generated in parallel across num_workers processes

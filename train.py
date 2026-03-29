@@ -27,6 +27,8 @@ def main():
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
     parser.add_argument("--d-model", type=int, default=256, help="Model dimension (default: 256)")
     parser.add_argument("--n-layers", type=int, default=8, help="Transformer layers (default: 8)")
+    parser.add_argument("--checkpoint-dir", type=str, default=None, help="Base dir for checkpoints (default: checkpoints/<phase>)")
+    parser.add_argument("--log-dir", type=str, default=None, help="Base dir for TensorBoard logs (default: runs/<phase>)")
     args = parser.parse_args()
 
     device = args.device
@@ -43,6 +45,9 @@ def main():
     from pylatro_agent.agent import AgentConfig
     agent_config = AgentConfig(d_model=args.d_model, n_layers=args.n_layers)
 
+    checkpoint_dir = args.checkpoint_dir
+    log_dir = args.log_dir
+
     if args.phase == "supervised":
         from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
         train_supervised(
@@ -51,6 +56,8 @@ def main():
                 batch_size=args.batch,
                 max_epochs=args.epochs,
                 device=device,
+                save_dir=checkpoint_dir or "checkpoints/supervised",
+                log_dir=log_dir or "runs/supervised",
             ),
             agent_config=agent_config,
         )
@@ -64,6 +71,8 @@ def main():
                 total_timesteps=args.steps,
                 mini_batch_size=min(32, args.batch),
                 device=device,
+                save_dir=checkpoint_dir or "checkpoints/ppo",
+                log_dir=log_dir or "runs/ppo",
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,
@@ -75,6 +84,7 @@ def main():
             SelfPlayConfig(
                 ppo_timesteps_per_stage=args.steps,
                 device=device,
+                save_dir=checkpoint_dir or "checkpoints/self_play",
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

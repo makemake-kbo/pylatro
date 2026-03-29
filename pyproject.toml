@@ -18,6 +18,7 @@ agent = [
     "torch>=2.0",
     "gymnasium>=1.0",
     "numpy>=1.26",
+    "tensorboard>=2.14",
 ]
 
 [project.scripts]

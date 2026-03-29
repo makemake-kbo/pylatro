@@ -74,6 +74,42 @@ Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 tensorboard --logdir runs/
 ```
 
+### Docker (vast.ai)
+
+Build and push:
+
+```bash
+docker build -t pylatro .
+docker tag pylatro your-registry/pylatro:latest
+docker push your-registry/pylatro:latest
+```
+
+On vast.ai, mount a persistent volume to `/data` so checkpoints and TensorBoard logs survive container restarts:
+
+```bash
+# Supervised pretraining
+docker run --gpus all -v /workspace:/data pylatro \
+  uv run python train.py supervised \
+    --games 5000 --epochs 10 --device cuda \
+    --checkpoint-dir /data/checkpoints/supervised \
+    --log-dir /data/runs/supervised
+
+# PPO fine-tuning
+docker run --gpus all -v /workspace:/data pylatro \
+  uv run python train.py ppo \
+    --pretrained /data/checkpoints/supervised/supervised_epoch10.pt \
+    --envs 16 --steps 4000000 --device cuda \
+    --checkpoint-dir /data/checkpoints/ppo \
+    --log-dir /data/runs/ppo
+```
+
+TensorBoard (run alongside training):
+
+```bash
+docker run --gpus all -v /workspace:/data -p 6006:6006 pylatro \
+  uv run tensorboard --logdir /data/runs --host 0.0.0.0
+```
+
 ### Playing
 
 #### Trained model

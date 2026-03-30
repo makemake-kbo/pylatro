@@ -74,9 +74,11 @@ class PPOConfig:
     gamma: float = 0.995
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1
-    entropy_coeff: float = 0.003
-    entropy_decay: float = 0.9999
-    entropy_floor: float = 0.001
+    entropy_coeff: float = 0.01
+    target_entropy: float = 0.15
+    alpha_lr: float = 3e-4
+    alpha_min: float = 0.001
+    alpha_max: float = 0.03
     value_loss_coeff: float = 0.5
     max_grad_norm: float = 0.5
     lr: float = 2e-5
@@ -133,6 +135,9 @@ def train_ppo(
 
     total_steps = 0
     update_count = 0
+    # Adaptive entropy coefficient (SAC-style)
+    log_alpha = torch.tensor(np.log(config.entropy_coeff), dtype=torch.float32, requires_grad=True)
+    alpha_optimizer = AdamW([log_alpha], lr=config.alpha_lr)
     entropy_coeff = config.entropy_coeff
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
@@ -243,7 +248,8 @@ def train_ppo(
                 # Value loss
                 value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
-                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
+                alpha = log_alpha.exp().detach()
+                loss = policy_loss + config.value_loss_coeff * value_loss - alpha * entropy
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -257,7 +263,15 @@ def train_ppo(
                 update_entropies.append(entropy.item())
                 update_clip_fracs.append(clip_frac)
 
-        entropy_coeff = max(entropy_coeff * config.entropy_decay, config.entropy_floor)
+        # Adaptive entropy: adjust alpha toward target entropy
+        mean_entropy = np.mean(update_entropies)
+        alpha_loss = -(log_alpha * (mean_entropy - config.target_entropy))
+        alpha_optimizer.zero_grad()
+        alpha_loss.backward()
+        alpha_optimizer.step()
+        with torch.no_grad():
+            log_alpha.clamp_(np.log(config.alpha_min), np.log(config.alpha_max))
+        entropy_coeff = log_alpha.exp().item()
         update_count += 1
 
         # Save checkpoint every 10 updates

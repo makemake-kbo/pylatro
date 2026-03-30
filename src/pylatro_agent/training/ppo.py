@@ -260,6 +260,11 @@ def train_ppo(
         entropy_coeff = max(entropy_coeff * config.entropy_decay, config.entropy_floor)
         update_count += 1
 
+        # Save checkpoint every 10 updates
+        if update_count % 10 == 0:
+            save_model = model.module if isinstance(model, nn.DataParallel) else model
+            torch.save(save_model.state_dict(), save_path / f"ppo_update{update_count}.pt")
+
         # TensorBoard logging
         writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
         writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)

@@ -87,6 +87,7 @@ class PPOConfig:
     log_dir: str = "runs/ppo"
     eval_interval: int = 50
     eval_games: int = 10
+    micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
 
 
@@ -111,8 +112,15 @@ def train_ppo(
         _load_checkpoint_compatible(model, pretrained_path, device)
         logger.info(f"Loaded pretrained model from {pretrained_path}")
 
-    if config.device == "cuda" and torch.cuda.device_count() > 1:
+    use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
+    if use_multi_gpu:
         model = nn.DataParallel(model)
+        accum_steps = max(1, config.mini_batch_size // config.micro_batch_size)
+        effective_batch_size = config.micro_batch_size
+        logger.info(f"DataParallel: grad accum {accum_steps} steps, micro_batch={effective_batch_size}")
+    else:
+        accum_steps = 1
+        effective_batch_size = config.mini_batch_size
 
     optimizer = AdamW(model.parameters(), lr=config.lr)
 
@@ -225,8 +233,9 @@ def train_ppo(
         update_clip_fracs = []
 
         for ppo_epoch in range(config.ppo_epochs):
-            batches = buffer.get_batches(config.mini_batch_size, device, pin_memory=use_pin_memory)
-            for batch in batches:
+            batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
+            optimizer.zero_grad()
+            for i, batch in enumerate(batches):
                 logits, value_dict = model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
                     batch["attention_mask"], batch["action_mask"],
@@ -250,11 +259,13 @@ def train_ppo(
 
                 alpha = log_alpha.exp().detach()
                 loss = policy_loss + config.value_loss_coeff * value_loss - alpha * entropy
+                (loss / accum_steps).backward()
 
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-                optimizer.step()
+                # Step every accum_steps micro-batches (or on last batch)
+                if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
+                    nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+                    optimizer.step()
+                    optimizer.zero_grad()
 
                 with torch.no_grad():
                     clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()

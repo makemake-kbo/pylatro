@@ -38,6 +38,7 @@ class SupervisedConfig:
     max_epochs: int = 10
     value_loss_coeff: float = 0.5
     num_workers: int = 0  # 0 = auto-detect (all available cores)
+    min_ante: int = 5
     save_dir: str = "checkpoints/supervised"
     log_dir: str = "runs/supervised"
     device: str = "cpu"
@@ -120,12 +121,12 @@ def generate_training_data(
     num_games: int,
     data: GameData | None = None,
     vocab: Vocab | None = None,
-    min_ante: int = 4,
+    min_ante: int = 5,
     num_workers: int = 0,
 ) -> list[dict[str, Any]]:
     """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
 
-    Only keeps games that reached at least min_ante (default 3),
+    Only keeps games that reached at least min_ante,
     filtering out low-quality games that would teach bad strategy.
 
     Games are generated in parallel across num_workers processes
@@ -181,7 +182,13 @@ def train_supervised(
     base_model = model.module if isinstance(model, nn.DataParallel) else model
     logger.info(f"Model parameters: {base_model.count_parameters():,}")
     logger.info("Generating training data from heuristic agent...")
-    records = generate_training_data(config.num_games, data=data, vocab=vocab, num_workers=config.num_workers)
+    records = generate_training_data(
+        config.num_games,
+        data=data,
+        vocab=vocab,
+        min_ante=config.min_ante,
+        num_workers=config.num_workers,
+    )
     logger.info(f"Generated {len(records)} training records")
 
     wins = sum(1 for r in records if r["won"])

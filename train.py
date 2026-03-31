@@ -20,6 +20,12 @@ def main():
     parser.add_argument("phase", choices=["supervised", "ppo", "self_play"])
     parser.add_argument("--games", type=int, default=1000, help="Heuristic games for supervised (default: 1000)")
     parser.add_argument("--epochs", type=int, default=5, help="Supervised epochs (default: 5)")
+    parser.add_argument(
+        "--min-ante",
+        type=int,
+        default=5,
+        help="Minimum ante a heuristic game must reach to be kept for supervised pretraining (default: 5)",
+    )
     parser.add_argument("--steps", type=int, default=200_000, help="PPO total timesteps (default: 200000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
     parser.add_argument("--batch", type=int, default=128, help="Batch size (default: 128)")
@@ -91,6 +97,7 @@ def main():
                 batch_size=args.batch,
                 max_epochs=args.epochs,
                 num_workers=args.workers,
+                min_ante=args.min_ante,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/supervised",
                 log_dir=log_dir or "runs/supervised",

@@ -230,6 +230,7 @@ def train_ppo(
         update_policy_losses = []
         update_value_losses = []
         update_entropies = []
+        update_normalized_entropies = []
         update_clip_fracs = []
 
         for ppo_epoch in range(config.ppo_epochs):
@@ -243,7 +244,15 @@ def train_ppo(
                 dist = MaskedCategorical(logits, batch["action_mask"])
 
                 new_log_probs = dist.log_prob(batch["actions"])
-                entropy = dist.entropy().mean()
+                entropy_per_state = dist.entropy()
+                entropy = entropy_per_state.mean()
+                valid_action_counts = batch["action_mask"].sum(dim=-1)
+                max_entropy = torch.log(valid_action_counts.clamp_min(2.0))
+                normalized_entropy = torch.where(
+                    valid_action_counts > 1.0,
+                    entropy_per_state / max_entropy,
+                    torch.zeros_like(entropy_per_state),
+                ).mean()
 
                 # Policy loss (clipped PPO)
                 ratio = torch.exp(new_log_probs - batch["old_log_probs"])
@@ -272,11 +281,13 @@ def train_ppo(
                 update_policy_losses.append(policy_loss.item())
                 update_value_losses.append(value_loss.item())
                 update_entropies.append(entropy.item())
+                update_normalized_entropies.append(normalized_entropy.item())
                 update_clip_fracs.append(clip_frac)
 
         # Adaptive entropy: adjust alpha toward target entropy
-        mean_entropy = np.mean(update_entropies)
-        alpha_loss = -(log_alpha * (mean_entropy - config.target_entropy))
+        mean_entropy = float(np.mean(update_entropies))
+        mean_entropy_tensor = torch.tensor(mean_entropy, dtype=torch.float32, device=log_alpha.device)
+        alpha_loss = log_alpha.exp() * (mean_entropy_tensor - config.target_entropy)
         alpha_optimizer.zero_grad()
         alpha_loss.backward()
         alpha_optimizer.step()
@@ -294,6 +305,7 @@ def train_ppo(
         writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
         writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
         writer.add_scalar("ppo/entropy", np.mean(update_entropies), update_count)
+        writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
         writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
@@ -383,7 +395,7 @@ def evaluate_model(
     num_games: int,
     device: torch.device,
 ) -> float:
-    """Evaluate model win rate over num_games."""
+    """Evaluate model win rate with greedy action selection over num_games."""
     model.eval()
     wins = 0
 
@@ -399,8 +411,8 @@ def evaluate_model(
                     batch["tokens"], batch["token_types"], batch["scalars"],
                     batch["attention_mask"], batch["action_mask"],
                 )
-                dist = MaskedCategorical(logits, batch["action_mask"])
-                action = dist.sample().item()
+                masked_logits = logits.masked_fill(batch["action_mask"] == 0, -1e8)
+                action = masked_logits.argmax(dim=-1).item()
 
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated

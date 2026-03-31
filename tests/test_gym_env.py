@@ -5,10 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pylatro import load_game_data
-from pylatro_agent.constants import NUM_ACTIONS
+from pylatro import load_game_data, populate_shop
+from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.vocab import build_vocab
+from pylatro_cli.controller import GamePhase
 
 
 @pytest.fixture(scope="module")
@@ -80,3 +81,28 @@ def test_env_multiple_resets(game_data, vocab):
             if terminated or truncated:
                 break
             mask = obs["action_mask"]
+
+
+def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab)
+    env.reset()
+
+    assert env.state is not None
+    env.state.dollars = 100
+    populate_shop(env.state)
+    env._controller.phase = GamePhase.SHOP
+    env._sub_phase = SubPhase.SHOP
+
+    obs = env._obs_to_dict(env._build_obs())
+    booster_offset = len(env.state.shop.cards) + len(env.state.shop.vouchers)
+    action = ActionRange.SHOP_BUY_START + booster_offset
+
+    assert obs["action_mask"][action] == 1
+
+    _, _, terminated, truncated, info = env.step(action)
+
+    assert not terminated
+    assert not truncated
+    assert "error" not in info
+    assert env.state.pack is not None
+    assert env._sub_phase == SubPhase.BOOSTER_PACK

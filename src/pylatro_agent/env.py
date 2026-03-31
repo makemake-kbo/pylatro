@@ -292,19 +292,19 @@ class BalatroEnv(gymnasium.Env):
 
         elif at == ActionType.SHOP_BUY:
             idx = decoded.index
-            all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
-            item = all_items[idx]
-            if item.shop_voucher:
-                ctrl.buy_voucher(item.center_key)
-            elif item.booster_pos is not None:
-                # Buying a booster opens it
-                booster_idx = item.booster_pos
-                ctrl.buy_card(idx)  # Pay for it first
-                pack = ctrl.open_pack(booster_idx)
+            n_cards = len(state.shop.cards)
+            n_vouchers = len(state.shop.vouchers)
+
+            if idx < n_cards:
+                ctrl.buy_card(idx)
+            elif idx < n_cards + n_vouchers:
+                voucher = state.shop.vouchers[idx - n_cards]
+                ctrl.buy_voucher(voucher.center_key)
+            else:
+                booster_idx = idx - n_cards - n_vouchers
+                ctrl.open_pack(booster_idx)
                 self._sub_phase = SubPhase.BOOSTER_PACK
                 return
-            else:
-                ctrl.buy_card(idx)
 
         elif at == ActionType.SHOP_REROLL:
             ctrl.reroll()

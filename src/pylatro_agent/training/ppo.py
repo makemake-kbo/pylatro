@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,10 +76,12 @@ class PPOConfig:
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1
     entropy_coeff: float = 0.01
-    target_entropy: float = 0.15
+    adaptive_entropy: bool = True
+    target_entropy: float = 0.25  # Target normalized entropy ratio in [0, 1]
     alpha_lr: float = 3e-4
     alpha_min: float = 0.001
     alpha_max: float = 0.03
+    entropy_ema_beta: float = 0.9
     value_loss_coeff: float = 0.5
     max_grad_norm: float = 0.5
     lr: float = 2e-5
@@ -86,9 +89,36 @@ class PPOConfig:
     save_dir: str = "checkpoints/ppo"
     log_dir: str = "runs/ppo"
     eval_interval: int = 50
+    log_interval: int = 10
+    checkpoint_interval: int = 10
     eval_games: int = 10
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
+
+
+def _unwrap_model(model: nn.Module) -> nn.Module:
+    """Return the underlying model when wrapped for multi-GPU training."""
+    return model.module if isinstance(model, nn.DataParallel) else model
+
+
+def _save_checkpoint(model: nn.Module, save_path: Path, update_count: int) -> Path:
+    """Persist a numbered PPO checkpoint and return its path."""
+    checkpoint_path = save_path / f"ppo_update{update_count}.pt"
+    torch.save(_unwrap_model(model).state_dict(), checkpoint_path)
+    return checkpoint_path
+
+
+def _smoothed_entropy_signal(previous: float | None, current: float, beta: float) -> float:
+    """Update the controller's entropy signal with an EMA."""
+    if previous is None:
+        return current
+    return beta * previous + (1.0 - beta) * current
+
+
+def _entropy_alpha_loss(log_alpha: torch.Tensor, entropy_signal: float, target_entropy: float) -> torch.Tensor:
+    """Return the alpha loss for adaptive entropy tuning."""
+    signal = torch.tensor(entropy_signal, dtype=torch.float32, device=log_alpha.device)
+    return log_alpha.exp() * (signal - target_entropy)
 
 
 def train_ppo(
@@ -107,6 +137,32 @@ def train_ppo(
     device = torch.device(config.device)
     use_pin_memory = device.type == "cuda"
     model = BalatroAgent(agent_config, vocab).to(device)
+
+    if config.log_interval <= 0:
+        raise ValueError("log_interval must be positive")
+    if config.checkpoint_interval <= 0:
+        raise ValueError("checkpoint_interval must be positive")
+    if config.eval_interval <= 0:
+        raise ValueError("eval_interval must be positive")
+    if config.ppo_epochs <= 0:
+        raise ValueError("ppo_epochs must be positive")
+    if config.lr <= 0.0:
+        raise ValueError("lr must be positive")
+    if config.entropy_coeff < 0.0:
+        raise ValueError("entropy_coeff must be non-negative")
+    if config.adaptive_entropy:
+        if config.entropy_coeff <= 0.0:
+            raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
+        if config.alpha_lr <= 0.0:
+            raise ValueError("alpha_lr must be positive when adaptive entropy is enabled")
+        if config.alpha_min <= 0.0:
+            raise ValueError("alpha_min must be positive when adaptive entropy is enabled")
+        if config.alpha_max < config.alpha_min:
+            raise ValueError("alpha_max must be greater than or equal to alpha_min")
+        if not 0.0 <= config.target_entropy <= 1.0:
+            raise ValueError("target_entropy must be between 0 and 1 when using normalized entropy")
+        if not 0.0 <= config.entropy_ema_beta < 1.0:
+            raise ValueError("entropy_ema_beta must be in [0, 1)")
 
     if pretrained_path:
         _load_checkpoint_compatible(model, pretrained_path, device)
@@ -141,12 +197,48 @@ def train_ppo(
     save_path.mkdir(parents=True, exist_ok=True)
     writer = SummaryWriter(config.log_dir)
 
+    steps_per_update = config.num_envs * config.rollout_length
+    planned_updates = max(1, math.ceil(config.total_timesteps / steps_per_update))
+    if config.total_timesteps % steps_per_update != 0:
+        logger.info(
+            "PPO total_timesteps=%d is not divisible by steps_per_update=%d; "
+            "the final update will overshoot to %d total env steps.",
+            config.total_timesteps,
+            steps_per_update,
+            planned_updates * steps_per_update,
+        )
+    logger.info(
+        "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "
+        "ppo_epochs=%d, lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
+        "log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
+        config.total_timesteps,
+        steps_per_update,
+        planned_updates,
+        config.ppo_epochs,
+        config.lr,
+        config.entropy_coeff,
+        config.adaptive_entropy,
+        config.log_interval,
+        config.checkpoint_interval,
+        config.eval_interval,
+    )
+
     total_steps = 0
     update_count = 0
-    # Adaptive entropy coefficient (SAC-style)
-    log_alpha = torch.tensor(np.log(config.entropy_coeff), dtype=torch.float32, requires_grad=True)
-    alpha_optimizer = AdamW([log_alpha], lr=config.alpha_lr)
     entropy_coeff = config.entropy_coeff
+    if config.adaptive_entropy:
+        # Adaptive entropy coefficient driven by normalized entropy.
+        log_alpha = torch.tensor(
+            np.log(config.entropy_coeff),
+            dtype=torch.float32,
+            device=device,
+            requires_grad=True,
+        )
+        alpha_optimizer = AdamW([log_alpha], lr=config.alpha_lr)
+    else:
+        log_alpha = None
+        alpha_optimizer = None
+    entropy_signal_ema: float | None = None
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
@@ -154,7 +246,7 @@ def train_ppo(
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
 
-    while total_steps < config.total_timesteps:
+    while update_count < planned_updates:
         buffer = RolloutBuffer(
             num_envs=config.num_envs,
             rollout_length=config.rollout_length,
@@ -232,6 +324,8 @@ def train_ppo(
         update_entropies = []
         update_normalized_entropies = []
         update_clip_fracs = []
+        update_approx_kls = []
+        update_valid_action_counts = []
 
         for ppo_epoch in range(config.ppo_epochs):
             batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
@@ -266,8 +360,7 @@ def train_ppo(
                 # Value loss
                 value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
-                alpha = log_alpha.exp().detach()
-                loss = policy_loss + config.value_loss_coeff * value_loss - alpha * entropy
+                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
                 (loss / accum_steps).backward()
 
                 # Step every accum_steps micro-batches (or on last batch)
@@ -278,36 +371,48 @@ def train_ppo(
 
                 with torch.no_grad():
                     clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
+                    approx_kl = (batch["old_log_probs"] - new_log_probs).mean().item()
+                    valid_action_count_mean = valid_action_counts.float().mean().item()
                 update_policy_losses.append(policy_loss.item())
                 update_value_losses.append(value_loss.item())
                 update_entropies.append(entropy.item())
                 update_normalized_entropies.append(normalized_entropy.item())
                 update_clip_fracs.append(clip_frac)
+                update_approx_kls.append(approx_kl)
+                update_valid_action_counts.append(valid_action_count_mean)
 
-        # Adaptive entropy: adjust alpha toward target entropy
-        mean_entropy = float(np.mean(update_entropies))
-        mean_entropy_tensor = torch.tensor(mean_entropy, dtype=torch.float32, device=log_alpha.device)
-        alpha_loss = log_alpha.exp() * (mean_entropy_tensor - config.target_entropy)
-        alpha_optimizer.zero_grad()
-        alpha_loss.backward()
-        alpha_optimizer.step()
-        with torch.no_grad():
-            log_alpha.clamp_(np.log(config.alpha_min), np.log(config.alpha_max))
-        entropy_coeff = log_alpha.exp().item()
+        # Track the normalized entropy signal every update, even with fixed entropy.
+        mean_normalized_entropy = float(np.mean(update_normalized_entropies))
+        entropy_signal_ema = _smoothed_entropy_signal(
+            entropy_signal_ema,
+            mean_normalized_entropy,
+            config.entropy_ema_beta,
+        )
+        if config.adaptive_entropy:
+            assert log_alpha is not None
+            assert alpha_optimizer is not None
+            alpha_loss = _entropy_alpha_loss(log_alpha, entropy_signal_ema, config.target_entropy)
+            alpha_optimizer.zero_grad()
+            alpha_loss.backward()
+            alpha_optimizer.step()
+            with torch.no_grad():
+                log_alpha.clamp_(np.log(config.alpha_min), np.log(config.alpha_max))
+            entropy_coeff = log_alpha.exp().item()
         update_count += 1
 
-        # Save checkpoint every 10 updates
-        if update_count % 10 == 0:
-            save_model = model.module if isinstance(model, nn.DataParallel) else model
-            torch.save(save_model.state_dict(), save_path / f"ppo_update{update_count}.pt")
-
         # TensorBoard logging
+        mean_entropy = float(np.mean(update_entropies))
         writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
         writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
-        writer.add_scalar("ppo/entropy", np.mean(update_entropies), update_count)
+        writer.add_scalar("ppo/entropy", mean_entropy, update_count)
         writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
         writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
+        writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
+        writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
+        writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_entropy, update_count)
+        writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
+        writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
 
         flat_returns = buffer._flat_returns
@@ -325,19 +430,53 @@ def train_ppo(
             writer.add_scalar("rollout/ep_length_mean", np.mean(episode_lengths[-100:]), update_count)
             writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
             writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
+            recent_reward_mean = float(np.mean(recent))
+            recent_length_mean = float(np.mean(episode_lengths[-100:]))
+            recent_win_rate = float(np.mean(recent_wins))
+        else:
+            recent_reward_mean = float("nan")
+            recent_length_mean = float("nan")
+            recent_win_rate = float("nan")
 
-        if update_count % config.eval_interval == 0:
+        should_checkpoint = update_count % config.checkpoint_interval == 0 or update_count == planned_updates
+        if should_checkpoint:
+            checkpoint_path = _save_checkpoint(model, save_path, update_count)
+            logger.info("Saved checkpoint: %s", checkpoint_path)
+
+        eval_win_rate: float | None = None
+        should_eval = update_count % config.eval_interval == 0 or update_count == planned_updates
+        if should_eval:
             win_rate = evaluate_model(model, data, vocab, config.eval_games, device)
             writer.add_scalar("eval/win_rate", win_rate, update_count)
-            logger.info(
-                f"Update {update_count}, steps {total_steps}: "
-                f"win_rate={win_rate:.3f}, entropy_coeff={entropy_coeff:.5f}"
+            eval_win_rate = win_rate
+
+        should_log_progress = update_count % config.log_interval == 0 or should_eval or update_count == planned_updates
+        if should_log_progress:
+            progress = (
+                f"Update {update_count}/{planned_updates}, steps {total_steps}/{config.total_timesteps}: "
+                f"policy_loss={np.mean(update_policy_losses):.4f}, "
+                f"value_loss={np.mean(update_value_losses):.4f}, "
+                f"entropy={mean_entropy:.4f}, "
+                f"entropy_signal={entropy_signal_ema:.4f}, "
+                f"entropy_coeff={entropy_coeff:.5f}, "
+                f"clip_fraction={np.mean(update_clip_fracs):.4f}, "
+                f"approx_kl={np.mean(update_approx_kls):.5f}, "
+                f"valid_actions={np.mean(update_valid_action_counts):.1f}, "
+                f"ep_reward_mean={recent_reward_mean:.3f}, "
+                f"ep_length_mean={recent_length_mean:.1f}, "
+                f"rollout_win_rate={recent_win_rate:.3f}"
             )
-            save_model = model.module if isinstance(model, nn.DataParallel) else model
-            torch.save(save_model.state_dict(), save_path / f"ppo_update{update_count}.pt")
+            if eval_win_rate is not None:
+                progress += f", eval_win_rate={eval_win_rate:.3f}"
+            logger.info(progress)
 
     vec_env.close()
     writer.close()
+    logger.info(
+        "PPO training complete after %d updates and %d env steps.",
+        update_count,
+        total_steps,
+    )
     return model
 
 

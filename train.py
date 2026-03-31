@@ -23,14 +23,47 @@ def main():
     parser.add_argument("--steps", type=int, default=200_000, help="PPO total timesteps (default: 200000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
     parser.add_argument("--batch", type=int, default=128, help="Batch size (default: 128)")
+    parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO epochs per update (default: 4)")
     parser.add_argument("--pretrained", type=str, default=None, help="Path to pretrained checkpoint")
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
+    parser.add_argument("--lr", type=float, default=2e-5, help="PPO learning rate (default: 2e-5)")
     parser.add_argument("--d-model", type=int, default=256, help="Model dimension (default: 256)")
     parser.add_argument("--n-layers", type=int, default=8, help="Transformer layers (default: 8)")
     parser.add_argument("--checkpoint-dir", type=str, default=None, help="Base dir for checkpoints (default: checkpoints/<phase>)")
     parser.add_argument("--workers", type=int, default=0, help="CPU workers for game generation (default: all cores)")
     parser.add_argument("--log-dir", type=str, default=None, help="Base dir for TensorBoard logs (default: runs/<phase>)")
     parser.add_argument("--sync-envs", action="store_true", help="Use SyncVectorEnv instead of AsyncVectorEnv for PPO")
+    parser.add_argument("--log-interval", type=int, default=10, help="PPO console log interval in updates (default: 10)")
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=10,
+        help="PPO checkpoint interval in updates (default: 10)",
+    )
+    parser.add_argument("--eval-interval", type=int, default=50, help="PPO eval interval in updates (default: 50)")
+    parser.add_argument(
+        "--target-entropy",
+        type=float,
+        default=0.25,
+        help="PPO target normalized entropy ratio in [0, 1] (default: 0.25)",
+    )
+    parser.add_argument(
+        "--entropy-coeff",
+        type=float,
+        default=0.01,
+        help="PPO entropy coefficient; set to 0 with --no-adaptive-entropy for ablation (default: 0.01)",
+    )
+    parser.add_argument(
+        "--entropy-ema-beta",
+        type=float,
+        default=0.9,
+        help="EMA smoothing for PPO entropy control signal (default: 0.9)",
+    )
+    parser.add_argument(
+        "--no-adaptive-entropy",
+        action="store_true",
+        help="Disable adaptive entropy tuning and keep entropy coefficient fixed",
+    )
     args = parser.parse_args()
 
     device = args.device
@@ -72,10 +105,19 @@ def main():
                 num_envs=args.envs,
                 rollout_length=2048,
                 total_timesteps=args.steps,
+                ppo_epochs=args.ppo_epochs,
                 mini_batch_size=args.batch,
+                lr=args.lr,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/ppo",
                 log_dir=log_dir or "runs/ppo",
+                log_interval=args.log_interval,
+                checkpoint_interval=args.checkpoint_interval,
+                eval_interval=args.eval_interval,
+                entropy_coeff=args.entropy_coeff,
+                adaptive_entropy=not args.no_adaptive_entropy,
+                target_entropy=args.target_entropy,
+                entropy_ema_beta=args.entropy_ema_beta,
                 async_envs=not args.sync_envs,
             ),
             agent_config=agent_config,

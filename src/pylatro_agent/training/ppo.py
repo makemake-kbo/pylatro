@@ -68,7 +68,7 @@ def _make_vectorized_envs(
 @dataclass
 class PPOConfig:
     num_envs: int = 32
-    rollout_length: int = 2048
+    rollout_length: int = 512
     total_timesteps: int = 1_000_000
     ppo_epochs: int = 4
     mini_batch_size: int = 64
@@ -146,6 +146,8 @@ def train_ppo(
         raise ValueError("eval_interval must be positive")
     if config.ppo_epochs <= 0:
         raise ValueError("ppo_epochs must be positive")
+    if config.rollout_length <= 0:
+        raise ValueError("rollout_length must be positive")
     if config.lr <= 0.0:
         raise ValueError("lr must be positive")
     if config.entropy_coeff < 0.0:
@@ -206,6 +208,14 @@ def train_ppo(
             config.total_timesteps,
             steps_per_update,
             planned_updates * steps_per_update,
+        )
+    if planned_updates < 20:
+        logger.warning(
+            "PPO is configured for only %d policy updates (%d steps/update). "
+            "This is usually too few to debug or improve a weak prior; "
+            "lower rollout_length or raise total_timesteps.",
+            planned_updates,
+            steps_per_update,
         )
     logger.info(
         "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "

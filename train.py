@@ -28,6 +28,12 @@ def main():
     )
     parser.add_argument("--steps", type=int, default=200_000, help="PPO total timesteps (default: 200000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
+    parser.add_argument(
+        "--rollout-length",
+        type=int,
+        default=512,
+        help="PPO rollout length per env before each update (default: 512)",
+    )
     parser.add_argument("--batch", type=int, default=128, help="Batch size (default: 128)")
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO epochs per update (default: 4)")
     parser.add_argument("--pretrained", type=str, default=None, help="Path to pretrained checkpoint")
@@ -110,7 +116,7 @@ def main():
         train_ppo(
             PPOConfig(
                 num_envs=args.envs,
-                rollout_length=2048,
+                rollout_length=args.rollout_length,
                 total_timesteps=args.steps,
                 ppo_epochs=args.ppo_epochs,
                 mini_batch_size=args.batch,

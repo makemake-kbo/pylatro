@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,6 @@ from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
 from ..distributions import MaskedCategorical
-from ..constants import SubPhase
 from ..env import BalatroEnv
 from ..heuristic import HeuristicAgent
 from ..vocab import Vocab, build_vocab
@@ -32,6 +31,7 @@ logger = logging.getLogger(__name__)
 class SupervisedConfig:
     num_games: int = 10000
     batch_size: int = 256
+    gamma: float = 0.995
     lr: float = 3e-4
     weight_decay: float = 0.01
     warmup_steps: int = 1000
@@ -55,9 +55,19 @@ def _init_worker(counter: multiprocessing.Value, target: int) -> None:
     _shared_target = target
 
 
+def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
+    """Compute discounted reward-to-go targets for value pretraining."""
+    returns = [0.0] * len(rewards)
+    running_return = 0.0
+    for idx in range(len(rewards) - 1, -1, -1):
+        running_return = rewards[idx] + gamma * running_return
+        returns[idx] = running_return
+    return returns
+
+
 def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
     """Worker function for parallel game generation. Must be module-level for pickling."""
-    seed_start, min_ante = args
+    seed_start, min_ante, gamma = args
     data = load_game_data()
     vocab = build_vocab(data)
     agent = HeuristicAgent()
@@ -77,6 +87,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
         max_ante = 1
 
         while not done:
+            current_obs = obs
             mask = obs["action_mask"]
             action = agent.select_action(
                 env.state,
@@ -86,8 +97,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 pending_action=env._pending_action,
                 pending_consumable_slot=env._pending_consumable_slot,
             )
-            game_records.append({"obs": obs, "action": action})
             obs, reward, terminated, truncated, info = env.step(action)
+            game_records.append({"obs": current_obs, "action": action, "reward": float(reward)})
             done = terminated or truncated
             max_ante = max(max_ante, env.state.round_resets.ante)
 
@@ -99,9 +110,11 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 if _shared_counter.value >= _shared_target:
                     break
                 _shared_counter.value += 1
-            for rec in game_records:
+            return_targets = _discounted_returns([rec["reward"] for rec in game_records], gamma)
+            for rec, return_target in zip(game_records, return_targets):
                 rec["won"] = won
                 rec["max_ante"] = max_ante
+                rec["return_target"] = return_target
                 records.append(rec)
 
     return records
@@ -122,6 +135,7 @@ def generate_training_data(
     data: GameData | None = None,
     vocab: Vocab | None = None,
     min_ante: int = 5,
+    gamma: float = 0.995,
     num_workers: int = 0,
 ) -> list[dict[str, Any]]:
     """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
@@ -134,10 +148,16 @@ def generate_training_data(
     and stop as soon as the target number of games is reached.
     """
     num_workers = _get_num_workers(num_workers)
-    logger.info(f"Generating {num_games} games across {num_workers} workers (min_ante={min_ante})")
+    logger.info(
+        "Generating %d games across %d workers (min_ante=%d, gamma=%.3f)",
+        num_games,
+        num_workers,
+        min_ante,
+        gamma,
+    )
 
     # Non-overlapping seed ranges per worker (1M apart)
-    worker_args = [(i * 1_000_000, min_ante) for i in range(num_workers)]
+    worker_args = [(i * 1_000_000, min_ante, gamma) for i in range(num_workers)]
 
     if num_workers == 1:
         # Single worker — use shared state in-process
@@ -187,6 +207,7 @@ def train_supervised(
         data=data,
         vocab=vocab,
         min_ante=config.min_ante,
+        gamma=config.gamma,
         num_workers=config.num_workers,
     )
     logger.info(f"Generated {len(records)} training records")
@@ -332,7 +353,7 @@ def _collate_batch(records: list[dict], device: torch.device) -> dict[str, torch
         ),
         "value_target": torch.tensor(
             [
-                10.0 if r["won"] else (-10.0 + min(r.get("max_ante", 1), 8) * 1.0)
+                r.get("return_target", 10.0 if r["won"] else (-10.0 + min(r.get("max_ante", 1), 8) * 1.0))
                 for r in records
             ],
             dtype=torch.float32, device=device,

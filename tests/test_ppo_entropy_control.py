@@ -2,7 +2,11 @@ import math
 
 import torch
 
-from pylatro_agent.training.ppo import _entropy_alpha_loss, _smoothed_entropy_signal
+from pylatro_agent.training.ppo import (
+    _entropy_alpha_loss,
+    _make_alpha_optimizer,
+    _smoothed_entropy_signal,
+)
 
 
 def test_smoothed_entropy_signal_uses_current_value_first() -> None:
@@ -29,3 +33,31 @@ def test_alpha_loss_gradient_increases_alpha_when_entropy_below_target() -> None
 
     assert log_alpha.grad is not None
     assert log_alpha.grad.item() < 0.0
+
+
+def test_alpha_optimizer_step_decreases_alpha_when_entropy_above_target() -> None:
+    log_alpha = torch.tensor(math.log(0.01), dtype=torch.float32, requires_grad=True)
+    optimizer = _make_alpha_optimizer(log_alpha, lr=3e-4)
+    before = log_alpha.exp().item()
+
+    loss = _entropy_alpha_loss(log_alpha, entropy_signal=0.4, target_entropy=0.25)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    after = log_alpha.exp().item()
+    assert after < before
+
+
+def test_alpha_optimizer_step_is_stable_when_entropy_matches_target() -> None:
+    log_alpha = torch.tensor(math.log(0.01), dtype=torch.float32, requires_grad=True)
+    optimizer = _make_alpha_optimizer(log_alpha, lr=3e-4)
+    before = log_alpha.exp().item()
+
+    loss = _entropy_alpha_loss(log_alpha, entropy_signal=0.25, target_entropy=0.25)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    after = log_alpha.exp().item()
+    assert after == before

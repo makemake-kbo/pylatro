@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import AdamW
+from torch.optim import Adam, AdamW
 
 from pylatro import GameData, load_game_data
 
@@ -119,6 +119,16 @@ def _entropy_alpha_loss(log_alpha: torch.Tensor, entropy_signal: float, target_e
     """Return the alpha loss for adaptive entropy tuning."""
     signal = torch.tensor(entropy_signal, dtype=torch.float32, device=log_alpha.device)
     return log_alpha.exp() * (signal - target_entropy)
+
+
+def _make_alpha_optimizer(log_alpha: torch.Tensor, lr: float) -> Adam:
+    """Build the entropy-coefficient optimizer without weight decay.
+
+    `log_alpha` is usually negative. AdamW's decoupled weight decay pushes
+    negative parameters toward zero, which increases alpha even when the
+    entropy error is zero. Plain Adam avoids that bias.
+    """
+    return Adam([log_alpha], lr=lr)
 
 
 def train_ppo(
@@ -244,7 +254,7 @@ def train_ppo(
             device=device,
             requires_grad=True,
         )
-        alpha_optimizer = AdamW([log_alpha], lr=config.alpha_lr)
+        alpha_optimizer = _make_alpha_optimizer(log_alpha, config.alpha_lr)
     else:
         log_alpha = None
         alpha_optimizer = None

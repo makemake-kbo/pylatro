@@ -68,14 +68,34 @@ def test_default_reward_ramps_idle_penalty_after_grace_window() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(-(0.001 + (20 - 8) * 0.0003))
+    assert reward == pytest.approx(-(0.001 + (20 - 8) * 0.0005))
 
 
-def test_default_reward_stalled_terminal_is_less_harsh_than_true_loss() -> None:
+def test_default_reward_caps_idle_penalty() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 200,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-0.02)
+
+
+def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1}
-    curr_info = {"stalled": True}
+    ordinary_loss = default_reward(state, prev_info, {"stalled": False}, terminated=True, won=False)
+    stalled_loss = default_reward(state, prev_info, {"stalled": True}, terminated=True, won=False)
 
-    reward = default_reward(state, prev_info, curr_info, terminated=True, won=False)
-
-    assert reward == pytest.approx(-6.0)
+    assert ordinary_loss == pytest.approx(-10.0)
+    assert stalled_loss == pytest.approx(-12.0)
+    assert stalled_loss < ordinary_loss

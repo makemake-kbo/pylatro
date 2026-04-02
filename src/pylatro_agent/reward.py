@@ -41,12 +41,15 @@ def default_reward(
         if won:
             reward += 10.0
         else:
-            # Scale loss penalty by progress — dying at ante 3 is better than ante 1
+            # Scale loss penalty by progress — dying at ante 3 is better than ante 1.
+            # Stalling is an avoidable policy failure, so it must stay strictly worse
+            # than taking a decisive losing line.
             ante = state.round_resets.ante
+            loss_penalty = -10.0 + min(ante - 1, 5) * 1.0  # -10 at ante 1, -5 at ante 6+
             if curr_info.get("stalled", False):
-                reward += -6.0 + min(ante - 1, 5) * 0.5  # -6 at ante 1, -3.5 at ante 6+
+                reward += loss_penalty - 2.0
             else:
-                reward += -10.0 + min(ante - 1, 5) * 1.0  # -10 at ante 1, -5 at ante 6+
+                reward += loss_penalty
         return reward
 
     prev_ante = prev_info.get("ante", 1)
@@ -76,12 +79,14 @@ def default_reward(
         reward += 0.1 * min(interest_tier, 5)
 
     # Allow a short grace window for normal multi-click sequences, then ramp up.
+    # The cap is intentionally large enough that surviving only by idling remains
+    # much worse than advancing the run.
     if curr_info.get("progress_made", False):
         reward -= 0.001
     else:
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
-        idle_penalty = 0.001 + max(idle_streak - 8, 0) * 0.0003
-        reward -= min(idle_penalty, 0.01)
+        idle_penalty = 0.001 + max(idle_streak - 8, 0) * 0.0005
+        reward -= min(idle_penalty, 0.02)
 
     return reward
 

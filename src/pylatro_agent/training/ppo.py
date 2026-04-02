@@ -189,6 +189,12 @@ def train_ppo(
             raise ValueError("target_entropy must be between 0 and 1 when using normalized entropy")
         if not 0.0 <= config.entropy_ema_beta < 1.0:
             raise ValueError("entropy_ema_beta must be in [0, 1)")
+        if config.target_entropy < 0.1:
+            logger.warning(
+                "target_entropy=%.3f is a very low normalized entropy target; "
+                "it will aggressively push the policy toward near-deterministic behavior.",
+                config.target_entropy,
+            )
 
     if pretrained_path:
         _load_checkpoint_compatible(model, pretrained_path, device)
@@ -278,6 +284,7 @@ def train_ppo(
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
+    episode_stalls: list[bool] = []
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
@@ -328,15 +335,19 @@ def train_ppo(
             env_ep_length += 1
 
             # Handle completed episodes (vectorized envs auto-reset)
+            final_infos = infos.get("final_info", [None] * config.num_envs)
             for i in np.where(dones)[0]:
                 episode_rewards.append(float(env_ep_reward[i]))
                 episode_lengths.append(int(env_ep_length[i]))
-                # final_info is in infos for auto-reset envs
-                final_info = infos.get("final_info", [None] * config.num_envs)
-                if final_info[i] is not None:
-                    episode_wins.append(final_info[i].get("won", False))
+                final_info = final_infos[i]
+                if final_info is not None:
+                    episode_wins.append(final_info.get("won", False))
+                    episode_stalls.append(final_info.get("stalled", False))
                 else:
                     episode_wins.append(infos.get("won", [False] * config.num_envs)[i] if "won" in infos else False)
+                    episode_stalls.append(
+                        infos.get("stalled", [False] * config.num_envs)[i] if "stalled" in infos else False
+                    )
                 env_ep_reward[i] = 0.0
                 env_ep_length[i] = 0
 
@@ -463,17 +474,21 @@ def train_ppo(
         if episode_rewards:
             recent = episode_rewards[-100:]
             recent_wins = episode_wins[-100:]
+            recent_stalls = episode_stalls[-100:]
             writer.add_scalar("rollout/ep_reward_mean", np.mean(recent), update_count)
             writer.add_scalar("rollout/ep_length_mean", np.mean(episode_lengths[-100:]), update_count)
             writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
+            writer.add_scalar("rollout/stall_rate", np.mean(recent_stalls), update_count)
             writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
             recent_reward_mean = float(np.mean(recent))
             recent_length_mean = float(np.mean(episode_lengths[-100:]))
             recent_win_rate = float(np.mean(recent_wins))
+            recent_stall_rate = float(np.mean(recent_stalls))
         else:
             recent_reward_mean = float("nan")
             recent_length_mean = float("nan")
             recent_win_rate = float("nan")
+            recent_stall_rate = float("nan")
 
         should_checkpoint = update_count % config.checkpoint_interval == 0 or update_count == planned_updates
         if should_checkpoint:
@@ -508,7 +523,8 @@ def train_ppo(
                 f"valid_actions={np.mean(update_valid_action_counts):.1f}, "
                 f"ep_reward_mean={recent_reward_mean:.3f}, "
                 f"ep_length_mean={recent_length_mean:.1f}, "
-                f"rollout_win_rate={recent_win_rate:.3f}"
+                f"rollout_win_rate={recent_win_rate:.3f}, "
+                f"rollout_stall_rate={recent_stall_rate:.3f}"
             )
             if eval_win_rate is not None:
                 progress += f", eval_win_rate={eval_win_rate:.3f}"

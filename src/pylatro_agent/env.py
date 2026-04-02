@@ -142,6 +142,7 @@ class BalatroEnv(gymnasium.Env):
             self._steps_since_progress = 0
         else:
             self._steps_since_progress += 1
+        curr_info["steps_since_progress"] = self._steps_since_progress
 
         if not terminated and self._steps_since_progress >= self._max_steps:
             terminated = True

@@ -33,6 +33,7 @@ def default_reward(
     curr_info also has:
         blind_just_beaten: bool — whether a blind was beaten this step
         progress_made: bool — whether the environment state changed meaningfully
+        steps_since_progress: int — idle streak length after the action
     """
     reward = 0.0
 
@@ -42,7 +43,10 @@ def default_reward(
         else:
             # Scale loss penalty by progress — dying at ante 3 is better than ante 1
             ante = state.round_resets.ante
-            reward += -10.0 + min(ante - 1, 5) * 1.0  # -10 at ante 1, -5 at ante 6+
+            if curr_info.get("stalled", False):
+                reward += -6.0 + min(ante - 1, 5) * 0.5  # -6 at ante 1, -3.5 at ante 6+
+            else:
+                reward += -10.0 + min(ante - 1, 5) * 1.0  # -10 at ante 1, -5 at ante 6+
         return reward
 
     prev_ante = prev_info.get("ante", 1)
@@ -55,7 +59,7 @@ def default_reward(
     curr_progress = min(curr_score / blind_target, 1.0)
     if curr_progress > prev_progress:
         # Reward score progress toward clearing the blind without letting overscore dominate.
-        reward += 0.5 * (curr_progress - prev_progress)
+        reward += 1.5 * (curr_progress - prev_progress)
 
     # Beat a blind → enter shop (most important intermediate signal)
     if curr_info.get("blind_just_beaten", False):
@@ -71,11 +75,13 @@ def default_reward(
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         reward += 0.1 * min(interest_tier, 5)
 
-    # Penalize stalling much more heavily than ordinary progression steps.
+    # Allow a short grace window for normal multi-click sequences, then ramp up.
     if curr_info.get("progress_made", False):
         reward -= 0.001
     else:
-        reward -= 0.01
+        idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
+        idle_penalty = 0.001 + max(idle_streak - 8, 0) * 0.0003
+        reward -= min(idle_penalty, 0.01)
 
     return reward
 

@@ -41,11 +41,26 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-5, help="PPO learning rate (default: 2e-5)")
     parser.add_argument("--d-model", type=int, default=256, help="Model dimension (default: 256)")
     parser.add_argument("--n-layers", type=int, default=8, help="Transformer layers (default: 8)")
-    parser.add_argument("--checkpoint-dir", type=str, default=None, help="Base dir for checkpoints (default: checkpoints/<phase>)")
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default=None,
+        help="Base dir for checkpoints (default: checkpoints/<phase>)",
+    )
     parser.add_argument("--workers", type=int, default=0, help="CPU workers for game generation (default: all cores)")
-    parser.add_argument("--log-dir", type=str, default=None, help="Base dir for TensorBoard logs (default: runs/<phase>)")
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default=None,
+        help="Base dir for TensorBoard logs (default: runs/<phase>)",
+    )
     parser.add_argument("--sync-envs", action="store_true", help="Use SyncVectorEnv instead of AsyncVectorEnv for PPO")
-    parser.add_argument("--log-interval", type=int, default=10, help="PPO console log interval in updates (default: 10)")
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=10,
+        help="PPO console log interval in updates (default: 10)",
+    )
     parser.add_argument(
         "--checkpoint-interval",
         type=int,
@@ -53,6 +68,12 @@ def main():
         help="PPO checkpoint interval in updates (default: 10)",
     )
     parser.add_argument("--eval-interval", type=int, default=50, help="PPO eval interval in updates (default: 50)")
+    parser.add_argument(
+        "--max-idle-steps",
+        type=int,
+        default=256,
+        help="Terminate PPO episodes only after this many consecutive no-progress steps (default: 256)",
+    )
     parser.add_argument(
         "--target-entropy",
         type=float,
@@ -127,6 +148,7 @@ def main():
                 log_interval=args.log_interval,
                 checkpoint_interval=args.checkpoint_interval,
                 eval_interval=args.eval_interval,
+                max_no_progress_steps=args.max_idle_steps,
                 entropy_coeff=args.entropy_coeff,
                 adaptive_entropy=not args.no_adaptive_entropy,
                 target_entropy=args.target_entropy,

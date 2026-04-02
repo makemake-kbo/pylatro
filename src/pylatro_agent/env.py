@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from math import floor
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium
 import numpy as np
 from gymnasium import spaces
 
-from pylatro import GameData, load_game_data
+from pylatro import GameData, get_blind_amount, load_game_data
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
@@ -27,7 +26,7 @@ class BalatroEnv(gymnasium.Env):
     beyond GamePhase to handle multi-step actions like card selection.
     """
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     def __init__(
         self,
@@ -54,6 +53,7 @@ class BalatroEnv(gymnasium.Env):
         self._controller: GameController | None = None
         self._sub_phase = SubPhase.BLIND_SELECT
         self._step_count = 0
+        self._steps_since_progress = 0
 
         # Multi-step state
         self._selected_cards: set[int] = set()
@@ -93,6 +93,7 @@ class BalatroEnv(gymnasium.Env):
 
         self._sub_phase = SubPhase.BLIND_SELECT
         self._step_count = 0
+        self._steps_since_progress = 0
         self._selected_cards = set()
         self._pending_action = None
         self._pending_consumable_slot = None
@@ -128,19 +129,26 @@ class BalatroEnv(gymnasium.Env):
             info = {"sub_phase": self._sub_phase, "error": str(e)}
             return self._obs_to_dict(obs), reward, False, False, info
 
-        # Check terminal conditions
-        if self._controller.phase == GamePhase.GAME_OVER:
-            terminated = True
-        elif self._controller.phase == GamePhase.GAME_WON:
-            terminated = True
-        elif self._step_count >= self._max_steps:
-            truncated = True
-
+        # Check terminal conditions driven by the underlying game state.
+        terminated = self._controller.phase in (GamePhase.GAME_OVER, GamePhase.GAME_WON)
         won = self._controller.phase == GamePhase.GAME_WON
         state = self._controller.state
         curr_info = self._capture_state_info()
         curr_info["blind_just_beaten"] = self._blind_just_beaten
         curr_info["hands_left"] = state.current_round.hands_left
+        progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
+        curr_info["progress_made"] = progress_made
+        if progress_made:
+            self._steps_since_progress = 0
+        else:
+            self._steps_since_progress += 1
+
+        if not terminated and self._steps_since_progress >= self._max_steps:
+            terminated = True
+            curr_info["stalled"] = True
+        else:
+            curr_info["stalled"] = False
+
         reward = self._reward_fn(state, self._prev_info, curr_info, terminated, won)
 
         obs = self._build_obs()
@@ -150,6 +158,9 @@ class BalatroEnv(gymnasium.Env):
             "dollars": state.dollars,
             "round_score": self._round_score,
             "won": won,
+            "progress_made": progress_made,
+            "steps_since_progress": self._steps_since_progress,
+            "stalled": curr_info["stalled"],
         }
         return self._obs_to_dict(obs), reward, terminated, truncated, info
 
@@ -353,11 +364,52 @@ class BalatroEnv(gymnasium.Env):
         if self._controller is None or self._controller.state is None:
             return {}
         state = self._controller.state
+        pack_choices_remaining = state.pack.choices_remaining if state.pack is not None else 0
+        shop_item_count = len(state.shop.cards) + len(state.shop.vouchers) + len(state.shop.boosters)
         return {
             "ante": state.round_resets.ante,
             "round_score": self._round_score,
             "blind_beaten": self._controller.blind_beaten() if self._controller.phase == GamePhase.HAND_PLAY else False,
+            "blind_on_deck": state.blind_on_deck or "",
+            "blind_target": self._blind_target(state),
             "hands_left": state.current_round.hands_left,
+            "discards_left": state.current_round.discards_left,
             "dollars": state.dollars,
             "in_shop": self._controller.phase == GamePhase.SHOP,
+            "phase": self._controller.phase,
+            "sub_phase": self._sub_phase,
+            "joker_count": len(state.jokers),
+            "consumable_count": len(state.consumables),
+            "shop_item_count": shop_item_count,
+            "pack_choices_remaining": pack_choices_remaining,
         }
+
+    def _blind_target(self, state) -> int:
+        blind = state.round_resets.blind
+        if blind is None:
+            return 0
+        base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
+        mult = blind.get("mult", 1)
+        return int(base * mult)
+
+    def _progress_signature(self, info: dict[str, Any]) -> tuple[Any, ...]:
+        """Return a compact snapshot used to detect meaningful game progress.
+
+        Selection toggles are intentionally excluded so the agent cannot avoid the
+        inactivity limit by flipping highlighted cards back and forth.
+        """
+        return (
+            info.get("ante", 0),
+            info.get("blind_on_deck", ""),
+            info.get("blind_target", 0),
+            info.get("round_score", 0),
+            info.get("hands_left", 0),
+            info.get("discards_left", 0),
+            info.get("dollars", 0),
+            info.get("phase", ""),
+            info.get("sub_phase", ""),
+            info.get("joker_count", 0),
+            info.get("consumable_count", 0),
+            info.get("shop_item_count", 0),
+            info.get("pack_choices_remaining", 0),
+        )

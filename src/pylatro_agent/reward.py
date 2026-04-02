@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from pylatro.models import RunState
+if TYPE_CHECKING:
+    from pylatro.models import RunState
 
 
 class RewardFn(Protocol):
@@ -31,6 +32,7 @@ def default_reward(
         ante, round_score, blind_beaten, hands_left, dollars, in_shop
     curr_info also has:
         blind_just_beaten: bool — whether a blind was beaten this step
+        progress_made: bool — whether the environment state changed meaningfully
     """
     reward = 0.0
 
@@ -46,6 +48,15 @@ def default_reward(
     prev_ante = prev_info.get("ante", 1)
     curr_ante = state.round_resets.ante
 
+    prev_score = float(prev_info.get("round_score", 0))
+    curr_score = float(curr_info.get("round_score", 0))
+    blind_target = max(float(prev_info.get("blind_target", curr_info.get("blind_target", 0))), 1.0)
+    prev_progress = min(prev_score / blind_target, 1.0)
+    curr_progress = min(curr_score / blind_target, 1.0)
+    if curr_progress > prev_progress:
+        # Reward score progress toward clearing the blind without letting overscore dominate.
+        reward += 0.5 * (curr_progress - prev_progress)
+
     # Beat a blind → enter shop (most important intermediate signal)
     if curr_info.get("blind_just_beaten", False):
         reward += 0.5
@@ -60,8 +71,11 @@ def default_reward(
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         reward += 0.1 * min(interest_tier, 5)
 
-    # Small per-step cost to discourage looping (toggling cards without confirming)
-    reward -= 0.001
+    # Penalize stalling much more heavily than ordinary progression steps.
+    if curr_info.get("progress_made", False):
+        reward -= 0.001
+    else:
+        reward -= 0.01
 
     return reward
 

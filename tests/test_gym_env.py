@@ -56,7 +56,7 @@ def test_env_random_rollout(game_data, vocab):
         if len(valid) == 0:
             break
         action = np.random.choice(valid)
-        obs, reward, terminated, truncated, info = env.step(action)
+        obs, _reward, terminated, truncated, _info = env.step(action)
         steps += 1
         if terminated or truncated:
             break
@@ -68,7 +68,7 @@ def test_env_multiple_resets(game_data, vocab):
     """Ensure environment can be reset multiple times."""
     env = BalatroEnv(seed=1, data=game_data, vocab=vocab, max_steps=100)
     for seed in range(3):
-        obs, info = env.reset(seed=seed)
+        obs, _info = env.reset(seed=seed)
         mask = obs["action_mask"]
         assert mask.sum() > 0
 
@@ -106,3 +106,58 @@ def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
     assert "error" not in info
     assert env.state.pack is not None
     assert env._sub_phase == SubPhase.BOOSTER_PACK
+
+
+def test_env_stalls_after_repeated_no_progress_actions(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
+    env.reset()
+
+    _, _, terminated, truncated, info = env.step(ActionRange.BLIND_PLAY)
+    assert not terminated
+    assert not truncated
+    assert info["progress_made"]
+
+    _, _, terminated, truncated, info = env.step(ActionRange.PLAY_HAND)
+    assert not terminated
+    assert not truncated
+    assert info["progress_made"]
+
+    for expected_steps in (1, 2):
+        _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
+        assert not terminated
+        assert not truncated
+        assert not info["progress_made"]
+        assert info["steps_since_progress"] == expected_steps
+        assert not info["stalled"]
+
+    _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
+    assert terminated
+    assert not truncated
+    assert not info["progress_made"]
+    assert info["steps_since_progress"] == 3
+    assert info["stalled"]
+
+
+def test_env_progress_resets_stall_counter(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
+    env.reset()
+
+    _, _, _, _, _ = env.step(ActionRange.BLIND_PLAY)
+    _, _, _, _, _ = env.step(ActionRange.PLAY_HAND)
+
+    _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
+    assert not terminated
+    assert not truncated
+    assert info["steps_since_progress"] == 1
+
+    _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START + 1)
+    assert not terminated
+    assert not truncated
+    assert info["steps_since_progress"] == 2
+
+    _, _, terminated, truncated, info = env.step(ActionRange.SELECT_CONFIRM)
+    assert not terminated
+    assert not truncated
+    assert info["progress_made"]
+    assert info["steps_since_progress"] == 0
+    assert not info["stalled"]

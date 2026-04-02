@@ -1,9 +1,7 @@
 """Phase 2: PPO training loop with vectorized environments."""
 
-from __future__ import annotations
-
-import math
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,7 +27,7 @@ def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: 
     """Load checkpoint, handling DataParallel prefix mismatch."""
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
-    has_module_prefix = any(k.startswith("module.") for k in state_dict.keys())
+    has_module_prefix = any(k.startswith("module.") for k in state_dict)
     is_wrapped = isinstance(model, nn.DataParallel)
 
     if has_module_prefix and not is_wrapped:
@@ -40,10 +38,22 @@ def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: 
     model.load_state_dict(state_dict)
 
 
-def _make_env(seed: int, stake: int, data: GameData, vocab: Vocab):
+def _make_env(
+    seed: int,
+    stake: int,
+    data: GameData,
+    vocab: Vocab,
+    max_no_progress_steps: int,
+):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
     def _thunk():
-        return BalatroEnv(seed=seed, stake=stake, data=data, vocab=vocab)
+        return BalatroEnv(
+            seed=seed,
+            stake=stake,
+            data=data,
+            vocab=vocab,
+            max_steps=max_no_progress_steps,
+        )
     return _thunk
 
 
@@ -52,12 +62,13 @@ def _make_vectorized_envs(
     data: GameData,
     vocab: Vocab,
     stake: int = 1,
+    max_no_progress_steps: int = 256,
     use_async: bool = True,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
 
-    env_fns = [_make_env(i, stake, data, vocab) for i in range(num_envs)]
+    env_fns = [_make_env(i, stake, data, vocab, max_no_progress_steps) for i in range(num_envs)]
 
     if use_async and num_envs > 1:
         return gymnasium.vector.AsyncVectorEnv(env_fns)
@@ -92,6 +103,7 @@ class PPOConfig:
     log_interval: int = 10
     checkpoint_interval: int = 10
     eval_games: int = 10
+    max_no_progress_steps: int = 256
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
 
@@ -158,6 +170,8 @@ def train_ppo(
         raise ValueError("ppo_epochs must be positive")
     if config.rollout_length <= 0:
         raise ValueError("rollout_length must be positive")
+    if config.max_no_progress_steps <= 0:
+        raise ValueError("max_no_progress_steps must be positive")
     if config.lr <= 0.0:
         raise ValueError("lr must be positive")
     if config.entropy_coeff < 0.0:
@@ -195,6 +209,7 @@ def train_ppo(
     # Create vectorized environments
     vec_env = _make_vectorized_envs(
         config.num_envs, data, vocab,
+        max_no_progress_steps=config.max_no_progress_steps,
         use_async=config.async_envs,
     )
     obs_dict, _ = vec_env.reset()
@@ -230,7 +245,7 @@ def train_ppo(
     logger.info(
         "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "
         "ppo_epochs=%d, lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
-        "log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
+        "max_no_progress_steps=%d, log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
         config.total_timesteps,
         steps_per_update,
         planned_updates,
@@ -238,6 +253,7 @@ def train_ppo(
         config.lr,
         config.entropy_coeff,
         config.adaptive_entropy,
+        config.max_no_progress_steps,
         config.log_interval,
         config.checkpoint_interval,
         config.eval_interval,
@@ -348,7 +364,7 @@ def train_ppo(
         update_approx_kls = []
         update_valid_action_counts = []
 
-        for ppo_epoch in range(config.ppo_epochs):
+        for _ppo_epoch in range(config.ppo_epochs):
             batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
             optimizer.zero_grad()
             for i, batch in enumerate(batches):
@@ -467,7 +483,14 @@ def train_ppo(
         eval_win_rate: float | None = None
         should_eval = update_count % config.eval_interval == 0 or update_count == planned_updates
         if should_eval:
-            win_rate = evaluate_model(model, data, vocab, config.eval_games, device)
+            win_rate = evaluate_model(
+                model,
+                data,
+                vocab,
+                config.eval_games,
+                device,
+                max_no_progress_steps=config.max_no_progress_steps,
+            )
             writer.add_scalar("eval/win_rate", win_rate, update_count)
             eval_win_rate = win_rate
 
@@ -554,13 +577,19 @@ def evaluate_model(
     vocab: Vocab,
     num_games: int,
     device: torch.device,
+    max_no_progress_steps: int = 256,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games."""
     model.eval()
     wins = 0
 
     for game_idx in range(num_games):
-        env = BalatroEnv(seed=10000 + game_idx, data=data, vocab=vocab)
+        env = BalatroEnv(
+            seed=10000 + game_idx,
+            data=data,
+            vocab=vocab,
+            max_steps=max_no_progress_steps,
+        )
         obs, _ = env.reset()
         done = False
 
@@ -574,7 +603,7 @@ def evaluate_model(
                 masked_logits = logits.masked_fill(batch["action_mask"] == 0, -1e8)
                 action = masked_logits.argmax(dim=-1).item()
 
-            obs, reward, terminated, truncated, info = env.step(action)
+            obs, _reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
         if info.get("won", False):

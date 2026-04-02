@@ -303,7 +303,8 @@ def train_ppo(
                 rewards=rewards.astype(np.float32),
                 values=values_np,
                 log_probs=log_probs_np,
-                dones=dones,
+                terminated=terminated,
+                truncated=truncated,
             )
 
             # Track per-env episode stats

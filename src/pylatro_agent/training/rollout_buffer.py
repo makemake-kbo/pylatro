@@ -41,7 +41,8 @@ class RolloutBuffer:
         self.rewards = np.zeros(self.total_size, dtype=np.float32)
         self.values = np.zeros(self.total_size, dtype=np.float32)
         self.log_probs = np.zeros(self.total_size, dtype=np.float32)
-        self.dones = np.zeros(self.total_size, dtype=np.bool_)
+        self.terminated = np.zeros(self.total_size, dtype=np.bool_)
+        self.truncated = np.zeros(self.total_size, dtype=np.bool_)
 
         # Computed after rollout
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
@@ -61,7 +62,8 @@ class RolloutBuffer:
         reward: float,
         value: float,
         log_prob: float,
-        done: bool,
+        terminated: bool,
+        truncated: bool,
     ) -> None:
         """Store one transition for one environment."""
         step = self._step_counts[env_idx]
@@ -76,7 +78,8 @@ class RolloutBuffer:
         self.rewards[idx] = reward
         self.values[idx] = value
         self.log_probs[idx] = log_prob
-        self.dones[idx] = done
+        self.terminated[idx] = terminated
+        self.truncated[idx] = truncated
 
         self._step_counts[env_idx] = step + 1
 
@@ -88,7 +91,8 @@ class RolloutBuffer:
         rewards: np.ndarray,
         values: np.ndarray,
         log_probs: np.ndarray,
-        dones: np.ndarray,
+        terminated: np.ndarray,
+        truncated: np.ndarray,
     ) -> None:
         """Store one timestep for all environments at once (vectorized)."""
         indices = np.arange(self.num_envs) * self.rollout_length + step
@@ -102,7 +106,8 @@ class RolloutBuffer:
         self.rewards[indices] = rewards
         self.values[indices] = values
         self.log_probs[indices] = log_probs
-        self.dones[indices] = dones
+        self.terminated[indices] = terminated
+        self.truncated[indices] = truncated
 
         self._step_counts[:] = step + 1
 
@@ -121,7 +126,7 @@ class RolloutBuffer:
 
             env_rewards = self.rewards[start:end]
             env_values = self.values[start:end]
-            env_dones = self.dones[start:end]
+            env_terminated = self.terminated[start:end]
 
             last_gae = 0.0
             for t in reversed(range(n)):
@@ -131,7 +136,8 @@ class RolloutBuffer:
                 else:
                     next_value = env_values[t + 1]
 
-                next_non_terminal = 1.0 - float(env_dones[t])
+                # Time-limit truncation should still bootstrap from next_value.
+                next_non_terminal = 1.0 - float(env_terminated[t])
                 delta = env_rewards[t] + self.gamma * next_value * next_non_terminal - env_values[t]
                 last_gae = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae
                 self.advantages[idx] = last_gae

@@ -138,7 +138,7 @@ class PseudorandomState:
         self.draws_since_seed = draws
 
 
-def _sorted_items[KT, VT](values: Sequence[VT] | dict[KT, VT]) -> list[tuple[KT | int, VT]]:
+def _sorted_items(values: Sequence[Any] | dict[Any, Any]) -> list[tuple[Any, Any]]:
     items: list[tuple[Any, Any]] = (
         list(values.items()) if isinstance(values, dict) else list(enumerate(values, start=1))
     )
@@ -149,7 +149,7 @@ def _sorted_items[KT, VT](values: Sequence[VT] | dict[KT, VT]) -> list[tuple[KT 
     return items
 
 
-def pseudorandom_element[KT, VT](values: Sequence[VT] | dict[KT, VT], seed: float) -> tuple[VT, KT | int]:
+def pseudorandom_element(values: Sequence[Any] | dict[Any, Any], seed: float) -> tuple[Any, Any]:
     items = _sorted_items(values)
     if not items:
         raise ValueError("Cannot choose an element from an empty collection")
@@ -157,7 +157,7 @@ def pseudorandom_element[KT, VT](values: Sequence[VT] | dict[KT, VT], seed: floa
     return items[selected][1], items[selected][0]
 
 
-def pseudoshuffle[VT](values: list[VT], seed: float) -> list[VT]:
+def pseudoshuffle(values: list[Any], seed: float) -> list[Any]:
     working = list(values)
     if working and isinstance(working[0], dict) and "sort_id" in working[0]:
         working.sort(key=lambda item: item["sort_id"])  # type: ignore[index]

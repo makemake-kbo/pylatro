@@ -5,6 +5,9 @@ build/
 dist/
 wheels/
 *.egg-info
+src/pylatro/*.so
+src/pylatro/*.c
+src/pylatro/pylatro/
 
 # Virtual environments
 .venv

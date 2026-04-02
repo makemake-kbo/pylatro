@@ -4,19 +4,48 @@ from __future__ import annotations
 
 from collections import Counter
 from itertools import combinations
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from pylatro import can_use_consumable, evaluate_poker_hand
-from pylatro.models import PlayingCard, RunState
-from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL, _card_effect, _card_id, _is_suit
+from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
-from .action import ActionType, encode_action
 from .constants import ActionRange, SubPhase
+
+if TYPE_CHECKING:
+    from pylatro.models import PlayingCard, RunState
 
 
 class HeuristicAgent:
-    """Simple rule-based agent that plays highest-scoring hands and buys jokers."""
+    _hand_cache_key: tuple
+    _hand_cache_val: set[int]
+
+    def __init__(self) -> None:
+        self._hand_cache_key = ()
+        self._hand_cache_val = set()
+
+    def _cached_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
+        key = (
+            tuple(
+                (
+                    id(card),
+                    card.rank,
+                    card.suit,
+                    card.center_key,
+                    card.debuff,
+                    card.face_down,
+                )
+                for card in hand
+            ),
+            tuple(joker.center_key for joker in state.jokers),
+        )
+        if key == self._hand_cache_key:
+            return set(self._hand_cache_val)
+        result = set(self._find_best_hand(state, hand))
+        self._hand_cache_key = key
+        self._hand_cache_val = result
+        return set(result)
 
     def select_action(self, state: RunState, sub_phase: SubPhase, action_mask: np.ndarray, **kwargs) -> int:
         """Select an action given the current state and valid action mask.
@@ -31,7 +60,12 @@ class HeuristicAgent:
         elif sub_phase == SubPhase.CHOOSE_ACTION:
             return self._choose_action(state, action_mask)
         elif sub_phase == SubPhase.SELECT_CARDS:
-            return self._select_cards(state, action_mask, kwargs.get("selected_cards", set()), kwargs.get("pending_action"))
+            return self._select_cards(
+                state,
+                action_mask,
+                kwargs.get("selected_cards", set()),
+                kwargs.get("pending_action"),
+            )
         elif sub_phase == SubPhase.SHOP:
             return self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
@@ -72,23 +106,61 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _evaluate_hand_quality(self, state: RunState, hand: list[PlayingCard]) -> int:
-        """Rate the best hand quality: 0=high card, 1=pair, 2=two pair, 3+=better."""
         quality_map = {
             "Flush Five": 8, "Flush House": 7, "Five of a Kind": 6,
             "Straight Flush": 5, "Four of a Kind": 4, "Full House": 3,
             "Flush": 3, "Straight": 3, "Three of a Kind": 2, "Two Pair": 2,
             "Pair": 1, "High Card": 0,
         }
-        best = self._find_best_hand(state, hand)
+        best = self._cached_best_hand(state, hand)
         cards = [hand[i] for i in best]
-        try:
-            result = evaluate_poker_hand(state, cards)
-            for hname, quality in quality_map.items():
-                if result.get(hname) and any(result[hname]):
-                    return quality
-        except Exception:
-            pass
-        return 0
+        quality = self._quick_hand_quality(state, cards)
+        return quality_map.get(quality, 0)
+
+    def _quick_hand_quality(self, state: RunState, cards: list[PlayingCard]) -> str:
+        n = len(cards)
+        if n == 0:
+            return "High Card"
+        ranks = [RANK_TO_ID[c.rank] for c in cards]
+        suits = [c.suit for c in cards]
+        rank_counts: dict[int, int] = {}
+        for r in ranks:
+            rank_counts[r] = rank_counts.get(r, 0) + 1
+        counts = sorted(rank_counts.values(), reverse=True)
+
+        is_flush = n >= 5 and len(set(suits)) == 1
+        sorted_r = sorted(set(ranks))
+        is_straight = False
+        if len(sorted_r) >= 5 and len(sorted_r) == n:
+            is_straight = sorted_r[-1] - sorted_r[0] == n - 1
+            if not is_straight and 14 in sorted_r:
+                low = sorted(set(1 if r == 14 else r for r in ranks))
+                if len(low) >= 5 and len(low) == n and low[-1] - low[0] == n - 1:
+                    is_straight = True
+
+        if is_flush and is_straight:
+            if counts[0] >= 4:
+                return "Flush Five"
+            if counts[0] >= 3 and len(counts) >= 2 and counts[1] >= 2:
+                return "Flush House"
+            return "Straight Flush"
+        if counts[0] >= 5:
+            return "Five of a Kind"
+        if counts[0] >= 4:
+            return "Four of a Kind"
+        if counts[0] >= 3 and len(counts) >= 2 and counts[1] >= 2:
+            return "Full House"
+        if is_flush:
+            return "Flush"
+        if is_straight:
+            return "Straight"
+        if counts[0] >= 3:
+            return "Three of a Kind"
+        if len(counts) >= 2 and counts[0] >= 2 and counts[1] >= 2:
+            return "Two Pair"
+        if counts[0] >= 2:
+            return "Pair"
+        return "High Card"
 
     def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
         """Pick cards forming the best poker hand, then confirm."""
@@ -99,10 +171,9 @@ class HeuristicAgent:
             return self._random_valid(mask)
 
         if pending == "play":
-            best_cards = self._find_best_hand(state, hand)
+            best_cards = self._cached_best_hand(state, hand)
         else:
-            # For discard, find cards NOT in our best potential hand and discard those
-            keep = self._find_best_hand(state, hand)
+            keep = self._cached_best_hand(state, hand)
             discard = set(range(len(hand))) - keep
             # Cap at 5 discards, prioritize discarding worst cards
             if len(discard) > 5:
@@ -116,11 +187,7 @@ class HeuristicAgent:
 
         # Toggle cards to match target selection
         for idx in range(len(hand)):
-            if idx in best_indices and idx not in selected:
-                action = ActionRange.TOGGLE_CARD_START + idx
-                if mask[action]:
-                    return action
-            elif idx not in best_indices and idx in selected:
+            if (idx in best_indices and idx not in selected) or (idx not in best_indices and idx in selected):
                 action = ActionRange.TOGGLE_CARD_START + idx
                 if mask[action]:
                     return action
@@ -132,23 +199,19 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _find_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
-        """Find indices of cards forming the best 5-card poker hand.
-
-        Uses direct card analysis instead of brute-forcing all combinations
-        through the full scoring pipeline.
-        """
         if not hand:
             return set()
 
         max_cards = min(5, len(hand))
         has_stone = False
 
-        # Pre-compute card IDs and group by rank/suit (one pass)
+        centers = state.data.centers
         card_ids: list[int] = []
-        by_rank: dict[int, list[int]] = {}  # card_id -> [indices]
-        by_suit: dict[str, list[int]] = {}  # suit -> [indices]
+        by_rank: dict[int, list[int]] = {}
+        by_suit: dict[str, list[int]] = {}
         for i, card in enumerate(hand):
-            effect = _card_effect(state, card)
+            center = centers.get(card.center_key)
+            effect = center.get("effect", "") if center else ""
             if effect == "Stone Card":
                 has_stone = True
                 cid = -id(card)
@@ -158,17 +221,13 @@ class HeuristicAgent:
             if cid > 0:
                 by_rank.setdefault(cid, []).append(i)
 
-            # Suit grouping — handle Wild Card
-            if effect == "Stone Card":
-                pass  # stone cards have no suit
-            else:
-                is_wild = (state.data.centers.get(card.center_key, {}).get("effect", "") == "Wild Card")
+            if effect != "Stone Card":
+                is_wild = effect == "Wild Card"
                 if is_wild:
                     for s in ("Spades", "Hearts", "Clubs", "Diamonds"):
                         by_suit.setdefault(s, []).append(i)
                 else:
                     by_suit.setdefault(card.suit, []).append(i)
-                    # Smeared Joker: red suits count as both red, black as both black
                     if state.has_joker("Smeared Joker"):
                         if card.suit in ("Hearts", "Diamonds"):
                             other = "Diamonds" if card.suit == "Hearts" else "Hearts"
@@ -252,7 +311,7 @@ class HeuristicAgent:
         if 4 in groups_by_size:
             best_four: set[int] | None = None
             best_four_score = -1.0
-            for cid, idxs in groups_by_size[4]:
+            for _cid, idxs in groups_by_size[4]:
                 s = set(idxs[:4])
                 sc = _best_of(s)
                 if sc > best_four_score:
@@ -277,28 +336,26 @@ class HeuristicAgent:
                 return best_four
 
         # Straight Flush
-        if flush_indices and straight_indices:
-            # Check if we can form a straight from flush-suit cards only
-            if flush_suit:
-                flush_only_by_rank: dict[int, int] = {}
-                for i in dict.fromkeys(by_suit.get(flush_suit, [])):
-                    cid = card_ids[i]
-                    if cid > 0 and cid not in flush_only_by_rank:
-                        flush_only_by_rank[cid] = i
-                if 14 in flush_only_by_rank:
-                    flush_only_by_rank.setdefault(1, flush_only_by_rank[14])
-                for high in range(14, 0, -1):
-                    run: list[int] = []
-                    for r in range(high, high - straight_req - 1, -1):
-                        if r < 1:
-                            break
-                        actual = 14 if r == 1 else r
-                        if actual in flush_only_by_rank:
-                            run.append(flush_only_by_rank[actual])
-                        else:
-                            break
-                    if len(run) >= straight_req:
-                        return set(run[:5])
+        if flush_indices and straight_indices and flush_suit:
+            flush_only_by_rank: dict[int, int] = {}
+            for i in dict.fromkeys(by_suit.get(flush_suit, [])):
+                cid = card_ids[i]
+                if cid > 0 and cid not in flush_only_by_rank:
+                    flush_only_by_rank[cid] = i
+            if 14 in flush_only_by_rank:
+                flush_only_by_rank.setdefault(1, flush_only_by_rank[14])
+            for high in range(14, 0, -1):
+                run: list[int] = []
+                for r in range(high, high - straight_req - 1, -1):
+                    if r < 1:
+                        break
+                    actual = 14 if r == 1 else r
+                    if actual in flush_only_by_rank:
+                        run.append(flush_only_by_rank[actual])
+                    else:
+                        break
+                if len(run) >= straight_req:
+                    return set(run[:5])
 
         # Full House (3 + 2)
         if 3 in groups_by_size and 2 in groups_by_size:
@@ -374,46 +431,49 @@ class HeuristicAgent:
         return best_indices
 
     def _find_worst_cards(self, state: RunState, hand: list[PlayingCard], max_discard: int) -> set[int]:
-        """Find indices of cards to discard — keep cards that contribute to potential hands."""
-        # Score each card by how useful it is for building hands
-        from collections import Counter
-
         suits = [c.suit for c in hand]
         ranks = [c.rank for c in hand]
         suit_counts = Counter(suits)
         rank_counts = Counter(ranks)
+        nominals = [RANK_TO_NOMINAL.get(r, 0) for r in ranks]
+        sorted_nominals = sorted(nominals)
 
-        # Score each card: higher = more worth keeping
         keep_scores: list[float] = []
         for i, card in enumerate(hand):
-            score = 0.0
-            # Base value from rank
-            score += RANK_TO_NOMINAL.get(card.rank, 0) * 0.1
+            score = nominals[i] * 0.1
 
-            # Flush potential: cards in the most common suit get a big bonus
             suit_n = suit_counts[card.suit]
             if suit_n >= 4:
-                score += 20.0  # near-flush — strongly keep
+                score += 20.0
             elif suit_n >= 3:
                 score += 8.0
 
-            # Pair/trips potential: cards with matching ranks
             rank_n = rank_counts[card.rank]
             if rank_n >= 3:
-                score += 25.0  # trips or better — always keep
+                score += 25.0
             elif rank_n >= 2:
-                score += 15.0  # pair — keep
+                score += 15.0
 
-            # Straight potential: check for connected cards
-            nominal = RANK_TO_NOMINAL.get(card.rank, 0)
-            nearby = sum(1 for r in ranks if abs(RANK_TO_NOMINAL.get(r, 0) - nominal) <= 4 and r != card.rank)
+            nom = nominals[i]
+            lo = max(nom - 4, 0)
+            hi = nom + 4
+            lo_idx = 0
+            for j in range(len(sorted_nominals)):
+                if sorted_nominals[j] >= lo:
+                    lo_idx = j
+                    break
+            nearby = 0
+            for j in range(lo_idx, len(sorted_nominals)):
+                if sorted_nominals[j] > hi:
+                    break
+                nearby += 1
+            nearby -= 1  # exclude self
             if nearby >= 3:
                 score += 5.0
 
             keep_scores.append(score)
 
-        # Discard the lowest-scored cards
-        ranked = sorted(range(len(hand)), key=lambda i: keep_scores[i])
+        ranked = sorted(range(len(hand)), key=lambda idx: keep_scores[idx])
         return set(ranked[:max_discard])
 
     def _shop(self, state: RunState, mask: np.ndarray) -> int:

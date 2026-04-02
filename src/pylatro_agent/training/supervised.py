@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
@@ -20,9 +17,8 @@ from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
 from ..distributions import MaskedCategorical
-from ..env import BalatroEnv
-from ..heuristic import HeuristicAgent
-from ..vocab import Vocab, build_vocab
+from ..vocab import build_vocab
+from .fast_generate import generate_training_data
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +40,6 @@ class SupervisedConfig:
     device: str = "cpu"
 
 
-_shared_counter: multiprocessing.Value | None = None
-_shared_target: int = 0
-
-
-def _init_worker(counter: multiprocessing.Value, target: int) -> None:
-    """Pool initializer — store shared state in each worker process."""
-    global _shared_counter, _shared_target
-    _shared_counter = counter
-    _shared_target = target
-
-
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
     """Compute discounted reward-to-go targets for value pretraining."""
     returns = [0.0] * len(rewards)
@@ -63,120 +48,6 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
         running_return = rewards[idx] + gamma * running_return
         returns[idx] = running_return
     return returns
-
-
-def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
-    """Worker function for parallel game generation. Must be module-level for pickling."""
-    seed_start, min_ante, gamma = args
-    data = load_game_data()
-    vocab = build_vocab(data)
-    agent = HeuristicAgent()
-    records: list[dict[str, Any]] = []
-    seed = seed_start
-
-    while True:
-        # Check shared counter before starting a new game
-        with _shared_counter.get_lock():
-            if _shared_counter.value >= _shared_target:
-                break
-
-        env = BalatroEnv(seed=seed, data=data, vocab=vocab)
-        obs, info = env.reset()
-        done = False
-        game_records: list[dict[str, Any]] = []
-        max_ante = 1
-
-        while not done:
-            current_obs = obs
-            mask = obs["action_mask"]
-            action = agent.select_action(
-                env.state,
-                env._sub_phase,
-                mask,
-                selected_cards=env._selected_cards,
-                pending_action=env._pending_action,
-                pending_consumable_slot=env._pending_consumable_slot,
-            )
-            obs, reward, terminated, truncated, info = env.step(action)
-            game_records.append({"obs": current_obs, "action": action, "reward": float(reward)})
-            done = terminated or truncated
-            max_ante = max(max_ante, env.state.round_resets.ante)
-
-        seed += 1
-        won = info.get("won", False)
-
-        if max_ante >= min_ante or won:
-            with _shared_counter.get_lock():
-                if _shared_counter.value >= _shared_target:
-                    break
-                _shared_counter.value += 1
-            return_targets = _discounted_returns([rec["reward"] for rec in game_records], gamma)
-            for rec, return_target in zip(game_records, return_targets):
-                rec["won"] = won
-                rec["max_ante"] = max_ante
-                rec["return_target"] = return_target
-                records.append(rec)
-
-    return records
-
-
-def _get_num_workers(num_workers: int) -> int:
-    """Resolve worker count: 0 means use all available cores."""
-    if num_workers > 0:
-        return num_workers
-    try:
-        return len(os.sched_getaffinity(0))
-    except AttributeError:
-        return os.cpu_count() or 1
-
-
-def generate_training_data(
-    num_games: int,
-    data: GameData | None = None,
-    vocab: Vocab | None = None,
-    min_ante: int = 5,
-    gamma: float = 0.995,
-    num_workers: int = 0,
-) -> list[dict[str, Any]]:
-    """Run the heuristic agent for num_games and collect (obs, action, outcome) tuples.
-
-    Only keeps games that reached at least min_ante,
-    filtering out low-quality games that would teach bad strategy.
-
-    Games are generated in parallel across num_workers processes
-    (default: all available CPU cores). All workers share a global counter
-    and stop as soon as the target number of games is reached.
-    """
-    num_workers = _get_num_workers(num_workers)
-    logger.info(
-        "Generating %d games across %d workers (min_ante=%d, gamma=%.3f)",
-        num_games,
-        num_workers,
-        min_ante,
-        gamma,
-    )
-
-    # Non-overlapping seed ranges per worker (1M apart)
-    worker_args = [(i * 1_000_000, min_ante, gamma) for i in range(num_workers)]
-
-    if num_workers == 1:
-        # Single worker — use shared state in-process
-        global _shared_counter, _shared_target
-        _shared_counter = multiprocessing.Value("i", 0)
-        _shared_target = num_games
-        records = _generate_games_worker(worker_args[0])
-    else:
-        counter = multiprocessing.Value("i", 0)
-        with multiprocessing.Pool(
-            num_workers, initializer=_init_worker, initargs=(counter, num_games)
-        ) as pool:
-            results = pool.map(_generate_games_worker, worker_args)
-        records = []
-        for r in results:
-            records.extend(r)
-
-    logger.info(f"Generated {len(records)} training records from {num_games} games")
-    return records
 
 
 def train_supervised(
@@ -213,8 +84,6 @@ def train_supervised(
     logger.info(f"Generated {len(records)} training records")
 
     wins = sum(1 for r in records if r["won"])
-    unique_games = config.num_games
-    win_games = len({id(r) for r in records if r["won"]})  # approximate
     logger.info(f"Heuristic win rate (approx): {wins / max(len(records), 1):.3f} of records from winning games")
 
     # Shuffle and batch

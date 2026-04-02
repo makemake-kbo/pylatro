@@ -119,8 +119,17 @@ def _card_name(state: RunState, card: PlayingCard) -> str:
     return str(_card_center(state, card)["name"])
 
 
+_card_effect_cache: dict[str, str] = {}
+
+
 def _card_effect(state: RunState, card: PlayingCard) -> str:
-    return str(_card_center(state, card).get("effect", ""))
+    ck = card.center_key
+    cached = _card_effect_cache.get(ck)
+    if cached is not None:
+        return cached
+    result = str(_card_center(state, card).get("effect", ""))
+    _card_effect_cache[ck] = result
+    return result
 
 
 def _card_id(state: RunState, card: PlayingCard) -> int:

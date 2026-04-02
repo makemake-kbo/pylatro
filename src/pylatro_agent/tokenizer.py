@@ -11,7 +11,6 @@ import numpy as np
 from pylatro.models import (
     ConsumableInstance,
     JokerInstance,
-    PlayingCard,
     RunState,
     ShopCard,
 )
@@ -29,7 +28,6 @@ from .constants import (
     META_COUNT,
     META_START,
     OBJ_START,
-    PAD_START,
     SHOP_MAX,
     SHOP_START,
     TOKEN_DIM,
@@ -70,7 +68,6 @@ class Tokenizer:
         selected_cards: set[int] | None = None,
         action_mask: np.ndarray | None = None,
     ) -> RawObservation:
-        """Convert RunState into RawObservation arrays."""
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
         tokens = np.zeros((MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16)
@@ -82,11 +79,17 @@ class Tokenizer:
         if selected_cards is None:
             selected_cards = set()
 
+        # Cache dict lookups as locals for the hot loop
+        _rank_to_id = RANK_TO_ID
+        _suit_to_id = SUIT_TO_ID
+        _enh_to_id = self.vocab.enhancement_to_id
+        _edition_to_id = EDITION_TO_ID
+        _seal_to_id = SEAL_TO_ID
+
         pos = 0
 
         # OBJ token (position 0)
-        obj_id = 0  # default: win
-        tokens[OBJ_START, 0] = obj_id
+        tokens[OBJ_START, 0] = 0
         token_types[OBJ_START] = TokenType.OBJ
         attn_mask[OBJ_START] = 1
         pos = 1
@@ -102,7 +105,7 @@ class Tokenizer:
             attn_mask[pos + i] = 1
         pos = META_START + META_COUNT
 
-        # Scalars (continuous values for linear projection)
+        # Scalars
         scalars[0] = sign_log(float(state.dollars))
         scalars[1] = float(state.interest_cap)
         scalars[2] = float(state.round_resets.ante)
@@ -114,11 +117,33 @@ class Tokenizer:
 
         # DECK cards (positions 10-71, max 62)
         pos = DECK_START
-        all_cards = self._gather_all_cards(state)
-        for i, (card, location) in enumerate(all_cards[:DECK_MAX]):
-            self._encode_card(tokens, pos + i, card, location, i, selected_cards, state)
-            token_types[pos + i] = TokenType.DECK
-            attn_mask[pos + i] = 1
+        hand_cards = state.hand_cards
+        draw_pile = state.draw_pile
+        discard_pile = state.discard_pile
+        card_idx = 0
+        for loc, pile in ((0, hand_cards), (1, draw_pile), (2, discard_pile)):
+            for ci, card in enumerate(pile):
+                if card_idx >= DECK_MAX:
+                    break
+                p = pos + card_idx
+                if card.face_down:
+                    row = [0, 0]
+                else:
+                    row = [_rank_to_id.get(card.rank, 0), _suit_to_id.get(card.suit, 0)]
+                row.append(_enh_to_id.get(card.center_key, 0))
+                row.append(_edition_to_id.get(card.edition_key or "", 0))
+                row.append(_seal_to_id.get(card.seal or "", 0))
+                row.append(loc)
+                row.append(card.debuff)
+                row.append(card.face_down)
+                row.append(min(card.perma_bonus // 5, 31))
+                row.append(1 if loc == 0 and ci in selected_cards else 0)
+                row.append(card.forced_selection)
+                row.append(ci if loc == 0 else 0)
+                tokens[p] = row
+                token_types[p] = TokenType.DECK
+                attn_mask[p] = 1
+                card_idx += 1
 
         # JOKER tokens (positions 72-79, max 8)
         pos = JOKER_START
@@ -216,44 +241,6 @@ class Tokenizer:
             SubPhase.BOOSTER_PACK: 4,
             SubPhase.CONSUMABLE_TARGET: 5,
         }[sub_phase]
-
-    def _gather_all_cards(self, state: RunState) -> list[tuple[PlayingCard, int]]:
-        """Collect all cards with location: 0=hand, 1=draw, 2=discard."""
-        result: list[tuple[PlayingCard, int]] = []
-        for card in state.hand_cards:
-            result.append((card, 0))
-        for card in state.draw_pile:
-            result.append((card, 1))
-        for card in state.discard_pile:
-            result.append((card, 2))
-        return result
-
-    def _encode_card(
-        self,
-        tokens: np.ndarray,
-        pos: int,
-        card: PlayingCard,
-        location: int,
-        hand_idx: int,
-        selected_cards: set[int],
-        state: RunState,
-    ) -> None:
-        if card.face_down:
-            tokens[pos, 0] = 0  # rank hidden
-            tokens[pos, 1] = 0  # suit hidden
-        else:
-            tokens[pos, 0] = RANK_TO_ID.get(card.rank, 0)
-            tokens[pos, 1] = SUIT_TO_ID.get(card.suit, 0)
-        tokens[pos, 2] = self.vocab.enhancement_to_id.get(card.center_key, 0)
-        tokens[pos, 3] = EDITION_TO_ID.get(card.edition_key or "", 0)
-        tokens[pos, 4] = SEAL_TO_ID.get(card.seal or "", 0)
-        tokens[pos, 5] = location
-        tokens[pos, 6] = int(card.debuff)
-        tokens[pos, 7] = int(card.face_down)
-        tokens[pos, 8] = min(card.perma_bonus // 5, 31)  # bucket
-        tokens[pos, 9] = int(location == 0 and hand_idx in selected_cards)
-        tokens[pos, 10] = int(card.forced_selection)
-        tokens[pos, 11] = hand_idx if location == 0 else 0
 
     def _encode_joker(
         self, tokens: np.ndarray, pos: int, joker: JokerInstance, slot: int

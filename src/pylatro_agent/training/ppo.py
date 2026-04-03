@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import Adam, AdamW
+from torch.optim import Adam
 
 from pylatro import GameData, load_game_data
 
@@ -143,6 +143,23 @@ def _make_alpha_optimizer(log_alpha: torch.Tensor, lr: float) -> Adam:
     return Adam([log_alpha], lr=lr)
 
 
+def _make_policy_optimizer(parameters, lr: float) -> Adam:
+    """Build the PPO optimizer without weight decay so RL updates do not flatten the policy prior."""
+    return Adam(parameters, lr=lr)
+
+
+def _mean_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
+    """Return mean entropy normalized by the log of each state's valid-action count."""
+    valid_action_counts = action_mask.sum(dim=-1).to(entropy_per_state.dtype)
+    max_entropy = torch.log(valid_action_counts.clamp_min(2.0))
+    normalized_entropy = torch.where(
+        valid_action_counts > 1.0,
+        entropy_per_state / max_entropy,
+        torch.zeros_like(entropy_per_state),
+    )
+    return normalized_entropy.mean()
+
+
 def train_ppo(
     config: PPOConfig,
     agent_config: AgentConfig | None = None,
@@ -210,7 +227,7 @@ def train_ppo(
         accum_steps = 1
         effective_batch_size = config.mini_batch_size
 
-    optimizer = AdamW(model.parameters(), lr=config.lr)
+    optimizer = _make_policy_optimizer(model.parameters(), config.lr)
 
     # Create vectorized environments
     vec_env = _make_vectorized_envs(
@@ -389,12 +406,7 @@ def train_ppo(
                 entropy_per_state = dist.entropy()
                 entropy = entropy_per_state.mean()
                 valid_action_counts = batch["action_mask"].sum(dim=-1)
-                max_entropy = torch.log(valid_action_counts.clamp_min(2.0))
-                normalized_entropy = torch.where(
-                    valid_action_counts > 1.0,
-                    entropy_per_state / max_entropy,
-                    torch.zeros_like(entropy_per_state),
-                ).mean()
+                normalized_entropy = _mean_normalized_entropy(entropy_per_state, batch["action_mask"])
 
                 # Policy loss (clipped PPO)
                 ratio = torch.exp(new_log_probs - batch["old_log_probs"])
@@ -408,7 +420,7 @@ def train_ppo(
                 # Value loss
                 value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
-                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
+                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * normalized_entropy
                 (loss / accum_steps).backward()
 
                 # Step every accum_steps micro-batches (or on last batch)
@@ -458,7 +470,8 @@ def train_ppo(
         writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
         writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
-        writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_entropy, update_count)
+        writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_normalized_entropy, update_count)
+        writer.add_scalar("ppo/entropy_bonus_raw", entropy_coeff * mean_entropy, update_count)
         writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
         writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)

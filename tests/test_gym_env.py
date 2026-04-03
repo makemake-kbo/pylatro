@@ -83,6 +83,19 @@ def test_env_multiple_resets(game_data, vocab):
             mask = obs["action_mask"]
 
 
+def test_env_constructor_seed_is_only_used_for_first_reset(game_data, vocab):
+    env = BalatroEnv(seed=7, data=game_data, vocab=vocab, max_steps=100)
+
+    _obs1, _ = env.reset()
+    first_seed = env.state.seed
+
+    _obs2, _ = env.reset()
+    second_seed = env.state.seed
+
+    assert first_seed == "7"
+    assert second_seed != first_seed
+
+
 def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab)
     env.reset()

@@ -49,6 +49,7 @@ class BalatroEnv(gymnasium.Env):
         self._max_steps = max_steps
         self._reward_fn = reward_fn or default_reward
         self._seed = seed
+        self._initial_seed_pending = seed is not None
 
         self._controller: GameController | None = None
         self._sub_phase = SubPhase.BLIND_SELECT
@@ -83,10 +84,20 @@ class BalatroEnv(gymnasium.Env):
         return self._controller.state if self._controller else None
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[dict, dict]:
-        super().reset(seed=seed)
-        effective_seed = seed if seed is not None else self._seed
-        if effective_seed is None:
-            effective_seed = self.np_random.integers(0, 2**31)
+        if seed is not None:
+            super().reset(seed=seed)
+            self._seed = seed
+            self._initial_seed_pending = False
+            effective_seed = seed
+        elif self._seed is not None and self._initial_seed_pending:
+            # Use the constructor seed exactly once, then advance via the env RNG
+            # so vector-env autoresets do not replay the same episode forever.
+            super().reset(seed=self._seed)
+            self._initial_seed_pending = False
+            effective_seed = self._seed
+        else:
+            super().reset(seed=None)
+            effective_seed = int(self.np_random.integers(0, 2**31))
 
         self._controller = GameController(data=self._data)
         self._controller.new_run(str(effective_seed), stake=self._stake, deck_key=self._deck_key)

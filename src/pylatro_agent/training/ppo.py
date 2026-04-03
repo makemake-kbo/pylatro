@@ -2,6 +2,7 @@
 
 import logging
 import math
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from torch.optim import Adam
 
 from pylatro import GameData, load_game_data
 
+from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..distributions import MaskedCategorical
@@ -173,6 +175,16 @@ def _extract_vector_info_value(info_dict: dict, key: str, env_idx: int, default=
 
     value = values[env_idx]
     return value.item() if isinstance(value, np.generic) else value
+
+
+def _safe_mean(values: list[float]) -> float:
+    """Return the mean of a list or NaN when empty."""
+    return float(np.mean(values)) if values else float("nan")
+
+
+def _action_type_name(action_id: int) -> str:
+    """Map a flat action id to a stable TensorBoard-friendly action type name."""
+    return decode_action(int(action_id)).action_type.value
 
 
 def _obs_dicts_to_batch(obs_list: list[dict], device: torch.device) -> dict[str, torch.Tensor]:
@@ -345,6 +357,16 @@ def train_ppo(
             gamma=config.gamma,
             gae_lambda=config.gae_lambda,
         )
+        rollout_action_type_counts: Counter[str] = Counter()
+        rollout_step_rewards: list[float] = []
+        rollout_progress_flags: list[float] = []
+        rollout_steps_since_progress: list[float] = []
+        rollout_chosen_action_probs: list[float] = []
+        rollout_max_action_probs: list[float] = []
+        rollout_done_flags: list[float] = []
+        rollout_terminated_flags: list[float] = []
+        rollout_truncated_flags: list[float] = []
+        rollout_reward_component_values: defaultdict[str, list[float]] = defaultdict(list)
 
         # === Collect rollouts (vectorized) ===
         model.eval()
@@ -358,10 +380,15 @@ def train_ppo(
                 actions = dist.sample()
                 log_probs = dist.log_prob(actions)
                 values = value_dict["expected_score"]
+                action_probs = dist.probs
+                chosen_action_probs = action_probs.gather(1, actions.unsqueeze(-1)).squeeze(-1)
+                max_action_probs = action_probs.max(dim=-1).values
 
             actions_np = actions.cpu().numpy()
             log_probs_np = log_probs.cpu().numpy()
             values_np = values.cpu().numpy()
+            chosen_action_probs_np = chosen_action_probs.cpu().numpy()
+            max_action_probs_np = max_action_probs.cpu().numpy()
 
             # Step all envs at once
             next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
@@ -401,6 +428,35 @@ def train_ppo(
             # Track per-env episode stats
             env_ep_reward += rewards
             env_ep_length += 1
+            rollout_step_rewards.extend(rewards.astype(np.float64).tolist())
+            rollout_chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
+            rollout_max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
+            rollout_done_flags.extend(dones.astype(np.float64).tolist())
+            rollout_terminated_flags.extend(terminated.astype(np.float64).tolist())
+            rollout_truncated_flags.extend(truncated.astype(np.float64).tolist())
+            for action_id in actions_np:
+                rollout_action_type_counts[_action_type_name(int(action_id))] += 1
+            for env_idx in range(config.num_envs):
+                rollout_progress_flags.append(
+                    float(bool(_extract_vector_info_value(infos, "progress_made", env_idx, False)))
+                )
+                rollout_steps_since_progress.append(
+                    float(_extract_vector_info_value(infos, "steps_since_progress", env_idx, 0))
+                )
+                for component_name in (
+                    "reward_total",
+                    "reward_terminal",
+                    "reward_score_progress",
+                    "reward_blind_clear",
+                    "reward_hands_bonus",
+                    "reward_ante_bonus",
+                    "reward_interest_bonus",
+                    "reward_progress_tick_penalty",
+                    "reward_idle_penalty",
+                ):
+                    component_value = _extract_vector_info_value(infos, component_name, env_idx, None)
+                    if component_value is not None:
+                        rollout_reward_component_values[component_name].append(float(component_value))
 
             # Handle completed episodes (vectorized envs auto-reset)
             for i in np.where(dones)[0]:
@@ -527,6 +583,34 @@ def train_ppo(
         writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
         writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
+        writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rollout_chosen_action_probs), update_count)
+        writer.add_scalar("debug/max_action_prob_mean", _safe_mean(rollout_max_action_probs), update_count)
+        writer.add_scalar("debug/step_reward_mean", _safe_mean(rollout_step_rewards), update_count)
+        writer.add_scalar("rollout/progress_rate", _safe_mean(rollout_progress_flags), update_count)
+        writer.add_scalar("rollout/steps_since_progress_mean", _safe_mean(rollout_steps_since_progress), update_count)
+        if rollout_steps_since_progress:
+            writer.add_scalar(
+                "rollout/steps_since_progress_max",
+                float(np.max(rollout_steps_since_progress)),
+                update_count,
+            )
+        writer.add_scalar("rollout/done_rate", _safe_mean(rollout_done_flags), update_count)
+        writer.add_scalar("rollout/terminated_rate", _safe_mean(rollout_terminated_flags), update_count)
+        writer.add_scalar("rollout/truncated_rate", _safe_mean(rollout_truncated_flags), update_count)
+        total_action_count = sum(rollout_action_type_counts.values())
+        if total_action_count > 0:
+            for action_type in ActionType:
+                writer.add_scalar(
+                    f"actions/{action_type.value}_fraction",
+                    rollout_action_type_counts[action_type.value] / total_action_count,
+                    update_count,
+                )
+        for component_name, component_values in rollout_reward_component_values.items():
+            writer.add_scalar(
+                f"reward/{component_name.removeprefix('reward_')}_mean",
+                _safe_mean(component_values),
+                update_count,
+            )
 
         flat_returns = buffer._flat_returns
         if len(flat_returns) > 0:

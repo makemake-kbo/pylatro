@@ -14,7 +14,7 @@ from pylatro_cli.controller import GameController, GamePhase
 from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
 from .masks import compute_action_mask
-from .reward import RewardFn, default_reward
+from .reward import RewardFn, default_reward, default_reward_components
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
 
@@ -161,7 +161,12 @@ class BalatroEnv(gymnasium.Env):
         else:
             curr_info["stalled"] = False
 
-        reward = self._reward_fn(state, self._prev_info, curr_info, terminated, won)
+        reward_components: dict[str, float] = {}
+        if self._reward_fn is default_reward:
+            reward_components = default_reward_components(state, self._prev_info, curr_info, terminated, won)
+            reward = reward_components["total"]
+        else:
+            reward = self._reward_fn(state, self._prev_info, curr_info, terminated, won)
 
         obs = self._build_obs()
         info = {
@@ -174,6 +179,8 @@ class BalatroEnv(gymnasium.Env):
             "steps_since_progress": self._steps_since_progress,
             "stalled": curr_info["stalled"],
         }
+        for component_name, component_value in reward_components.items():
+            info[f"reward_{component_name}"] = component_value
         return self._obs_to_dict(obs), reward, terminated, truncated, info
 
     def action_masks(self) -> np.ndarray:

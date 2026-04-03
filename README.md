@@ -50,6 +50,41 @@ Transformer-based RL agent that learns to play Balatro via supervised pretrainin
 uv sync --extra agent
 ```
 
+### Running Post-Cython
+
+The Cython workflow builds in-place extensions next to the Python modules in
+`src/pylatro` and `src/pylatro_agent`. Once those `.so` files exist, Python will
+import them automatically in preference to the `.py` sources.
+
+```bash
+# Enter the toolchain shell and install deps
+nix develop
+uv sync --group dev --extra agent
+
+# Build the compiled modules
+uv run python scripts/compile_cython.py
+
+# Verify the compiled agent path
+uv run pytest -q tests/test_tokenizer.py tests/test_fast_generate_regressions.py tests/test_gym_env.py
+
+# Run the project normally; the compiled modules are picked up automatically
+uv run python train.py supervised --games 100 --epochs 3 --device cpu
+uv run python play.py --heuristic --games 10
+```
+
+If you change any of the Cythonized modules, rebuild before running again:
+
+```bash
+uv run python scripts/compile_cython.py
+```
+
+If you want to go back to pure Python or clear stale generated artifacts first:
+
+```bash
+uv run python scripts/compile_cython.py --clean
+uv run python scripts/compile_cython.py
+```
+
 ### Training
 
 #### Phase 1: Supervised Pretraining

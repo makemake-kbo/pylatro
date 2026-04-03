@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import load_game_data, populate_shop
 from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
+from pylatro_agent.training.ppo import _make_vectorized_envs
 from pylatro_agent.vocab import build_vocab
 from pylatro_cli.controller import GamePhase
 
@@ -144,8 +146,8 @@ def test_env_stalls_after_repeated_no_progress_actions(game_data, vocab):
         assert not info["stalled"]
 
     _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
-    assert terminated
-    assert not truncated
+    assert not terminated
+    assert truncated
     assert not info["progress_made"]
     assert info["steps_since_progress"] == 3
     assert info["stalled"]
@@ -174,3 +176,12 @@ def test_env_progress_resets_stall_counter(game_data, vocab):
     assert info["progress_made"]
     assert info["steps_since_progress"] == 0
     assert not info["stalled"]
+
+
+def test_vector_env_uses_same_step_autoreset(game_data, vocab):
+    vec_env = _make_vectorized_envs(1, game_data, vocab, use_async=False)
+
+    try:
+        assert vec_env.metadata["autoreset_mode"] == AutoresetMode.SAME_STEP
+    finally:
+        vec_env.close()

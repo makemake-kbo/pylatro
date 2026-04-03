@@ -99,3 +99,12 @@ def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     assert ordinary_loss == pytest.approx(-10.0)
     assert stalled_loss == pytest.approx(-12.0)
     assert stalled_loss < ordinary_loss
+
+
+def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1}
+
+    reward = default_reward(state, prev_info, {"stalled": True}, terminated=False, won=False)
+
+    assert reward == pytest.approx(-12.0)

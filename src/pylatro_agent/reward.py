@@ -37,7 +37,7 @@ def default_reward(
     """
     reward = 0.0
 
-    if terminated:
+    if terminated or curr_info.get("stalled", False):
         if won:
             reward += 10.0
         else:

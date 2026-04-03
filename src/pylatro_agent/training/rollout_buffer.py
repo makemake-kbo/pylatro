@@ -43,6 +43,7 @@ class RolloutBuffer:
         self.log_probs = np.zeros(self.total_size, dtype=np.float32)
         self.terminated = np.zeros(self.total_size, dtype=np.bool_)
         self.truncated = np.zeros(self.total_size, dtype=np.bool_)
+        self.bootstrap_values = np.zeros(self.total_size, dtype=np.float32)
 
         # Computed after rollout
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
@@ -64,6 +65,7 @@ class RolloutBuffer:
         log_prob: float,
         terminated: bool,
         truncated: bool,
+        bootstrap_value: float = 0.0,
     ) -> None:
         """Store one transition for one environment."""
         step = self._step_counts[env_idx]
@@ -80,6 +82,7 @@ class RolloutBuffer:
         self.log_probs[idx] = log_prob
         self.terminated[idx] = terminated
         self.truncated[idx] = truncated
+        self.bootstrap_values[idx] = bootstrap_value
 
         self._step_counts[env_idx] = step + 1
 
@@ -93,9 +96,12 @@ class RolloutBuffer:
         log_probs: np.ndarray,
         terminated: np.ndarray,
         truncated: np.ndarray,
+        bootstrap_values: np.ndarray | None = None,
     ) -> None:
         """Store one timestep for all environments at once (vectorized)."""
         indices = np.arange(self.num_envs) * self.rollout_length + step
+        if bootstrap_values is None:
+            bootstrap_values = np.zeros(self.num_envs, dtype=np.float32)
 
         self.tokens[indices] = obs["tokens"]
         self.token_types[indices] = obs["token_types"]
@@ -108,6 +114,7 @@ class RolloutBuffer:
         self.log_probs[indices] = log_probs
         self.terminated[indices] = terminated
         self.truncated[indices] = truncated
+        self.bootstrap_values[indices] = bootstrap_values
 
         self._step_counts[:] = step + 1
 
@@ -127,19 +134,32 @@ class RolloutBuffer:
             env_rewards = self.rewards[start:end]
             env_values = self.values[start:end]
             env_terminated = self.terminated[start:end]
+            env_truncated = self.truncated[start:end]
+            env_bootstrap_values = self.bootstrap_values[start:end]
 
             last_gae = 0.0
             for t in reversed(range(n)):
                 idx = start + t
-                if t == n - 1:
-                    next_value = last_values[env_idx]
+                if env_terminated[t]:
+                    next_value = 0.0
+                    bootstrap_mask = 0.0
+                    gae_continue_mask = 0.0
+                elif env_truncated[t]:
+                    next_value = env_bootstrap_values[t]
+                    bootstrap_mask = 1.0
+                    # Truncation ends the episode but still bootstraps from the
+                    # final observation; do not leak GAE across the reset boundary.
+                    gae_continue_mask = 0.0
                 else:
-                    next_value = env_values[t + 1]
+                    if t == n - 1:
+                        next_value = last_values[env_idx]
+                    else:
+                        next_value = env_values[t + 1]
+                    bootstrap_mask = 1.0
+                    gae_continue_mask = 1.0
 
-                # Time-limit truncation should still bootstrap from next_value.
-                next_non_terminal = 1.0 - float(env_terminated[t])
-                delta = env_rewards[t] + self.gamma * next_value * next_non_terminal - env_values[t]
-                last_gae = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae
+                delta = env_rewards[t] + self.gamma * next_value * bootstrap_mask - env_values[t]
+                last_gae = delta + self.gamma * self.gae_lambda * gae_continue_mask * last_gae
                 self.advantages[idx] = last_gae
 
             self.returns[start:end] = self.advantages[start:end] + env_values[:n]

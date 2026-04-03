@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from gymnasium.vector.vector_env import AutoresetMode
 from torch.optim import Adam
 
 from pylatro import GameData, load_game_data
@@ -71,9 +72,9 @@ def _make_vectorized_envs(
     env_fns = [_make_env(i, stake, data, vocab, max_no_progress_steps) for i in range(num_envs)]
 
     if use_async and num_envs > 1:
-        return gymnasium.vector.AsyncVectorEnv(env_fns)
+        return gymnasium.vector.AsyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
     else:
-        return gymnasium.vector.SyncVectorEnv(env_fns)
+        return gymnasium.vector.SyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
 
 
 @dataclass
@@ -158,6 +159,37 @@ def _mean_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch
         torch.zeros_like(entropy_per_state),
     )
     return normalized_entropy.mean()
+
+
+def _extract_vector_info_value(info_dict: dict, key: str, env_idx: int, default=None):
+    """Read one env's value from Gymnasium's vector-info dict-of-arrays format."""
+    values = info_dict.get(key)
+    if values is None:
+        return default
+
+    mask = info_dict.get(f"_{key}")
+    if mask is not None and not bool(mask[env_idx]):
+        return default
+
+    value = values[env_idx]
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def _obs_dicts_to_batch(obs_list: list[dict], device: torch.device) -> dict[str, torch.Tensor]:
+    """Stack a list of single-env observations into a model batch."""
+    return {
+        "tokens": torch.tensor(np.stack([obs["tokens"] for obs in obs_list]), dtype=torch.long, device=device),
+        "token_types": torch.tensor(
+            np.stack([obs["token_types"] for obs in obs_list]), dtype=torch.long, device=device,
+        ),
+        "scalars": torch.tensor(np.stack([obs["scalars"] for obs in obs_list]), dtype=torch.float32, device=device),
+        "attention_mask": torch.tensor(
+            np.stack([obs["attention_mask"] for obs in obs_list]), dtype=torch.long, device=device,
+        ),
+        "action_mask": torch.tensor(
+            np.stack([obs["action_mask"] for obs in obs_list]), dtype=torch.float32, device=device,
+        ),
+    }
 
 
 def train_ppo(
@@ -334,6 +366,24 @@ def train_ppo(
             # Step all envs at once
             next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
             dones = terminated | truncated
+            bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
+
+            if np.any(truncated) and "final_obs" in infos:
+                final_obs_arr = infos["final_obs"]
+                truncated_indices = [idx for idx in np.where(truncated)[0] if final_obs_arr[idx] is not None]
+                if truncated_indices:
+                    final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
+                    with torch.no_grad():
+                        _, truncated_value_dict = model(
+                            final_obs_batch["tokens"],
+                            final_obs_batch["token_types"],
+                            final_obs_batch["scalars"],
+                            final_obs_batch["attention_mask"],
+                            final_obs_batch["action_mask"],
+                        )
+                    bootstrap_values_np[np.asarray(truncated_indices, dtype=np.int64)] = (
+                        truncated_value_dict["expected_score"].cpu().numpy()
+                    )
 
             # Store transition (using pre-step obs from obs_buf)
             buffer.add_batch(
@@ -345,6 +395,7 @@ def train_ppo(
                 log_probs=log_probs_np,
                 terminated=terminated,
                 truncated=truncated,
+                bootstrap_values=bootstrap_values_np,
             )
 
             # Track per-env episode stats
@@ -352,14 +403,13 @@ def train_ppo(
             env_ep_length += 1
 
             # Handle completed episodes (vectorized envs auto-reset)
-            final_infos = infos.get("final_info", [None] * config.num_envs)
             for i in np.where(dones)[0]:
                 episode_rewards.append(float(env_ep_reward[i]))
                 episode_lengths.append(int(env_ep_length[i]))
-                final_info = final_infos[i]
-                if final_info is not None:
-                    episode_wins.append(final_info.get("won", False))
-                    episode_stalls.append(final_info.get("stalled", False))
+                final_info = infos.get("final_info")
+                if isinstance(final_info, dict):
+                    episode_wins.append(bool(_extract_vector_info_value(final_info, "won", i, False)))
+                    episode_stalls.append(bool(_extract_vector_info_value(final_info, "stalled", i, False)))
                 else:
                     episode_wins.append(infos.get("won", [False] * config.num_envs)[i] if "won" in infos else False)
                     episode_stalls.append(
@@ -383,7 +433,9 @@ def train_ppo(
         buffer.compute_returns_and_advantages(last_values=last_values)
 
         # === PPO update ===
-        model.train()
+        # Keep dropout disabled so the PPO ratio compares the same policy
+        # function used to collect `old_log_probs`.
+        model.eval()
         update_policy_losses = []
         update_value_losses = []
         update_entropies = []

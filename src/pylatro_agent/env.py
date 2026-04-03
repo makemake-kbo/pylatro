@@ -123,6 +123,9 @@ class BalatroEnv(gymnasium.Env):
         self._prev_info = self._capture_state_info()
         self._step_count += 1
         self._blind_just_beaten = False
+        pre_sub_phase = self._sub_phase
+        pre_pending_action = self._pending_action or ""
+        pre_selected_count = len(self._selected_cards)
 
         decoded = decode_action(action)
         terminated = False
@@ -171,6 +174,9 @@ class BalatroEnv(gymnasium.Env):
         obs = self._build_obs()
         info = {
             "sub_phase": self._sub_phase,
+            "pre_sub_phase": pre_sub_phase,
+            "pre_pending_action": pre_pending_action,
+            "pre_selected_count": pre_selected_count,
             "ante": state.round_resets.ante,
             "dollars": state.dollars,
             "round_score": self._round_score,

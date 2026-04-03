@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 from pylatro import GameData, load_game_data
@@ -30,12 +32,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _shared_counter: Any = None
+_shared_total_attempted: Any = None
 _shared_target: int = 0
 
 
-def _init_worker(counter: Any, target: int) -> None:
-    global _shared_counter, _shared_target
+def _init_worker(counter: Any, total_attempted: Any, target: int) -> None:
+    global _shared_counter, _shared_total_attempted, _shared_target
     _shared_counter = counter
+    _shared_total_attempted = total_attempted
     _shared_target = target
 
 
@@ -189,7 +193,9 @@ def _run_game_single_pass(
 
 
 def _run_game_fast_no_obs(
-    seed: int, data: GameData, agent: HeuristicAgent,
+    seed: int,
+    data: GameData,
+    agent: HeuristicAgent,
 ) -> tuple[int, bool]:
     runner = FastRunner(seed, data)
     while not runner.done:
@@ -222,6 +228,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
 
         if min_ante > 2:
             max_ante, won = _run_game_fast_no_obs(seed, data, agent)
+            with _shared_total_attempted.get_lock():
+                _shared_total_attempted.value += 1
             seed += 1
             if max_ante < min_ante and not won:
                 continue
@@ -230,7 +238,11 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                     break
                 _shared_counter.value += 1
             game_records, _, _ = _run_game_single_pass(
-                seed - 1, data, tokenizer, agent, gamma,
+                seed - 1,
+                data,
+                tokenizer,
+                agent,
+                gamma,
             )
             records.extend(game_records)
         else:
@@ -238,8 +250,14 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 if _shared_counter.value >= _shared_target:
                     break
                 _shared_counter.value += 1
+            with _shared_total_attempted.get_lock():
+                _shared_total_attempted.value += 1
             game_records, _, _ = _run_game_single_pass(
-                seed, data, tokenizer, agent, gamma,
+                seed,
+                data,
+                tokenizer,
+                agent,
+                gamma,
             )
             seed += 1
             records.extend(game_records)
@@ -256,6 +274,62 @@ def _get_num_workers(num_workers: int) -> int:
         return os.cpu_count() or 1
 
 
+def _progress_reporter(
+    counter: Any,
+    total_attempted: Any,
+    target: int,
+    stop_event: threading.Event,
+    interval_seconds: int = 60,
+) -> None:
+    start_time = time.monotonic()
+    prev_valid = 0
+    prev_attempted = 0
+    prev_time = start_time
+
+    while not stop_event.is_set():
+        stop_event.wait(timeout=interval_seconds)
+        if stop_event.is_set():
+            break
+
+        now = time.monotonic()
+        valid = counter.value
+        attempted = total_attempted.value
+        elapsed_since_last = now - prev_time
+
+        if elapsed_since_last < 0.1:
+            continue
+
+        valid_rate = (valid - prev_valid) / elapsed_since_last
+        attempted_rate = (attempted - prev_attempted) / elapsed_since_last
+        pct_valid = (valid / max(attempted, 1)) * 100
+
+        remaining = target - valid
+        eta_secs = remaining / valid_rate if valid_rate > 0 else float("inf")
+
+        if eta_secs < 60:
+            eta_str = f"{eta_secs:.0f}s"
+        elif eta_secs < 3600:
+            eta_str = f"{eta_secs / 60:.1f}m"
+        else:
+            eta_str = f"{eta_secs / 3600:.1f}h"
+
+        logger.info(
+            "Progress: %d/%d valid games (%.1f%% of %d attempted) | "
+            "valid: %.1f games/s | attempted: %.1f games/s | ETA: %s",
+            valid,
+            target,
+            pct_valid,
+            attempted,
+            valid_rate,
+            attempted_rate,
+            eta_str,
+        )
+
+        prev_valid = valid
+        prev_attempted = attempted
+        prev_time = now
+
+
 def generate_training_data(
     num_games: int,
     data: GameData | None = None,
@@ -267,25 +341,48 @@ def generate_training_data(
     num_workers = _get_num_workers(num_workers)
     logger.info(
         "Fast-generating %d games across %d workers (min_ante=%d, gamma=%.3f)",
-        num_games, num_workers, min_ante, gamma,
+        num_games,
+        num_workers,
+        min_ante,
+        gamma,
     )
 
     worker_args = [(i * 1_000_000, min_ante, gamma) for i in range(num_workers)]
 
+    stop_event = threading.Event()
+
     if num_workers == 1:
-        global _shared_counter, _shared_target
+        global _shared_counter, _shared_total_attempted, _shared_target
         _shared_counter = multiprocessing.Value("i", 0)
+        _shared_total_attempted = multiprocessing.Value("i", 0)
         _shared_target = num_games
+        progress_thread = threading.Thread(
+            target=_progress_reporter,
+            args=(_shared_counter, _shared_total_attempted, num_games, stop_event),
+            daemon=True,
+        )
+        progress_thread.start()
         records = _generate_games_worker(worker_args[0])
     else:
         counter = multiprocessing.Value("i", 0)
+        total_attempted = multiprocessing.Value("i", 0)
+        progress_thread = threading.Thread(
+            target=_progress_reporter,
+            args=(counter, total_attempted, num_games, stop_event),
+            daemon=True,
+        )
+        progress_thread.start()
         with multiprocessing.Pool(
-            num_workers, initializer=_init_worker, initargs=(counter, num_games)
+            num_workers,
+            initializer=_init_worker,
+            initargs=(counter, total_attempted, num_games),
         ) as pool:
             results = pool.map(_generate_games_worker, worker_args)
         records = []
         for r in results:
             records.extend(r)
 
+    stop_event.set()
+    progress_thread.join(timeout=5)
     logger.info("Fast-generated %d training records from %d games", len(records), num_games)
     return records

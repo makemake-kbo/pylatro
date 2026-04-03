@@ -2,8 +2,10 @@
 """Compile hot pylatro modules with Cython for ~5-20x speedup.
 
 Usage:
-    nix-shell -p gcc --run "python scripts/compile_cython.py"
-    python scripts/compile_cython.py --clean
+    nix develop
+    uv sync --group dev
+    uv run python scripts/compile_cython.py
+    uv run python scripts/compile_cython.py --clean
 
 Compiled .so files sit alongside the .py sources.  Python prefers the
 compiled extension on import, falling back to pure-Python when absent.
@@ -17,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "pylatro"
+SRC_AGENT = ROOT / "src" / "pylatro_agent"
 
 MODULES = [
     "rng",
@@ -29,6 +32,12 @@ MODULES = [
     "pool",
     "runtime",
     "_helpers",
+]
+
+AGENT_MODULES: list[str] = [
+    "tokenizer",
+    "heuristic",
+    "training.fast_runner",
 ]
 
 DIRECTIVES = {
@@ -44,13 +53,17 @@ DIRECTIVES = {
 }
 
 
-def _build_distribution(ext_modules: list[object]):
+def _build_distribution(ext_modules: list[object], include_agent: bool = False):
     from setuptools import Distribution
+
+    packages = ["pylatro"]
+    if include_agent:
+        packages.append("pylatro_agent")
 
     return Distribution(
         {
             "name": "pylatro",
-            "packages": ["pylatro"],
+            "packages": packages,
             "package_dir": {"": "src"},
             "ext_modules": ext_modules,
         }
@@ -73,15 +86,27 @@ def compile_extensions() -> None:
         for mod in MODULES
     ]
 
+    if AGENT_MODULES:
+        import numpy as np
+
+        extensions.extend(
+            Extension(
+                f"pylatro_agent.{mod}",
+                sources=[str(SRC_AGENT / f"{mod.replace('.', '/')}.py")],
+                include_dirs=[np.get_include()],
+            )
+            for mod in AGENT_MODULES
+        )
+
     ext_modules = cythonize(extensions, compiler_directives=DIRECTIVES, force=True, quiet=False)
 
-    dist = _build_distribution(ext_modules)
+    dist = _build_distribution(ext_modules, include_agent=bool(AGENT_MODULES))
     cmd = dist.get_command_obj("build_ext")
     cmd.ensure_finalized()
     cmd.inplace = True
     cmd.run()
 
-    compiled = list(SRC.glob("*.so"))
+    compiled = list(SRC.rglob("*.so")) + list(SRC_AGENT.rglob("*.so"))
     for so in compiled:
         print(f"  {so}")
 
@@ -90,13 +115,14 @@ def compile_extensions() -> None:
 
 def clean_extensions() -> None:
     removed = 0
-    for pattern in ("*.so", "*.c"):
-        for p in SRC.glob(pattern):
-            if p.name == "__init__.py":
-                continue
-            p.unlink()
-            removed += 1
-            print(f"  rm {p}")
+    for src_dir in (SRC, SRC_AGENT):
+        for pattern in ("*.so", "*.c"):
+            for p in src_dir.rglob(pattern):
+                if p.name == "__init__.py":
+                    continue
+                p.unlink()
+                removed += 1
+                print(f"  rm {p}")
     legacy_src = _legacy_src()
     if legacy_src.exists():
         removed += sum(1 for _ in legacy_src.glob("*"))

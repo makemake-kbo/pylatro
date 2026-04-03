@@ -7,6 +7,10 @@ wheels/
 *.egg-info
 src/pylatro/*.so
 src/pylatro/*.c
+src/pylatro_agent/*.so
+src/pylatro_agent/*.c
+src/pylatro_agent/**/*.so
+src/pylatro_agent/**/*.c
 src/pylatro/pylatro/
 
 # Virtual environments

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -1180,6 +1180,7 @@ source = { editable = "." }
 
 [package.optional-dependencies]
 agent = [
+    { name = "cython" },
     { name = "gymnasium" },
     { name = "numpy" },
     { name = "tensorboard" },
@@ -1201,6 +1202,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cython", marker = "extra == 'agent'", specifier = ">=3.2.4" },
     { name = "gymnasium", marker = "extra == 'agent'", specifier = ">=1.0" },
     { name = "numpy", marker = "extra == 'agent'", specifier = ">=1.26" },
     { name = "tensorboard", marker = "extra == 'agent'", specifier = ">=2.14" },

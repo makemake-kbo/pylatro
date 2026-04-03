@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+import cython
 import numpy as np
 
 from pylatro import can_use_consumable
@@ -129,35 +130,40 @@ class FastRunner:
 
     # ── action mask (pre-allocated buffer) ──
 
+    @cython.locals(mv=cython.char[:])
     def compute_mask(self) -> np.ndarray:
         m = self._mask
         m.fill(0)
+        mv = m
         AR = ActionRange
         state = self._state
         sp = self._sub_phase
 
         if sp == SubPhase.BLIND_SELECT:
-            _mask_blind(m, state, AR)
+            _mask_blind(mv, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
-            _mask_action(m, state, AR)
+            _mask_action(mv, state, AR)
         elif sp == SubPhase.SELECT_CARDS:
-            _mask_cards(m, state, AR, self._selected_cards, self._pending_action)
+            _mask_cards(mv, state, AR, self._selected_cards, self._pending_action)
         elif sp == SubPhase.SHOP:
-            _mask_shop(m, state, AR)
+            _mask_shop(mv, state, AR)
         elif sp == SubPhase.BOOSTER_PACK:
-            _mask_booster(m, state, AR)
+            _mask_booster(mv, state, AR)
         elif sp == SubPhase.CONSUMABLE_TARGET:
             _mask_consumable(
-                m, state, AR,
+                mv,
+                state,
+                AR,
                 self._pending_consumable_slot,
                 self._pending_hand_targets,
                 self._pending_joker_targets,
             )
 
-        return m
+        return self._mask
 
     # ── step (action-id based, no decode_action overhead) ──
 
+    @cython.locals(action_id=cython.int, _step_count=cython.int)
     def step(self, action_id: int) -> None:
         self._blind_just_beaten = False
         self._step_count += 1
@@ -188,6 +194,13 @@ class FastRunner:
 
     # ── internal state machine ──
 
+    @cython.locals(
+        aid=cython.int,
+        idx=cython.int,
+        n_cards=cython.int,
+        n_vouchers=cython.int,
+        booster_idx=cython.int,
+    )
     def _execute(self, aid: int) -> None:
         ctrl = self._ctrl
         state = self._state
@@ -340,7 +353,10 @@ class FastRunner:
 
 # ── mask helpers (module-level for speed) ──
 
-def _mask_blind(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
+
+@cython.cfunc
+@cython.locals(m=cython.char[:])
+def _mask_blind(m, state, AR):
     m[AR.BLIND_PLAY] = 1
     blind_on_deck = state.blind_on_deck or "Small"
     if blind_on_deck in ("Small", "Big"):
@@ -349,7 +365,9 @@ def _mask_blind(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
         m[AR.BLIND_REROLL] = 1
 
 
-def _mask_action(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
+@cython.cfunc
+@cython.locals(m=cython.char[:])
+def _mask_action(m, state, AR):
     hand_size = len(state.hand_cards)
     if state.current_round.hands_left > 0 and hand_size > 0:
         m[AR.PLAY_HAND] = 1
@@ -361,13 +379,16 @@ def _mask_action(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
             break
 
 
-def _mask_cards(
-    m: np.ndarray,
-    state: RunState,
-    AR: type[ActionRange],
-    selected: set[int],
-    pending: str | None,
-) -> None:
+@cython.cfunc
+@cython.locals(
+    m=cython.char[:],
+    hand_size=cython.int,
+    num_sel=cython.int,
+    is_play=cython.bint,
+    max_sel=cython.int,
+    i=cython.int,
+)
+def _mask_cards(m, state, AR, selected, pending):
     hand_size = len(state.hand_cards)
     num_sel = len(selected)
     is_play = pending == "play"
@@ -389,7 +410,9 @@ def _mask_cards(
             m[AR.SELECT_CONFIRM] = 1
 
 
-def _mask_shop(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
+@cython.cfunc
+@cython.locals(m=cython.char[:], i=cython.int)
+def _mask_shop(m, state, AR):
     all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
     for i, item in enumerate(all_items[:MAX_SHOP_ITEMS]):
         if item.cost > state.dollars:
@@ -416,7 +439,9 @@ def _mask_shop(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
     m[AR.SHOP_LEAVE] = 1
 
 
-def _mask_booster(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None:
+@cython.cfunc
+@cython.locals(m=cython.char[:], i=cython.int)
+def _mask_booster(m, state, AR):
     pack = state.pack
     if pack and pack.choices_remaining > 0:
         for i in range(min(len(pack.cards), MAX_PACK_CARDS)):
@@ -424,14 +449,16 @@ def _mask_booster(m: np.ndarray, state: RunState, AR: type[ActionRange]) -> None
     m[AR.PACK_SKIP] = 1
 
 
-def _mask_consumable(
-    m: np.ndarray,
-    state: RunState,
-    AR: type[ActionRange],
-    pending_slot: int | None,
-    hand_targets: tuple[int, ...],
-    joker_targets: tuple[int, ...],
-) -> None:
+@cython.cfunc
+@cython.locals(
+    m=cython.char[:],
+    i=cython.int,
+    max_highlighted_int=cython.int,
+    required_min=cython.int,
+    required_max=cython.int,
+    current_count=cython.int,
+)
+def _mask_consumable(m, state, AR, pending_slot, hand_targets, joker_targets):
     if pending_slot is None:
         for i, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
             if can_use_consumable(state, cons):
@@ -453,7 +480,10 @@ def _mask_consumable(
                         m[AR.CONSUMABLE_HAND_TARGET_START + i] = 1
 
             if required_min <= current_count <= required_max and can_use_consumable(
-                state, cons, hand_targets=hand_targets, joker_targets=joker_targets,
+                state,
+                cons,
+                hand_targets=hand_targets,
+                joker_targets=joker_targets,
             ):
                 m[AR.CONSUMABLE_CONFIRM] = 1
         else:
@@ -471,12 +501,9 @@ def _mask_consumable(
 
 # ── progress signature (mirrors BalatroEnv._progress_signature) ──
 
-def _progress_signature(
-    state: RunState,
-    phase: GamePhase,
-    sub_phase: SubPhase,
-    round_score: int,
-) -> tuple:
+
+@cython.locals(round_score=cython.int, shop_count=cython.int, pack_choices=cython.int)
+def _progress_signature(state, phase, sub_phase, round_score):
     pack_choices = state.pack.choices_remaining if state.pack is not None else 0
     shop_count = len(state.shop.cards) + len(state.shop.vouchers) + len(state.shop.boosters)
     return (
@@ -496,11 +523,15 @@ def _progress_signature(
     )
 
 
-def _blind_target(state: RunState) -> int:
+@cython.locals(ante=cython.int, scaling=cython.int, base=cython.int)
+def _blind_target(state):
     from pylatro import get_blind_amount
+
     blind = state.round_resets.blind
     if blind is None:
         return 0
-    base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
+    ante = state.round_resets.ante
+    scaling = min(state.stake, 3)
+    base = get_blind_amount(ante, scaling)
     mult = blind.get("mult", 1)
     return int(base * mult)

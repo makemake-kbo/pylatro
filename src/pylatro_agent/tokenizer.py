@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
+import cython
 import numpy as np
 
 from pylatro.models import (
@@ -39,8 +40,9 @@ from .constants import (
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
 
+@cython.ccall
+@cython.locals(x=cython.double)
 def sign_log(x: float) -> float:
-    """Sign-preserving log: sign(x) * log(1 + |x|)."""
     if x >= 0:
         return math.log1p(x)
     return -math.log1p(-x)
@@ -48,9 +50,9 @@ def sign_log(x: float) -> float:
 
 @dataclass(slots=True)
 class RawObservation:
-    tokens: np.ndarray       # (MAX_SEQ_LEN, TOKEN_DIM), int16
+    tokens: np.ndarray  # (MAX_SEQ_LEN, TOKEN_DIM), int16
     token_types: np.ndarray  # (MAX_SEQ_LEN,), int8
-    scalars: np.ndarray      # (SCALAR_DIM,), float32
+    scalars: np.ndarray  # (SCALAR_DIM,), float32
     attention_mask: np.ndarray  # (MAX_SEQ_LEN,), int8
     action_mask: np.ndarray  # (NUM_ACTIONS,), int8
     selected_cards: np.ndarray  # (12,), int8
@@ -61,6 +63,19 @@ class Tokenizer:
     vocab: Vocab
     _selected: set[int] = field(default_factory=set)
 
+    @cython.locals(
+        pos=cython.int,
+        card_idx=cython.int,
+        i=cython.int,
+        ci=cython.int,
+        p=cython.Py_ssize_t,
+        loc=cython.int,
+        tokens=cython.short[:, :],
+        token_types=cython.char[:],
+        attn_mask=cython.char[:],
+        scalars=cython.float[:],
+        sel_cards=cython.char[:],
+    )
     def tokenize(
         self,
         state: RunState,
@@ -79,7 +94,6 @@ class Tokenizer:
         if selected_cards is None:
             selected_cards = set()
 
-        # Cache dict lookups as locals for the hot loop
         _rank_to_id = RANK_TO_ID
         _suit_to_id = SUIT_TO_ID
         _enh_to_id = self.vocab.enhancement_to_id
@@ -88,13 +102,11 @@ class Tokenizer:
 
         pos = 0
 
-        # OBJ token (position 0)
         tokens[OBJ_START, 0] = 0
         token_types[OBJ_START] = TokenType.OBJ
         attn_mask[OBJ_START] = 1
         pos = 1
 
-        # META tokens (positions 1-9)
         pos = META_START
         meta_values = self._encode_meta(state, sub_phase)
         for i, val in enumerate(meta_values):
@@ -105,7 +117,6 @@ class Tokenizer:
             attn_mask[pos + i] = 1
         pos = META_START + META_COUNT
 
-        # Scalars
         scalars[0] = sign_log(float(state.dollars))
         scalars[1] = float(state.interest_cap)
         scalars[2] = float(state.round_resets.ante)
@@ -115,7 +126,6 @@ class Tokenizer:
         scalars[6] = float(state.current_round.hand_size)
         scalars[7] = float(self._sub_phase_id(sub_phase))
 
-        # DECK cards (positions 10-71, max 62)
         pos = DECK_START
         hand_cards = state.hand_cards
         draw_pile = state.draw_pile
@@ -127,32 +137,31 @@ class Tokenizer:
                     break
                 p = pos + card_idx
                 if card.face_down:
-                    row = [0, 0]
+                    tokens[p, 0] = 0
+                    tokens[p, 1] = 0
                 else:
-                    row = [_rank_to_id.get(card.rank, 0), _suit_to_id.get(card.suit, 0)]
-                row.append(_enh_to_id.get(card.center_key, 0))
-                row.append(_edition_to_id.get(card.edition_key or "", 0))
-                row.append(_seal_to_id.get(card.seal or "", 0))
-                row.append(loc)
-                row.append(card.debuff)
-                row.append(card.face_down)
-                row.append(min(card.perma_bonus // 5, 31))
-                row.append(1 if loc == 0 and ci in selected_cards else 0)
-                row.append(card.forced_selection)
-                row.append(ci if loc == 0 else 0)
-                tokens[p] = row
+                    tokens[p, 0] = _rank_to_id.get(card.rank, 0)
+                    tokens[p, 1] = _suit_to_id.get(card.suit, 0)
+                tokens[p, 2] = _enh_to_id.get(card.center_key, 0)
+                tokens[p, 3] = _edition_to_id.get(card.edition_key or "", 0)
+                tokens[p, 4] = _seal_to_id.get(card.seal or "", 0)
+                tokens[p, 5] = loc
+                tokens[p, 6] = card.debuff
+                tokens[p, 7] = card.face_down
+                tokens[p, 8] = min(card.perma_bonus // 5, 31)
+                tokens[p, 9] = 1 if loc == 0 and ci in selected_cards else 0
+                tokens[p, 10] = card.forced_selection
+                tokens[p, 11] = ci if loc == 0 else 0
                 token_types[p] = TokenType.DECK
                 attn_mask[p] = 1
                 card_idx += 1
 
-        # JOKER tokens (positions 72-79, max 8)
         pos = JOKER_START
         for i, joker in enumerate(state.jokers[:JOKER_MAX]):
             self._encode_joker(tokens, pos + i, joker, i)
             token_types[pos + i] = TokenType.JOKER
             attn_mask[pos + i] = 1
 
-        # VOUCHER tokens (positions 80-83, max 4)
         pos = VOUCHER_START
         voucher_keys = [k for k in state.used_vouchers if state.used_vouchers[k]]
         for i, vkey in enumerate(voucher_keys[:VOUCHER_MAX]):
@@ -160,14 +169,12 @@ class Tokenizer:
             token_types[pos + i] = TokenType.VOUCHER
             attn_mask[pos + i] = 1
 
-        # CONSUMABLE tokens (positions 84-88, max 5)
         pos = CONSUMABLE_START
         for i, cons in enumerate(state.consumables[:CONSUMABLE_MAX]):
             self._encode_consumable(tokens, pos + i, cons, i)
             token_types[pos + i] = TokenType.CONSUMABLE
             attn_mask[pos + i] = 1
 
-        # SHOP tokens (positions 89-98, max 10) — only during SHOP
         if sub_phase == SubPhase.SHOP:
             pos = SHOP_START
             shop_items = self._gather_shop_items(state)
@@ -176,7 +183,6 @@ class Tokenizer:
                 token_types[pos + i] = TokenType.SHOP
                 attn_mask[pos + i] = 1
 
-        # BLIND_SELECT tokens (positions 99-101, max 3) — only during BLIND_SELECT
         if sub_phase == SubPhase.BLIND_SELECT:
             pos = BLIND_SELECT_START
             blind_infos = self._gather_blind_choices(state)
@@ -185,7 +191,6 @@ class Tokenizer:
                 token_types[pos + i] = TokenType.BLIND_SELECT
                 attn_mask[pos + i] = 1
 
-        # Selected cards tracking
         for idx in selected_cards:
             if idx < 12:
                 sel_cards[idx] = 1
@@ -194,44 +199,47 @@ class Tokenizer:
             action_mask = np.ones(NUM_ACTIONS, dtype=np.int8)
 
         return RawObservation(
-            tokens=tokens,
-            token_types=token_types,
-            scalars=scalars,
-            attention_mask=attn_mask,
+            tokens=np.asarray(tokens),
+            token_types=np.asarray(token_types),
+            scalars=np.asarray(scalars),
+            attention_mask=np.asarray(attn_mask),
             action_mask=action_mask,
-            selected_cards=sel_cards,
+            selected_cards=np.asarray(sel_cards),
         )
 
+    @cython.locals(blind_type_id=cython.int, boss_id=cython.int)
     def _encode_meta(self, state: RunState, sub_phase: SubPhase) -> list[int]:
-        """Encode 9 META token values."""
         blind = state.round_resets.blind or {}
         blind_type_id = {"Small": 0, "Big": 1}.get(state.blind_on_deck or "Small", 2)
         boss_key = state.round_resets.blind_choices.get("Boss", "")
         boss_id = self.vocab.boss_to_id.get(boss_key, 0)
 
         return [
-            int(sign_log(float(state.dollars)) * 10),     # money (scaled)
-            int(state.interest_cap),                       # interest_cap
-            int(state.round_resets.ante),                  # ante
-            blind_type_id * 100 + boss_id,                 # blind_type + boss_id combined
-            int(sign_log(float(self._blind_target(state))) * 10),  # target (scaled)
-            int(state.current_round.hands_left),           # hands_left
-            int(state.current_round.discards_left),        # discards_left
-            int(state.current_round.hand_size),            # hand_size
-            self._sub_phase_id(sub_phase),                 # phase
+            int(sign_log(float(state.dollars)) * 10),
+            int(state.interest_cap),
+            int(state.round_resets.ante),
+            blind_type_id * 100 + boss_id,
+            int(sign_log(float(self._blind_target(state))) * 10),
+            int(state.current_round.hands_left),
+            int(state.current_round.discards_left),
+            int(state.current_round.hand_size),
+            self._sub_phase_id(sub_phase),
         ]
 
+    @cython.locals(ante=cython.int, scaling=cython.int, base=cython.int)
     def _blind_target(self, state: RunState) -> int:
         blind = state.round_resets.blind
         if blind is None:
             return 0
         from pylatro import get_blind_amount
+
         ante = state.round_resets.ante
         scaling = min(state.stake, 3)
         base = get_blind_amount(ante, scaling)
         mult = blind.get("mult", 1)
         return int(math.floor(base * mult))
 
+    @cython.locals(sp_id=cython.int)
     def _sub_phase_id(self, sub_phase: SubPhase) -> int:
         return {
             SubPhase.BLIND_SELECT: 0,
@@ -242,12 +250,16 @@ class Tokenizer:
             SubPhase.CONSUMABLE_TARGET: 5,
         }[sub_phase]
 
-    def _encode_joker(
-        self, tokens: np.ndarray, pos: int, joker: JokerInstance, slot: int
-    ) -> None:
+    @cython.locals(
+        tokens=cython.short[:, :],
+        pos=cython.int,
+        slot=cython.int,
+        edition_id=cython.int,
+        counter=cython.int,
+    )
+    def _encode_joker(self, tokens: np.ndarray, pos: int, joker: JokerInstance, slot: int) -> None:
         tokens[pos, 0] = self.vocab.joker_to_id.get(joker.center_key, 0)
-        # Rarity from center data — we encode as simple int
-        tokens[pos, 1] = 0  # rarity placeholder (set by env if data available)
+        tokens[pos, 1] = 0
         edition_id = 0
         if joker.edition:
             for key, val in joker.edition.items():
@@ -256,17 +268,20 @@ class Tokenizer:
                     break
         tokens[pos, 2] = edition_id
         tokens[pos, 3] = min(joker.sell_cost, 31)
-        # Counter value — varies by joker, use a generic bucket
         counter = max(joker.mult, joker.t_chips, joker.t_mult, int(joker.x_mult * 10))
         tokens[pos, 4] = min(counter, 255)
         tokens[pos, 5] = slot
         tokens[pos, 6] = int(joker.eternal)
         tokens[pos, 7] = int(joker.perishable)
 
-    def _encode_consumable(
-        self, tokens: np.ndarray, pos: int, cons: ConsumableInstance, slot: int
-    ) -> None:
-        tokens[pos, 0] = 0  # type_id set below
+    @cython.locals(
+        tokens=cython.short[:, :],
+        pos=cython.int,
+        slot=cython.int,
+        edition_id=cython.int,
+    )
+    def _encode_consumable(self, tokens: np.ndarray, pos: int, cons: ConsumableInstance, slot: int) -> None:
+        tokens[pos, 0] = 0
         tokens[pos, 1] = self.vocab.consumable_to_id.get(cons.center_key, 0)
         edition_id = 0
         if cons.edition:
@@ -278,19 +293,23 @@ class Tokenizer:
         tokens[pos, 3] = slot
 
     def _gather_shop_items(self, state: RunState) -> list[ShopCard]:
-        """Flatten shop cards + vouchers + boosters into one list."""
         items: list[ShopCard] = []
         items.extend(state.shop.cards)
         items.extend(state.shop.vouchers)
         items.extend(state.shop.boosters)
         return items
 
-    def _encode_shop_item(
-        self, tokens: np.ndarray, pos: int, item: ShopCard, slot: int
-    ) -> None:
-        # Try to identify item type and use appropriate vocab
+    @cython.locals(
+        tokens=cython.short[:, :],
+        pos=cython.int,
+        slot=cython.int,
+        item_id=cython.int,
+        item_type=cython.int,
+        edition_id=cython.int,
+    )
+    def _encode_shop_item(self, tokens: np.ndarray, pos: int, item: ShopCard, slot: int) -> None:
         item_id = 0
-        item_type = 0  # 0=card, 1=joker, 2=consumable, 3=voucher, 4=booster
+        item_type = 0
         if item.center_key in self.vocab.joker_to_id:
             item_id = self.vocab.joker_to_id[item.center_key]
             item_type = 1
@@ -316,26 +335,33 @@ class Tokenizer:
         tokens[pos, 4] = slot
 
     def _gather_blind_choices(self, state: RunState) -> list[dict[str, Any]]:
-        """Gather blind choice info for BLIND_SELECT tokens."""
         result: list[dict[str, Any]] = []
         for bt in ("Small", "Big", "Boss"):
             blind_state = state.round_resets.blind_states.get(bt, "Upcoming")
             blind_key = state.round_resets.blind_choices.get(bt, "")
             tag_key = state.round_resets.blind_tags.get(bt, "")
             blind_data = state.data.blinds.get(blind_key, {})
-            result.append({
-                "blind_type": bt,
-                "blind_key": blind_key,
-                "state": blind_state,
-                "mult": blind_data.get("mult", 1),
-                "boss": blind_data.get("boss", False),
-                "tag_key": tag_key,
-            })
+            result.append(
+                {
+                    "blind_type": bt,
+                    "blind_key": blind_key,
+                    "state": blind_state,
+                    "mult": blind_data.get("mult", 1),
+                    "boss": blind_data.get("boss", False),
+                    "tag_key": tag_key,
+                }
+            )
         return result
 
-    def _encode_blind_choice(
-        self, tokens: np.ndarray, pos: int, info: dict[str, Any]
-    ) -> None:
+    @cython.locals(
+        tokens=cython.short[:, :],
+        pos=cython.int,
+        blind_type_id=cython.int,
+        state_id=cython.int,
+        boss_id=cython.int,
+        tag_id=cython.int,
+    )
+    def _encode_blind_choice(self, tokens: np.ndarray, pos: int, info: dict[str, Any]) -> None:
         blind_type_id = {"Small": 0, "Big": 1, "Boss": 2}.get(info["blind_type"], 0)
         state_id = {"Select": 0, "Upcoming": 1, "Current": 2, "Skipped": 3, "Defeated": 4}.get(info["state"], 0)
         boss_id = self.vocab.boss_to_id.get(info["blind_key"], 0) if info["boss"] else 0

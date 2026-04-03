@@ -4,6 +4,22 @@
 
 The upstream shipped Lua sources are unpacked into [`vendor/balatro_lua`](/Users/makemake/Documents/code/python/pylatro/vendor/balatro_lua) and treated as the reference implementation. The Python package in [`src/pylatro`](/Users/makemake/Documents/code/python/pylatro/src/pylatro) focuses on deterministic run generation, state transitions, and action handling so the project can later back a Gym-style environment for research.
 
+## Development
+
+```bash
+nix develop
+uv sync --group dev
+```
+
+The flake provides Python 3.12, `uv`, and a native C toolchain so Cython
+extensions can be compiled in-place later.
+
+For the RL stack as well:
+
+```bash
+uv sync --group dev --extra agent
+```
+
 The current implementation includes:
 
 - upstream Lua table extraction for blinds, decks, cards, centers, stakes, tags, and seals

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +74,7 @@ def train_supervised(
     base_model = model.module if isinstance(model, nn.DataParallel) else model
     logger.info(f"Model parameters: {base_model.count_parameters():,}")
     logger.info("Generating training data from heuristic agent...")
+    t_gen_start = time.monotonic()
     records = generate_training_data(
         config.num_games,
         data=data,
@@ -81,10 +83,21 @@ def train_supervised(
         gamma=config.gamma,
         num_workers=config.num_workers,
     )
-    logger.info(f"Generated {len(records)} training records")
+    t_gen_elapsed = time.monotonic() - t_gen_start
+    logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)
+
+    if not records:
+        logger.error("No training records generated — check min_ante or heuristic agent")
+        return model
 
     wins = sum(1 for r in records if r["won"])
-    logger.info(f"Heuristic win rate (approx): {wins / max(len(records), 1):.3f} of records from winning games")
+    max_antes = [r.get("max_ante", 1) for r in records]
+    logger.info(
+        "Data stats: win_rate=%.3f, mean_max_ante=%.1f, median_max_ante=%d",
+        wins / len(records),
+        sum(max_antes) / len(max_antes),
+        sorted(max_antes)[len(max_antes) // 2],
+    )
 
     # Shuffle and batch
     n = len(records)

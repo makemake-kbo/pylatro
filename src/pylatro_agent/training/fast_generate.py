@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import math
 import multiprocessing
 import os
 import threading
@@ -34,13 +35,15 @@ logger = logging.getLogger(__name__)
 
 _shared_counter: Any = None
 _shared_total_attempted: Any = None
+_shared_busy: Any = None
 _shared_target: int = 0
 
 
-def _init_worker(counter: Any, total_attempted: Any, target: int) -> None:
-    global _shared_counter, _shared_total_attempted, _shared_target
+def _init_worker(counter: Any, total_attempted: Any, busy: Any, target: int) -> None:
+    global _shared_counter, _shared_total_attempted, _shared_busy, _shared_target
     _shared_counter = counter
     _shared_total_attempted = total_attempted
+    _shared_busy = busy
     _shared_target = target
 
 
@@ -82,7 +85,6 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
 
 
 def _info_signature(info: dict[str, Any]) -> tuple[Any, ...]:
-    """Mirror BalatroEnv progress detection on captured info snapshots."""
     return (
         info.get("ante", 0),
         info.get("blind_on_deck", ""),
@@ -245,6 +247,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 if _shared_counter.value >= _shared_target:
                     break
                 _shared_counter.value += 1
+            with _shared_busy.get_lock():
+                _shared_busy.value += 1
             game_records, _, _ = _run_game_single_pass(
                 seed - 1,
                 data,
@@ -252,6 +256,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 agent,
                 gamma,
             )
+            with _shared_busy.get_lock():
+                _shared_busy.value -= 1
             records.extend(game_records)
             gc.collect()
             games_since_gc = 0
@@ -262,6 +268,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 _shared_counter.value += 1
             with _shared_total_attempted.get_lock():
                 _shared_total_attempted.value += 1
+            with _shared_busy.get_lock():
+                _shared_busy.value += 1
             game_records, _, _ = _run_game_single_pass(
                 seed,
                 data,
@@ -269,6 +277,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 agent,
                 gamma,
             )
+            with _shared_busy.get_lock():
+                _shared_busy.value -= 1
             seed += 1
             records.extend(game_records)
             games_since_gc += 1
@@ -288,9 +298,20 @@ def _get_num_workers(num_workers: int) -> int:
         return os.cpu_count() or 1
 
 
+def _format_eta(eta_secs: float) -> str:
+    if math.isinf(eta_secs) or math.isnan(eta_secs) or eta_secs < 0:
+        return "--"
+    if eta_secs < 60:
+        return f"{eta_secs:.0f}s"
+    if eta_secs < 3600:
+        return f"{eta_secs / 60:.1f}m"
+    return f"{eta_secs / 3600:.1f}h"
+
+
 def _progress_reporter(
     counter: Any,
     total_attempted: Any,
+    busy: Any,
     target: int,
     stop_event: threading.Event,
     interval_seconds: int = 60,
@@ -308,6 +329,7 @@ def _progress_reporter(
         now = time.monotonic()
         valid = counter.value
         attempted = total_attempted.value
+        busy_count = busy.value
         elapsed_since_last = now - prev_time
 
         if elapsed_since_last < 0.1:
@@ -318,18 +340,20 @@ def _progress_reporter(
         pct_valid = (valid / max(attempted, 1)) * 100
 
         remaining = target - valid
-        eta_secs = remaining / valid_rate if valid_rate > 0 else float("inf")
-
-        if eta_secs < 60:
-            eta_str = f"{eta_secs:.0f}s"
-        elif eta_secs < 3600:
-            eta_str = f"{eta_secs / 60:.1f}m"
+        if remaining <= 0:
+            eta_str = "done"
+        elif valid_rate > 0:
+            eta_str = _format_eta(remaining / valid_rate)
         else:
-            eta_str = f"{eta_secs / 3600:.1f}h"
+            eta_str = "--"
+
+        status = "collecting" if valid >= target and busy_count > 0 else ""
+        busy_str = f" | single_pass: {busy_count}" if busy_count > 0 else ""
+        status_str = f" | {status}" if status else ""
 
         logger.info(
             "Progress: %d/%d valid games (%.1f%% of %d attempted) | "
-            "valid: %.1f games/s | attempted: %.1f games/s | ETA: %s",
+            "valid: %.1f games/s | attempted: %.1f games/s | ETA: %s%s%s",
             valid,
             target,
             pct_valid,
@@ -337,6 +361,8 @@ def _progress_reporter(
             valid_rate,
             attempted_rate,
             eta_str,
+            busy_str,
+            status_str,
         )
 
         prev_valid = valid
@@ -366,13 +392,14 @@ def generate_training_data(
     stop_event = threading.Event()
 
     if num_workers == 1:
-        global _shared_counter, _shared_total_attempted, _shared_target
+        global _shared_counter, _shared_total_attempted, _shared_busy, _shared_target
         _shared_counter = multiprocessing.Value("i", 0)
         _shared_total_attempted = multiprocessing.Value("i", 0)
+        _shared_busy = multiprocessing.Value("i", 0)
         _shared_target = num_games
         progress_thread = threading.Thread(
             target=_progress_reporter,
-            args=(_shared_counter, _shared_total_attempted, num_games, stop_event),
+            args=(_shared_counter, _shared_total_attempted, _shared_busy, num_games, stop_event),
             daemon=True,
         )
         progress_thread.start()
@@ -380,23 +407,31 @@ def generate_training_data(
     else:
         counter = multiprocessing.Value("i", 0)
         total_attempted = multiprocessing.Value("i", 0)
+        busy = multiprocessing.Value("i", 0)
         progress_thread = threading.Thread(
             target=_progress_reporter,
-            args=(counter, total_attempted, num_games, stop_event),
+            args=(counter, total_attempted, busy, num_games, stop_event),
             daemon=True,
         )
         progress_thread.start()
+        t_pool_start = time.monotonic()
         with multiprocessing.Pool(
             num_workers,
             initializer=_init_worker,
-            initargs=(counter, total_attempted, num_games),
+            initargs=(counter, total_attempted, busy, num_games),
         ) as pool:
             results = pool.map(_generate_games_worker, worker_args)
+        t_pool_elapsed = time.monotonic() - t_pool_start
+        logger.info("Pool.map completed in %.1fs, collecting results", t_pool_elapsed)
         records = []
         for r in results:
             records.extend(r)
 
     stop_event.set()
     progress_thread.join(timeout=5)
-    logger.info("Fast-generated %d training records from %d games", len(records), num_games)
+    logger.info(
+        "Fast-generated %d training records from %d requested games",
+        len(records),
+        num_games,
+    )
     return records

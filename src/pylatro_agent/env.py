@@ -13,6 +13,7 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from .hand_candidates import HandCandidate, candidate_signature, generate_hand_candidates
 from .masks import compute_action_mask
 from .reward import RewardFn, default_reward, default_reward_components
 from .tokenizer import RawObservation, Tokenizer
@@ -62,6 +63,9 @@ class BalatroEnv(gymnasium.Env):
         self._pending_consumable_slot: int | None = None
         self._pending_consumable_hand_targets: tuple[int, ...] = ()
         self._pending_consumable_joker_targets: tuple[int, ...] = ()
+        self._play_candidates: tuple[HandCandidate, ...] = ()
+        self._discard_candidates: tuple[HandCandidate, ...] = ()
+        self._candidate_signature: tuple | None = None
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -110,6 +114,9 @@ class BalatroEnv(gymnasium.Env):
         self._pending_consumable_slot = None
         self._pending_consumable_hand_targets = ()
         self._pending_consumable_joker_targets = ()
+        self._play_candidates = ()
+        self._discard_candidates = ()
+        self._candidate_signature = None
         self._round_score = 0
         self._blind_just_beaten = False
         self._prev_info = self._capture_state_info()
@@ -224,58 +231,38 @@ class BalatroEnv(gymnasium.Env):
             ctrl.reroll_boss()
             self._sub_phase = SubPhase.BLIND_SELECT
 
-        elif at == ActionType.PLAY_HAND:
-            self._pending_action = "play"
-            self._selected_cards = set()
-            # Auto-select forced cards
-            for i, card in enumerate(state.hand_cards):
-                if card.forced_selection:
-                    self._selected_cards.add(i)
-            self._sub_phase = SubPhase.SELECT_CARDS
+        elif at == ActionType.PLAY_CANDIDATE:
+            self._refresh_hand_candidates()
+            if decoded.index >= len(self._play_candidates):
+                raise IndexError(f"Play candidate {decoded.index} out of range")
+            indices = list(self._play_candidates[decoded.index].indices)
+            result = ctrl.play_selected(indices)
+            self._round_score += result.score.total
+            if ctrl.blind_beaten():
+                self._blind_just_beaten = True
+                ctrl.cash_out()
+                if ctrl.phase == GamePhase.GAME_WON:
+                    return
+                ctrl.enter_shop()
+                self._sub_phase = SubPhase.SHOP
+            elif ctrl.phase == GamePhase.GAME_OVER:
+                return
+            else:
+                self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif at == ActionType.DISCARD:
-            self._pending_action = "discard"
-            self._selected_cards = set()
-            for i, card in enumerate(state.hand_cards):
-                if card.forced_selection:
-                    self._selected_cards.add(i)
-            self._sub_phase = SubPhase.SELECT_CARDS
+        elif at == ActionType.DISCARD_CANDIDATE:
+            self._refresh_hand_candidates()
+            if decoded.index >= len(self._discard_candidates):
+                raise IndexError(f"Discard candidate {decoded.index} out of range")
+            indices = list(self._discard_candidates[decoded.index].indices)
+            ctrl.discard_selected(indices)
+            self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif at == ActionType.USE_CONSUMABLE:
             self._pending_consumable_slot = None
             self._pending_consumable_hand_targets = ()
             self._pending_consumable_joker_targets = ()
             self._sub_phase = SubPhase.CONSUMABLE_TARGET
-
-        elif at == ActionType.TOGGLE_CARD:
-            idx = decoded.index
-            if idx in self._selected_cards:
-                self._selected_cards.discard(idx)
-            else:
-                self._selected_cards.add(idx)
-            # Stay in SELECT_CARDS
-
-        elif at == ActionType.SELECT_CONFIRM:
-            indices = sorted(self._selected_cards)
-            if self._pending_action == "play":
-                result = ctrl.play_selected(indices)
-                self._round_score += result.score.total
-                if ctrl.blind_beaten():
-                    self._blind_just_beaten = True
-                    ctrl.cash_out()
-                    if ctrl.phase == GamePhase.GAME_WON:
-                        return
-                    ctrl.enter_shop()
-                    self._sub_phase = SubPhase.SHOP
-                elif ctrl.phase == GamePhase.GAME_OVER:
-                    return
-                else:
-                    self._sub_phase = SubPhase.CHOOSE_ACTION
-            else:
-                ctrl.discard_selected(indices)
-                self._sub_phase = SubPhase.CHOOSE_ACTION
-            self._selected_cards = set()
-            self._pending_action = None
 
         elif at == ActionType.CONSUMABLE_SLOT:
             self._pending_consumable_slot = decoded.index
@@ -367,12 +354,15 @@ class BalatroEnv(gymnasium.Env):
 
     def _build_obs(self) -> RawObservation:
         state = self._controller.state
+        self._refresh_hand_candidates()
         mask = self.action_masks()
         return self._tokenizer.tokenize(
             state,
             self._sub_phase,
             selected_cards=self._selected_cards,
             action_mask=mask,
+            play_candidates=self._play_candidates,
+            discard_candidates=self._discard_candidates,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
@@ -416,6 +406,27 @@ class BalatroEnv(gymnasium.Env):
         base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
         mult = blind.get("mult", 1)
         return int(base * mult)
+
+    def _refresh_hand_candidates(self) -> None:
+        if self._controller is None or self._controller.state is None:
+            self._play_candidates = ()
+            self._discard_candidates = ()
+            self._candidate_signature = None
+            return
+        if self._sub_phase != SubPhase.CHOOSE_ACTION or self._controller.phase != GamePhase.HAND_PLAY:
+            self._play_candidates = ()
+            self._discard_candidates = ()
+            self._candidate_signature = None
+            return
+
+        state = self._controller.state
+        sig = candidate_signature(state)
+        if sig == self._candidate_signature:
+            return
+        play_candidates, discard_candidates = generate_hand_candidates(state)
+        self._play_candidates = play_candidates
+        self._discard_candidates = discard_candidates
+        self._candidate_signature = sig
 
     def _progress_signature(self, info: dict[str, Any]) -> tuple[Any, ...]:
         """Return a compact snapshot used to detect meaningful game progress.

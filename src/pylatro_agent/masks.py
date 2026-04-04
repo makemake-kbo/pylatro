@@ -10,13 +10,16 @@ from pylatro.models import RunState
 from .constants import (
     MAX_CONSUMABLE_SLOTS,
     MAX_HAND_SIZE,
+    MAX_DISCARD_CANDIDATES,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
+    MAX_PLAY_CANDIDATES,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
     ActionRange,
     SubPhase,
 )
+from .hand_candidates import generate_hand_candidates
 
 
 def compute_action_mask(
@@ -78,13 +81,17 @@ def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
     AR = ActionRange
     hand_size = len(state.hand_cards)
 
-    # Play hand if hands_left > 0 and hand not empty
-    if state.current_round.hands_left > 0 and hand_size > 0:
-        mask[AR.PLAY_HAND] = 1
+    play_candidates, discard_candidates = generate_hand_candidates(state)
 
-    # Discard if discards_left > 0 and hand not empty
+    # Play candidate actions if hands_left > 0 and hand not empty
+    if state.current_round.hands_left > 0 and hand_size > 0:
+        for i in range(min(len(play_candidates), MAX_PLAY_CANDIDATES)):
+            mask[AR.PLAY_CANDIDATE_START + i] = 1
+
+    # Discard candidate actions if discards_left > 0 and hand not empty
     if state.current_round.discards_left > 0 and hand_size > 0:
-        mask[AR.DISCARD] = 1
+        for i in range(min(len(discard_candidates), MAX_DISCARD_CANDIDATES)):
+            mask[AR.DISCARD_CANDIDATE_START + i] = 1
 
     # Use consumable if any is usable
     for i, cons in enumerate(state.consumables):
@@ -99,31 +106,9 @@ def _mask_select_cards(
     selected_cards: set[int],
     pending_action: str | None,
 ) -> None:
-    AR = ActionRange
-    hand_size = len(state.hand_cards)
-    num_selected = len(selected_cards)
-
-    is_play = pending_action == "play"
-    max_select = 5 if is_play else hand_size  # play max 5, discard any amount
-
-    for i in range(min(hand_size, MAX_HAND_SIZE)):
-        if i in selected_cards:
-            # Can deselect unless forced
-            card = state.hand_cards[i]
-            if not card.forced_selection:
-                mask[AR.TOGGLE_CARD_START + i] = 1
-        else:
-            # Can select if under limit
-            if num_selected < max_select:
-                mask[AR.TOGGLE_CARD_START + i] = 1
-
-    # Confirm if valid selection
-    if is_play:
-        if 1 <= num_selected <= 5:
-            mask[AR.SELECT_CONFIRM] = 1
-    else:
-        if num_selected >= 1:
-            mask[AR.SELECT_CONFIRM] = 1
+    # The legacy select_cards phase is intentionally left empty. Hand selection
+    # now happens in one shot via play/discard candidate actions.
+    _ = (mask, state, selected_cards, pending_action)
 
 
 def _mask_shop(mask: np.ndarray, state: RunState) -> None:

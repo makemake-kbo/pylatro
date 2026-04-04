@@ -9,12 +9,30 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pylatro import can_use_consumable, evaluate_poker_hand
+from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
 from .constants import ActionRange, SubPhase
+from .hand_candidates import generate_hand_candidates
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard, RunState
+
+_LOW_VALUE_JOKERS = frozenset(
+    {
+        "j_oops",
+        "j_chaos",
+        "j_credit_card",
+        "j_egg",
+        "j_diet_cola",
+        "j_superposition",
+        "j_luchador",
+        "j_splash",
+        "j_certificate",
+        "j_cartomancer",
+        "j_invisible",
+    }
+)
 
 
 class HeuristicAgent:
@@ -53,12 +71,7 @@ class HeuristicAgent:
         elif sub_phase == SubPhase.CHOOSE_ACTION:
             return self._choose_action(state, action_mask)
         elif sub_phase == SubPhase.SELECT_CARDS:
-            return self._select_cards(
-                state,
-                action_mask,
-                kwargs.get("selected_cards", set()),
-                kwargs.get("pending_action"),
-            )
+            return self._random_valid(action_mask)
         elif sub_phase == SubPhase.SHOP:
             return self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
@@ -73,23 +86,41 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _choose_action(self, state: RunState, mask: np.ndarray) -> int:
+        play_candidates, discard_candidates = generate_hand_candidates(state)
+
         if mask[ActionRange.USE_CONSUMABLE]:
             for cons in state.consumables:
                 center = state.data.centers[cons.center_key]
-                if center.get("set") == "Planet" and can_use_consumable(state, cons):
+                cset = center.get("set", "")
+                if cset == "Planet" and can_use_consumable(state, cons):
+                    return ActionRange.USE_CONSUMABLE
+            for cons in state.consumables:
+                center = state.data.centers[cons.center_key]
+                cset = center.get("set", "")
+                if cset == "Tarot" and can_use_consumable(state, cons):
                     return ActionRange.USE_CONSUMABLE
 
         hand = state.hand_cards
-        can_discard = mask[ActionRange.DISCARD] and state.current_round.discards_left > 0
+        can_discard = any(
+            mask[ActionRange.DISCARD_CANDIDATE_START + i]
+            for i in range(len(discard_candidates))
+        ) and state.current_round.discards_left > 0
         hand_quality = self._evaluate_hand_quality(state, hand) if hand else 0
 
-        if hand_quality < 2 and can_discard:
-            return ActionRange.DISCARD
+        if hand_quality < 1 and can_discard and state.current_round.hands_left > 1:
+            for i, _candidate in enumerate(discard_candidates):
+                action = ActionRange.DISCARD_CANDIDATE_START + i
+                if mask[action]:
+                    return action
 
-        if mask[ActionRange.PLAY_HAND]:
-            return ActionRange.PLAY_HAND
-        if mask[ActionRange.DISCARD]:
-            return ActionRange.DISCARD
+        for i, _candidate in enumerate(play_candidates):
+            action = ActionRange.PLAY_CANDIDATE_START + i
+            if mask[action]:
+                return action
+        for i, _candidate in enumerate(discard_candidates):
+            action = ActionRange.DISCARD_CANDIDATE_START + i
+            if mask[action]:
+                return action
         return self._random_valid(mask)
 
     def _evaluate_hand_quality(self, state: RunState, hand: list[PlayingCard]) -> int:
@@ -110,7 +141,24 @@ class HeuristicAgent:
         best = self._cached_best_hand(state, hand)
         cards = [hand[i] for i in best]
         quality_name = self._quick_hand_quality(state, cards)
-        return quality_map.get(quality_name, 0)
+        base_quality = quality_map.get(quality_name, 0)
+
+        for j in state.jokers:
+            jc = state.data.centers.get(j.center_key, {})
+            jcfg = jc.get("config")
+            if not isinstance(jcfg, dict):
+                continue
+            jtype = jcfg.get("type", "")
+            if jtype == quality_name:
+                base_quality += 2
+                t_mult = jcfg.get("t_mult", 0) or 0
+                if t_mult >= 8:
+                    base_quality += 1
+                xmult = jcfg.get("Xmult", 0) or 0
+                if xmult > 1:
+                    base_quality += 2
+
+        return base_quality
 
     def _quick_hand_quality(self, state: RunState, cards: list[PlayingCard]) -> str:
         n = len(cards)
@@ -157,36 +205,125 @@ class HeuristicAgent:
             return "Pair"
         return "High Card"
 
+    def _score_joker_value(self, state: RunState, center_key: str) -> float:
+        center = state.data.centers.get(center_key, {})
+        config = center.get("config")
+        if not config or isinstance(config, list):
+            config = {}
+
+        cost = center.get("cost", 5)
+        score = 0.0
+
+        if center_key in _LOW_VALUE_JOKERS:
+            return -100.0
+
+        mult = config.get("mult")
+        if isinstance(mult, (int, float)) and mult:
+            score += mult * 4.0
+
+        t_mult = config.get("t_mult")
+        hand_type = config.get("type", "")
+        if isinstance(t_mult, (int, float)) and t_mult:
+            if self._hand_type_synergy(state, hand_type) > 0:
+                score += t_mult * 4.0
+            else:
+                score += t_mult * 1.5
+
+        t_chips = config.get("t_chips")
+        if isinstance(t_chips, (int, float)) and t_chips:
+            if self._hand_type_synergy(state, hand_type) > 0:
+                score += t_chips * 0.5
+            else:
+                score += t_chips * 0.15
+
+        x_mult = config.get("Xmult")
+        if isinstance(x_mult, (int, float)) and x_mult and x_mult > 1:
+            total_add = sum(j.mult for j in state.jokers) + sum(j.t_mult for j in state.jokers)
+            if total_add >= 8:
+                score += (x_mult - 1) * 30.0
+            elif total_add >= 4:
+                score += (x_mult - 1) * 15.0
+            else:
+                score += (x_mult - 1) * 3.0
+
+        extra = config.get("extra")
+        if isinstance(extra, dict):
+            s_mult = extra.get("s_mult")
+            if isinstance(s_mult, (int, float)) and s_mult:
+                score += s_mult * 2.5
+
+            chip_mod = extra.get("chip_mod")
+            if isinstance(chip_mod, (int, float)) and chip_mod:
+                score += chip_mod * 2.0
+
+            hand_add = extra.get("hand_add")
+            if isinstance(hand_add, (int, float)) and hand_add:
+                score += hand_add * 3.0
+
+            ex_mult = extra.get("Xmult")
+            if isinstance(ex_mult, (int, float)) and ex_mult:
+                score += ex_mult * 5.0
+
+            mult_val = extra.get("mult")
+            if isinstance(mult_val, (int, float)) and mult_val:
+                score += mult_val * 3.0
+
+            chips_val = extra.get("chips")
+            if isinstance(chips_val, (int, float)) and chips_val:
+                score += chips_val * 0.3
+        elif isinstance(extra, (int, float)) and extra and extra > 0:
+            effect = center.get("effect", "")
+            if "Mult" in effect:
+                score += extra * 3.0
+            elif "Chip" in effect:
+                score += extra * 0.5
+            elif "Card Buff" in effect:
+                score += extra * 2.0
+            elif extra >= 10:
+                score += extra * 1.0
+            else:
+                score += extra * 2.0
+
+        h_size = config.get("h_size")
+        if isinstance(h_size, (int, float)) and h_size and h_size > 0:
+            score += h_size * 12.0
+
+        d_size = config.get("d_size")
+        if isinstance(d_size, (int, float)) and d_size and d_size > 0:
+            score += d_size * 8.0
+
+        if center_key == "j_four_fingers":
+            score += 10.0
+        elif center_key in ("j_blueprint", "j_brainstorm"):
+            score += 15.0 if len(state.jokers) >= 2 else 3.0
+
+        if cost <= 3:
+            score *= 1.2
+        elif cost >= 8:
+            score *= 0.8
+
+        return score
+
+    def _hand_type_synergy(self, state: RunState, hand_type: str) -> float:
+        if not hand_type:
+            return 0.0
+        synergy = 0.0
+        for j in state.jokers:
+            jc = state.data.centers.get(j.center_key, {})
+            jcfg = jc.get("config")
+            if not isinstance(jcfg, dict):
+                continue
+            jtype = jcfg.get("type", "")
+            if jtype == hand_type:
+                synergy += jcfg.get("t_mult", 0) or 0
+                synergy += (jcfg.get("t_chips", 0) or 0) * 0.1
+                xm = jcfg.get("Xmult", 0) or 0
+                if xm > 1:
+                    synergy += (xm - 1) * 10
+        return synergy
+
     def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
-        hand = state.hand_cards
-        if not hand:
-            if mask[ActionRange.SELECT_CONFIRM]:
-                return ActionRange.SELECT_CONFIRM
-            return self._random_valid(mask)
-
-        if pending == "play":
-            best_cards = self._cached_best_hand(state, hand)
-        else:
-            keep = self._cached_best_hand(state, hand)
-            discard = set(range(len(hand))) - keep
-            if len(discard) > 5:
-                worst = self._find_worst_cards(state, hand, max_discard=5)
-                discard = discard & worst
-                if not discard:
-                    discard = worst
-            best_cards = discard if discard else self._find_worst_cards(state, hand, max_discard=min(3, len(hand)))
-
-        best_indices = set(best_cards)
-
-        for idx in range(len(hand)):
-            if (idx in best_indices and idx not in selected) or (idx not in best_indices and idx in selected):
-                action = ActionRange.TOGGLE_CARD_START + idx
-                if mask[action]:
-                    return action
-
-        if mask[ActionRange.SELECT_CONFIRM]:
-            return ActionRange.SELECT_CONFIRM
-
+        _ = (state, selected, pending)
         return self._random_valid(mask)
 
     def _find_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
@@ -447,19 +584,101 @@ class HeuristicAgent:
 
     def _shop(self, state: RunState, mask: np.ndarray) -> int:
         all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+        joker_slots_left = joker_limit(state) - len(state.jokers)
+
+        best_joker_action = -1
+        best_joker_score = -1e9
+
         for i, item in enumerate(all_items):
             action = ActionRange.SHOP_BUY_START + i
             if not mask[action]:
                 continue
             center = state.data.centers.get(item.center_key, {})
             if center.get("set") == "Joker":
+                jscore = self._score_joker_value(state, item.center_key)
+                if jscore > best_joker_score:
+                    best_joker_score = jscore
+                    best_joker_action = action
+
+        if best_joker_action >= 0 and joker_slots_left > 0 and best_joker_score > 0:
+            return best_joker_action
+
+        for i, item in enumerate(all_items):
+            action = ActionRange.SHOP_BUY_START + i
+            if not mask[action]:
+                continue
+            center = state.data.centers.get(item.center_key, {})
+            if center.get("set") == "Voucher":
                 return action
+
+        if joker_slots_left > 0:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster":
+                    name = center.get("name", "")
+                    if "Buffoon" in name:
+                        return action
+
+        for i, item in enumerate(all_items):
+            action = ActionRange.SHOP_BUY_START + i
+            if not mask[action]:
+                continue
+            center = state.data.centers.get(item.center_key, {})
+            if center.get("set") == "Booster":
+                name = center.get("name", "")
+                if "Celestial" in name:
+                    return action
+
+        cons_slots_left = consumable_limit(state) - len(state.consumables)
+        if cons_slots_left > 0:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster":
+                    name = center.get("name", "")
+                    if "Arcana" in name:
+                        return action
+
+        for i, item in enumerate(all_items):
+            action = ActionRange.SHOP_BUY_START + i
+            if not mask[action]:
+                continue
+            center = state.data.centers.get(item.center_key, {})
+            if center.get("set") == "Booster":
+                return action
+
+        if best_joker_action >= 0 and joker_slots_left > 0 and best_joker_score > -5:
+            return best_joker_action
+
+        if mask[ActionRange.SHOP_REROLL] and state.dollars >= 8 and joker_slots_left > 0:
+            return ActionRange.SHOP_REROLL
 
         if mask[ActionRange.SHOP_LEAVE]:
             return ActionRange.SHOP_LEAVE
         return self._random_valid(mask)
 
     def _booster_pack(self, state: RunState, mask: np.ndarray) -> int:
+        pack = state.pack
+        if pack and pack.cards:
+            best_score = -1e9
+            best_action = -1
+            for i, card in enumerate(pack.cards):
+                action = ActionRange.PACK_CLAIM_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(card.center_key, {})
+                cscore = self._score_pack_card(state, center)
+                if cscore > best_score:
+                    best_score = cscore
+                    best_action = action
+            if best_action >= 0:
+                return best_action
+
         for i in range(5):
             action = ActionRange.PACK_CLAIM_START + i
             if mask[action]:
@@ -468,16 +687,39 @@ class HeuristicAgent:
             return ActionRange.PACK_SKIP
         return self._random_valid(mask)
 
+    def _score_pack_card(self, state: RunState, center: dict) -> float:
+        cset = center.get("set", "")
+        if cset == "Joker":
+            jslots = joker_limit(state) - len(state.jokers)
+            if jslots > 0:
+                return self._score_joker_value(state, center.get("key", ""))
+            return -100.0
+        elif cset == "Planet":
+            return 5.0
+        elif cset == "Tarot":
+            return 4.0
+        elif cset == "Spectral":
+            return 3.0
+        return 1.0
+
     def _consumable_target(self, state: RunState, mask: np.ndarray, pending_slot: int | None) -> int:
         if pending_slot is None:
             for i, cons in enumerate(state.consumables):
                 action = ActionRange.CONSUMABLE_SLOT_START + i
                 if mask[action]:
                     center = state.data.centers[cons.center_key]
-                    if center.get("set") == "Planet":
+                    cset = center.get("set", "")
+                    if cset == "Planet":
                         return action
-            for i in range(5):
+            for i, cons in enumerate(state.consumables):
                 action = ActionRange.CONSUMABLE_SLOT_START + i
+                if mask[action]:
+                    return action
+
+        if mask[ActionRange.CONSUMABLE_HAND_TARGET_START]:
+            hand = state.hand_cards
+            for i in range(min(len(hand), 5)):
+                action = ActionRange.CONSUMABLE_HAND_TARGET_START + i
                 if mask[action]:
                     return action
 

@@ -23,12 +23,17 @@ from .constants import (
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
+    HAND_CANDIDATE_MAX,
+    HAND_CANDIDATE_START,
+    HAND_LEVEL_MAX,
+    HAND_LEVEL_START,
     JOKER_MAX,
     JOKER_START,
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
     OBJ_START,
+    POKER_HAND_NAMES,
     SHOP_MAX,
     SHOP_START,
     TOKEN_DIM,
@@ -37,6 +42,7 @@ from .constants import (
     SubPhase,
     TokenType,
 )
+from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
 
@@ -82,6 +88,8 @@ class Tokenizer:
         sub_phase: SubPhase,
         selected_cards: set[int] | None = None,
         action_mask: np.ndarray | None = None,
+        play_candidates: tuple[HandCandidate, ...] = (),
+        discard_candidates: tuple[HandCandidate, ...] = (),
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -93,6 +101,8 @@ class Tokenizer:
 
         if selected_cards is None:
             selected_cards = set()
+        if sub_phase == SubPhase.CHOOSE_ACTION and not play_candidates and not discard_candidates:
+            play_candidates, discard_candidates = generate_hand_candidates(state)
 
         _rank_to_id = RANK_TO_ID
         _suit_to_id = SUIT_TO_ID
@@ -190,6 +200,28 @@ class Tokenizer:
                 self._encode_blind_choice(tokens, pos + i, binfo)
                 token_types[pos + i] = TokenType.BLIND_SELECT
                 attn_mask[pos + i] = 1
+
+        pos = HAND_LEVEL_START
+        for i, hand_name in enumerate(POKER_HAND_NAMES):
+            if i >= HAND_LEVEL_MAX:
+                break
+            self._encode_hand_level(tokens, pos + i, hand_name, state.hands[hand_name])
+            token_types[pos + i] = TokenType.HAND_LEVEL
+            attn_mask[pos + i] = 1
+
+        if sub_phase == SubPhase.CHOOSE_ACTION:
+            pos = HAND_CANDIDATE_START
+            candidate_slot = 0
+            for candidate in play_candidates[:HAND_CANDIDATE_MAX]:
+                self._encode_hand_candidate(tokens, pos + candidate_slot, candidate, candidate_slot, state)
+                token_types[pos + candidate_slot] = TokenType.HAND_CANDIDATE
+                attn_mask[pos + candidate_slot] = 1
+                candidate_slot += 1
+            for candidate in discard_candidates[: max(0, HAND_CANDIDATE_MAX - candidate_slot)]:
+                self._encode_hand_candidate(tokens, pos + candidate_slot, candidate, candidate_slot, state)
+                token_types[pos + candidate_slot] = TokenType.HAND_CANDIDATE
+                attn_mask[pos + candidate_slot] = 1
+                candidate_slot += 1
 
         for idx in selected_cards:
             if idx < 12:
@@ -371,3 +403,31 @@ class Tokenizer:
         tokens[pos, 2] = int(info["mult"] * 10)
         tokens[pos, 3] = boss_id
         tokens[pos, 4] = tag_id
+
+    @cython.locals(tokens=cython.short[:, :], pos=cython.int)
+    def _encode_hand_level(self, tokens: np.ndarray, pos: int, hand_name: str, hand_info: dict[str, Any]) -> None:
+        tokens[pos, 0] = HAND_NAME_TO_ID.get(hand_name, 0)
+        tokens[pos, 1] = int(hand_info.get("level", 1) or 1)
+        tokens[pos, 2] = int(hand_info.get("chips", 0) or 0)
+        tokens[pos, 3] = int(hand_info.get("mult", 0) or 0)
+        tokens[pos, 4] = int(hand_info.get("played", 0) or 0)
+        tokens[pos, 5] = int(hand_info.get("visible", False))
+
+    @cython.locals(tokens=cython.short[:, :], pos=cython.int, i=cython.int)
+    def _encode_hand_candidate(
+        self,
+        tokens: np.ndarray,
+        pos: int,
+        candidate: HandCandidate,
+        rank_slot: int,
+        state: RunState,
+    ) -> None:
+        tokens[pos, 0] = 1 if candidate.kind == "play" else 2
+        tokens[pos, 1] = HAND_NAME_TO_ID.get(candidate.hand_name, 0)
+        tokens[pos, 2] = len(candidate.indices)
+        tokens[pos, 3] = int(min(max(sign_log(candidate.estimated_score) * 10.0, -255.0), 255.0))
+        tokens[pos, 4] = int(min(max(candidate.blind_ratio * 10.0, 0.0), 255.0))
+        for i in range(5):
+            tokens[pos, 5 + i] = candidate.indices[i] + 1 if i < len(candidate.indices) else 0
+        tokens[pos, 10] = rank_slot + 1
+        tokens[pos, 11] = sum(1 for idx in candidate.indices if state.hand_cards[idx].forced_selection)

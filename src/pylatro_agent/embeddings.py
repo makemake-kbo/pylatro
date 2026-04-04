@@ -14,8 +14,13 @@ from .constants import (
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
+    HAND_CANDIDATE_MAX,
+    HAND_CANDIDATE_START,
+    HAND_LEVEL_MAX,
+    HAND_LEVEL_START,
     JOKER_MAX,
     JOKER_START,
+    MAX_HAND_SIZE,
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
@@ -82,7 +87,7 @@ class MetaEmbedding(nn.Module):
 class DeckCardEmbedding(nn.Module):
     """Embedding for deck cards using sum of feature embeddings."""
 
-    def __init__(self, vocab: Vocab, d_model: int):
+    def __init__(self, vocab: Vocab, d_model: int, hand_slot_emb: nn.Embedding):
         super().__init__()
         self.rank_emb = nn.Embedding(vocab.rank_size, d_model)
         self.suit_emb = nn.Embedding(vocab.suit_size, d_model)
@@ -91,6 +96,7 @@ class DeckCardEmbedding(nn.Module):
         self.seal_emb = nn.Embedding(vocab.seal_size, d_model)
         self.location_emb = nn.Embedding(4, d_model)
         self.selected_emb = nn.Embedding(2, d_model)
+        self.hand_slot_emb = hand_slot_emb
         self.proj = nn.Linear(d_model, d_model)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -102,11 +108,12 @@ class DeckCardEmbedding(nn.Module):
         seal = tokens[:, :, 4].clamp(0, self.seal_emb.num_embeddings - 1)
         loc = tokens[:, :, 5].clamp(0, 3)
         sel = tokens[:, :, 9].clamp(0, 1)
+        slot = tokens[:, :, 11].clamp(0, self.hand_slot_emb.num_embeddings - 1)
 
         h = (
             self.rank_emb(rank) + self.suit_emb(suit) + self.enhancement_emb(enh)
             + self.edition_emb(ed) + self.seal_emb(seal) + self.location_emb(loc)
-            + self.selected_emb(sel)
+            + self.selected_emb(sel) + self.hand_slot_emb(slot)
         )
         return self.proj(h)
 
@@ -201,22 +208,87 @@ class BlindSelectEmbedding(nn.Module):
         return self.blind_type_emb(bt) + self.boss_emb(boss) + self.state_emb(st) + self.mult_proj(mult) + self.tag_emb(tag)
 
 
+class HandLevelEmbedding(nn.Module):
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.hand_type_emb = nn.Embedding(13, d_model)
+        self.level_emb = nn.Embedding(16, d_model)
+        self.chips_proj = nn.Linear(1, d_model)
+        self.mult_proj = nn.Linear(1, d_model)
+        self.played_proj = nn.Linear(1, d_model)
+        self.visible_emb = nn.Embedding(2, d_model)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        hand_type = tokens[:, :, 0].clamp(0, 12)
+        level = tokens[:, :, 1].clamp(0, 15)
+        chips = tokens[:, :, 2].float().unsqueeze(-1)
+        mult = tokens[:, :, 3].float().unsqueeze(-1)
+        played = tokens[:, :, 4].float().unsqueeze(-1)
+        visible = tokens[:, :, 5].clamp(0, 1)
+        return (
+            self.hand_type_emb(hand_type)
+            + self.level_emb(level)
+            + self.chips_proj(chips)
+            + self.mult_proj(mult)
+            + self.played_proj(played)
+            + self.visible_emb(visible)
+        )
+
+
+class HandCandidateEmbedding(nn.Module):
+    def __init__(self, d_model: int, hand_slot_emb: nn.Embedding):
+        super().__init__()
+        self.kind_emb = nn.Embedding(3, d_model)
+        self.hand_type_emb = nn.Embedding(13, d_model)
+        self.size_emb = nn.Embedding(6, d_model)
+        self.score_proj = nn.Linear(1, d_model)
+        self.coverage_proj = nn.Linear(1, d_model)
+        self.rank_slot_emb = nn.Embedding(HAND_CANDIDATE_MAX + 1, d_model)
+        self.forced_proj = nn.Linear(1, d_model)
+        self.hand_slot_emb = hand_slot_emb
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        kind = tokens[:, :, 0].clamp(0, 2)
+        hand_type = tokens[:, :, 1].clamp(0, 12)
+        size = tokens[:, :, 2].clamp(0, 5)
+        score = tokens[:, :, 3].float().unsqueeze(-1)
+        coverage = tokens[:, :, 4].float().unsqueeze(-1)
+        rank_slot = tokens[:, :, 10].clamp(0, HAND_CANDIDATE_MAX)
+        forced = tokens[:, :, 11].float().unsqueeze(-1)
+        card_slots = tokens[:, :, 5:10].clamp(0, MAX_HAND_SIZE)
+        slot_embed = self.hand_slot_emb(card_slots).sum(dim=-2)
+        return (
+            self.kind_emb(kind)
+            + self.hand_type_emb(hand_type)
+            + self.size_emb(size)
+            + self.score_proj(score)
+            + self.coverage_proj(coverage)
+            + self.rank_slot_emb(rank_slot)
+            + self.forced_proj(forced)
+            + slot_embed
+        )
+
+
 class ContentEmbeddingLayer(nn.Module):
     """Routes each token type to its specialized embedding, then adds token type embedding."""
 
     def __init__(self, vocab: Vocab, d_model: int):
         super().__init__()
         self.d_model = d_model
-        self.token_type_emb = nn.Embedding(9, d_model)
+        self.token_type_emb = nn.Embedding(11, d_model)
+        self.position_emb = nn.Embedding(MAX_SEQ_LEN, d_model)
+        self.hand_slot_emb = nn.Embedding(MAX_HAND_SIZE + 1, d_model)
 
         self.obj_emb = ObjEmbedding(d_model)
         self.meta_emb = MetaEmbedding(d_model)
-        self.deck_emb = DeckCardEmbedding(vocab, d_model)
+        self.deck_emb = DeckCardEmbedding(vocab, d_model, hand_slot_emb=self.hand_slot_emb)
         self.joker_emb = JokerEmbedding(vocab, d_model)
         self.voucher_emb = VoucherEmbedding(vocab, d_model)
         self.consumable_emb = ConsumableEmbedding(vocab, d_model)
         self.shop_emb = ShopEmbedding(vocab, d_model)
         self.blind_select_emb = BlindSelectEmbedding(vocab, d_model)
+        self.hand_level_emb = HandLevelEmbedding(d_model)
+        self.hand_candidate_emb = HandCandidateEmbedding(d_model, hand_slot_emb=self.hand_slot_emb)
 
     def forward(
         self,
@@ -267,7 +339,18 @@ class ContentEmbeddingLayer(nn.Module):
         blind_end = BLIND_SELECT_START + BLIND_SELECT_MAX
         out[:, BLIND_SELECT_START:blind_end] = self.blind_select_emb(tokens[:, BLIND_SELECT_START:blind_end])
 
+        # HAND_LEVEL (positions 102-113)
+        hand_level_end = HAND_LEVEL_START + HAND_LEVEL_MAX
+        out[:, HAND_LEVEL_START:hand_level_end] = self.hand_level_emb(tokens[:, HAND_LEVEL_START:hand_level_end])
+
+        # HAND_CANDIDATE (positions 114-145)
+        hand_candidate_end = HAND_CANDIDATE_START + HAND_CANDIDATE_MAX
+        out[:, HAND_CANDIDATE_START:hand_candidate_end] = self.hand_candidate_emb(
+            tokens[:, HAND_CANDIDATE_START:hand_candidate_end]
+        )
+
         # Add token type embedding
-        out = out + self.token_type_emb(token_types)
+        positions = torch.arange(MAX_SEQ_LEN, device=device).unsqueeze(0)
+        out = out + self.token_type_emb(token_types) + self.position_emb(positions)
 
         return out

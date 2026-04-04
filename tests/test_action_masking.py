@@ -35,55 +35,31 @@ def test_blind_select_mask(game_data):
 def test_choose_action_mask(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 
-    assert mask[ActionRange.PLAY_HAND] == 1, "Should be able to play hand"
-    assert mask[ActionRange.DISCARD] == 1, "Should be able to discard"
+    assert mask[ActionRange.PLAY_CANDIDATE_START] == 1, "Should expose at least one play candidate"
+    assert mask[ActionRange.DISCARD_CANDIDATE_START] == 1, "Should expose at least one discard candidate"
     # Consumable depends on state
     assert mask.sum() >= 2
 
 
-def test_select_cards_mask_play(hand_play_state):
-    selected = set()
+def test_choose_action_candidate_ranges_are_bounded(hand_play_state):
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+
+    play_mask = mask[ActionRange.PLAY_CANDIDATE_START:ActionRange.PLAY_CANDIDATE_END + 1]
+    discard_mask = mask[ActionRange.DISCARD_CANDIDATE_START:ActionRange.DISCARD_CANDIDATE_END + 1]
+    assert play_mask.sum() >= 1
+    assert discard_mask.sum() >= 1
+    assert play_mask.sum() <= len(play_mask)
+    assert discard_mask.sum() <= len(discard_mask)
+
+
+def test_select_cards_mask_is_legacy_noop(hand_play_state):
     mask = compute_action_mask(
-        hand_play_state, SubPhase.SELECT_CARDS,
-        selected_cards=selected, pending_action="play",
+        hand_play_state,
+        SubPhase.SELECT_CARDS,
+        selected_cards=set(),
+        pending_action="play",
     )
-
-    # Should be able to toggle cards in hand
-    hand_size = len(hand_play_state.hand_cards)
-    for i in range(min(hand_size, 12)):
-        assert mask[ActionRange.TOGGLE_CARD_START + i] == 1
-
-    # Confirm should NOT be valid with 0 selected
-    assert mask[ActionRange.SELECT_CONFIRM] == 0
-
-
-def test_select_cards_mask_with_selection(hand_play_state):
-    selected = {0, 1, 2}
-    mask = compute_action_mask(
-        hand_play_state, SubPhase.SELECT_CARDS,
-        selected_cards=selected, pending_action="play",
-    )
-
-    # Confirm should be valid with 3 cards selected
-    assert mask[ActionRange.SELECT_CONFIRM] == 1
-
-
-def test_select_cards_max_5_for_play(hand_play_state):
-    selected = {0, 1, 2, 3, 4}
-    mask = compute_action_mask(
-        hand_play_state, SubPhase.SELECT_CARDS,
-        selected_cards=selected, pending_action="play",
-    )
-
-    # Can't select more (5 is max for play)
-    for i in range(len(hand_play_state.hand_cards)):
-        if i not in selected:
-            assert mask[ActionRange.TOGGLE_CARD_START + i] == 0
-
-    # Can deselect existing
-    assert mask[ActionRange.TOGGLE_CARD_START + 0] == 1
-    # Confirm is valid
-    assert mask[ActionRange.SELECT_CONFIRM] == 1
+    assert mask.sum() == 0
 
 
 def test_shop_mask_leave_always_valid(hand_play_state):

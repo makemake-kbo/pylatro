@@ -9,12 +9,16 @@ from .constants import (
     BLIND_SELECT_START,
     CONSUMABLE_START,
     DECK_START,
+    HAND_CANDIDATE_MAX,
+    HAND_CANDIDATE_START,
     JOKER_START,
     MAX_CONSUMABLE_SLOTS,
+    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_SEQ_LEN,
+    MAX_PLAY_CANDIDATES,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
     SHOP_START,
@@ -57,21 +61,12 @@ class BlindSelectHead(nn.Module):
 
 
 class HandPlayHead(nn.Module):
-    """Handles CHOOSE_ACTION (play/discard/use_consumable) and SELECT_CARDS (toggle/confirm)."""
+    """Scores one-shot hand candidates for CHOOSE_ACTION."""
 
     def __init__(self, d_model: int):
         super().__init__()
-        # CHOOSE_ACTION
-        self.choose_mlp = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.GELU(),
-            nn.Linear(d_model, 3),
-        )
-        # SELECT_CARDS — per-card scoring
-        self.card_query = nn.Parameter(torch.randn(1, 1, d_model))
-        self.card_attn = nn.MultiheadAttention(d_model, 4, batch_first=True)
-        self.card_proj = nn.Linear(d_model, 1)
-        self.confirm_proj = nn.Linear(d_model, 1)
+        self.candidate_proj = nn.Linear(d_model, 1)
+        self.use_consumable_proj = nn.Linear(d_model, 1)
 
     def forward(
         self, backbone_out: torch.Tensor, attention_mask: torch.Tensor, select_mode: bool = False,
@@ -83,29 +78,13 @@ class HandPlayHead(nn.Module):
         global_pool = (backbone_out * full_mask).sum(1) / full_mask.sum(1).clamp(min=1)
 
         if not select_mode:
-            # CHOOSE_ACTION mode
-            choose_logits = self.choose_mlp(global_pool)
-            logits[:, ActionRange.PLAY_HAND] = choose_logits[:, 0]
-            logits[:, ActionRange.DISCARD] = choose_logits[:, 1]
-            logits[:, ActionRange.USE_CONSUMABLE] = choose_logits[:, 2]
-        else:
-            # SELECT_CARDS mode — score each hand card
-            hand_tokens = backbone_out[:, DECK_START:DECK_START + MAX_HAND_SIZE]
-            hand_mask = attention_mask[:, DECK_START:DECK_START + MAX_HAND_SIZE]
-
-            query = self.card_query.expand(batch, -1, -1)
-            # Cross-attention: query attends to hand cards
-            attn_out, _ = self.card_attn(
-                query, hand_tokens, hand_tokens,
-                key_padding_mask=(hand_mask == 0),
-            )
-
-            card_scores = self.card_proj(hand_tokens).squeeze(-1)  # (batch, MAX_HAND_SIZE)
-            for i in range(MAX_HAND_SIZE):
-                logits[:, ActionRange.TOGGLE_CARD_START + i] = card_scores[:, i]
-
-            confirm_score = self.confirm_proj(attn_out.squeeze(1))  # (batch, 1)
-            logits[:, ActionRange.SELECT_CONFIRM] = confirm_score.squeeze(-1)
+            candidate_tokens = backbone_out[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
+            candidate_scores = self.candidate_proj(candidate_tokens).squeeze(-1)
+            for i in range(MAX_PLAY_CANDIDATES):
+                logits[:, ActionRange.PLAY_CANDIDATE_START + i] = candidate_scores[:, i]
+            for i in range(MAX_DISCARD_CANDIDATES):
+                logits[:, ActionRange.DISCARD_CANDIDATE_START + i] = candidate_scores[:, MAX_PLAY_CANDIDATES + i]
+            logits[:, ActionRange.USE_CONSUMABLE] = self.use_consumable_proj(global_pool).squeeze(-1)
 
         return logits
 

@@ -123,7 +123,7 @@ def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
     assert env._sub_phase == SubPhase.BOOSTER_PACK
 
 
-def test_env_stalls_after_repeated_no_progress_actions(game_data, vocab):
+def test_env_play_candidate_executes_directly(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
     env.reset()
 
@@ -132,50 +132,40 @@ def test_env_stalls_after_repeated_no_progress_actions(game_data, vocab):
     assert not truncated
     assert info["progress_made"]
 
-    _, _, terminated, truncated, info = env.step(ActionRange.PLAY_HAND)
+    play_action = _first_valid(
+        env.action_masks(),
+        ActionRange.PLAY_CANDIDATE_START,
+        ActionRange.PLAY_CANDIDATE_END,
+    )
+    _, _, terminated, truncated, info = env.step(play_action)
     assert not terminated
     assert not truncated
     assert info["progress_made"]
-
-    for expected_steps in (1, 2):
-        _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
-        assert not terminated
-        assert not truncated
-        assert not info["progress_made"]
-        assert info["steps_since_progress"] == expected_steps
-        assert not info["stalled"]
-
-    _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
-    assert not terminated
-    assert truncated
-    assert not info["progress_made"]
-    assert info["steps_since_progress"] == 3
-    assert info["stalled"]
+    assert env._sub_phase == SubPhase.CHOOSE_ACTION
 
 
-def test_env_progress_resets_stall_counter(game_data, vocab):
+def test_env_play_candidate_reports_progress(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
     env.reset()
 
     _, _, _, _, _ = env.step(ActionRange.BLIND_PLAY)
-    _, _, _, _, _ = env.step(ActionRange.PLAY_HAND)
-
-    _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START)
-    assert not terminated
-    assert not truncated
-    assert info["steps_since_progress"] == 1
-
-    _, _, terminated, truncated, info = env.step(ActionRange.TOGGLE_CARD_START + 1)
-    assert not terminated
-    assert not truncated
-    assert info["steps_since_progress"] == 2
-
-    _, _, terminated, truncated, info = env.step(ActionRange.SELECT_CONFIRM)
+    play_action = _first_valid(
+        env.action_masks(),
+        ActionRange.PLAY_CANDIDATE_START,
+        ActionRange.PLAY_CANDIDATE_END,
+    )
+    _, _, terminated, truncated, info = env.step(play_action)
     assert not terminated
     assert not truncated
     assert info["progress_made"]
     assert info["steps_since_progress"] == 0
     assert not info["stalled"]
+
+
+def _first_valid(mask: np.ndarray, start: int, end: int) -> int:
+    valid = np.where(mask[start:end + 1] == 1)[0]
+    assert len(valid) > 0
+    return start + int(valid[0])
 
 
 def test_vector_env_uses_same_step_autoreset(game_data, vocab):

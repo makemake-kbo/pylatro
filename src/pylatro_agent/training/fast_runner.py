@@ -19,7 +19,9 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from ..constants import (
     MAX_CONSUMABLE_SLOTS,
+    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
+    MAX_PLAY_CANDIDATES,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_SHOP_ITEMS,
@@ -27,6 +29,7 @@ from ..constants import (
     ActionRange,
     SubPhase,
 )
+from ..hand_candidates import HandCandidate, candidate_signature, generate_hand_candidates
 
 if TYPE_CHECKING:
     from pylatro.data import GameData
@@ -45,8 +48,11 @@ class FastRunner:
         "_pending_consumable_slot",
         "_pending_hand_targets",
         "_pending_joker_targets",
+        "_play_candidates",
         "_prev_signature",
         "_round_score",
+        "_candidate_signature",
+        "_discard_candidates",
         "_selected_cards",
         "_state",
         "_step_count",
@@ -67,6 +73,9 @@ class FastRunner:
         self._pending_consumable_slot: int | None = None
         self._pending_hand_targets: tuple[int, ...] = ()
         self._pending_joker_targets: tuple[int, ...] = ()
+        self._play_candidates: tuple[HandCandidate, ...] = ()
+        self._discard_candidates: tuple[HandCandidate, ...] = ()
+        self._candidate_signature: tuple | None = None
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
@@ -103,6 +112,14 @@ class FastRunner:
     @property
     def max_ante(self) -> int:
         return self._max_ante
+
+    @property
+    def play_candidates(self) -> tuple[HandCandidate, ...]:
+        return self._play_candidates
+
+    @property
+    def discard_candidates(self) -> tuple[HandCandidate, ...]:
+        return self._discard_candidates
 
     @property
     def done(self) -> bool:
@@ -142,7 +159,8 @@ class FastRunner:
         if sp == SubPhase.BLIND_SELECT:
             _mask_blind(mv, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
-            _mask_action(mv, state, AR)
+            self._refresh_hand_candidates()
+            _mask_action(mv, state, AR, len(self._play_candidates), len(self._discard_candidates))
         elif sp == SubPhase.SELECT_CARDS:
             _mask_cards(mv, state, AR, self._selected_cards, self._pending_action)
         elif sp == SubPhase.SHOP:
@@ -220,50 +238,38 @@ class FastRunner:
             ctrl.reroll_boss()
             self._sub_phase = SubPhase.BLIND_SELECT
 
-        elif aid == AR.PLAY_HAND:
-            self._pending_action = "play"
-            self._selected_cards = {i for i, c in enumerate(state.hand_cards) if c.forced_selection}
-            self._sub_phase = SubPhase.SELECT_CARDS
+        elif AR.PLAY_CANDIDATE_START <= aid <= AR.PLAY_CANDIDATE_END:
+            self._refresh_hand_candidates()
+            idx = aid - AR.PLAY_CANDIDATE_START
+            if idx >= len(self._play_candidates):
+                return
+            result = ctrl.play_selected(list(self._play_candidates[idx].indices))
+            self._round_score += result.score.total
+            if ctrl.blind_beaten():
+                self._blind_just_beaten = True
+                ctrl.cash_out()
+                if ctrl.phase == GamePhase.GAME_WON:
+                    return
+                ctrl.enter_shop()
+                self._sub_phase = SubPhase.SHOP
+            elif ctrl.phase == GamePhase.GAME_OVER:
+                return
+            else:
+                self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif aid == AR.DISCARD:
-            self._pending_action = "discard"
-            self._selected_cards = {i for i, c in enumerate(state.hand_cards) if c.forced_selection}
-            self._sub_phase = SubPhase.SELECT_CARDS
+        elif AR.DISCARD_CANDIDATE_START <= aid <= AR.DISCARD_CANDIDATE_END:
+            self._refresh_hand_candidates()
+            idx = aid - AR.DISCARD_CANDIDATE_START
+            if idx >= len(self._discard_candidates):
+                return
+            ctrl.discard_selected(list(self._discard_candidates[idx].indices))
+            self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif aid == AR.USE_CONSUMABLE:
             self._pending_consumable_slot = None
             self._pending_hand_targets = ()
             self._pending_joker_targets = ()
             self._sub_phase = SubPhase.CONSUMABLE_TARGET
-
-        elif AR.TOGGLE_CARD_START <= aid <= AR.TOGGLE_CARD_END:
-            idx = aid - AR.TOGGLE_CARD_START
-            if idx in self._selected_cards:
-                self._selected_cards.discard(idx)
-            else:
-                self._selected_cards.add(idx)
-
-        elif aid == AR.SELECT_CONFIRM:
-            indices = sorted(self._selected_cards)
-            if self._pending_action == "play":
-                result = ctrl.play_selected(indices)
-                self._round_score += result.score.total
-                if ctrl.blind_beaten():
-                    self._blind_just_beaten = True
-                    ctrl.cash_out()
-                    if ctrl.phase == GamePhase.GAME_WON:
-                        return
-                    ctrl.enter_shop()
-                    self._sub_phase = SubPhase.SHOP
-                elif ctrl.phase == GamePhase.GAME_OVER:
-                    return
-                else:
-                    self._sub_phase = SubPhase.CHOOSE_ACTION
-            else:
-                ctrl.discard_selected(indices)
-                self._sub_phase = SubPhase.CHOOSE_ACTION
-            self._selected_cards = set()
-            self._pending_action = None
 
         elif AR.CONSUMABLE_SLOT_START <= aid <= AR.CONSUMABLE_SLOT_END:
             self._pending_consumable_slot = aid - AR.CONSUMABLE_SLOT_START
@@ -350,6 +356,21 @@ class FastRunner:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
 
+    def _refresh_hand_candidates(self) -> None:
+        if self._sub_phase != SubPhase.CHOOSE_ACTION or self._ctrl.phase != GamePhase.HAND_PLAY:
+            self._play_candidates = ()
+            self._discard_candidates = ()
+            self._candidate_signature = None
+            return
+
+        sig = candidate_signature(self._state)
+        if sig == self._candidate_signature:
+            return
+        play_candidates, discard_candidates = generate_hand_candidates(self._state)
+        self._play_candidates = play_candidates
+        self._discard_candidates = discard_candidates
+        self._candidate_signature = sig
+
 
 # ── mask helpers (module-level for speed) ──
 
@@ -366,13 +387,15 @@ def _mask_blind(m, state, AR):
 
 
 @cython.cfunc
-@cython.locals(m=cython.char[:])
-def _mask_action(m, state, AR):
+@cython.locals(m=cython.char[:], i=cython.int)
+def _mask_action(m, state, AR, play_count, discard_count):
     hand_size = len(state.hand_cards)
     if state.current_round.hands_left > 0 and hand_size > 0:
-        m[AR.PLAY_HAND] = 1
+        for i in range(min(play_count, MAX_PLAY_CANDIDATES)):
+            m[AR.PLAY_CANDIDATE_START + i] = 1
     if state.current_round.discards_left > 0 and hand_size > 0:
-        m[AR.DISCARD] = 1
+        for i in range(min(discard_count, MAX_DISCARD_CANDIDATES)):
+            m[AR.DISCARD_CANDIDATE_START + i] = 1
     for cons in state.consumables:
         if can_use_consumable(state, cons):
             m[AR.USE_CONSUMABLE] = 1
@@ -389,25 +412,7 @@ def _mask_action(m, state, AR):
     i=cython.int,
 )
 def _mask_cards(m, state, AR, selected, pending):
-    hand_size = len(state.hand_cards)
-    num_sel = len(selected)
-    is_play = pending == "play"
-    max_sel = 5 if is_play else hand_size
-
-    for i in range(min(hand_size, MAX_HAND_SIZE)):
-        if i in selected:
-            if not state.hand_cards[i].forced_selection:
-                m[AR.TOGGLE_CARD_START + i] = 1
-        else:
-            if num_sel < max_sel:
-                m[AR.TOGGLE_CARD_START + i] = 1
-
-    if is_play:
-        if 1 <= num_sel <= 5:
-            m[AR.SELECT_CONFIRM] = 1
-    else:
-        if num_sel >= 1:
-            m[AR.SELECT_CONFIRM] = 1
+    _ = (m, state, AR, selected, pending)
 
 
 @cython.cfunc

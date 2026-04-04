@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
-    """Load checkpoint, handling DataParallel prefix mismatch."""
+    """Load checkpoint, handling DataParallel prefix mismatch and head shape drift."""
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
     has_module_prefix = any(k.startswith("module.") for k in state_dict)
@@ -38,7 +38,19 @@ def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: 
     elif not has_module_prefix and is_wrapped:
         state_dict = {f"module.{k}": v for k, v in state_dict.items()}
 
-    model.load_state_dict(state_dict)
+    model_state = model.state_dict()
+    compatible = {
+        key: value
+        for key, value in state_dict.items()
+        if key in model_state and model_state[key].shape == value.shape
+    }
+    missing = sorted(set(model_state) - set(compatible))
+    skipped = sorted(set(state_dict) - set(compatible))
+    model.load_state_dict(compatible, strict=False)
+    if missing:
+        logger.warning("Checkpoint missing %d params after compatibility filter", len(missing))
+    if skipped:
+        logger.warning("Checkpoint skipped %d incompatible params", len(skipped))
 
 
 def _make_env(
@@ -367,14 +379,9 @@ def train_ppo(
         rollout_terminated_flags: list[float] = []
         rollout_truncated_flags: list[float] = []
         rollout_reward_component_values: defaultdict[str, list[float]] = defaultdict(list)
-        rollout_pre_select_cards_flags: list[float] = []
-        rollout_selected_count_at_confirm: list[float] = []
-        rollout_pending_play_select_steps = 0
-        rollout_pending_play_confirms = 0
-        rollout_pending_discard_select_steps = 0
-        rollout_pending_discard_confirms = 0
-        rollout_toggle_count = 0
-        rollout_confirm_count = 0
+        rollout_pre_choose_action_flags: list[float] = []
+        rollout_play_candidate_count = 0
+        rollout_discard_candidate_count = 0
 
         # === Collect rollouts (vectorized) ===
         model.eval()
@@ -446,25 +453,14 @@ def train_ppo(
                 rollout_action_type_counts[_action_type_name(int(action_id))] += 1
             for env_idx in range(config.num_envs):
                 pre_sub_phase = _extract_vector_info_value(infos, "pre_sub_phase", env_idx, "")
-                pre_pending_action = _extract_vector_info_value(infos, "pre_pending_action", env_idx, "")
-                pre_selected_count = _extract_vector_info_value(infos, "pre_selected_count", env_idx, 0)
                 action_type_name = _action_type_name(int(actions_np[env_idx]))
 
-                in_select_cards = pre_sub_phase == "select_cards"
-                rollout_pre_select_cards_flags.append(float(in_select_cards))
-                if in_select_cards and pre_pending_action == "play":
-                    rollout_pending_play_select_steps += 1
-                    if action_type_name == ActionType.SELECT_CONFIRM.value:
-                        rollout_pending_play_confirms += 1
-                if in_select_cards and pre_pending_action == "discard":
-                    rollout_pending_discard_select_steps += 1
-                    if action_type_name == ActionType.SELECT_CONFIRM.value:
-                        rollout_pending_discard_confirms += 1
-                if action_type_name == ActionType.TOGGLE_CARD.value:
-                    rollout_toggle_count += 1
-                elif action_type_name == ActionType.SELECT_CONFIRM.value:
-                    rollout_confirm_count += 1
-                    rollout_selected_count_at_confirm.append(float(pre_selected_count))
+                in_choose_action = pre_sub_phase == "choose_action"
+                rollout_pre_choose_action_flags.append(float(in_choose_action))
+                if action_type_name == ActionType.PLAY_CANDIDATE.value:
+                    rollout_play_candidate_count += 1
+                elif action_type_name == ActionType.DISCARD_CANDIDATE.value:
+                    rollout_discard_candidate_count += 1
 
                 rollout_progress_flags.append(
                     float(bool(_extract_vector_info_value(infos, "progress_made", env_idx, False)))
@@ -628,33 +624,23 @@ def train_ppo(
         writer.add_scalar("rollout/done_rate", _safe_mean(rollout_done_flags), update_count)
         writer.add_scalar("rollout/terminated_rate", _safe_mean(rollout_terminated_flags), update_count)
         writer.add_scalar("rollout/truncated_rate", _safe_mean(rollout_truncated_flags), update_count)
-        writer.add_scalar("subphase/select_cards_fraction", _safe_mean(rollout_pre_select_cards_flags), update_count)
+        writer.add_scalar("subphase/choose_action_fraction", _safe_mean(rollout_pre_choose_action_flags), update_count)
         writer.add_scalar(
-            "select/toggles_per_confirm",
-            float(rollout_toggle_count / rollout_confirm_count) if rollout_confirm_count > 0 else float("nan"),
-            update_count,
-        )
-        writer.add_scalar(
-            "select/confirm_rate_pending_play",
+            "hand_choice/play_fraction",
             (
-                float(rollout_pending_play_confirms / rollout_pending_play_select_steps)
-                if rollout_pending_play_select_steps > 0
+                float(rollout_play_candidate_count / (rollout_play_candidate_count + rollout_discard_candidate_count))
+                if (rollout_play_candidate_count + rollout_discard_candidate_count) > 0
                 else float("nan")
             ),
             update_count,
         )
         writer.add_scalar(
-            "select/confirm_rate_pending_discard",
+            "hand_choice/discard_fraction",
             (
-                float(rollout_pending_discard_confirms / rollout_pending_discard_select_steps)
-                if rollout_pending_discard_select_steps > 0
+                float(rollout_discard_candidate_count / (rollout_play_candidate_count + rollout_discard_candidate_count))
+                if (rollout_play_candidate_count + rollout_discard_candidate_count) > 0
                 else float("nan")
             ),
-            update_count,
-        )
-        writer.add_scalar(
-            "select/selected_count_at_confirm_mean",
-            _safe_mean(rollout_selected_count_at_confirm),
             update_count,
         )
         total_action_count = sum(rollout_action_type_counts.values())

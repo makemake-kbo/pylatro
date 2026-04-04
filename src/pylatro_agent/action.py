@@ -13,11 +13,9 @@ class ActionType(StrEnum):
     BLIND_PLAY = "blind_play"
     BLIND_SKIP = "blind_skip"
     BLIND_REROLL = "blind_reroll"
-    PLAY_HAND = "play_hand"
-    DISCARD = "discard"
+    PLAY_CANDIDATE = "play_candidate"
+    DISCARD_CANDIDATE = "discard_candidate"
     USE_CONSUMABLE = "use_consumable"
-    TOGGLE_CARD = "toggle_card"
-    SELECT_CONFIRM = "select_confirm"
     CONSUMABLE_SLOT = "consumable_slot"
     CONSUMABLE_HAND_TARGET = "consumable_hand_target"
     CONSUMABLE_JOKER_TARGET = "consumable_joker_target"
@@ -48,17 +46,12 @@ def decode_action(action_id: int) -> DecodedAction:
         return DecodedAction(ActionType.BLIND_SKIP)
     if action_id == AR.BLIND_REROLL:
         return DecodedAction(ActionType.BLIND_REROLL)
-    if action_id == AR.PLAY_HAND:
-        return DecodedAction(ActionType.PLAY_HAND)
-    if action_id == AR.DISCARD:
-        return DecodedAction(ActionType.DISCARD)
+    if AR.PLAY_CANDIDATE_START <= action_id <= AR.PLAY_CANDIDATE_END:
+        return DecodedAction(ActionType.PLAY_CANDIDATE, action_id - AR.PLAY_CANDIDATE_START)
+    if AR.DISCARD_CANDIDATE_START <= action_id <= AR.DISCARD_CANDIDATE_END:
+        return DecodedAction(ActionType.DISCARD_CANDIDATE, action_id - AR.DISCARD_CANDIDATE_START)
     if action_id == AR.USE_CONSUMABLE:
         return DecodedAction(ActionType.USE_CONSUMABLE)
-
-    if AR.TOGGLE_CARD_START <= action_id <= AR.TOGGLE_CARD_END:
-        return DecodedAction(ActionType.TOGGLE_CARD, action_id - AR.TOGGLE_CARD_START)
-    if action_id == AR.SELECT_CONFIRM:
-        return DecodedAction(ActionType.SELECT_CONFIRM)
 
     if AR.CONSUMABLE_SLOT_START <= action_id <= AR.CONSUMABLE_SLOT_END:
         return DecodedAction(ActionType.CONSUMABLE_SLOT, action_id - AR.CONSUMABLE_SLOT_START)
@@ -101,16 +94,12 @@ def encode_action(action_type: ActionType, index: int = 0) -> int:
             return AR.BLIND_SKIP
         case ActionType.BLIND_REROLL:
             return AR.BLIND_REROLL
-        case ActionType.PLAY_HAND:
-            return AR.PLAY_HAND
-        case ActionType.DISCARD:
-            return AR.DISCARD
+        case ActionType.PLAY_CANDIDATE:
+            return AR.PLAY_CANDIDATE_START + index
+        case ActionType.DISCARD_CANDIDATE:
+            return AR.DISCARD_CANDIDATE_START + index
         case ActionType.USE_CONSUMABLE:
             return AR.USE_CONSUMABLE
-        case ActionType.TOGGLE_CARD:
-            return AR.TOGGLE_CARD_START + index
-        case ActionType.SELECT_CONFIRM:
-            return AR.SELECT_CONFIRM
         case ActionType.CONSUMABLE_SLOT:
             return AR.CONSUMABLE_SLOT_START + index
         case ActionType.CONSUMABLE_HAND_TARGET:

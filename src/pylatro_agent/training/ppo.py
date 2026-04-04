@@ -556,9 +556,10 @@ def train_ppo(
                 # Value loss
                 value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
-                # Use raw entropy in loss for stronger gradient signal;
-                # normalized entropy is still used for adaptive target tracking.
-                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
+                # Align the entropy bonus with the controller signal.
+                # Using raw entropy here over-rewards high-branching phases
+                # like card selection, where the max entropy is much larger.
+                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * normalized_entropy
                 (loss / accum_steps).backward()
 
                 # Step every accum_steps micro-batches (or on last batch)

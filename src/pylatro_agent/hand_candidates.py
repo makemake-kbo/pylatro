@@ -96,31 +96,30 @@ def _generate_play_candidates(state: RunState) -> list[HandCandidate]:
     if min_size > max_size:
         return []
 
+    # Generate a small set of promising combos structurally instead of
+    # brute-forcing all C(n,1..5) combinations.
+    candidate_indices = _structural_candidates(state, hand, forced, min_size, max_size)
+
     ranked: list[HandCandidate] = []
     seen: set[tuple[int, ...]] = set()
 
-    for size in range(min_size, max_size + 1):
-        for combo in combinations(range(len(hand)), size):
-            combo_set = set(combo)
-            if not forced.issubset(combo_set):
-                continue
-            indices = tuple(sorted(combo))
-            if indices in seen:
-                continue
-            seen.add(indices)
-            cards = [hand[i] for i in indices]
-            hand_name, _display, _poker_hands, scoring_hand = get_poker_hand_info(state, cards)
-            estimated_score = _estimate_play_value(state, cards, hand_name, scoring_hand)
-            blind_ratio = estimated_score / max(_blind_target(state), 1)
-            ranked.append(
-                HandCandidate(
-                    kind="play",
-                    indices=indices,
-                    hand_name=hand_name,
-                    estimated_score=estimated_score,
-                    blind_ratio=blind_ratio,
-                )
+    for indices in candidate_indices:
+        if indices in seen:
+            continue
+        seen.add(indices)
+        cards = [hand[i] for i in indices]
+        hand_name, _display, _poker_hands, scoring_hand = get_poker_hand_info(state, cards)
+        estimated_score = _estimate_play_value(state, cards, hand_name, scoring_hand)
+        blind_ratio = estimated_score / max(_blind_target(state), 1)
+        ranked.append(
+            HandCandidate(
+                kind="play",
+                indices=indices,
+                hand_name=hand_name,
+                estimated_score=estimated_score,
+                blind_ratio=blind_ratio,
             )
+        )
 
     ranked.sort(
         key=lambda c: (
@@ -131,6 +130,168 @@ def _generate_play_candidates(state: RunState) -> list[HandCandidate]:
         reverse=True,
     )
     return ranked
+
+
+def _structural_candidates(
+    state: RunState,
+    hand: list[PlayingCard],
+    forced: set[int],
+    min_size: int,
+    max_size: int,
+) -> list[tuple[int, ...]]:
+    """Build promising hand combos using rank/suit grouping instead of brute force."""
+    n = len(hand)
+
+    # Index cards by rank and suit
+    by_rank: dict[int, list[int]] = {}
+    by_suit: dict[str, list[int]] = {}
+    nominals: list[float] = []
+    for i, card in enumerate(hand):
+        rid = RANK_TO_NOMINAL.get(card.rank, 0)
+        nominals.append(rid)
+        center = state.data.centers.get(card.center_key, {})
+        effect = center.get("effect", "") if center else ""
+        if effect != "Stone Card":
+            cid = _rank_to_id(card.rank)
+            by_rank.setdefault(cid, []).append(i)
+            is_wild = effect == "Wild Card"
+            if is_wild:
+                for s in ("Spades", "Hearts", "Clubs", "Diamonds"):
+                    by_suit.setdefault(s, []).append(i)
+            else:
+                by_suit.setdefault(card.suit, []).append(i)
+                if state.has_joker("Smeared Joker"):
+                    if card.suit in ("Hearts", "Diamonds"):
+                        other = "Diamonds" if card.suit == "Hearts" else "Hearts"
+                    else:
+                        other = "Clubs" if card.suit == "Spades" else "Spades"
+                    by_suit.setdefault(other, []).append(i)
+        else:
+            by_rank.setdefault(-id(card), []).append(i)
+
+    four_fingers = state.has_joker("Four Fingers")
+    flush_req = 4 if four_fingers else 5
+    straight_req = 4 if four_fingers else 5
+
+    results: list[tuple[int, ...]] = []
+
+    def _add(indices: set[int]) -> None:
+        if not forced.issubset(indices):
+            return
+        if not (min_size <= len(indices) <= max_size):
+            return
+        results.append(tuple(sorted(indices)))
+
+    # --- N-of-a-kind combos (pairs, trips, quads, fives) ---
+    groups_sorted = sorted(by_rank.items(), key=lambda x: (len(x[1]), x[0]), reverse=True)
+    for cid, idxs in groups_sorted:
+        if cid < 0:
+            continue
+        for sz in range(min(len(idxs), 5), 1, -1):
+            _add(set(idxs[:sz]))
+
+    # --- Full houses (3 + 2) ---
+    trips = [(cid, idxs) for cid, idxs in groups_sorted if len(idxs) >= 3 and cid > 0]
+    pairs = [(cid, idxs) for cid, idxs in groups_sorted if len(idxs) >= 2 and cid > 0]
+    for t_cid, t_idxs in trips[:3]:
+        for p_cid, p_idxs in pairs[:4]:
+            if p_cid != t_cid:
+                _add(set(t_idxs[:3]) | set(p_idxs[:2]))
+
+    # --- Flushes ---
+    for suit, idxs in by_suit.items():
+        unique = list(dict.fromkeys(idxs))
+        if len(unique) >= flush_req:
+            unique.sort(key=lambda i: nominals[i], reverse=True)
+            _add(set(unique[:5]))
+            # Also try the worst flush (for diversity)
+            if len(unique) > 5:
+                _add(set(unique[:4] + unique[5:6]))
+
+    # --- Straights ---
+    rank_set = set(by_rank.keys())
+    positive_ranks = {r for r in rank_set if r > 0}
+    if 14 in positive_ranks:
+        positive_ranks.add(1)
+    for high in range(14, 0, -1):
+        run_ranks: list[int] = []
+        for r in range(high, high - straight_req - 1, -1):
+            if r < 1:
+                break
+            actual = 14 if r == 1 else r
+            if actual in by_rank and actual > 0:
+                run_ranks.append(actual)
+            elif state.has_joker("Shortcut") and len(run_ranks) > 0:
+                continue
+            else:
+                break
+        if len(run_ranks) >= straight_req:
+            combo: set[int] = set()
+            for r in run_ranks[:5]:
+                combo.add(by_rank[r][0])
+            _add(combo)
+
+    # --- Straight flushes ---
+    for suit, idxs in by_suit.items():
+        unique = list(dict.fromkeys(idxs))
+        if len(unique) < straight_req:
+            continue
+        suit_ranks: dict[int, int] = {}
+        for i in unique:
+            cid = _rank_to_id(hand[i].rank)
+            if cid > 0 and cid not in suit_ranks:
+                suit_ranks[cid] = i
+        if 14 in suit_ranks:
+            suit_ranks.setdefault(1, suit_ranks[14])
+        for high in range(14, 0, -1):
+            run: list[int] = []
+            for r in range(high, high - straight_req - 1, -1):
+                if r < 1:
+                    break
+                actual = 14 if r == 1 else r
+                if actual in suit_ranks:
+                    run.append(suit_ranks[actual])
+                else:
+                    break
+            if len(run) >= straight_req:
+                _add(set(run[:5]))
+                break
+
+    # --- Two pairs ---
+    pair_groups = [(cid, idxs) for cid, idxs in groups_sorted if len(idxs) >= 2 and cid > 0]
+    for i in range(min(len(pair_groups), 3)):
+        for j in range(i + 1, min(len(pair_groups), 4)):
+            _add(set(pair_groups[i][1][:2]) | set(pair_groups[j][1][:2]))
+
+    # --- Single high cards ---
+    ranked_indices = sorted(range(n), key=lambda i: nominals[i], reverse=True)
+    for i in ranked_indices[:3]:
+        _add({i})
+
+    # --- Best 5-card hand (all highest nominals) ---
+    _add(set(ranked_indices[:min(5, n)]))
+
+    # --- Forced-card combos if we have forced cards ---
+    if forced:
+        remaining = [i for i in ranked_indices if i not in forced]
+        for fill_size in range(min(5 - len(forced), len(remaining)) + 1):
+            if fill_size == 0:
+                _add(set(forced))
+            else:
+                for combo in combinations(remaining[:6], fill_size):
+                    _add(set(forced) | set(combo))
+
+    return results
+
+
+_RANK_IDS = {
+    "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8,
+    "9": 9, "10": 10, "Jack": 11, "Queen": 12, "King": 13, "Ace": 14,
+}
+
+
+def _rank_to_id(rank: str) -> int:
+    return _RANK_IDS.get(rank, 0)
 
 
 def _generate_discard_candidates(state: RunState, play_candidates: Iterable[HandCandidate]) -> list[HandCandidate]:

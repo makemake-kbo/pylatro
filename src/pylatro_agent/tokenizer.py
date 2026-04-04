@@ -81,6 +81,8 @@ class Tokenizer:
         attn_mask=cython.char[:],
         scalars=cython.float[:],
         sel_cards=cython.char[:],
+        candidate_slot=cython.int,
+        idx=cython.int,
     )
     def tokenize(
         self,
@@ -112,9 +114,9 @@ class Tokenizer:
 
         pos = 0
 
-        tokens[OBJ_START, 0] = 0
-        token_types[OBJ_START] = TokenType.OBJ
-        attn_mask[OBJ_START] = 1
+        tokens[pos, 0] = 0
+        token_types[pos] = TokenType.OBJ
+        attn_mask[pos] = 1
         pos = 1
 
         pos = META_START

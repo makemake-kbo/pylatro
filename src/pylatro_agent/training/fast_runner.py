@@ -376,29 +376,35 @@ class FastRunner:
 
 
 @cython.cfunc
-@cython.locals(m=cython.char[:])
+@cython.locals(m=cython.char[:], _bp=cython.int, _bs=cython.int, _br=cython.int)
 def _mask_blind(m, state, AR):
-    m[AR.BLIND_PLAY] = 1
+    _bp = AR.BLIND_PLAY
+    _bs = AR.BLIND_SKIP
+    _br = AR.BLIND_REROLL
+    m[_bp] = 1
     blind_on_deck = state.blind_on_deck or "Small"
     if blind_on_deck in ("Small", "Big"):
-        m[AR.BLIND_SKIP] = 1
+        m[_bs] = 1
     if blind_on_deck == "Boss" and state.dollars >= 10 and not state.round_resets.boss_rerolled:
-        m[AR.BLIND_REROLL] = 1
+        m[_br] = 1
 
 
 @cython.cfunc
-@cython.locals(m=cython.char[:], i=cython.int)
+@cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int, _use=cython.int)
 def _mask_action(m, state, AR, play_count, discard_count):
+    _play_start = AR.PLAY_CANDIDATE_START
+    _disc_start = AR.DISCARD_CANDIDATE_START
+    _use = AR.USE_CONSUMABLE
     hand_size = len(state.hand_cards)
     if state.current_round.hands_left > 0 and hand_size > 0:
         for i in range(min(play_count, MAX_PLAY_CANDIDATES)):
-            m[AR.PLAY_CANDIDATE_START + i] = 1
+            m[_play_start + i] = 1
     if state.current_round.discards_left > 0 and hand_size > 0:
         for i in range(min(discard_count, MAX_DISCARD_CANDIDATES)):
-            m[AR.DISCARD_CANDIDATE_START + i] = 1
+            m[_disc_start + i] = 1
     for cons in state.consumables:
         if can_use_consumable(state, cons):
-            m[AR.USE_CONSUMABLE] = 1
+            m[_use] = 1
             break
 
 
@@ -416,42 +422,57 @@ def _mask_cards(m, state, AR, selected, pending):
 
 
 @cython.cfunc
-@cython.locals(m=cython.char[:], i=cython.int)
+@cython.locals(
+    m=cython.char[:],
+    i=cython.int,
+    _buy_start=cython.int,
+    _reroll=cython.int,
+    _sell_joker=cython.int,
+    _sell_cons=cython.int,
+    _leave=cython.int,
+)
 def _mask_shop(m, state, AR):
+    _buy_start = AR.SHOP_BUY_START
+    _reroll = AR.SHOP_REROLL
+    _sell_joker = AR.SHOP_SELL_JOKER_START
+    _sell_cons = AR.SHOP_SELL_CONSUMABLE_START
+    _leave = AR.SHOP_LEAVE
     all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
     for i, item in enumerate(all_items[:MAX_SHOP_ITEMS]):
         if item.cost > state.dollars:
             continue
         if item.card_type == "Joker":
             if len(state.jokers) < joker_limit(state):
-                m[AR.SHOP_BUY_START + i] = 1
+                m[_buy_start + i] = 1
         elif item.card_type in ("Tarot", "Planet", "Spectral"):
             if len(state.consumables) < consumable_limit(state):
-                m[AR.SHOP_BUY_START + i] = 1
+                m[_buy_start + i] = 1
         else:
-            m[AR.SHOP_BUY_START + i] = 1
+            m[_buy_start + i] = 1
 
     if state.current_round.reroll_cost <= state.dollars:
-        m[AR.SHOP_REROLL] = 1
+        m[_reroll] = 1
 
     for i, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
         if not joker.eternal:
-            m[AR.SHOP_SELL_JOKER_START + i] = 1
+            m[_sell_joker + i] = 1
 
     for i in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
-        m[AR.SHOP_SELL_CONSUMABLE_START + i] = 1
+        m[_sell_cons + i] = 1
 
-    m[AR.SHOP_LEAVE] = 1
+    m[_leave] = 1
 
 
 @cython.cfunc
-@cython.locals(m=cython.char[:], i=cython.int)
+@cython.locals(m=cython.char[:], i=cython.int, _claim_start=cython.int, _skip=cython.int)
 def _mask_booster(m, state, AR):
+    _claim_start = AR.PACK_CLAIM_START
+    _skip = AR.PACK_SKIP
     pack = state.pack
     if pack and pack.choices_remaining > 0:
         for i in range(min(len(pack.cards), MAX_PACK_CARDS)):
-            m[AR.PACK_CLAIM_START + i] = 1
-    m[AR.PACK_SKIP] = 1
+            m[_claim_start + i] = 1
+    m[_skip] = 1
 
 
 @cython.cfunc
@@ -462,12 +483,22 @@ def _mask_booster(m, state, AR):
     required_min=cython.int,
     required_max=cython.int,
     current_count=cython.int,
+    _slot_start=cython.int,
+    _hand_target_start=cython.int,
+    _confirm=cython.int,
+    _joker_target_start=cython.int,
+    _cancel=cython.int,
 )
 def _mask_consumable(m, state, AR, pending_slot, hand_targets, joker_targets):
+    _slot_start = AR.CONSUMABLE_SLOT_START
+    _hand_target_start = AR.CONSUMABLE_HAND_TARGET_START
+    _confirm = AR.CONSUMABLE_CONFIRM
+    _joker_target_start = AR.CONSUMABLE_JOKER_TARGET_START
+    _cancel = AR.CONSUMABLE_CANCEL
     if pending_slot is None:
         for i, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
             if can_use_consumable(state, cons):
-                m[AR.CONSUMABLE_SLOT_START + i] = 1
+                m[_slot_start + i] = 1
     else:
         cons = state.consumables[pending_slot]
         center = state.data.centers[cons.center_key]
@@ -482,7 +513,7 @@ def _mask_consumable(m, state, AR, pending_slot, hand_targets, joker_targets):
             if current_count < required_max:
                 for i in range(min(len(state.hand_cards), MAX_HAND_SIZE)):
                     if i not in hand_targets:
-                        m[AR.CONSUMABLE_HAND_TARGET_START + i] = 1
+                        m[_hand_target_start + i] = 1
 
             if required_min <= current_count <= required_max and can_use_consumable(
                 state,
@@ -490,18 +521,18 @@ def _mask_consumable(m, state, AR, pending_slot, hand_targets, joker_targets):
                 hand_targets=hand_targets,
                 joker_targets=joker_targets,
             ):
-                m[AR.CONSUMABLE_CONFIRM] = 1
+                m[_confirm] = 1
         else:
             if can_use_consumable(state, cons, hand_targets=hand_targets, joker_targets=joker_targets):
-                m[AR.CONSUMABLE_CONFIRM] = 1
+                m[_confirm] = 1
 
         name = center.get("name", "")
         if name in ("The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"):
             for i in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
                 if i not in joker_targets:
-                    m[AR.CONSUMABLE_JOKER_TARGET_START + i] = 1
+                    m[_joker_target_start + i] = 1
 
-    m[AR.CONSUMABLE_CANCEL] = 1
+    m[_cancel] = 1
 
 
 # ── progress signature (mirrors BalatroEnv._progress_signature) ──

@@ -18,10 +18,10 @@ from .vocab import Vocab
 
 @dataclass
 class AgentConfig:
-    d_model: int = 256
-    n_layers: int = 8
+    d_model: int = 512
+    n_layers: int = 12
     n_heads: int = 8
-    d_ff: int = 1024
+    d_ff: int = 2048
     dropout: float = 0.1
     max_seq_len: int = MAX_SEQ_LEN
 

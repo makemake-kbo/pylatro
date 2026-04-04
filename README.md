@@ -39,7 +39,7 @@ Transformer-based RL agent that learns to play Balatro via supervised pretrainin
 
 ### Architecture
 
-- **Model**: 8-layer transformer encoder (~10M params), d_model=256, 8 heads
+- **Model**: 12-layer transformer encoder (~40M params), d_model=512, 8 heads
 - **Observation**: Tokenized game state (cards, jokers, shop, blinds) + scalar features
 - **Action space**: Flat `Discrete(71)` with masking across 6 sub-phases
 - **Training**: Supervised imitation learning → PPO reinforcement learning

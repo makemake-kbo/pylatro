@@ -9,6 +9,7 @@ observations, and only qualifying games are re-run with observation building
 
 from __future__ import annotations
 
+import gc
 import logging
 import multiprocessing
 import os
@@ -229,7 +230,9 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 break
 
         if min_ante > 2:
+            gc.disable()
             max_ante, won = _run_game_fast_no_obs(seed, data, agent)
+            gc.enable()
             with _shared_total_attempted.get_lock():
                 _shared_total_attempted.value += 1
             seed += 1

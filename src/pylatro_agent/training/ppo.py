@@ -92,13 +92,13 @@ class PPOConfig:
     entropy_coeff: float = 0.01
     adaptive_entropy: bool = True
     target_entropy: float = 0.25  # Target normalized entropy ratio in [0, 1]
-    alpha_lr: float = 3e-4
+    alpha_lr: float = 1e-3
     alpha_min: float = 0.001
-    alpha_max: float = 0.03
-    entropy_ema_beta: float = 0.9
-    value_loss_coeff: float = 0.5
+    alpha_max: float = 0.2
+    entropy_ema_beta: float = 0.6
+    value_loss_coeff: float = 0.25
     max_grad_norm: float = 0.5
-    lr: float = 2e-5
+    lr: float = 1e-4
     device: str = "cpu"
     save_dir: str = "checkpoints/ppo"
     log_dir: str = "runs/ppo"
@@ -480,7 +480,6 @@ def train_ppo(
                     "reward_hands_bonus",
                     "reward_ante_bonus",
                     "reward_interest_bonus",
-                    "reward_progress_tick_penalty",
                     "reward_idle_penalty",
                 ):
                     component_value = _extract_vector_info_value(infos, component_name, env_idx, None)
@@ -557,7 +556,9 @@ def train_ppo(
                 # Value loss
                 value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
 
-                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * normalized_entropy
+                # Use raw entropy in loss for stronger gradient signal;
+                # normalized entropy is still used for adaptive target tracking.
+                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * entropy
                 (loss / accum_steps).backward()
 
                 # Step every accum_steps micro-batches (or on last batch)

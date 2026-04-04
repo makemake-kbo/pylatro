@@ -34,7 +34,6 @@ def default_reward_components(
         "hands_bonus": 0.0,
         "ante_bonus": 0.0,
         "interest_bonus": 0.0,
-        "progress_tick_penalty": 0.0,
         "idle_penalty": 0.0,
     }
 
@@ -43,9 +42,9 @@ def default_reward_components(
             components["terminal"] += 10.0
         else:
             ante = state.round_resets.ante
-            loss_penalty = -10.0 + min(ante - 1, 5) * 1.0
+            loss_penalty = -5.0 + min(ante - 1, 5) * 1.0
             if curr_info.get("stalled", False):
-                loss_penalty -= 2.0
+                loss_penalty -= 1.0
             components["terminal"] += loss_penalty
         components["total"] = sum(components.values())
         return components
@@ -62,7 +61,7 @@ def default_reward_components(
         components["score_progress"] += 1.5 * (curr_progress - prev_progress)
 
     if curr_info.get("blind_just_beaten", False):
-        components["blind_clear"] += 0.5
+        components["blind_clear"] += 1.0
         hands_left = curr_info.get("hands_left", 0)
         components["hands_bonus"] += 0.1 * hands_left
 
@@ -71,9 +70,10 @@ def default_reward_components(
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         components["interest_bonus"] += 0.1 * min(interest_tier, 5)
 
-    if curr_info.get("progress_made", False):
-        components["progress_tick_penalty"] -= 0.001
-    else:
+    # Only penalize idle steps outside mandatory selection phases
+    # (card toggles and consumable targeting are necessary, not idle)
+    in_selection = curr_info.get("sub_phase", "") in ("select_cards", "consumable_target")
+    if not curr_info.get("progress_made", False) and not in_selection:
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
         idle_penalty = 0.001 + max(idle_streak - 8, 0) * 0.0005
         components["idle_penalty"] -= min(idle_penalty, 0.02)

@@ -200,7 +200,7 @@ def _run_game_fast_no_obs(
     data: GameData,
     agent: HeuristicAgent,
 ) -> tuple[int, bool]:
-    runner = FastRunner(seed, data)
+    runner = FastRunner(seed, data, max_steps=2000)
     while not runner.done:
         mask = runner.compute_mask()
         action = agent.select_action(

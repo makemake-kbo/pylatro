@@ -189,6 +189,9 @@ class FastRunner:
         try:
             self._execute(action_id)
         except Exception:
+            self._steps_since_progress += 1
+            if not self._done and self._steps_since_progress >= self._max_steps:
+                self._done = True
             return
 
         state = self._state

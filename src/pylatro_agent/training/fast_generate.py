@@ -223,6 +223,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
     agent = HeuristicAgent()
     records: list[dict[str, Any]] = []
     seed = seed_start
+    games_since_gc = 0
 
     while True:
         with _shared_counter.get_lock():
@@ -230,13 +231,15 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 break
 
         if min_ante > 2:
-            gc.disable()
             max_ante, won = _run_game_fast_no_obs(seed, data, agent)
-            gc.enable()
             with _shared_total_attempted.get_lock():
                 _shared_total_attempted.value += 1
             seed += 1
+            games_since_gc += 1
             if max_ante < min_ante and not won:
+                if games_since_gc >= 500:
+                    gc.collect()
+                    games_since_gc = 0
                 continue
             with _shared_counter.get_lock():
                 if _shared_counter.value >= _shared_target:
@@ -250,6 +253,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 gamma,
             )
             records.extend(game_records)
+            gc.collect()
+            games_since_gc = 0
         else:
             with _shared_counter.get_lock():
                 if _shared_counter.value >= _shared_target:
@@ -266,6 +271,10 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
             )
             seed += 1
             records.extend(game_records)
+            games_since_gc += 1
+            if games_since_gc >= 50:
+                gc.collect()
+                games_since_gc = 0
 
     return records
 

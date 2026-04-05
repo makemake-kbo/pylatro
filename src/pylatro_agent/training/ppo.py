@@ -116,7 +116,7 @@ class PPOConfig:
     log_dir: str = "runs/ppo"
     eval_interval: int = 50
     log_interval: int = 10
-    checkpoint_interval: int = 100
+    checkpoint_interval: int = 50
     eval_games: int = 10
     max_no_progress_steps: int = 256
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)

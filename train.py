@@ -64,8 +64,8 @@ def main():
     parser.add_argument(
         "--checkpoint-interval",
         type=int,
-        default=10,
-        help="PPO checkpoint interval in updates (default: 10)",
+        default=50,
+        help="PPO checkpoint interval in updates (default: 50)",
     )
     parser.add_argument("--eval-interval", type=int, default=50, help="PPO eval interval in updates (default: 50)")
     parser.add_argument(

@@ -204,7 +204,11 @@ def train_supervised(
         )
 
         save_model = model.module if isinstance(model, nn.DataParallel) else model
-        torch.save(save_model.state_dict(), save_path / f"supervised_epoch{epoch + 1}.pt")
+        ckpt_path = save_path / f"supervised_epoch{epoch + 1}.pt"
+        tmp_path = ckpt_path.with_suffix(".tmp")
+        with open(tmp_path, "wb") as f:
+            torch.save(save_model.state_dict(), f)
+        tmp_path.rename(ckpt_path)
 
     writer.close()
     return model

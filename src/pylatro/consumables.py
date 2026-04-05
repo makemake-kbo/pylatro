@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
+import numpy as np
+
 from .instances import add_consumable, add_joker, remove_consumable, sync_all_jokers
 from .models import ConsumableInstance, PlayingCard
 from .pool import _pick_pool_key, create_card_spec, get_current_pool, poll_edition
@@ -252,8 +254,8 @@ def use_consumable(
 def _resolve_consumable(state, consumable: int | str | ConsumableInstance) -> ConsumableInstance:
     if isinstance(consumable, ConsumableInstance):
         return consumable
-    if isinstance(consumable, int):
-        return state.consumables[consumable]
+    if isinstance(consumable, (int, np.integer)):
+        return state.consumables[int(consumable)]
     for owned in state.consumables:
         if owned.center_key == consumable:
             return owned

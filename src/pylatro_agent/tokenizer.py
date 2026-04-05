@@ -40,7 +40,7 @@ from .constants import (
     SubPhase,
     TokenType,
 )
-from .hand_candidates import HAND_NAME_TO_ID
+from .hand_candidates import HAND_NAME_TO_ID, HandCandidate
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
 

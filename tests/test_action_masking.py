@@ -35,31 +35,33 @@ def test_blind_select_mask(game_data):
 def test_choose_action_mask(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 
-    assert mask[ActionRange.PLAY_SUBSET_START] == 1, "Should expose at least one play subset"
-    assert mask[ActionRange.DISCARD_SUBSET_START] == 1, "Should expose at least one discard subset"
+    assert mask[ActionRange.PLAY_SELECTION] == 1, "Should expose play selection"
+    assert mask[ActionRange.DISCARD_SELECTION] == 1, "Should expose discard selection"
     # Consumable depends on state
     assert mask.sum() >= 2
 
 
-def test_choose_action_subset_ranges_are_bounded(hand_play_state):
-    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+def test_select_cards_mask_exposes_toggles_and_confirm(hand_play_state):
+    mask = compute_action_mask(
+        hand_play_state,
+        SubPhase.SELECT_CARDS,
+        selected_cards={0},
+        pending_action="play",
+    )
+    assert mask[ActionRange.SELECT_CARD_START] == 1
+    assert mask[ActionRange.SELECTION_CONFIRM] == 1
+    assert mask[ActionRange.SELECTION_CANCEL] == 1
 
-    play_mask = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
-    discard_mask = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
-    assert play_mask.sum() >= 1
-    assert discard_mask.sum() >= 1
-    assert play_mask.sum() <= len(play_mask)
-    assert discard_mask.sum() <= len(discard_mask)
 
-
-def test_select_cards_mask_is_legacy_noop(hand_play_state):
+def test_select_cards_requires_selection_before_confirm(hand_play_state):
     mask = compute_action_mask(
         hand_play_state,
         SubPhase.SELECT_CARDS,
         selected_cards=set(),
         pending_action="play",
     )
-    assert mask.sum() == 0
+    assert mask[ActionRange.SELECTION_CONFIRM] == 0
+    assert mask[ActionRange.SELECTION_CANCEL] == 1
 
 
 def test_shop_mask_leave_always_valid(hand_play_state):

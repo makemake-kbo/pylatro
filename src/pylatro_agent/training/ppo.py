@@ -394,8 +394,8 @@ def train_ppo(
         rollout_truncated_flags: list[float] = []
         rollout_reward_component_values: defaultdict[str, list[float]] = defaultdict(list)
         rollout_pre_choose_action_flags: list[float] = []
-        rollout_play_subset_count = 0
-        rollout_discard_subset_count = 0
+        rollout_play_selection_count = 0
+        rollout_discard_selection_count = 0
 
         # === Collect rollouts (vectorized) ===
         model.eval()
@@ -478,10 +478,10 @@ def train_ppo(
 
                 in_choose_action = pre_sub_phase == "choose_action"
                 rollout_pre_choose_action_flags.append(float(in_choose_action))
-                if action_type_name == ActionType.PLAY_SUBSET.value:
-                    rollout_play_subset_count += 1
-                elif action_type_name == ActionType.DISCARD_SUBSET.value:
-                    rollout_discard_subset_count += 1
+                if action_type_name == ActionType.PLAY_SELECTION.value:
+                    rollout_play_selection_count += 1
+                elif action_type_name == ActionType.DISCARD_SELECTION.value:
+                    rollout_discard_selection_count += 1
 
                 rollout_progress_flags.append(
                     float(bool(_extract_step_info_value(infos, "progress_made", env_idx, done=step_done, default=False)))
@@ -648,8 +648,8 @@ def train_ppo(
         writer.add_scalar(
             "hand_choice/play_fraction",
             (
-                float(rollout_play_subset_count / (rollout_play_subset_count + rollout_discard_subset_count))
-                if (rollout_play_subset_count + rollout_discard_subset_count) > 0
+                float(rollout_play_selection_count / (rollout_play_selection_count + rollout_discard_selection_count))
+                if (rollout_play_selection_count + rollout_discard_selection_count) > 0
                 else float("nan")
             ),
             update_count,
@@ -657,8 +657,8 @@ def train_ppo(
         writer.add_scalar(
             "hand_choice/discard_fraction",
             (
-                float(rollout_discard_subset_count / (rollout_play_subset_count + rollout_discard_subset_count))
-                if (rollout_play_subset_count + rollout_discard_subset_count) > 0
+                float(rollout_discard_selection_count / (rollout_play_selection_count + rollout_discard_selection_count))
+                if (rollout_play_selection_count + rollout_discard_selection_count) > 0
                 else float("nan")
             ),
             update_count,

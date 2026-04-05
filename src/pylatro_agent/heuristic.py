@@ -13,7 +13,6 @@ from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
 from .constants import ActionRange, SubPhase
-from .subset_actions import subset_index
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard, RunState
@@ -71,7 +70,12 @@ class HeuristicAgent:
         elif sub_phase == SubPhase.CHOOSE_ACTION:
             return self._choose_action(state, action_mask)
         elif sub_phase == SubPhase.SELECT_CARDS:
-            return self._random_valid(action_mask)
+            return self._select_cards(
+                state,
+                action_mask,
+                kwargs.get("selected_cards") or set(),
+                kwargs.get("pending_action"),
+            )
         elif sub_phase == SubPhase.SHOP:
             return self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
@@ -99,32 +103,17 @@ class HeuristicAgent:
                     return ActionRange.USE_CONSUMABLE
 
         hand = state.hand_cards
-        best_play = tuple(sorted(self._cached_best_hand(state, hand)))
-        best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand)))))
-        can_discard = (
-            bool(best_discard)
-            and state.current_round.discards_left > 0
-            and mask[ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)]
-        )
+        can_discard = bool(hand) and state.current_round.discards_left > 0 and bool(mask[ActionRange.DISCARD_SELECTION])
         hand_quality = self._evaluate_hand_quality(state, hand) if hand else 0
 
         if hand_quality < 1 and can_discard and state.current_round.hands_left > 1:
-            return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
+            return ActionRange.DISCARD_SELECTION
 
-        if best_play:
-            play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
-            if mask[play_action]:
-                return play_action
+        if hand and mask[ActionRange.PLAY_SELECTION]:
+            return ActionRange.PLAY_SELECTION
 
         if can_discard:
-            return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
-
-        valid_play = np.where(mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1] == 1)[0]
-        if len(valid_play) > 0:
-            return ActionRange.PLAY_SUBSET_START + int(valid_play[0])
-        valid_discard = np.where(mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1] == 1)[0]
-        if len(valid_discard) > 0:
-            return ActionRange.DISCARD_SUBSET_START + int(valid_discard[0])
+            return ActionRange.DISCARD_SELECTION
         return self._random_valid(mask)
 
     def _evaluate_hand_quality(self, state: RunState, hand: list[PlayingCard]) -> int:
@@ -327,7 +316,32 @@ class HeuristicAgent:
         return synergy
 
     def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
-        _ = (state, selected, pending)
+        hand = state.hand_cards
+        if pending == "play":
+            target = self._cached_best_hand(state, hand)
+        elif pending == "discard":
+            target = self._find_worst_cards(state, hand, max_discard=min(5, len(hand)))
+        else:
+            return self._random_valid(mask)
+
+        forced = {idx for idx, card in enumerate(hand) if card.forced_selection}
+        target |= forced
+        target = {idx for idx in target if idx < len(hand)}
+
+        for idx in sorted(target - selected):
+            action = ActionRange.SELECT_CARD_START + idx
+            if action < len(mask) and mask[action]:
+                return action
+
+        for idx in sorted(selected - target):
+            action = ActionRange.SELECT_CARD_START + idx
+            if action < len(mask) and mask[action]:
+                return action
+
+        if mask[ActionRange.SELECTION_CONFIRM]:
+            return ActionRange.SELECTION_CONFIRM
+        if mask[ActionRange.SELECTION_CANCEL]:
+            return ActionRange.SELECTION_CANCEL
         return self._random_valid(mask)
 
     def _find_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:

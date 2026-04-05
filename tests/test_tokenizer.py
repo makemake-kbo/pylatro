@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from pylatro import create_run_state, load_game_data, select_blind, start_blind
-from pylatro_agent.constants import MAX_SEQ_LEN, TOKEN_DIM, SubPhase, TokenType
+from pylatro_agent.constants import MAX_HAND_SIZE, MAX_SEQ_LEN, TOKEN_DIM, SubPhase, TokenType
 from pylatro_agent.tokenizer import Tokenizer, sign_log
 from pylatro_agent.vocab import build_vocab
 
@@ -43,7 +43,7 @@ def test_tokenize_shape(run_state, vocab):
     assert obs.tokens.shape == (MAX_SEQ_LEN, TOKEN_DIM)
     assert obs.token_types.shape == (MAX_SEQ_LEN,)
     assert obs.attention_mask.shape == (MAX_SEQ_LEN,)
-    assert obs.selected_cards.shape == (12,)
+    assert obs.selected_cards.shape == (MAX_HAND_SIZE,)
 
 
 def test_tokenize_has_tokens(run_state, vocab):

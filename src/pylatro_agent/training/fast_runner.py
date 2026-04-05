@@ -27,7 +27,6 @@ from ..constants import (
     ActionRange,
     SubPhase,
 )
-from ..subset_actions import legal_subset_mask, subset_indices
 
 if TYPE_CHECKING:
     from pylatro.data import GameData
@@ -228,31 +227,58 @@ class FastRunner:
             ctrl.reroll_boss()
             self._sub_phase = SubPhase.BLIND_SELECT
 
-        elif AR.PLAY_SUBSET_START <= aid <= AR.PLAY_SUBSET_END:
-            idx = aid - AR.PLAY_SUBSET_START
-            indices = subset_indices(idx)
-            if any(slot >= len(state.hand_cards) for slot in indices):
+        elif aid == AR.PLAY_SELECTION:
+            self._pending_action = "play"
+            self._selected_cards = {
+                idx for idx, card in enumerate(state.hand_cards[:MAX_HAND_SIZE]) if card.forced_selection
+            }
+            self._sub_phase = SubPhase.SELECT_CARDS
+
+        elif aid == AR.DISCARD_SELECTION:
+            self._pending_action = "discard"
+            self._selected_cards = {
+                idx for idx, card in enumerate(state.hand_cards[:MAX_HAND_SIZE]) if card.forced_selection
+            }
+            self._sub_phase = SubPhase.SELECT_CARDS
+
+        elif AR.SELECT_CARD_START <= aid <= AR.SELECT_CARD_END:
+            idx = aid - AR.SELECT_CARD_START
+            if idx >= len(state.hand_cards) or idx >= MAX_HAND_SIZE:
                 return
-            result = ctrl.play_selected(list(indices))
-            self._round_score += result.score.total
-            if ctrl.blind_beaten():
-                self._blind_just_beaten = True
-                ctrl.cash_out()
-                if ctrl.phase == GamePhase.GAME_WON:
+            if idx in self._selected_cards:
+                if not state.hand_cards[idx].forced_selection:
+                    self._selected_cards.remove(idx)
+            elif len(self._selected_cards) < 5:
+                self._selected_cards.add(idx)
+
+        elif aid == AR.SELECTION_CONFIRM:
+            indices = sorted(self._selected_cards)
+            if not indices:
+                return
+            pending_action = self._pending_action
+            self._pending_action = None
+            self._selected_cards = set()
+            if pending_action == "play":
+                result = ctrl.play_selected(indices)
+                self._round_score += result.score.total
+                if ctrl.blind_beaten():
+                    self._blind_just_beaten = True
+                    ctrl.cash_out()
+                    if ctrl.phase == GamePhase.GAME_WON:
+                        return
+                    ctrl.enter_shop()
+                    self._sub_phase = SubPhase.SHOP
+                elif ctrl.phase == GamePhase.GAME_OVER:
                     return
-                ctrl.enter_shop()
-                self._sub_phase = SubPhase.SHOP
-            elif ctrl.phase == GamePhase.GAME_OVER:
-                return
-            else:
+                else:
+                    self._sub_phase = SubPhase.CHOOSE_ACTION
+            elif pending_action == "discard":
+                ctrl.discard_selected(indices)
                 self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif AR.DISCARD_SUBSET_START <= aid <= AR.DISCARD_SUBSET_END:
-            idx = aid - AR.DISCARD_SUBSET_START
-            indices = subset_indices(idx)
-            if any(slot >= len(state.hand_cards) for slot in indices):
-                return
-            ctrl.discard_selected(list(indices))
+        elif aid == AR.SELECTION_CANCEL:
+            self._selected_cards = set()
+            self._pending_action = None
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif aid == AR.USE_CONSUMABLE:
@@ -366,18 +392,14 @@ def _mask_blind(m, state, AR):
 @cython.cfunc
 @cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int, _use=cython.int)
 def _mask_action(m, state, AR):
-    _play_start = AR.PLAY_SUBSET_START
-    _disc_start = AR.DISCARD_SUBSET_START
+    _play_start = AR.PLAY_SELECTION
+    _disc_start = AR.DISCARD_SELECTION
     _use = AR.USE_CONSUMABLE
     hand_size = len(state.hand_cards)
-    forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
-    legal_subsets = legal_subset_mask(hand_size, forced_slots)
     if state.current_round.hands_left > 0 and hand_size > 0:
-        for i in range(len(legal_subsets)):
-            m[_play_start + i] = cython.cast(cython.char, legal_subsets[i])
+        m[_play_start] = 1
     if state.current_round.discards_left > 0 and hand_size > 0:
-        for i in range(len(legal_subsets)):
-            m[_disc_start + i] = cython.cast(cython.char, legal_subsets[i])
+        m[_disc_start] = 1
     for cons in state.consumables:
         if can_use_consumable(state, cons):
             m[_use] = 1
@@ -394,7 +416,25 @@ def _mask_action(m, state, AR):
     i=cython.int,
 )
 def _mask_cards(m, state, AR, selected, pending):
-    _ = (m, state, AR, selected, pending)
+    hand_size = min(len(state.hand_cards), MAX_HAND_SIZE)
+    forced_slots = {idx for idx, card in enumerate(state.hand_cards[:hand_size]) if card.forced_selection}
+    selected_count = len(selected)
+    if pending not in ("play", "discard"):
+        return
+
+    for i in range(hand_size):
+        if i in selected:
+            if i not in forced_slots:
+                m[AR.SELECT_CARD_START + i] = 1
+        elif selected_count < 5:
+            m[AR.SELECT_CARD_START + i] = 1
+
+    if forced_slots.issubset(selected) and 1 <= selected_count <= 5:
+        if pending == "play" and state.current_round.hands_left > 0:
+            m[AR.SELECTION_CONFIRM] = 1
+        elif pending == "discard" and state.current_round.discards_left > 0:
+            m[AR.SELECTION_CONFIRM] = 1
+    m[AR.SELECTION_CANCEL] = 1
 
 
 @cython.cfunc

@@ -108,6 +108,7 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
         runner.state,
         runner.sub_phase,
         selected_cards=runner.selected_cards,
+        pending_action=runner.pending_action,
         action_mask=mask.copy(),
     )
     return {

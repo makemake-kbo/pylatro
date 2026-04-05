@@ -123,7 +123,7 @@ def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
     assert env._sub_phase == SubPhase.BOOSTER_PACK
 
 
-def test_env_play_subset_executes_directly(game_data, vocab):
+def test_env_play_selection_enters_select_cards(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
     env.reset()
 
@@ -132,29 +132,27 @@ def test_env_play_subset_executes_directly(game_data, vocab):
     assert not truncated
     assert info["progress_made"]
 
-    play_action = _first_valid(
-        env.action_masks(),
-        ActionRange.PLAY_SUBSET_START,
-        ActionRange.PLAY_SUBSET_END,
-    )
+    play_action = ActionRange.PLAY_SELECTION
     _, _, terminated, truncated, info = env.step(play_action)
     assert not terminated
     assert not truncated
     assert info["progress_made"]
-    assert env._sub_phase == SubPhase.CHOOSE_ACTION
+    assert env._sub_phase == SubPhase.SELECT_CARDS
 
 
-def test_env_play_subset_reports_progress(game_data, vocab):
+def test_env_play_selection_confirm_reports_progress(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
     env.reset()
 
     _, _, _, _, _ = env.step(ActionRange.BLIND_PLAY)
-    play_action = _first_valid(
+    _, _, _, _, _ = env.step(ActionRange.PLAY_SELECTION)
+    select_action = _first_valid(
         env.action_masks(),
-        ActionRange.PLAY_SUBSET_START,
-        ActionRange.PLAY_SUBSET_END,
+        ActionRange.SELECT_CARD_START,
+        ActionRange.SELECT_CARD_END,
     )
-    _, _, terminated, truncated, info = env.step(play_action)
+    _, _, _, _, _ = env.step(select_action)
+    _, _, terminated, truncated, info = env.step(ActionRange.SELECTION_CONFIRM)
     assert not terminated
     assert not truncated
     assert info["progress_made"]

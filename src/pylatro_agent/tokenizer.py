@@ -27,6 +27,7 @@ from .constants import (
     HAND_LEVEL_START,
     JOKER_MAX,
     JOKER_START,
+    MAX_HAND_SIZE,
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
@@ -60,7 +61,7 @@ class RawObservation:
     scalars: np.ndarray  # (SCALAR_DIM,), float32
     attention_mask: np.ndarray  # (MAX_SEQ_LEN,), int8
     action_mask: np.ndarray  # (NUM_ACTIONS,), int8
-    selected_cards: np.ndarray  # (12,), int8
+    selected_cards: np.ndarray  # (MAX_HAND_SIZE,), int8
 
 
 @dataclass
@@ -87,6 +88,7 @@ class Tokenizer:
         state: RunState,
         sub_phase: SubPhase,
         selected_cards: set[int] | None = None,
+        pending_action: str | None = None,
         action_mask: np.ndarray | None = None,
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
@@ -95,7 +97,7 @@ class Tokenizer:
         token_types = np.full(MAX_SEQ_LEN, TokenType.PAD, dtype=np.int8)
         attn_mask = np.zeros(MAX_SEQ_LEN, dtype=np.int8)
         scalars = np.zeros(SCALAR_DIM, dtype=np.float32)
-        sel_cards = np.zeros(12, dtype=np.int8)
+        sel_cards = np.zeros(MAX_HAND_SIZE, dtype=np.int8)
 
         if selected_cards is None:
             selected_cards = set()
@@ -131,6 +133,7 @@ class Tokenizer:
         scalars[5] = float(state.current_round.discards_left)
         scalars[6] = float(state.current_round.hand_size)
         scalars[7] = float(self._sub_phase_id(sub_phase))
+        scalars[8] = float({"play": 1, "discard": 2}.get(pending_action or "", 0))
 
         pos = DECK_START
         hand_cards = state.hand_cards
@@ -206,7 +209,7 @@ class Tokenizer:
             attn_mask[pos + i] = 1
 
         for idx in selected_cards:
-            if idx < 12:
+            if idx < MAX_HAND_SIZE:
                 sel_cards[idx] = 1
 
         if action_mask is None:

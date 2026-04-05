@@ -13,9 +13,12 @@ class ActionType(StrEnum):
     BLIND_PLAY = "blind_play"
     BLIND_SKIP = "blind_skip"
     BLIND_REROLL = "blind_reroll"
-    PLAY_SUBSET = "play_subset"
-    DISCARD_SUBSET = "discard_subset"
+    PLAY_SELECTION = "play_selection"
+    DISCARD_SELECTION = "discard_selection"
     USE_CONSUMABLE = "use_consumable"
+    SELECT_CARD = "select_card"
+    SELECTION_CONFIRM = "selection_confirm"
+    SELECTION_CANCEL = "selection_cancel"
     CONSUMABLE_SLOT = "consumable_slot"
     CONSUMABLE_HAND_TARGET = "consumable_hand_target"
     CONSUMABLE_JOKER_TARGET = "consumable_joker_target"
@@ -46,12 +49,18 @@ def decode_action(action_id: int) -> DecodedAction:
         return DecodedAction(ActionType.BLIND_SKIP)
     if action_id == AR.BLIND_REROLL:
         return DecodedAction(ActionType.BLIND_REROLL)
-    if AR.PLAY_SUBSET_START <= action_id <= AR.PLAY_SUBSET_END:
-        return DecodedAction(ActionType.PLAY_SUBSET, action_id - AR.PLAY_SUBSET_START)
-    if AR.DISCARD_SUBSET_START <= action_id <= AR.DISCARD_SUBSET_END:
-        return DecodedAction(ActionType.DISCARD_SUBSET, action_id - AR.DISCARD_SUBSET_START)
+    if action_id == AR.PLAY_SELECTION:
+        return DecodedAction(ActionType.PLAY_SELECTION)
+    if action_id == AR.DISCARD_SELECTION:
+        return DecodedAction(ActionType.DISCARD_SELECTION)
     if action_id == AR.USE_CONSUMABLE:
         return DecodedAction(ActionType.USE_CONSUMABLE)
+    if AR.SELECT_CARD_START <= action_id <= AR.SELECT_CARD_END:
+        return DecodedAction(ActionType.SELECT_CARD, action_id - AR.SELECT_CARD_START)
+    if action_id == AR.SELECTION_CONFIRM:
+        return DecodedAction(ActionType.SELECTION_CONFIRM)
+    if action_id == AR.SELECTION_CANCEL:
+        return DecodedAction(ActionType.SELECTION_CANCEL)
 
     if AR.CONSUMABLE_SLOT_START <= action_id <= AR.CONSUMABLE_SLOT_END:
         return DecodedAction(ActionType.CONSUMABLE_SLOT, action_id - AR.CONSUMABLE_SLOT_START)
@@ -94,12 +103,18 @@ def encode_action(action_type: ActionType, index: int = 0) -> int:
             return AR.BLIND_SKIP
         case ActionType.BLIND_REROLL:
             return AR.BLIND_REROLL
-        case ActionType.PLAY_SUBSET:
-            return AR.PLAY_SUBSET_START + index
-        case ActionType.DISCARD_SUBSET:
-            return AR.DISCARD_SUBSET_START + index
+        case ActionType.PLAY_SELECTION:
+            return AR.PLAY_SELECTION
+        case ActionType.DISCARD_SELECTION:
+            return AR.DISCARD_SELECTION
         case ActionType.USE_CONSUMABLE:
             return AR.USE_CONSUMABLE
+        case ActionType.SELECT_CARD:
+            return AR.SELECT_CARD_START + index
+        case ActionType.SELECTION_CONFIRM:
+            return AR.SELECTION_CONFIRM
+        case ActionType.SELECTION_CANCEL:
+            return AR.SELECTION_CANCEL
         case ActionType.CONSUMABLE_SLOT:
             return AR.CONSUMABLE_SLOT_START + index
         case ActionType.CONSUMABLE_HAND_TARGET:

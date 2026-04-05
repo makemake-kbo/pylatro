@@ -23,8 +23,6 @@ from .constants import (
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
-    HAND_CANDIDATE_MAX,
-    HAND_CANDIDATE_START,
     HAND_LEVEL_MAX,
     HAND_LEVEL_START,
     JOKER_MAX,
@@ -42,11 +40,12 @@ from .constants import (
     SubPhase,
     TokenType,
 )
-from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
+from .hand_candidates import HAND_NAME_TO_ID
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
 
 @cython.ccall
+@cython.exceptval(check=False)
 @cython.locals(x=cython.double)
 def sign_log(x: float) -> float:
     if x >= 0:
@@ -81,7 +80,6 @@ class Tokenizer:
         attn_mask=cython.char[:],
         scalars=cython.float[:],
         sel_cards=cython.char[:],
-        candidate_slot=cython.int,
         idx=cython.int,
     )
     def tokenize(
@@ -90,8 +88,6 @@ class Tokenizer:
         sub_phase: SubPhase,
         selected_cards: set[int] | None = None,
         action_mask: np.ndarray | None = None,
-        play_candidates: tuple[HandCandidate, ...] = (),
-        discard_candidates: tuple[HandCandidate, ...] = (),
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -103,8 +99,6 @@ class Tokenizer:
 
         if selected_cards is None:
             selected_cards = set()
-        if sub_phase == SubPhase.CHOOSE_ACTION and not play_candidates and not discard_candidates:
-            play_candidates, discard_candidates = generate_hand_candidates(state)
 
         _rank_to_id = RANK_TO_ID
         _suit_to_id = SUIT_TO_ID
@@ -210,20 +204,6 @@ class Tokenizer:
             self._encode_hand_level(tokens, pos + i, hand_name, state.hands[hand_name])
             token_types[pos + i] = TokenType.HAND_LEVEL
             attn_mask[pos + i] = 1
-
-        if sub_phase == SubPhase.CHOOSE_ACTION:
-            pos = HAND_CANDIDATE_START
-            candidate_slot = 0
-            for candidate in play_candidates[:HAND_CANDIDATE_MAX]:
-                self._encode_hand_candidate(tokens, pos + candidate_slot, candidate, candidate_slot, state)
-                token_types[pos + candidate_slot] = TokenType.HAND_CANDIDATE
-                attn_mask[pos + candidate_slot] = 1
-                candidate_slot += 1
-            for candidate in discard_candidates[: max(0, HAND_CANDIDATE_MAX - candidate_slot)]:
-                self._encode_hand_candidate(tokens, pos + candidate_slot, candidate, candidate_slot, state)
-                token_types[pos + candidate_slot] = TokenType.HAND_CANDIDATE
-                attn_mask[pos + candidate_slot] = 1
-                candidate_slot += 1
 
         for idx in selected_cards:
             if idx < 12:

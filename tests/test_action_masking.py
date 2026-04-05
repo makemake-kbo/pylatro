@@ -35,17 +35,17 @@ def test_blind_select_mask(game_data):
 def test_choose_action_mask(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 
-    assert mask[ActionRange.PLAY_CANDIDATE_START] == 1, "Should expose at least one play candidate"
-    assert mask[ActionRange.DISCARD_CANDIDATE_START] == 1, "Should expose at least one discard candidate"
+    assert mask[ActionRange.PLAY_SUBSET_START] == 1, "Should expose at least one play subset"
+    assert mask[ActionRange.DISCARD_SUBSET_START] == 1, "Should expose at least one discard subset"
     # Consumable depends on state
     assert mask.sum() >= 2
 
 
-def test_choose_action_candidate_ranges_are_bounded(hand_play_state):
+def test_choose_action_subset_ranges_are_bounded(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 
-    play_mask = mask[ActionRange.PLAY_CANDIDATE_START:ActionRange.PLAY_CANDIDATE_END + 1]
-    discard_mask = mask[ActionRange.DISCARD_CANDIDATE_START:ActionRange.DISCARD_CANDIDATE_END + 1]
+    play_mask = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
+    discard_mask = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
     assert play_mask.sum() >= 1
     assert discard_mask.sum() >= 1
     assert play_mask.sum() <= len(play_mask)

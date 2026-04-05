@@ -123,7 +123,7 @@ def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
     assert env._sub_phase == SubPhase.BOOSTER_PACK
 
 
-def test_env_play_candidate_executes_directly(game_data, vocab):
+def test_env_play_subset_executes_directly(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
     env.reset()
 
@@ -134,8 +134,8 @@ def test_env_play_candidate_executes_directly(game_data, vocab):
 
     play_action = _first_valid(
         env.action_masks(),
-        ActionRange.PLAY_CANDIDATE_START,
-        ActionRange.PLAY_CANDIDATE_END,
+        ActionRange.PLAY_SUBSET_START,
+        ActionRange.PLAY_SUBSET_END,
     )
     _, _, terminated, truncated, info = env.step(play_action)
     assert not terminated
@@ -144,15 +144,15 @@ def test_env_play_candidate_executes_directly(game_data, vocab):
     assert env._sub_phase == SubPhase.CHOOSE_ACTION
 
 
-def test_env_play_candidate_reports_progress(game_data, vocab):
+def test_env_play_subset_reports_progress(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=3)
     env.reset()
 
     _, _, _, _, _ = env.step(ActionRange.BLIND_PLAY)
     play_action = _first_valid(
         env.action_masks(),
-        ActionRange.PLAY_CANDIDATE_START,
-        ActionRange.PLAY_CANDIDATE_END,
+        ActionRange.PLAY_SUBSET_START,
+        ActionRange.PLAY_SUBSET_END,
     )
     _, _, terminated, truncated, info = env.step(play_action)
     assert not terminated

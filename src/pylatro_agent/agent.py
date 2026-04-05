@@ -43,7 +43,7 @@ class BalatroAgent(nn.Module):
 
         # Action heads
         self.blind_select_head = BlindSelectHead(d)
-        self.hand_play_head = HandPlayHead(d)
+        self.hand_play_head = HandPlayHead(d, vocab)
         self.shop_head = ShopHead(d)
         self.consumable_head = ConsumableHead(d)
         self.pack_head = PackHead(d)
@@ -88,7 +88,7 @@ class BalatroAgent(nn.Module):
         else:
             sub_phase_list = sub_phase
 
-        logits = self._compute_logits(x, attention_mask, sub_phase_list)
+        logits = self._compute_logits(x, attention_mask, tokens, token_types, scalars, sub_phase_list)
 
         # Value prediction
         value_dict = self.value_head(x, attention_mask)
@@ -101,6 +101,9 @@ class BalatroAgent(nn.Module):
         self,
         backbone_out: torch.Tensor,
         attention_mask: torch.Tensor,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
         sub_phases: list[SubPhase],
     ) -> torch.Tensor:
         """Compute logits by routing each batch element to the correct head."""
@@ -118,13 +121,16 @@ class BalatroAgent(nn.Module):
             idx = torch.tensor(indices, device=device)
             bo = backbone_out[idx]
             am = attention_mask[idx]
+            tok = tokens[idx]
+            tok_types = token_types[idx]
+            scal = scalars[idx]
 
             if sp == SubPhase.BLIND_SELECT:
                 head_logits = self.blind_select_head(bo, am)
             elif sp == SubPhase.CHOOSE_ACTION:
-                head_logits = self.hand_play_head(bo, am, select_mode=False)
+                head_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=False)
             elif sp == SubPhase.SELECT_CARDS:
-                head_logits = self.hand_play_head(bo, am, select_mode=True)
+                head_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=True)
             elif sp == SubPhase.SHOP:
                 head_logits = self.shop_head(bo, am)
             elif sp == SubPhase.CONSUMABLE_TARGET:

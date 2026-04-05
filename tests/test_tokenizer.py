@@ -77,7 +77,7 @@ def test_tokenize_choose_action_includes_hand_context_tokens(run_state, vocab):
     obs = tok.tokenize(run_state, SubPhase.CHOOSE_ACTION)
 
     assert (obs.token_types == TokenType.HAND_LEVEL).sum() > 0
-    assert (obs.token_types == TokenType.HAND_CANDIDATE).sum() > 0
+    assert (obs.token_types == TokenType.HAND_CANDIDATE).sum() == 0
 
 
 def test_tokenize_blind_select_tokens(game_data, vocab):

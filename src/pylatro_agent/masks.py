@@ -10,16 +10,14 @@ from pylatro.models import RunState
 from .constants import (
     MAX_CONSUMABLE_SLOTS,
     MAX_HAND_SIZE,
-    MAX_DISCARD_CANDIDATES,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
-    MAX_PLAY_CANDIDATES,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
     ActionRange,
     SubPhase,
 )
-from .hand_candidates import generate_hand_candidates
+from .subset_actions import legal_subset_mask
 
 
 def compute_action_mask(
@@ -80,18 +78,14 @@ def _mask_blind_select(mask: np.ndarray, state: RunState) -> None:
 def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
     AR = ActionRange
     hand_size = len(state.hand_cards)
+    forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
+    legal_subsets = legal_subset_mask(hand_size, forced_slots)
 
-    play_candidates, discard_candidates = generate_hand_candidates(state)
-
-    # Play candidate actions if hands_left > 0 and hand not empty
     if state.current_round.hands_left > 0 and hand_size > 0:
-        for i in range(min(len(play_candidates), MAX_PLAY_CANDIDATES)):
-            mask[AR.PLAY_CANDIDATE_START + i] = 1
+        mask[AR.PLAY_SUBSET_START:AR.PLAY_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
-    # Discard candidate actions if discards_left > 0 and hand not empty
     if state.current_round.discards_left > 0 and hand_size > 0:
-        for i in range(min(len(discard_candidates), MAX_DISCARD_CANDIDATES)):
-            mask[AR.DISCARD_CANDIDATE_START + i] = 1
+        mask[AR.DISCARD_SUBSET_START:AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     # Use consumable if any is usable
     for i, cons in enumerate(state.consumables):
@@ -107,7 +101,7 @@ def _mask_select_cards(
     pending_action: str | None,
 ) -> None:
     # The legacy select_cards phase is intentionally left empty. Hand selection
-    # now happens in one shot via play/discard candidate actions.
+    # now happens in one shot via exhaustive play/discard subset actions.
     _ = (mask, state, selected_cards, pending_action)
 
 

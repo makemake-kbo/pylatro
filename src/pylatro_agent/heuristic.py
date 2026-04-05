@@ -13,7 +13,7 @@ from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
 from .constants import ActionRange, SubPhase
-from .hand_candidates import generate_hand_candidates
+from .subset_actions import subset_index
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard, RunState
@@ -86,8 +86,6 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _choose_action(self, state: RunState, mask: np.ndarray) -> int:
-        play_candidates, discard_candidates = generate_hand_candidates(state)
-
         if mask[ActionRange.USE_CONSUMABLE]:
             for cons in state.consumables:
                 center = state.data.centers[cons.center_key]
@@ -101,26 +99,32 @@ class HeuristicAgent:
                     return ActionRange.USE_CONSUMABLE
 
         hand = state.hand_cards
-        can_discard = any(
-            mask[ActionRange.DISCARD_CANDIDATE_START + i]
-            for i in range(len(discard_candidates))
-        ) and state.current_round.discards_left > 0
+        best_play = tuple(sorted(self._cached_best_hand(state, hand)))
+        best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand)))))
+        can_discard = (
+            bool(best_discard)
+            and state.current_round.discards_left > 0
+            and mask[ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)]
+        )
         hand_quality = self._evaluate_hand_quality(state, hand) if hand else 0
 
         if hand_quality < 1 and can_discard and state.current_round.hands_left > 1:
-            for i, _candidate in enumerate(discard_candidates):
-                action = ActionRange.DISCARD_CANDIDATE_START + i
-                if mask[action]:
-                    return action
+            return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
 
-        for i, _candidate in enumerate(play_candidates):
-            action = ActionRange.PLAY_CANDIDATE_START + i
-            if mask[action]:
-                return action
-        for i, _candidate in enumerate(discard_candidates):
-            action = ActionRange.DISCARD_CANDIDATE_START + i
-            if mask[action]:
-                return action
+        if best_play:
+            play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
+            if mask[play_action]:
+                return play_action
+
+        if can_discard:
+            return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
+
+        valid_play = np.where(mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1] == 1)[0]
+        if len(valid_play) > 0:
+            return ActionRange.PLAY_SUBSET_START + int(valid_play[0])
+        valid_discard = np.where(mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1] == 1)[0]
+        if len(valid_discard) > 0:
+            return ActionRange.DISCARD_SUBSET_START + int(valid_discard[0])
         return self._random_valid(mask)
 
     def _evaluate_hand_quality(self, state: RunState, hand: list[PlayingCard]) -> int:

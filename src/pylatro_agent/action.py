@@ -13,8 +13,8 @@ class ActionType(StrEnum):
     BLIND_PLAY = "blind_play"
     BLIND_SKIP = "blind_skip"
     BLIND_REROLL = "blind_reroll"
-    PLAY_CANDIDATE = "play_candidate"
-    DISCARD_CANDIDATE = "discard_candidate"
+    PLAY_SUBSET = "play_subset"
+    DISCARD_SUBSET = "discard_subset"
     USE_CONSUMABLE = "use_consumable"
     CONSUMABLE_SLOT = "consumable_slot"
     CONSUMABLE_HAND_TARGET = "consumable_hand_target"
@@ -46,10 +46,10 @@ def decode_action(action_id: int) -> DecodedAction:
         return DecodedAction(ActionType.BLIND_SKIP)
     if action_id == AR.BLIND_REROLL:
         return DecodedAction(ActionType.BLIND_REROLL)
-    if AR.PLAY_CANDIDATE_START <= action_id <= AR.PLAY_CANDIDATE_END:
-        return DecodedAction(ActionType.PLAY_CANDIDATE, action_id - AR.PLAY_CANDIDATE_START)
-    if AR.DISCARD_CANDIDATE_START <= action_id <= AR.DISCARD_CANDIDATE_END:
-        return DecodedAction(ActionType.DISCARD_CANDIDATE, action_id - AR.DISCARD_CANDIDATE_START)
+    if AR.PLAY_SUBSET_START <= action_id <= AR.PLAY_SUBSET_END:
+        return DecodedAction(ActionType.PLAY_SUBSET, action_id - AR.PLAY_SUBSET_START)
+    if AR.DISCARD_SUBSET_START <= action_id <= AR.DISCARD_SUBSET_END:
+        return DecodedAction(ActionType.DISCARD_SUBSET, action_id - AR.DISCARD_SUBSET_START)
     if action_id == AR.USE_CONSUMABLE:
         return DecodedAction(ActionType.USE_CONSUMABLE)
 
@@ -94,10 +94,10 @@ def encode_action(action_type: ActionType, index: int = 0) -> int:
             return AR.BLIND_SKIP
         case ActionType.BLIND_REROLL:
             return AR.BLIND_REROLL
-        case ActionType.PLAY_CANDIDATE:
-            return AR.PLAY_CANDIDATE_START + index
-        case ActionType.DISCARD_CANDIDATE:
-            return AR.DISCARD_CANDIDATE_START + index
+        case ActionType.PLAY_SUBSET:
+            return AR.PLAY_SUBSET_START + index
+        case ActionType.DISCARD_SUBSET:
+            return AR.DISCARD_SUBSET_START + index
         case ActionType.USE_CONSUMABLE:
             return AR.USE_CONSUMABLE
         case ActionType.CONSUMABLE_SLOT:

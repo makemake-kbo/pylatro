@@ -13,9 +13,9 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
-from .hand_candidates import HandCandidate, candidate_signature, generate_hand_candidates
 from .masks import compute_action_mask
 from .reward import RewardFn, default_reward, default_reward_components
+from .subset_actions import subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
 
@@ -63,9 +63,6 @@ class BalatroEnv(gymnasium.Env):
         self._pending_consumable_slot: int | None = None
         self._pending_consumable_hand_targets: tuple[int, ...] = ()
         self._pending_consumable_joker_targets: tuple[int, ...] = ()
-        self._play_candidates: tuple[HandCandidate, ...] = ()
-        self._discard_candidates: tuple[HandCandidate, ...] = ()
-        self._candidate_signature: tuple | None = None
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -75,7 +72,7 @@ class BalatroEnv(gymnasium.Env):
         # Gymnasium spaces
         self.observation_space = spaces.Dict({
             "tokens": spaces.Box(0, 32767, (MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
-            "token_types": spaces.Box(0, 9, (MAX_SEQ_LEN,), dtype=np.int8),
+            "token_types": spaces.Box(0, 10, (MAX_SEQ_LEN,), dtype=np.int8),
             "scalars": spaces.Box(-np.inf, np.inf, (SCALAR_DIM,), dtype=np.float32),
             "attention_mask": spaces.Box(0, 1, (MAX_SEQ_LEN,), dtype=np.int8),
             "action_mask": spaces.Box(0, 1, (NUM_ACTIONS,), dtype=np.int8),
@@ -114,9 +111,6 @@ class BalatroEnv(gymnasium.Env):
         self._pending_consumable_slot = None
         self._pending_consumable_hand_targets = ()
         self._pending_consumable_joker_targets = ()
-        self._play_candidates = ()
-        self._discard_candidates = ()
-        self._candidate_signature = None
         self._round_score = 0
         self._blind_just_beaten = False
         self._prev_info = self._capture_state_info()
@@ -231,12 +225,11 @@ class BalatroEnv(gymnasium.Env):
             ctrl.reroll_boss()
             self._sub_phase = SubPhase.BLIND_SELECT
 
-        elif at == ActionType.PLAY_CANDIDATE:
-            self._refresh_hand_candidates()
-            if decoded.index >= len(self._play_candidates):
-                raise IndexError(f"Play candidate {decoded.index} out of range")
-            indices = list(self._play_candidates[decoded.index].indices)
-            result = ctrl.play_selected(indices)
+        elif at == ActionType.PLAY_SUBSET:
+            indices = subset_indices(decoded.index)
+            if any(idx >= len(state.hand_cards) for idx in indices):
+                raise IndexError(f"Play subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
+            result = ctrl.play_selected(list(indices))
             self._round_score += result.score.total
             if ctrl.blind_beaten():
                 self._blind_just_beaten = True
@@ -250,12 +243,11 @@ class BalatroEnv(gymnasium.Env):
             else:
                 self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif at == ActionType.DISCARD_CANDIDATE:
-            self._refresh_hand_candidates()
-            if decoded.index >= len(self._discard_candidates):
-                raise IndexError(f"Discard candidate {decoded.index} out of range")
-            indices = list(self._discard_candidates[decoded.index].indices)
-            ctrl.discard_selected(indices)
+        elif at == ActionType.DISCARD_SUBSET:
+            indices = subset_indices(decoded.index)
+            if any(idx >= len(state.hand_cards) for idx in indices):
+                raise IndexError(f"Discard subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
+            ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif at == ActionType.USE_CONSUMABLE:
@@ -354,15 +346,12 @@ class BalatroEnv(gymnasium.Env):
 
     def _build_obs(self) -> RawObservation:
         state = self._controller.state
-        self._refresh_hand_candidates()
         mask = self.action_masks()
         return self._tokenizer.tokenize(
             state,
             self._sub_phase,
             selected_cards=self._selected_cards,
             action_mask=mask,
-            play_candidates=self._play_candidates,
-            discard_candidates=self._discard_candidates,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
@@ -406,27 +395,6 @@ class BalatroEnv(gymnasium.Env):
         base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
         mult = blind.get("mult", 1)
         return int(base * mult)
-
-    def _refresh_hand_candidates(self) -> None:
-        if self._controller is None or self._controller.state is None:
-            self._play_candidates = ()
-            self._discard_candidates = ()
-            self._candidate_signature = None
-            return
-        if self._sub_phase != SubPhase.CHOOSE_ACTION or self._controller.phase != GamePhase.HAND_PLAY:
-            self._play_candidates = ()
-            self._discard_candidates = ()
-            self._candidate_signature = None
-            return
-
-        state = self._controller.state
-        sig = candidate_signature(state)
-        if sig == self._candidate_signature:
-            return
-        play_candidates, discard_candidates = generate_hand_candidates(state)
-        self._play_candidates = play_candidates
-        self._discard_candidates = discard_candidates
-        self._candidate_signature = sig
 
     def _progress_signature(self, info: dict[str, Any]) -> tuple[Any, ...]:
         """Return a compact snapshot used to detect meaningful game progress.

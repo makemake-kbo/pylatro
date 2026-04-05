@@ -19,9 +19,7 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from ..constants import (
     MAX_CONSUMABLE_SLOTS,
-    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
-    MAX_PLAY_CANDIDATES,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_SHOP_ITEMS,
@@ -29,7 +27,7 @@ from ..constants import (
     ActionRange,
     SubPhase,
 )
-from ..hand_candidates import HandCandidate, candidate_signature, generate_hand_candidates
+from ..subset_actions import legal_subset_mask, subset_indices
 
 if TYPE_CHECKING:
     from pylatro.data import GameData
@@ -48,11 +46,8 @@ class FastRunner:
         "_pending_consumable_slot",
         "_pending_hand_targets",
         "_pending_joker_targets",
-        "_play_candidates",
         "_prev_signature",
         "_round_score",
-        "_candidate_signature",
-        "_discard_candidates",
         "_selected_cards",
         "_state",
         "_step_count",
@@ -73,9 +68,6 @@ class FastRunner:
         self._pending_consumable_slot: int | None = None
         self._pending_hand_targets: tuple[int, ...] = ()
         self._pending_joker_targets: tuple[int, ...] = ()
-        self._play_candidates: tuple[HandCandidate, ...] = ()
-        self._discard_candidates: tuple[HandCandidate, ...] = ()
-        self._candidate_signature: tuple | None = None
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
@@ -112,14 +104,6 @@ class FastRunner:
     @property
     def max_ante(self) -> int:
         return self._max_ante
-
-    @property
-    def play_candidates(self) -> tuple[HandCandidate, ...]:
-        return self._play_candidates
-
-    @property
-    def discard_candidates(self) -> tuple[HandCandidate, ...]:
-        return self._discard_candidates
 
     @property
     def done(self) -> bool:
@@ -159,8 +143,7 @@ class FastRunner:
         if sp == SubPhase.BLIND_SELECT:
             _mask_blind(mv, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
-            self._refresh_hand_candidates()
-            _mask_action(mv, state, AR, len(self._play_candidates), len(self._discard_candidates))
+            _mask_action(mv, state, AR)
         elif sp == SubPhase.SELECT_CARDS:
             _mask_cards(mv, state, AR, self._selected_cards, self._pending_action)
         elif sp == SubPhase.SHOP:
@@ -245,12 +228,12 @@ class FastRunner:
             ctrl.reroll_boss()
             self._sub_phase = SubPhase.BLIND_SELECT
 
-        elif AR.PLAY_CANDIDATE_START <= aid <= AR.PLAY_CANDIDATE_END:
-            self._refresh_hand_candidates()
-            idx = aid - AR.PLAY_CANDIDATE_START
-            if idx >= len(self._play_candidates):
+        elif AR.PLAY_SUBSET_START <= aid <= AR.PLAY_SUBSET_END:
+            idx = aid - AR.PLAY_SUBSET_START
+            indices = subset_indices(idx)
+            if any(slot >= len(state.hand_cards) for slot in indices):
                 return
-            result = ctrl.play_selected(list(self._play_candidates[idx].indices))
+            result = ctrl.play_selected(list(indices))
             self._round_score += result.score.total
             if ctrl.blind_beaten():
                 self._blind_just_beaten = True
@@ -264,12 +247,12 @@ class FastRunner:
             else:
                 self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif AR.DISCARD_CANDIDATE_START <= aid <= AR.DISCARD_CANDIDATE_END:
-            self._refresh_hand_candidates()
-            idx = aid - AR.DISCARD_CANDIDATE_START
-            if idx >= len(self._discard_candidates):
+        elif AR.DISCARD_SUBSET_START <= aid <= AR.DISCARD_SUBSET_END:
+            idx = aid - AR.DISCARD_SUBSET_START
+            indices = subset_indices(idx)
+            if any(slot >= len(state.hand_cards) for slot in indices):
                 return
-            ctrl.discard_selected(list(self._discard_candidates[idx].indices))
+            ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif aid == AR.USE_CONSUMABLE:
@@ -363,22 +346,6 @@ class FastRunner:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
 
-    def _refresh_hand_candidates(self) -> None:
-        if self._sub_phase != SubPhase.CHOOSE_ACTION or self._ctrl.phase != GamePhase.HAND_PLAY:
-            self._play_candidates = ()
-            self._discard_candidates = ()
-            self._candidate_signature = None
-            return
-
-        sig = candidate_signature(self._state)
-        if sig == self._candidate_signature:
-            return
-        play_candidates, discard_candidates = generate_hand_candidates(self._state)
-        self._play_candidates = play_candidates
-        self._discard_candidates = discard_candidates
-        self._candidate_signature = sig
-
-
 # ── mask helpers (module-level for speed) ──
 
 
@@ -398,17 +365,19 @@ def _mask_blind(m, state, AR):
 
 @cython.cfunc
 @cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int, _use=cython.int)
-def _mask_action(m, state, AR, play_count, discard_count):
-    _play_start = AR.PLAY_CANDIDATE_START
-    _disc_start = AR.DISCARD_CANDIDATE_START
+def _mask_action(m, state, AR):
+    _play_start = AR.PLAY_SUBSET_START
+    _disc_start = AR.DISCARD_SUBSET_START
     _use = AR.USE_CONSUMABLE
     hand_size = len(state.hand_cards)
+    forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
+    legal_subsets = legal_subset_mask(hand_size, forced_slots)
     if state.current_round.hands_left > 0 and hand_size > 0:
-        for i in range(min(play_count, MAX_PLAY_CANDIDATES)):
-            m[_play_start + i] = 1
+        for i in range(len(legal_subsets)):
+            m[_play_start + i] = cython.cast(cython.char, legal_subsets[i])
     if state.current_round.discards_left > 0 and hand_size > 0:
-        for i in range(min(discard_count, MAX_DISCARD_CANDIDATES)):
-            m[_disc_start + i] = 1
+        for i in range(len(legal_subsets)):
+            m[_disc_start + i] = cython.cast(cython.char, legal_subsets[i])
     for cons in state.consumables:
         if can_use_consumable(state, cons):
             m[_use] = 1

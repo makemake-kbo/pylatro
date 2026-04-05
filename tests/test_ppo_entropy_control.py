@@ -1,10 +1,12 @@
 import math
 
+import numpy as np
 import pytest
 import torch
 
 from pylatro_agent.training.ppo import (
     _entropy_alpha_loss,
+    _extract_step_info_value,
     _make_alpha_optimizer,
     _make_policy_optimizer,
     _mean_normalized_entropy,
@@ -93,3 +95,27 @@ def test_mean_normalized_entropy_is_zero_when_only_one_action_is_valid() -> None
     normalized = _mean_normalized_entropy(entropy, action_mask)
 
     assert normalized.item() == pytest.approx(0.0)
+
+
+def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:
+    infos = {
+        "reward_total": np.array([0.25, 0.5], dtype=np.float32),
+        "_reward_total": np.array([True, True]),
+        "final_info": {
+            "reward_total": np.array([-9.0, 0.0], dtype=np.float32),
+            "_reward_total": np.array([True, False]),
+        },
+    }
+
+    assert _extract_step_info_value(infos, "reward_total", 0, done=True) == pytest.approx(-9.0)
+    assert _extract_step_info_value(infos, "reward_total", 1, done=True) == pytest.approx(0.5)
+
+
+def test_extract_step_info_value_uses_live_info_for_nonterminal_steps() -> None:
+    infos = {
+        "progress_made": np.array([True, False]),
+        "_progress_made": np.array([True, True]),
+    }
+
+    assert _extract_step_info_value(infos, "progress_made", 0, done=False) is True
+    assert _extract_step_info_value(infos, "progress_made", 1, done=False) is False

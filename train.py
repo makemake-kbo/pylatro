@@ -89,8 +89,8 @@ def main():
     parser.add_argument(
         "--entropy-ema-beta",
         type=float,
-        default=0.9,
-        help="EMA smoothing for PPO entropy control signal (default: 0.9)",
+        default=0.6,
+        help="EMA smoothing for PPO entropy control signal (default: 0.6)",
     )
     parser.add_argument(
         "--no-adaptive-entropy",

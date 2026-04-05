@@ -24,6 +24,7 @@ from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
 
 logger = logging.getLogger(__name__)
+_MISSING = object()
 
 
 def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
@@ -187,6 +188,19 @@ def _extract_vector_info_value(info_dict: dict, key: str, env_idx: int, default=
 
     value = values[env_idx]
     return value.item() if isinstance(value, np.generic) else value
+
+
+def _extract_step_info_value(info_dict: dict, key: str, env_idx: int, *, done: bool, default=None):
+    """Read the just-finished step's info, preferring final_info on autoresets."""
+    if done:
+        final_info = info_dict.get("final_info")
+        if isinstance(final_info, dict):
+            final_value = _extract_vector_info_value(final_info, key, env_idx, _MISSING)
+            if final_value is not _MISSING:
+                return final_value
+
+    value = _extract_vector_info_value(info_dict, key, env_idx, _MISSING)
+    return default if value is _MISSING else value
 
 
 def _safe_mean(values: list[float]) -> float:
@@ -452,7 +466,14 @@ def train_ppo(
             for action_id in actions_np:
                 rollout_action_type_counts[_action_type_name(int(action_id))] += 1
             for env_idx in range(config.num_envs):
-                pre_sub_phase = _extract_vector_info_value(infos, "pre_sub_phase", env_idx, "")
+                step_done = bool(dones[env_idx])
+                pre_sub_phase = _extract_step_info_value(
+                    infos,
+                    "pre_sub_phase",
+                    env_idx,
+                    done=step_done,
+                    default="",
+                )
                 action_type_name = _action_type_name(int(actions_np[env_idx]))
 
                 in_choose_action = pre_sub_phase == "choose_action"
@@ -463,10 +484,10 @@ def train_ppo(
                     rollout_discard_candidate_count += 1
 
                 rollout_progress_flags.append(
-                    float(bool(_extract_vector_info_value(infos, "progress_made", env_idx, False)))
+                    float(bool(_extract_step_info_value(infos, "progress_made", env_idx, done=step_done, default=False)))
                 )
                 rollout_steps_since_progress.append(
-                    float(_extract_vector_info_value(infos, "steps_since_progress", env_idx, 0))
+                    float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
                 )
                 for component_name in (
                     "reward_total",
@@ -478,7 +499,13 @@ def train_ppo(
                     "reward_interest_bonus",
                     "reward_idle_penalty",
                 ):
-                    component_value = _extract_vector_info_value(infos, component_name, env_idx, None)
+                    component_value = _extract_step_info_value(
+                        infos,
+                        component_name,
+                        env_idx,
+                        done=step_done,
+                        default=None,
+                    )
                     if component_value is not None:
                         rollout_reward_component_values[component_name].append(float(component_value))
 
@@ -486,15 +513,8 @@ def train_ppo(
             for i in np.where(dones)[0]:
                 episode_rewards.append(float(env_ep_reward[i]))
                 episode_lengths.append(int(env_ep_length[i]))
-                final_info = infos.get("final_info")
-                if isinstance(final_info, dict):
-                    episode_wins.append(bool(_extract_vector_info_value(final_info, "won", i, False)))
-                    episode_stalls.append(bool(_extract_vector_info_value(final_info, "stalled", i, False)))
-                else:
-                    episode_wins.append(infos.get("won", [False] * config.num_envs)[i] if "won" in infos else False)
-                    episode_stalls.append(
-                        infos.get("stalled", [False] * config.num_envs)[i] if "stalled" in infos else False
-                    )
+                episode_wins.append(bool(_extract_step_info_value(infos, "won", i, done=True, default=False)))
+                episode_stalls.append(bool(_extract_step_info_value(infos, "stalled", i, done=True, default=False)))
                 env_ep_reward[i] = 0.0
                 env_ep_length[i] = 0
 

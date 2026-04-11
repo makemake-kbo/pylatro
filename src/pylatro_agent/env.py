@@ -15,6 +15,7 @@ from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
 from .masks import compute_action_mask
 from .reward import RewardFn, default_reward, default_reward_components
+from .subset_actions import subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
 
@@ -224,61 +225,29 @@ class BalatroEnv(gymnasium.Env):
             ctrl.reroll_boss()
             self._sub_phase = SubPhase.BLIND_SELECT
 
-        elif at == ActionType.PLAY_SELECTION:
-            self._pending_action = "play"
-            self._selected_cards = {
-                idx for idx, card in enumerate(state.hand_cards[:MAX_HAND_SIZE]) if card.forced_selection
-            }
-            self._sub_phase = SubPhase.SELECT_CARDS
-
-        elif at == ActionType.DISCARD_SELECTION:
-            self._pending_action = "discard"
-            self._selected_cards = {
-                idx for idx, card in enumerate(state.hand_cards[:MAX_HAND_SIZE]) if card.forced_selection
-            }
-            self._sub_phase = SubPhase.SELECT_CARDS
-
-        elif at == ActionType.SELECT_CARD:
-            idx = decoded.index
-            if idx >= len(state.hand_cards) or idx >= MAX_HAND_SIZE:
-                raise IndexError(f"Hand card {idx} out of range")
-            if idx in self._selected_cards:
-                if not state.hand_cards[idx].forced_selection:
-                    self._selected_cards.remove(idx)
-            elif len(self._selected_cards) < 5:
-                self._selected_cards.add(idx)
-
-        elif at == ActionType.SELECTION_CONFIRM:
-            indices = sorted(self._selected_cards)
-            if not indices:
-                raise ValueError("Cannot confirm empty card selection")
-            pending_action = self._pending_action
-            self._pending_action = None
-            self._selected_cards = set()
-
-            if pending_action == "play":
-                result = ctrl.play_selected(indices)
-                self._round_score += result.score.total
-                if ctrl.blind_beaten():
-                    self._blind_just_beaten = True
-                    ctrl.cash_out()
-                    if ctrl.phase == GamePhase.GAME_WON:
-                        return
-                    ctrl.enter_shop()
-                    self._sub_phase = SubPhase.SHOP
-                elif ctrl.phase == GamePhase.GAME_OVER:
+        elif at == ActionType.PLAY_SUBSET:
+            indices = subset_indices(decoded.index)
+            if any(idx >= len(state.hand_cards) for idx in indices):
+                raise IndexError(f"Play subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
+            result = ctrl.play_selected(list(indices))
+            self._round_score += result.score.total
+            if ctrl.blind_beaten():
+                self._blind_just_beaten = True
+                ctrl.cash_out()
+                if ctrl.phase == GamePhase.GAME_WON:
                     return
-                else:
-                    self._sub_phase = SubPhase.CHOOSE_ACTION
-            elif pending_action == "discard":
-                ctrl.discard_selected(indices)
-                self._sub_phase = SubPhase.CHOOSE_ACTION
+                ctrl.enter_shop()
+                self._sub_phase = SubPhase.SHOP
+            elif ctrl.phase == GamePhase.GAME_OVER:
+                return
             else:
-                raise ValueError("No pending action to confirm")
+                self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif at == ActionType.SELECTION_CANCEL:
-            self._selected_cards = set()
-            self._pending_action = None
+        elif at == ActionType.DISCARD_SUBSET:
+            indices = subset_indices(decoded.index)
+            if any(idx >= len(state.hand_cards) for idx in indices):
+                raise IndexError(f"Discard subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
+            ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif at == ActionType.USE_CONSUMABLE:
@@ -382,7 +351,6 @@ class BalatroEnv(gymnasium.Env):
             state,
             self._sub_phase,
             selected_cards=self._selected_cards,
-            pending_action=self._pending_action,
             action_mask=mask,
         )
 

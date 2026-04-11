@@ -17,6 +17,7 @@ from .constants import (
     ActionRange,
     SubPhase,
 )
+from .subset_actions import legal_subset_mask
 
 
 def compute_action_mask(
@@ -77,12 +78,14 @@ def _mask_blind_select(mask: np.ndarray, state: RunState) -> None:
 def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
     AR = ActionRange
     hand_size = len(state.hand_cards)
+    forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
+    legal_subsets = legal_subset_mask(hand_size, forced_slots)
 
     if state.current_round.hands_left > 0 and hand_size > 0:
-        mask[AR.PLAY_SELECTION] = 1
+        mask[AR.PLAY_SUBSET_START:AR.PLAY_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     if state.current_round.discards_left > 0 and hand_size > 0:
-        mask[AR.DISCARD_SELECTION] = 1
+        mask[AR.DISCARD_SUBSET_START:AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     # Use consumable if any is usable
     for i, cons in enumerate(state.consumables):
@@ -97,29 +100,9 @@ def _mask_select_cards(
     selected_cards: set[int],
     pending_action: str | None,
 ) -> None:
-    AR = ActionRange
-    hand_size = min(len(state.hand_cards), MAX_HAND_SIZE)
-    forced_slots = {idx for idx, card in enumerate(state.hand_cards[:hand_size]) if card.forced_selection}
-    selected = set(selected_cards)
-    selected_count = len(selected)
-
-    if pending_action not in {"play", "discard"}:
-        return
-
-    for i in range(hand_size):
-        if i in selected:
-            if i not in forced_slots:
-                mask[AR.SELECT_CARD_START + i] = 1
-        elif selected_count < 5:
-            mask[AR.SELECT_CARD_START + i] = 1
-
-    if forced_slots.issubset(selected) and 1 <= selected_count <= 5:
-        if pending_action == "play" and state.current_round.hands_left > 0:
-            mask[AR.SELECTION_CONFIRM] = 1
-        elif pending_action == "discard" and state.current_round.discards_left > 0:
-            mask[AR.SELECTION_CONFIRM] = 1
-
-    mask[AR.SELECTION_CANCEL] = 1
+    # The legacy select_cards phase is intentionally left empty. Hand selection
+    # now happens in one shot via exhaustive play/discard subset actions.
+    _ = (mask, state, selected_cards, pending_action)
 
 
 def _mask_shop(mask: np.ndarray, state: RunState) -> None:

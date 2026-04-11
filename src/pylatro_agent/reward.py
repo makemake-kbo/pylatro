@@ -10,13 +10,12 @@ if TYPE_CHECKING:
 
 WIN_REWARD = 15.0
 LOSS_PENALTY_BASE = -10.0
-LOSS_ANTE_RECOVERY = 1.0
 STALL_EXTRA_PENALTY = 1.5
 
-SCORE_PROGRESS_SCALE = 1.0
-BLIND_CLEAR_REWARD = 0.5
-HANDS_LEFT_BONUS_SCALE = 0.05
-ANTE_ADVANCE_REWARD = 0.5
+SCORE_PROGRESS_SCALE = 0.35
+BLIND_CLEAR_REWARD = 1.25
+HANDS_LEFT_BONUS_SCALE = 0.1
+ANTE_ADVANCE_REWARD = 1.5
 INTEREST_BONUS_SCALE = 0.05
 
 IDLE_PENALTY_BASE = 0.001
@@ -57,10 +56,11 @@ def default_reward_components(
         if won:
             components["terminal"] += WIN_REWARD
         else:
-            ante = state.round_resets.ante
             # Keep terminal outcomes larger than the dense shaping terms so
             # PPO cannot maximize local progress while still losing every run.
-            loss_penalty = LOSS_PENALTY_BASE + min(ante - 1, 5) * LOSS_ANTE_RECOVERY
+            # Do not soften losses just because the run survived longer; that
+            # teaches the agent to preserve itself instead of closing blinds.
+            loss_penalty = LOSS_PENALTY_BASE
             if curr_info.get("stalled", False):
                 loss_penalty -= STALL_EXTRA_PENALTY
             components["terminal"] += loss_penalty

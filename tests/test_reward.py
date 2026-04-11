@@ -29,7 +29,7 @@ def test_default_reward_rewards_round_score_progress() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    expected = (500 / 800) - (100 / 800)
+    expected = ((500 / 800) - (100 / 800)) * 0.35
     assert reward == pytest.approx(expected)
 
 
@@ -50,7 +50,7 @@ def test_default_reward_blind_clear_bonus_stays_modest() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(1.0 + 0.5 + 0.15)
+    assert reward == pytest.approx(0.35 + 1.25 + 0.3)
 
 
 def test_default_reward_gives_idle_grace_before_ramping_penalty() -> None:
@@ -119,6 +119,16 @@ def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     assert ordinary_loss == pytest.approx(-10.0)
     assert stalled_loss == pytest.approx(-11.5)
     assert stalled_loss < ordinary_loss
+
+
+def test_default_reward_loss_penalty_does_not_recover_with_ante() -> None:
+    prev_info = {"ante": 1}
+
+    early_loss = default_reward(_dummy_state(ante=1), prev_info, {"stalled": False}, terminated=True, won=False)
+    later_loss = default_reward(_dummy_state(ante=6), prev_info, {"stalled": False}, terminated=True, won=False)
+
+    assert early_loss == pytest.approx(-10.0)
+    assert later_loss == pytest.approx(-10.0)
 
 
 def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:

@@ -3,7 +3,7 @@
 
 Usage:
     uv run python train.py supervised [--games 1000] [--epochs 5] [--device mps]
-    uv run python train.py ppo [--pretrained PATH] [--steps 200000] [--device mps]
+    uv run python train.py ppo [--pretrained PATH] [--steps 1000000] [--device mps]
     uv run python train.py self_play [--pretrained PATH] [--device mps]
 """
 
@@ -26,19 +26,19 @@ def main():
         default=5,
         help="Minimum ante a heuristic game must reach to be kept for supervised pretraining (default: 5)",
     )
-    parser.add_argument("--steps", type=int, default=200_000, help="PPO total timesteps (default: 200000)")
+    parser.add_argument("--steps", type=int, default=1_000_000, help="PPO total timesteps (default: 1000000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
     parser.add_argument(
         "--rollout-length",
         type=int,
-        default=512,
-        help="PPO rollout length per env before each update (default: 512)",
+        default=256,
+        help="PPO rollout length per env before each update (default: 256)",
     )
     parser.add_argument("--batch", type=int, default=128, help="Batch size (default: 128)")
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO epochs per update (default: 4)")
     parser.add_argument("--pretrained", type=str, default=None, help="Path to pretrained checkpoint")
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
-    parser.add_argument("--lr", type=float, default=2e-5, help="PPO learning rate (default: 2e-5)")
+    parser.add_argument("--lr", type=float, default=1e-4, help="PPO learning rate (default: 1e-4)")
     parser.add_argument("--d-model", type=int, default=512, help="Model dimension (default: 512)")
     parser.add_argument("--n-layers", type=int, default=12, help="Transformer layers (default: 12)")
     parser.add_argument(
@@ -77,8 +77,8 @@ def main():
     parser.add_argument(
         "--target-entropy",
         type=float,
-        default=0.25,
-        help="PPO target normalized entropy ratio in [0, 1] (default: 0.25)",
+        default=0.5,
+        help="PPO target normalized entropy ratio in [0, 1] (default: 0.5)",
     )
     parser.add_argument(
         "--entropy-coeff",

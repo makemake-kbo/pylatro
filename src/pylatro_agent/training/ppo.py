@@ -95,7 +95,7 @@ def _make_vectorized_envs(
 @dataclass
 class PPOConfig:
     num_envs: int = 32
-    rollout_length: int = 512
+    rollout_length: int = 256
     total_timesteps: int = 1_000_000
     ppo_epochs: int = 4
     mini_batch_size: int = 64
@@ -104,7 +104,7 @@ class PPOConfig:
     clip_epsilon: float = 0.1
     entropy_coeff: float = 0.01
     adaptive_entropy: bool = True
-    target_entropy: float = 0.25  # Target normalized entropy ratio in [0, 1]
+    target_entropy: float = 0.5  # Keep broader search in high-branching phases.
     alpha_lr: float = 1e-3
     alpha_min: float = 0.001
     alpha_max: float = 0.2

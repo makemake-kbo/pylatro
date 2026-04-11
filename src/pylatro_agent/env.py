@@ -369,7 +369,8 @@ class BalatroEnv(gymnasium.Env):
             return {}
         state = self._controller.state
         pack_choices_remaining = state.pack.choices_remaining if state.pack is not None else 0
-        shop_item_count = len(state.shop.cards) + len(state.shop.vouchers) + len(state.shop.boosters)
+        shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+        pack_cards = state.pack.cards if state.pack is not None else ()
         return {
             "ante": state.round_resets.ante,
             "round_score": self._round_score,
@@ -382,9 +383,13 @@ class BalatroEnv(gymnasium.Env):
             "in_shop": self._controller.phase == GamePhase.SHOP,
             "phase": self._controller.phase,
             "sub_phase": self._sub_phase,
-            "joker_count": len(state.jokers),
-            "consumable_count": len(state.consumables),
-            "shop_item_count": shop_item_count,
+            "reroll_cost": state.current_round.reroll_cost,
+            "free_rerolls": state.current_round.free_rerolls,
+            "joker_keys": tuple(state.joker_keys),
+            "consumable_keys": tuple(state.consumable_keys),
+            "shop_keys": tuple(item.center_key for item in shop_items),
+            "pack_booster_key": state.pack.booster_key if state.pack is not None else "",
+            "pack_card_keys": tuple(card.center_key for card in pack_cards),
             "pack_choices_remaining": pack_choices_remaining,
         }
 
@@ -399,8 +404,8 @@ class BalatroEnv(gymnasium.Env):
     def _progress_signature(self, info: dict[str, Any]) -> tuple[Any, ...]:
         """Return a compact snapshot used to detect meaningful game progress.
 
-        Selection toggles are intentionally excluded so the agent cannot avoid the
-        inactivity limit by flipping highlighted cards back and forth.
+        Transient sub-phases are intentionally excluded so the agent cannot avoid
+        the inactivity limit by entering and cancelling target-selection flows.
         """
         return (
             info.get("ante", 0),
@@ -411,9 +416,12 @@ class BalatroEnv(gymnasium.Env):
             info.get("discards_left", 0),
             info.get("dollars", 0),
             info.get("phase", ""),
-            info.get("sub_phase", ""),
-            info.get("joker_count", 0),
-            info.get("consumable_count", 0),
-            info.get("shop_item_count", 0),
+            info.get("reroll_cost", 0),
+            info.get("free_rerolls", 0),
+            info.get("joker_keys", ()),
+            info.get("consumable_keys", ()),
+            info.get("shop_keys", ()),
+            info.get("pack_booster_key", ""),
+            info.get("pack_card_keys", ()),
             info.get("pack_choices_remaining", 0),
         )

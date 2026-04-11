@@ -60,7 +60,8 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
     state = runner.state
     ctrl_phase = runner.phase
     pack_cr = state.pack.choices_remaining if state.pack is not None else 0
-    shop_n = len(state.shop.cards) + len(state.shop.vouchers) + len(state.shop.boosters)
+    shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+    pack_cards = state.pack.cards if state.pack is not None else ()
     return {
         "ante": state.round_resets.ante,
         "round_score": runner.round_score,
@@ -73,9 +74,13 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
         "in_shop": ctrl_phase == GamePhase.SHOP,
         "phase": ctrl_phase,
         "sub_phase": runner.sub_phase,
-        "joker_count": len(state.jokers),
-        "consumable_count": len(state.consumables),
-        "shop_item_count": shop_n,
+        "reroll_cost": state.current_round.reroll_cost,
+        "free_rerolls": state.current_round.free_rerolls,
+        "joker_keys": tuple(state.joker_keys),
+        "consumable_keys": tuple(state.consumable_keys),
+        "shop_keys": tuple(item.center_key for item in shop_items),
+        "pack_booster_key": state.pack.booster_key if state.pack is not None else "",
+        "pack_card_keys": tuple(card.center_key for card in pack_cards),
         "pack_choices_remaining": pack_cr,
         "blind_just_beaten": runner.blind_just_beaten,
         "progress_made": False,
@@ -94,10 +99,13 @@ def _info_signature(info: dict[str, Any]) -> tuple[Any, ...]:
         info.get("discards_left", 0),
         info.get("dollars", 0),
         info.get("phase", ""),
-        info.get("sub_phase", ""),
-        info.get("joker_count", 0),
-        info.get("consumable_count", 0),
-        info.get("shop_item_count", 0),
+        info.get("reroll_cost", 0),
+        info.get("free_rerolls", 0),
+        info.get("joker_keys", ()),
+        info.get("consumable_keys", ()),
+        info.get("shop_keys", ()),
+        info.get("pack_booster_key", ""),
+        info.get("pack_card_keys", ()),
         info.get("pack_choices_remaining", 0),
     )
 

@@ -517,7 +517,11 @@ def _mask_consumable(m, state, AR, pending_slot, hand_targets, joker_targets):
 @cython.locals(round_score=cython.int, shop_count=cython.int, pack_choices=cython.int)
 def _progress_signature(state, phase, sub_phase, round_score):
     pack_choices = state.pack.choices_remaining if state.pack is not None else 0
-    shop_count = len(state.shop.cards) + len(state.shop.vouchers) + len(state.shop.boosters)
+    shop_keys = tuple(
+        item.center_key for item in list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+    )
+    pack_booster_key = state.pack.booster_key if state.pack is not None else ""
+    pack_card_keys = tuple(card.center_key for card in state.pack.cards) if state.pack is not None else ()
     return (
         state.round_resets.ante,
         state.blind_on_deck or "",
@@ -527,10 +531,13 @@ def _progress_signature(state, phase, sub_phase, round_score):
         state.current_round.discards_left,
         state.dollars,
         phase,
-        sub_phase,
-        len(state.jokers),
-        len(state.consumables),
-        shop_count,
+        state.current_round.reroll_cost,
+        state.current_round.free_rerolls,
+        tuple(state.joker_keys),
+        tuple(state.consumable_keys),
+        shop_keys,
+        pack_booster_key,
+        pack_card_keys,
         pack_choices,
     )
 

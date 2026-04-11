@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from gymnasium.vector.vector_env import AutoresetMode
 
-from pylatro import load_game_data, populate_shop
+from pylatro import add_consumable, add_joker, load_game_data, populate_shop
 from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.training.ppo import _make_vectorized_envs
@@ -160,6 +160,64 @@ def test_env_play_subset_reports_progress(game_data, vocab):
     assert info["progress_made"]
     assert info["steps_since_progress"] == 0
     assert not info["stalled"]
+
+
+def test_env_consumable_open_cancel_does_not_reset_progress(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=5)
+    env.reset()
+
+    _, _, terminated, truncated, _info = env.step(ActionRange.BLIND_PLAY)
+    assert not terminated
+    assert not truncated
+
+    assert env.state is not None
+    add_consumable(env.state, "c_pluto")
+    obs = env._obs_to_dict(env._build_obs())
+    assert obs["action_mask"][ActionRange.USE_CONSUMABLE] == 1
+
+    _, reward, terminated, truncated, info = env.step(ActionRange.USE_CONSUMABLE)
+    assert not terminated
+    assert not truncated
+    assert reward == pytest.approx(0.0)
+    assert not info["progress_made"]
+    assert info["steps_since_progress"] == 1
+    assert info["sub_phase"] == SubPhase.CONSUMABLE_TARGET
+
+    _, reward, terminated, truncated, info = env.step(ActionRange.CONSUMABLE_CANCEL)
+    assert not terminated
+    assert not truncated
+    assert reward < 0.0
+    assert not info["progress_made"]
+    assert info["steps_since_progress"] == 2
+    assert info["sub_phase"] == SubPhase.CHOOSE_ACTION
+
+
+def test_env_pack_skip_counts_as_progress_and_triggers_red_card(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab)
+    env.reset()
+
+    assert env.state is not None
+    env.state.dollars = 100
+    add_joker(env.state, "j_red_card")
+    populate_shop(env.state)
+    env._controller.phase = GamePhase.SHOP
+    env._sub_phase = SubPhase.SHOP
+
+    booster_offset = len(env.state.shop.cards) + len(env.state.shop.vouchers)
+    buy_action = ActionRange.SHOP_BUY_START + booster_offset
+    _, _, terminated, truncated, info = env.step(buy_action)
+    assert not terminated
+    assert not truncated
+    assert info["progress_made"]
+    assert env._sub_phase == SubPhase.BOOSTER_PACK
+
+    _, _, terminated, truncated, info = env.step(ActionRange.PACK_SKIP)
+    assert not terminated
+    assert not truncated
+    assert info["progress_made"]
+    assert info["steps_since_progress"] == 0
+    assert env._sub_phase == SubPhase.SHOP
+    assert env.state.jokers[0].mult == 3
 
 
 def _first_valid(mask: np.ndarray, start: int, end: int) -> int:

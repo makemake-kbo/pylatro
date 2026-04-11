@@ -10,7 +10,7 @@ MAX_SEQ_LEN = 160
 TOKEN_DIM = 12
 SCALAR_DIM = 8  # reserved for future continuous scalar features
 
-MAX_HAND_SIZE = 12
+MAX_HAND_SIZE = 16
 MAX_JOKER_SLOTS = 8
 MAX_CONSUMABLE_SLOTS = 5
 MAX_SHOP_ITEMS = 10

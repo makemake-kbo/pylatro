@@ -7,7 +7,7 @@ import pytest
 from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import add_consumable, add_joker, load_game_data, populate_shop
-from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
+from pylatro_agent.constants import MAX_HAND_SIZE, NUM_ACTIONS, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.training.ppo import _make_vectorized_envs
 from pylatro_agent.vocab import build_vocab
@@ -36,6 +36,7 @@ def test_env_reset(game_data, vocab):
     assert "selected_cards" in obs
     assert obs["tokens"].shape == (160, 12)
     assert obs["action_mask"].shape == (NUM_ACTIONS,)
+    assert obs["selected_cards"].shape == (MAX_HAND_SIZE,)
     assert info["sub_phase"] == "blind_select"
 
 
@@ -231,5 +232,15 @@ def test_vector_env_uses_same_step_autoreset(game_data, vocab):
 
     try:
         assert vec_env.metadata["autoreset_mode"] == AutoresetMode.SAME_STEP
+    finally:
+        vec_env.close()
+
+
+def test_async_vector_env_reset_matches_declared_selected_card_shape(game_data, vocab):
+    vec_env = _make_vectorized_envs(2, game_data, vocab, use_async=True)
+
+    try:
+        obs, _info = vec_env.reset()
+        assert obs["selected_cards"].shape == (2, MAX_HAND_SIZE)
     finally:
         vec_env.close()

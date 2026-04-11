@@ -27,6 +27,7 @@ from .constants import (
     HAND_LEVEL_START,
     JOKER_MAX,
     JOKER_START,
+    MAX_HAND_SIZE,
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
@@ -60,7 +61,7 @@ class RawObservation:
     scalars: np.ndarray  # (SCALAR_DIM,), float32
     attention_mask: np.ndarray  # (MAX_SEQ_LEN,), int8
     action_mask: np.ndarray  # (NUM_ACTIONS,), int8
-    selected_cards: np.ndarray  # (12,), int8
+    selected_cards: np.ndarray  # (MAX_HAND_SIZE,), int8
 
 
 @dataclass
@@ -95,7 +96,7 @@ class Tokenizer:
         token_types = np.full(MAX_SEQ_LEN, TokenType.PAD, dtype=np.int8)
         attn_mask = np.zeros(MAX_SEQ_LEN, dtype=np.int8)
         scalars = np.zeros(SCALAR_DIM, dtype=np.float32)
-        sel_cards = np.zeros(12, dtype=np.int8)
+        sel_cards = np.zeros(MAX_HAND_SIZE, dtype=np.int8)
 
         if selected_cards is None:
             selected_cards = set()
@@ -206,7 +207,7 @@ class Tokenizer:
             attn_mask[pos + i] = 1
 
         for idx in selected_cards:
-            if idx < 12:
+            if idx < MAX_HAND_SIZE:
                 sel_cards[idx] = 1
 
         if action_mask is None:

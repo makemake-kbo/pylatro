@@ -4,12 +4,15 @@ import numpy as np
 import pytest
 import torch
 
+from pylatro_agent.constants import ActionRange, NUM_ACTIONS
 from pylatro_agent.training.ppo import (
     _entropy_alpha_loss,
     _extract_step_info_value,
     _make_alpha_optimizer,
     _make_policy_optimizer,
+    _mean_normalized_action_type_entropy,
     _mean_normalized_entropy,
+    _mean_valid_action_type_count,
     _smoothed_entropy_signal,
 )
 
@@ -95,6 +98,48 @@ def test_mean_normalized_entropy_is_zero_when_only_one_action_is_valid() -> None
     normalized = _mean_normalized_entropy(entropy, action_mask)
 
     assert normalized.item() == pytest.approx(0.0)
+
+
+def test_mean_normalized_action_type_entropy_is_one_for_uniform_type_mass() -> None:
+    probs = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
+    mask = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
+    probs[0, ActionRange.SHOP_BUY_START] = 0.25
+    probs[0, ActionRange.SHOP_BUY_START + 1] = 0.25
+    probs[0, ActionRange.SHOP_LEAVE] = 0.5
+    mask[0, ActionRange.SHOP_BUY_START] = 1.0
+    mask[0, ActionRange.SHOP_BUY_START + 1] = 1.0
+    mask[0, ActionRange.SHOP_LEAVE] = 1.0
+
+    normalized = _mean_normalized_action_type_entropy(probs, mask)
+
+    assert normalized.item() == pytest.approx(1.0)
+
+
+def test_mean_normalized_action_type_entropy_is_zero_with_one_valid_type() -> None:
+    probs = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
+    mask = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
+    probs[0, ActionRange.PLAY_SUBSET_START] = 0.6
+    probs[0, ActionRange.PLAY_SUBSET_START + 1] = 0.4
+    mask[0, ActionRange.PLAY_SUBSET_START] = 1.0
+    mask[0, ActionRange.PLAY_SUBSET_START + 1] = 1.0
+
+    normalized = _mean_normalized_action_type_entropy(probs, mask)
+
+    assert normalized.item() == pytest.approx(0.0)
+
+
+def test_mean_valid_action_type_count_counts_distinct_types() -> None:
+    mask = torch.zeros((2, NUM_ACTIONS), dtype=torch.float32)
+    mask[0, ActionRange.SHOP_BUY_START] = 1.0
+    mask[0, ActionRange.SHOP_REROLL] = 1.0
+    mask[0, ActionRange.SHOP_LEAVE] = 1.0
+    mask[1, ActionRange.PLAY_SUBSET_START] = 1.0
+    mask[1, ActionRange.PLAY_SUBSET_START + 1] = 1.0
+    mask[1, ActionRange.DISCARD_SUBSET_START] = 1.0
+
+    mean_count = _mean_valid_action_type_count(mask)
+
+    assert mean_count == pytest.approx(2.5)
 
 
 def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:

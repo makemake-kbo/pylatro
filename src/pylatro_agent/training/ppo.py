@@ -25,6 +25,12 @@ from .rollout_buffer import RolloutBuffer
 
 logger = logging.getLogger(__name__)
 _MISSING = object()
+_ACTION_TYPES = tuple(ActionType)
+_ACTION_TYPE_TO_INDEX = {action_type: idx for idx, action_type in enumerate(_ACTION_TYPES)}
+_ACTION_ID_TO_TYPE_INDEX = torch.tensor(
+    [_ACTION_TYPE_TO_INDEX[decode_action(action_id).action_type] for action_id in range(NUM_ACTIONS)],
+    dtype=torch.long,
+)
 
 
 def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
@@ -105,10 +111,11 @@ class PPOConfig:
     entropy_coeff: float = 0.01
     adaptive_entropy: bool = True
     target_entropy: float = 0.5  # Keep broader search in high-branching phases.
-    alpha_lr: float = 1e-3
+    alpha_lr: float = 1e-2
     alpha_min: float = 0.001
     alpha_max: float = 0.2
     entropy_ema_beta: float = 0.6
+    action_type_entropy_scale: float = 0.5
     value_loss_coeff: float = 0.25
     max_grad_norm: float = 0.5
     lr: float = 1e-4
@@ -174,6 +181,54 @@ def _mean_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch
         torch.zeros_like(entropy_per_state),
     )
     return normalized_entropy.mean()
+
+
+def _mean_normalized_action_type_entropy(action_probs: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
+    """Return mean entropy over action types, normalized by valid type count.
+
+    This complements flat action entropy in highly imbalanced spaces where a
+    few action families contain most of the valid actions.
+    """
+    type_index = _ACTION_ID_TO_TYPE_INDEX.to(device=action_probs.device)
+    expanded_type_index = type_index.unsqueeze(0).expand(action_probs.shape[0], -1)
+
+    type_probs = torch.zeros(
+        action_probs.shape[0],
+        len(_ACTION_TYPES),
+        dtype=action_probs.dtype,
+        device=action_probs.device,
+    )
+    type_probs.scatter_add_(1, expanded_type_index, action_probs)
+
+    valid_action_mask = (action_mask > 0).to(action_probs.dtype)
+    valid_type_counts = torch.zeros_like(type_probs)
+    valid_type_counts.scatter_add_(1, expanded_type_index, valid_action_mask)
+    valid_type_counts = (valid_type_counts > 0).sum(dim=-1).to(action_probs.dtype)
+
+    safe_type_probs = type_probs.clamp_min(1e-12)
+    type_entropy = -(safe_type_probs * safe_type_probs.log()).sum(dim=-1)
+    max_type_entropy = torch.log(valid_type_counts.clamp_min(2.0))
+    normalized_type_entropy = torch.where(
+        valid_type_counts > 1.0,
+        type_entropy / max_type_entropy,
+        torch.zeros_like(type_entropy),
+    )
+    return normalized_type_entropy.mean()
+
+
+def _mean_valid_action_type_count(action_mask: torch.Tensor) -> float:
+    """Return the mean number of valid action types in a batch."""
+    type_index = _ACTION_ID_TO_TYPE_INDEX.to(device=action_mask.device)
+    expanded_type_index = type_index.unsqueeze(0).expand(action_mask.shape[0], -1)
+    valid_action_mask = (action_mask > 0).to(action_mask.dtype)
+    valid_type_counts = torch.zeros(
+        action_mask.shape[0],
+        len(_ACTION_TYPES),
+        dtype=action_mask.dtype,
+        device=action_mask.device,
+    )
+    valid_type_counts.scatter_add_(1, expanded_type_index, valid_action_mask)
+    return float((valid_type_counts > 0).sum(dim=-1).float().mean().item())
 
 
 def _extract_vector_info_value(info_dict: dict, key: str, env_idx: int, default=None):
@@ -263,6 +318,8 @@ def train_ppo(
         raise ValueError("lr must be positive")
     if config.entropy_coeff < 0.0:
         raise ValueError("entropy_coeff must be non-negative")
+    if config.action_type_entropy_scale < 0.0:
+        raise ValueError("action_type_entropy_scale must be non-negative")
     if config.adaptive_entropy:
         if config.entropy_coeff <= 0.0:
             raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
@@ -338,6 +395,7 @@ def train_ppo(
     logger.info(
         "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "
         "ppo_epochs=%d, lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
+        "target_entropy=%.3f, alpha_lr=%.2e, action_type_entropy_scale=%.2f, "
         "max_no_progress_steps=%d, log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
         config.total_timesteps,
         steps_per_update,
@@ -346,6 +404,9 @@ def train_ppo(
         config.lr,
         config.entropy_coeff,
         config.adaptive_entropy,
+        config.target_entropy,
+        config.alpha_lr,
+        config.action_type_entropy_scale,
         config.max_no_progress_steps,
         config.log_interval,
         config.checkpoint_interval,
@@ -540,9 +601,11 @@ def train_ppo(
         update_value_losses = []
         update_entropies = []
         update_normalized_entropies = []
+        update_action_type_entropies = []
         update_clip_fracs = []
         update_approx_kls = []
         update_valid_action_counts = []
+        update_valid_action_type_counts = []
 
         for _ppo_epoch in range(config.ppo_epochs):
             batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
@@ -559,6 +622,8 @@ def train_ppo(
                 entropy = entropy_per_state.mean()
                 valid_action_counts = batch["action_mask"].sum(dim=-1)
                 normalized_entropy = _mean_normalized_entropy(entropy_per_state, batch["action_mask"])
+                normalized_action_type_entropy = _mean_normalized_action_type_entropy(dist.probs, batch["action_mask"])
+                valid_action_type_count_mean = _mean_valid_action_type_count(batch["action_mask"])
 
                 # Policy loss (clipped PPO)
                 ratio = torch.exp(new_log_probs - batch["old_log_probs"])
@@ -575,7 +640,12 @@ def train_ppo(
                 # Align the entropy bonus with the controller signal.
                 # Using raw entropy here over-rewards high-branching phases
                 # like card selection, where the max entropy is much larger.
-                loss = policy_loss + config.value_loss_coeff * value_loss - entropy_coeff * normalized_entropy
+                loss = (
+                    policy_loss
+                    + config.value_loss_coeff * value_loss
+                    - entropy_coeff
+                    * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
+                )
                 (loss / accum_steps).backward()
 
                 # Step every accum_steps micro-batches (or on last batch)
@@ -592,9 +662,11 @@ def train_ppo(
                 update_value_losses.append(value_loss.item())
                 update_entropies.append(entropy.item())
                 update_normalized_entropies.append(normalized_entropy.item())
+                update_action_type_entropies.append(normalized_action_type_entropy.item())
                 update_clip_fracs.append(clip_frac)
                 update_approx_kls.append(approx_kl)
                 update_valid_action_counts.append(valid_action_count_mean)
+                update_valid_action_type_counts.append(valid_action_type_count_mean)
 
         # Track the normalized entropy signal every update, even with fixed entropy.
         mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -621,11 +693,24 @@ def train_ppo(
         writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
         writer.add_scalar("ppo/entropy", mean_entropy, update_count)
         writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
+        writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
         writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
         writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
         writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
+        writer.add_scalar("ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
         writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_normalized_entropy, update_count)
+        writer.add_scalar(
+            "ppo/action_type_entropy_bonus",
+            entropy_coeff * config.action_type_entropy_scale * np.mean(update_action_type_entropies),
+            update_count,
+        )
+        writer.add_scalar(
+            "ppo/entropy_bonus_total",
+            entropy_coeff
+            * (mean_normalized_entropy + config.action_type_entropy_scale * np.mean(update_action_type_entropies)),
+            update_count,
+        )
         writer.add_scalar("ppo/entropy_bonus_raw", entropy_coeff * mean_entropy, update_count)
         writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
         writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)

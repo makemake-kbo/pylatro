@@ -93,6 +93,18 @@ def main():
         help="EMA smoothing for PPO entropy control signal (default: 0.6)",
     )
     parser.add_argument(
+        "--alpha-lr",
+        type=float,
+        default=1e-2,
+        help="Learning rate for adaptive entropy coefficient updates (default: 1e-2)",
+    )
+    parser.add_argument(
+        "--action-type-entropy-scale",
+        type=float,
+        default=0.5,
+        help="Extra PPO bonus scale for normalized entropy over action types (default: 0.5)",
+    )
+    parser.add_argument(
         "--no-adaptive-entropy",
         action="store_true",
         help="Disable adaptive entropy tuning and keep entropy coefficient fixed",
@@ -153,6 +165,8 @@ def main():
                 adaptive_entropy=not args.no_adaptive_entropy,
                 target_entropy=args.target_entropy,
                 entropy_ema_beta=args.entropy_ema_beta,
+                alpha_lr=args.alpha_lr,
+                action_type_entropy_scale=args.action_type_entropy_scale,
                 async_envs=not args.sync_envs,
             ),
             agent_config=agent_config,

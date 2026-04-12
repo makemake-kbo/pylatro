@@ -21,6 +21,10 @@ class BoosterPackScreen(Screen):
         Binding("l", "cursor_right", "Right", show=False),
         Binding("left", "cursor_left", "Left", show=False),
         Binding("right", "cursor_right", "Right", show=False),
+        Binding("up", "cursor_up", "Up", show=False),
+        Binding("down", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+        Binding("j", "cursor_down", "Down", show=False),
         Binding("enter", "claim", "Claim"),
         Binding("escape", "skip_pack", "Skip"),
     ]
@@ -113,6 +117,15 @@ class BoosterPackScreen(Screen):
             self.cursor -= 1
 
     def action_cursor_right(self) -> None:
+        state = self.app.controller.state
+        if state and state.pack and self.cursor < len(state.pack.cards) - 1:
+            self.cursor += 1
+
+    def action_cursor_up(self) -> None:
+        if self.cursor > 0:
+            self.cursor -= 1
+
+    def action_cursor_down(self) -> None:
         state = self.app.controller.state
         if state and state.pack and self.cursor < len(state.pack.cards) - 1:
             self.cursor += 1

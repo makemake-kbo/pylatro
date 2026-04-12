@@ -554,6 +554,7 @@ def train_ppo(
                     "reward_total",
                     "reward_terminal",
                     "reward_score_progress",
+                    "reward_pressure_progress",
                     "reward_blind_clear",
                     "reward_hands_bonus",
                     "reward_ante_bonus",

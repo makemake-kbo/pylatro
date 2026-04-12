@@ -12,7 +12,9 @@ WIN_REWARD = 15.0
 LOSS_PENALTY_BASE = -10.0
 STALL_EXTRA_PENALTY = 1.5
 
-SCORE_PROGRESS_SCALE = 0.35
+SCORE_PROGRESS_SCALE = 0.25
+PRESSURE_PROGRESS_SCALE = 3.0
+DISCARD_RESOURCE_WEIGHT = 0.5
 BLIND_CLEAR_REWARD = 1.25
 HANDS_LEFT_BONUS_SCALE = 0.1
 ANTE_ADVANCE_REWARD = 1.5
@@ -34,6 +36,35 @@ class RewardFn(Protocol):
     ) -> float: ...
 
 
+def _blind_pressure(info: dict, *, cleared_blind: bool = False) -> float | None:
+    """Return a normalized measure of how hard the current blind is to finish.
+
+    Lower is better. The metric compares the fraction of blind score still
+    needed against the number of scoring resources left. This gives PPO a
+    signal for whether a discard or weak hand improved the situation, instead
+    of only paying for raw score deltas after the fact.
+    """
+    if cleared_blind:
+        return 0.0
+
+    blind_target = float(info.get("blind_target", 0))
+    if blind_target <= 0.0:
+        return None
+
+    phase = info.get("phase", "")
+    if str(phase) != "hand_play":
+        return None
+
+    hands_left = info.get("hands_left")
+    discards_left = info.get("discards_left")
+    if hands_left is None or discards_left is None:
+        return None
+
+    remaining_fraction = max(blind_target - float(info.get("round_score", 0)), 0.0) / blind_target
+    effective_resources = max(float(hands_left) + DISCARD_RESOURCE_WEIGHT * float(discards_left), 1.0)
+    return remaining_fraction / effective_resources
+
+
 def default_reward_components(
     state: RunState,
     prev_info: dict,
@@ -45,6 +76,7 @@ def default_reward_components(
     components = {
         "terminal": 0.0,
         "score_progress": 0.0,
+        "pressure_progress": 0.0,
         "blind_clear": 0.0,
         "hands_bonus": 0.0,
         "ante_bonus": 0.0,
@@ -77,6 +109,14 @@ def default_reward_components(
     curr_progress = min(curr_score / blind_target, 1.0)
     if curr_progress > prev_progress:
         components["score_progress"] += SCORE_PROGRESS_SCALE * (curr_progress - prev_progress)
+
+    prev_pressure = _blind_pressure(prev_info)
+    curr_pressure = _blind_pressure(
+        curr_info,
+        cleared_blind=bool(curr_info.get("blind_just_beaten", False)),
+    )
+    if prev_pressure is not None and curr_pressure is not None:
+        components["pressure_progress"] += PRESSURE_PROGRESS_SCALE * (prev_pressure - curr_pressure)
 
     if curr_info.get("blind_just_beaten", False):
         components["blind_clear"] += BLIND_CLEAR_REWARD

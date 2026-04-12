@@ -107,8 +107,7 @@ class ConsumableTargetScreen(Screen):
                 t.append(prefix)
 
             t.append(f"{marker} ", style=BALATRO_PALETTE["card_selected"] if is_selected else "#95a5a6")
-            r = "10" if card.rank == "T" else card.rank
-            t.append(f"{r}{sym}", style="#ecf0f1")
+            t.append(f"{card.rank}{sym}", style="#ecf0f1")
             t.append("\n")
 
         self.query_one("#target-cards-display", Static).update(t)

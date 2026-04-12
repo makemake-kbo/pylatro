@@ -51,7 +51,7 @@ class PlayingCardWidget(Widget):
 
         suit_color = SUIT_COLORS.get(card.suit, "#ecf0f1")
         suit_sym = SUIT_SYMBOLS.get(card.suit, "?")
-        rank = "10" if card.rank == "T" else card.rank
+        rank = card.rank
 
         # Border characters
         if self.selected:

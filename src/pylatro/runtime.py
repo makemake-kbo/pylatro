@@ -379,6 +379,31 @@ def apply_end_of_round(state: RunState, *, game_over: bool = False) -> dict[str,
 
     for joker in to_remove:
         remove_joker(state, joker)
+
+    blind = state.round_resets.blind or {}
+    blind_type = None
+    for bt in ("Small", "Big", "Boss"):
+        if state.round_resets.blind_states.get(bt) == "Defeated":
+            blind_type = bt
+            break
+
+    no_reward_blinds = state.modifiers.get("no_blind_reward", {})
+    if not isinstance(no_reward_blinds, dict):
+        no_reward_blinds = {}
+    if blind_type and not no_reward_blinds.get(blind_type):
+        base_reward = int(blind.get("dollars", 0))
+        results["dollars"] = int(results["dollars"]) + base_reward
+
+    hands_left = max(0, state.current_round.hands_left)
+    money_per_hand = int(state.modifiers.get("money_per_hand", 1))
+    results["dollars"] = int(results["dollars"]) + hands_left * money_per_hand
+
+    if not state.modifiers.get("no_interest"):
+        interest_rate = state.interest_amount
+        interest_cap = state.interest_cap
+        interest = min(floor(state.dollars / 5), floor(interest_cap / interest_rate)) * interest_rate
+        results["dollars"] = int(results["dollars"]) + max(0, interest)
+
     dollars = int(results["dollars"])
     if dollars:
         state.dollars += dollars

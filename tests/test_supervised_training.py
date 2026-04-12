@@ -6,6 +6,7 @@ collation, and a minimal end-to-end supervised training run.
 
 from __future__ import annotations
 
+import pickle
 import time
 from unittest.mock import patch
 
@@ -20,6 +21,7 @@ from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.training import fast_generate
 from pylatro_agent.training.fast_generate import (
     _format_eta,
+    _load_worker_records,
     _run_game_fast_no_obs,
     _run_game_single_pass,
 )
@@ -247,6 +249,15 @@ class TestDataGeneration:
         elapsed = time.monotonic() - t0
         assert elapsed < 30, f"Generation took {elapsed:.1f}s, expected < 30s"
         assert len(records) > 0
+
+    def test_load_worker_records_reads_multiple_pickled_chunks(self, tmp_path):
+        path = tmp_path / "worker.pkl"
+        expected = [{"action": 1}, {"action": 2}, {"action": 3}]
+        with open(path, "wb") as f:
+            pickle.dump(expected[:2], f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(expected[2:], f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        assert _load_worker_records(str(path)) == expected
 
 
 # ── Collation tests ──

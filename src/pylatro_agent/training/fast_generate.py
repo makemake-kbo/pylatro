@@ -14,6 +14,8 @@ import logging
 import math
 import multiprocessing
 import os
+import pickle
+import tempfile
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -37,14 +39,33 @@ _shared_counter: Any = None
 _shared_total_attempted: Any = None
 _shared_busy: Any = None
 _shared_target: int = 0
+_shared_result_dir: str | None = None
 
 
-def _init_worker(counter: Any, total_attempted: Any, busy: Any, target: int) -> None:
-    global _shared_counter, _shared_total_attempted, _shared_busy, _shared_target
+def _init_worker(
+    counter: Any,
+    total_attempted: Any,
+    busy: Any,
+    target: int,
+    result_dir: str | None = None,
+) -> None:
+    global _shared_counter, _shared_total_attempted, _shared_busy, _shared_target, _shared_result_dir
     _shared_counter = counter
     _shared_total_attempted = total_attempted
     _shared_busy = busy
     _shared_target = target
+    _shared_result_dir = result_dir
+
+
+def _load_worker_records(path: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    with open(path, "rb") as f:
+        while True:
+            try:
+                records.extend(pickle.load(f))
+            except EOFError:
+                break
+    return records
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -223,7 +244,7 @@ def _run_game_fast_no_obs(
     return runner.max_ante, runner.won
 
 
-def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
+def _generate_games_worker(args: tuple) -> list[dict[str, Any]] | str:
     seed_start, min_ante, gamma = args
     data = load_game_data()
     vocab = build_vocab(data)
@@ -232,67 +253,90 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     seed = seed_start
     games_since_gc = 0
+    result_path: str | None = None
+    result_file: Any = None
 
-    while True:
-        with _shared_counter.get_lock():
-            if _shared_counter.value >= _shared_target:
-                break
+    if _shared_result_dir is not None:
+        fd, result_path = tempfile.mkstemp(
+            prefix=f"fast-generate-{os.getpid()}-",
+            suffix=".pkl",
+            dir=_shared_result_dir,
+        )
+        os.close(fd)
+        result_file = open(result_path, "wb")
 
-        if min_ante > 2:
-            max_ante, won = _run_game_fast_no_obs(seed, data, agent)
-            with _shared_total_attempted.get_lock():
-                _shared_total_attempted.value += 1
-            seed += 1
-            games_since_gc += 1
-            if max_ante < min_ante and not won:
-                if games_since_gc >= 500:
-                    gc.collect()
-                    games_since_gc = 0
-                continue
+    def flush_records(chunk: list[dict[str, Any]]) -> None:
+        if not chunk:
+            return
+        if result_file is None:
+            records.extend(chunk)
+            return
+        pickle.dump(chunk, result_file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    try:
+        while True:
             with _shared_counter.get_lock():
                 if _shared_counter.value >= _shared_target:
                     break
-                _shared_counter.value += 1
-            with _shared_busy.get_lock():
-                _shared_busy.value += 1
-            game_records, _, _ = _run_game_single_pass(
-                seed - 1,
-                data,
-                tokenizer,
-                agent,
-                gamma,
-            )
-            with _shared_busy.get_lock():
-                _shared_busy.value -= 1
-            records.extend(game_records)
-            gc.collect()
-            games_since_gc = 0
-        else:
-            with _shared_counter.get_lock():
-                if _shared_counter.value >= _shared_target:
-                    break
-                _shared_counter.value += 1
-            with _shared_total_attempted.get_lock():
-                _shared_total_attempted.value += 1
-            with _shared_busy.get_lock():
-                _shared_busy.value += 1
-            game_records, _, _ = _run_game_single_pass(
-                seed,
-                data,
-                tokenizer,
-                agent,
-                gamma,
-            )
-            with _shared_busy.get_lock():
-                _shared_busy.value -= 1
-            seed += 1
-            records.extend(game_records)
-            games_since_gc += 1
-            if games_since_gc >= 50:
+
+            if min_ante > 2:
+                max_ante, won = _run_game_fast_no_obs(seed, data, agent)
+                with _shared_total_attempted.get_lock():
+                    _shared_total_attempted.value += 1
+                seed += 1
+                games_since_gc += 1
+                if max_ante < min_ante and not won:
+                    if games_since_gc >= 500:
+                        gc.collect()
+                        games_since_gc = 0
+                    continue
+                with _shared_counter.get_lock():
+                    if _shared_counter.value >= _shared_target:
+                        break
+                    _shared_counter.value += 1
+                with _shared_busy.get_lock():
+                    _shared_busy.value += 1
+                game_records, _, _ = _run_game_single_pass(
+                    seed - 1,
+                    data,
+                    tokenizer,
+                    agent,
+                    gamma,
+                )
+                with _shared_busy.get_lock():
+                    _shared_busy.value -= 1
+                flush_records(game_records)
                 gc.collect()
                 games_since_gc = 0
+            else:
+                with _shared_counter.get_lock():
+                    if _shared_counter.value >= _shared_target:
+                        break
+                    _shared_counter.value += 1
+                with _shared_total_attempted.get_lock():
+                    _shared_total_attempted.value += 1
+                with _shared_busy.get_lock():
+                    _shared_busy.value += 1
+                game_records, _, _ = _run_game_single_pass(
+                    seed,
+                    data,
+                    tokenizer,
+                    agent,
+                    gamma,
+                )
+                with _shared_busy.get_lock():
+                    _shared_busy.value -= 1
+                seed += 1
+                flush_records(game_records)
+                games_since_gc += 1
+                if games_since_gc >= 50:
+                    gc.collect()
+                    games_since_gc = 0
+    finally:
+        if result_file is not None:
+            result_file.close()
 
-    return records
+    return records if result_path is None else result_path
 
 
 def _get_num_workers(num_workers: int) -> int:
@@ -353,7 +397,9 @@ def _progress_reporter(
         else:
             eta_str = "--"
 
-        status = "collecting" if valid >= target and busy_count > 0 else ""
+        status = ""
+        if valid >= target:
+            status = "collecting" if busy_count > 0 else "finalizing"
         busy_str = f" | single_pass: {busy_count}" if busy_count > 0 else ""
         status_str = f" | {status}" if status else ""
 
@@ -398,11 +444,12 @@ def generate_training_data(
     stop_event = threading.Event()
 
     if num_workers == 1:
-        global _shared_counter, _shared_total_attempted, _shared_busy, _shared_target
+        global _shared_counter, _shared_total_attempted, _shared_busy, _shared_target, _shared_result_dir
         _shared_counter = multiprocessing.Value("i", 0)
         _shared_total_attempted = multiprocessing.Value("i", 0)
         _shared_busy = multiprocessing.Value("i", 0)
         _shared_target = num_games
+        _shared_result_dir = None
         progress_thread = threading.Thread(
             target=_progress_reporter,
             args=(_shared_counter, _shared_total_attempted, _shared_busy, num_games, stop_event),
@@ -421,17 +468,21 @@ def generate_training_data(
         )
         progress_thread.start()
         t_pool_start = time.monotonic()
-        with multiprocessing.Pool(
-            num_workers,
-            initializer=_init_worker,
-            initargs=(counter, total_attempted, busy, num_games),
-        ) as pool:
-            results = pool.map(_generate_games_worker, worker_args)
-        t_pool_elapsed = time.monotonic() - t_pool_start
-        logger.info("Pool.map completed in %.1fs, collecting results", t_pool_elapsed)
-        records = []
-        for r in results:
-            records.extend(r)
+        with tempfile.TemporaryDirectory(prefix="pylatro-fast-generate-") as result_dir:
+            with multiprocessing.Pool(
+                num_workers,
+                initializer=_init_worker,
+                initargs=(counter, total_attempted, busy, num_games, result_dir),
+            ) as pool:
+                results = pool.map(_generate_games_worker, worker_args)
+            t_pool_elapsed = time.monotonic() - t_pool_start
+            logger.info("Pool.map completed in %.1fs, loading worker tempfiles", t_pool_elapsed)
+            records = []
+            for result_path in results:
+                if not isinstance(result_path, str):
+                    records.extend(result_path)
+                    continue
+                records.extend(_load_worker_records(result_path))
 
     stop_event.set()
     progress_thread.join(timeout=5)

@@ -225,7 +225,7 @@ class GameController:
     def card_display_info(self, card: PlayingCard) -> dict:
         """Return display-friendly info for a playing card."""
         return {
-            "rank": card.rank,
+            "rank": "10" if card.rank == "T" else card.rank,
             "suit": card.suit,
             "debuff": card.debuff,
             "face_down": card.face_down,

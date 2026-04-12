@@ -108,12 +108,14 @@ class RunInfoScreen(Screen):
         deck_text.append("\n")
 
         # Count by rank
-        rank_order = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"]
+        rank_order = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"]
+        rank_labels = {"T": "10"}
         rank_counts = Counter(c.rank for c in state.deck_cards)
         for rank in rank_order:
             count = rank_counts.get(rank, 0)
             if count > 0:
-                deck_text.append(f"  {rank:>3}: ", style="#95a5a6")
+                label = rank_labels.get(rank, rank)
+                deck_text.append(f"  {label:>3}: ", style="#95a5a6")
                 deck_text.append(f"{count}\n", style="#ecf0f1")
 
         self.query_one("#deck-panel", Static).update(deck_text)

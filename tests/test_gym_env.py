@@ -179,7 +179,7 @@ def test_env_consumable_open_cancel_does_not_reset_progress(game_data, vocab):
     _, reward, terminated, truncated, info = env.step(ActionRange.USE_CONSUMABLE)
     assert not terminated
     assert not truncated
-    assert reward == pytest.approx(0.0)
+    assert reward < 0.0
     assert not info["progress_made"]
     assert info["steps_since_progress"] == 1
     assert info["sub_phase"] == SubPhase.CONSUMABLE_TARGET

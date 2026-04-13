@@ -23,6 +23,8 @@ INTEREST_BONUS_SCALE = 0.05
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
 IDLE_PENALTY_CAP = 0.02
+CONSUMABLE_TARGET_IDLE_MULT = 3.0
+CONSUMABLE_TARGET_IDLE_CAP = 0.05
 
 
 class RewardFn(Protocol):
@@ -128,13 +130,15 @@ def default_reward_components(
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         components["interest_bonus"] += INTEREST_BONUS_SCALE * min(interest_tier, 5)
 
-    # Only penalize idle steps outside mandatory selection phases
-    # (card toggles and consumable targeting are necessary, not idle)
-    in_selection = curr_info.get("sub_phase", "") in ("select_cards", "consumable_target")
-    if not curr_info.get("progress_made", False) and not in_selection:
+    if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
         idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
-        components["idle_penalty"] -= min(idle_penalty, IDLE_PENALTY_CAP)
+        if curr_info.get("sub_phase", "") == "consumable_target":
+            idle_penalty *= CONSUMABLE_TARGET_IDLE_MULT
+            idle_penalty = min(idle_penalty, CONSUMABLE_TARGET_IDLE_CAP)
+        else:
+            idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
+        components["idle_penalty"] -= idle_penalty
 
     components["total"] = sum(components.values())
     return components

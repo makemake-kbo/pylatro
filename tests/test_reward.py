@@ -153,6 +153,26 @@ def test_default_reward_gives_idle_grace_before_ramping_penalty() -> None:
     assert reward == pytest.approx(-0.001)
 
 
+def test_default_reward_penalizes_idle_consumable_target_more_aggressively() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 1,
+        "sub_phase": "consumable_target",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-0.003)
+
+
 def test_default_reward_ramps_idle_penalty_after_grace_window() -> None:
     state = _dummy_state()
     prev_info = {
@@ -170,6 +190,26 @@ def test_default_reward_ramps_idle_penalty_after_grace_window() -> None:
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
     assert reward == pytest.approx(-(0.001 + (20 - 8) * 0.0005))
+
+
+def test_default_reward_caps_consumable_target_idle_penalty_separately() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 200,
+        "sub_phase": "consumable_target",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-0.05)
 
 
 def test_default_reward_caps_idle_penalty() -> None:

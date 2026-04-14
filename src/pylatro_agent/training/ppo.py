@@ -105,7 +105,7 @@ class PPOConfig:
     total_timesteps: int = 1_000_000
     ppo_epochs: int = 4
     mini_batch_size: int = 64
-    gamma: float = 0.995
+    gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1
     entropy_coeff: float = 0.01

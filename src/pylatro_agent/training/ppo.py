@@ -25,6 +25,39 @@ from .rollout_buffer import RolloutBuffer
 
 logger = logging.getLogger(__name__)
 _MISSING = object()
+
+
+class RunningMeanStd:
+    """Welford's online algorithm for tracking mean/variance of a stream."""
+
+    def __init__(self, epsilon: float = 1e-8) -> None:
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = epsilon
+
+    def update(self, x: np.ndarray) -> None:
+        batch_mean = float(np.mean(x))
+        batch_var = float(np.var(x))
+        batch_count = x.shape[0]
+        delta = batch_mean - self.mean
+        total_count = self.count + batch_count
+        new_mean = self.mean + delta * batch_count / total_count
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        m2 = m_a + m_b + delta**2 * self.count * batch_count / total_count
+        self.mean = new_mean
+        self.var = m2 / total_count
+        self.count = total_count
+
+    @property
+    def std(self) -> float:
+        return float(np.sqrt(self.var + 1e-8))
+
+    def normalize(self, x: np.ndarray) -> np.ndarray:
+        return (x - self.mean) / self.std
+
+    def denormalize(self, x: np.ndarray) -> np.ndarray:
+        return x * self.std + self.mean
 _ACTION_TYPES = tuple(ActionType)
 _ACTION_TYPE_TO_INDEX = {action_type: idx for idx, action_type in enumerate(_ACTION_TYPES)}
 _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
@@ -128,6 +161,7 @@ class PPOConfig:
     eval_games: int = 10
     max_no_progress_steps: int = 256
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
+    normalize_returns: bool = True  # Running mean/std normalization for value targets
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
 
 
@@ -428,6 +462,7 @@ def train_ppo(
     else:
         log_alpha = None
         alpha_optimizer = None
+    return_rms = RunningMeanStd() if config.normalize_returns else None
     entropy_signal_ema: float | None = None
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
@@ -477,6 +512,8 @@ def train_ppo(
             actions_np = actions.cpu().numpy()
             log_probs_np = log_probs.cpu().numpy()
             values_np = values.cpu().numpy()
+            if return_rms is not None:
+                values_np = return_rms.denormalize(values_np)
             chosen_action_probs_np = chosen_action_probs.cpu().numpy()
             max_action_probs_np = max_action_probs.cpu().numpy()
 
@@ -498,9 +535,10 @@ def train_ppo(
                             final_obs_batch["attention_mask"],
                             final_obs_batch["action_mask"],
                         )
-                    bootstrap_values_np[np.asarray(truncated_indices, dtype=np.int64)] = (
-                        truncated_value_dict["expected_score"].cpu().numpy()
-                    )
+                    truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
+                    if return_rms is not None:
+                        truncated_vals = return_rms.denormalize(truncated_vals)
+                    bootstrap_values_np[np.asarray(truncated_indices, dtype=np.int64)] = truncated_vals
 
             # Store transition (using pre-step obs from obs_buf)
             buffer.add_batch(
@@ -591,8 +629,12 @@ def train_ppo(
                 obs_buf.attention_mask, obs_buf.action_mask,
             )
             last_values = value_dict["expected_score"].cpu().numpy()
+            if return_rms is not None:
+                last_values = return_rms.denormalize(last_values)
 
         buffer.compute_returns_and_advantages(last_values=last_values)
+        if return_rms is not None:
+            return_rms.update(buffer._flat_returns)
 
         # === PPO update ===
         # Keep dropout disabled so the PPO ratio compares the same policy
@@ -635,8 +677,11 @@ def train_ppo(
                 surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
-                # Value loss
-                value_loss = F.mse_loss(value_dict["expected_score"], batch["returns"])
+                # Value loss (normalize targets so critic trains in unit-variance space)
+                returns_target = batch["returns"]
+                if return_rms is not None:
+                    returns_target = (returns_target - return_rms.mean) / return_rms.std
+                value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
 
                 # Align the entropy bonus with the controller signal.
                 # Using raw entropy here over-rewards high-branching phases
@@ -763,6 +808,10 @@ def train_ppo(
                 _safe_mean(component_values),
                 update_count,
             )
+
+        if return_rms is not None:
+            writer.add_scalar("ppo/return_norm_mean", return_rms.mean, update_count)
+            writer.add_scalar("ppo/return_norm_std", return_rms.std, update_count)
 
         flat_returns = buffer._flat_returns
         if len(flat_returns) > 0:

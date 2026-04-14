@@ -74,7 +74,7 @@ def test_default_reward_penalizes_spending_resources_without_relieving_pressure(
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    expected = 3.0 * ((1.0 / (4 + 0.5 * 2)) - (1.0 / (4 + 0.5 * 1)))
+    expected = 1.5 * ((1.0 / (4 + 0.5 * 2)) - (1.0 / (4 + 0.5 * 1)))
     assert reward == pytest.approx(expected)
     assert reward < 0.0
 
@@ -101,7 +101,7 @@ def test_default_reward_rewards_relieving_pressure_during_hand_play() -> None:
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
     expected_score_progress = 0.25 * (160 / 400)
-    expected_pressure_progress = 3.0 * ((1.0 / (4 + 0.5 * 2)) - ((1.0 - 160 / 400) / (3 + 0.5 * 2)))
+    expected_pressure_progress = 1.5 * ((1.0 / (4 + 0.5 * 2)) - ((1.0 - 160 / 400) / (3 + 0.5 * 2)))
     assert reward == pytest.approx(expected_score_progress + expected_pressure_progress)
     assert reward > expected_score_progress
 
@@ -129,7 +129,7 @@ def test_default_reward_treats_blind_clear_as_full_pressure_relief() -> None:
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
     expected_score_progress = 0.25 * ((400 / 400) - (300 / 400))
-    expected_pressure_progress = 3.0 * ((0.25) / (2 + 0.5 * 1))
+    expected_pressure_progress = 1.5 * ((0.25) / (2 + 0.5 * 1))
     expected_blind_clear = 1.25 + 0.1
     assert reward == pytest.approx(expected_score_progress + expected_pressure_progress + expected_blind_clear)
 
@@ -237,8 +237,8 @@ def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     ordinary_loss = default_reward(state, prev_info, {"stalled": False}, terminated=True, won=False)
     stalled_loss = default_reward(state, prev_info, {"stalled": True}, terminated=True, won=False)
 
-    assert ordinary_loss == pytest.approx(-10.0)
-    assert stalled_loss == pytest.approx(-11.5)
+    assert ordinary_loss == pytest.approx(-4.0)
+    assert stalled_loss == pytest.approx(-5.5)
     assert stalled_loss < ordinary_loss
 
 
@@ -248,8 +248,8 @@ def test_default_reward_loss_penalty_does_not_recover_with_ante() -> None:
     early_loss = default_reward(_dummy_state(ante=1), prev_info, {"stalled": False}, terminated=True, won=False)
     later_loss = default_reward(_dummy_state(ante=6), prev_info, {"stalled": False}, terminated=True, won=False)
 
-    assert early_loss == pytest.approx(-10.0)
-    assert later_loss == pytest.approx(-10.0)
+    assert early_loss == pytest.approx(-4.0)
+    assert later_loss == pytest.approx(-4.0)
 
 
 def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
@@ -258,4 +258,4 @@ def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
 
     reward = default_reward(state, prev_info, {"stalled": True}, terminated=False, won=False)
 
-    assert reward == pytest.approx(-11.5)
+    assert reward == pytest.approx(-5.5)

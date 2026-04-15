@@ -109,6 +109,12 @@ def main():
         action="store_true",
         help="Disable adaptive entropy tuning and keep entropy coefficient fixed",
     )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="PPO discount factor (default: 0.99)",
+    )
     args = parser.parse_args()
 
     device = args.device
@@ -167,6 +173,7 @@ def main():
                 entropy_ema_beta=args.entropy_ema_beta,
                 alpha_lr=args.alpha_lr,
                 action_type_entropy_scale=args.action_type_entropy_scale,
+                gamma=args.gamma,
                 async_envs=not args.sync_envs,
             ),
             agent_config=agent_config,

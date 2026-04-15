@@ -29,7 +29,8 @@ def test_default_reward_rewards_round_score_progress() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    expected = ((500 / 800) - (100 / 800)) * 0.25
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    expected = shaping_scale * ((500 / 800) - (100 / 800)) * 0.25
     assert reward == pytest.approx(expected)
 
 
@@ -50,7 +51,8 @@ def test_default_reward_blind_clear_bonus_stays_modest() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(0.25 + 1.25 + 0.3)
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    assert reward == pytest.approx(shaping_scale * (0.25 + 1.25 + 0.3))
 
 
 def test_default_reward_penalizes_spending_resources_without_relieving_pressure() -> None:
@@ -74,7 +76,8 @@ def test_default_reward_penalizes_spending_resources_without_relieving_pressure(
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    expected = 1.5 * ((1.0 / (4 + 0.5 * 2)) - (1.0 / (4 + 0.5 * 1)))
+    shaping_scale = 1.0 / (1.0 + 1)  # prev_info has no ante key, defaults to 1
+    expected = shaping_scale * 1.5 * ((1.0 / (4 + 0.5 * 2)) - (1.0 / (4 + 0.5 * 1)))
     assert reward == pytest.approx(expected)
     assert reward < 0.0
 
@@ -100,8 +103,9 @@ def test_default_reward_rewards_relieving_pressure_during_hand_play() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    expected_score_progress = 0.25 * (160 / 400)
-    expected_pressure_progress = 1.5 * ((1.0 / (4 + 0.5 * 2)) - ((1.0 - 160 / 400) / (3 + 0.5 * 2)))
+    shaping_scale = 1.0 / (1.0 + 1)  # prev_info has no ante key, defaults to 1
+    expected_score_progress = shaping_scale * 0.25 * (160 / 400)
+    expected_pressure_progress = shaping_scale * 1.5 * ((1.0 / (4 + 0.5 * 2)) - ((1.0 - 160 / 400) / (3 + 0.5 * 2)))
     assert reward == pytest.approx(expected_score_progress + expected_pressure_progress)
     assert reward > expected_score_progress
 
@@ -128,9 +132,10 @@ def test_default_reward_treats_blind_clear_as_full_pressure_relief() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    expected_score_progress = 0.25 * ((400 / 400) - (300 / 400))
-    expected_pressure_progress = 1.5 * ((0.25) / (2 + 0.5 * 1))
-    expected_blind_clear = 1.25 + 0.1
+    shaping_scale = 1.0 / (1.0 + 1)  # prev_info has no ante key, defaults to 1
+    expected_score_progress = shaping_scale * 0.25 * ((400 / 400) - (300 / 400))
+    expected_pressure_progress = shaping_scale * 1.5 * ((0.25) / (2 + 0.5 * 1))
+    expected_blind_clear = shaping_scale * (1.25 + 0.1)
     assert reward == pytest.approx(expected_score_progress + expected_pressure_progress + expected_blind_clear)
 
 
@@ -150,7 +155,8 @@ def test_default_reward_gives_idle_grace_before_ramping_penalty() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(-0.001)
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    assert reward == pytest.approx(-shaping_scale * 0.001)
 
 
 def test_default_reward_penalizes_idle_consumable_target_more_aggressively() -> None:
@@ -170,7 +176,8 @@ def test_default_reward_penalizes_idle_consumable_target_more_aggressively() -> 
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(-0.003)
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    assert reward == pytest.approx(-shaping_scale * 0.003)
 
 
 def test_default_reward_ramps_idle_penalty_after_grace_window() -> None:
@@ -189,7 +196,8 @@ def test_default_reward_ramps_idle_penalty_after_grace_window() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(-(0.001 + (20 - 8) * 0.0005))
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    assert reward == pytest.approx(-shaping_scale * (0.001 + (20 - 8) * 0.0005))
 
 
 def test_default_reward_caps_consumable_target_idle_penalty_separately() -> None:
@@ -209,7 +217,8 @@ def test_default_reward_caps_consumable_target_idle_penalty_separately() -> None
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(-0.05)
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    assert reward == pytest.approx(-shaping_scale * 0.05)
 
 
 def test_default_reward_caps_idle_penalty() -> None:
@@ -228,7 +237,8 @@ def test_default_reward_caps_idle_penalty() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(-0.02)
+    shaping_scale = 1.0 / (1.0 + 1)  # ante=1
+    assert reward == pytest.approx(-shaping_scale * 0.02)
 
 
 def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
@@ -237,8 +247,8 @@ def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     ordinary_loss = default_reward(state, prev_info, {"stalled": False}, terminated=True, won=False)
     stalled_loss = default_reward(state, prev_info, {"stalled": True}, terminated=True, won=False)
 
-    assert ordinary_loss == pytest.approx(-4.0)
-    assert stalled_loss == pytest.approx(-5.5)
+    assert ordinary_loss == pytest.approx(-15.0)
+    assert stalled_loss == pytest.approx(-20.0)
     assert stalled_loss < ordinary_loss
 
 
@@ -248,8 +258,8 @@ def test_default_reward_loss_penalty_does_not_recover_with_ante() -> None:
     early_loss = default_reward(_dummy_state(ante=1), prev_info, {"stalled": False}, terminated=True, won=False)
     later_loss = default_reward(_dummy_state(ante=6), prev_info, {"stalled": False}, terminated=True, won=False)
 
-    assert early_loss == pytest.approx(-4.0)
-    assert later_loss == pytest.approx(-4.0)
+    assert early_loss == pytest.approx(-15.0)
+    assert later_loss == pytest.approx(-15.0)
 
 
 def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
@@ -258,4 +268,4 @@ def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
 
     reward = default_reward(state, prev_info, {"stalled": True}, terminated=False, won=False)
 
-    assert reward == pytest.approx(-5.5)
+    assert reward == pytest.approx(-20.0)

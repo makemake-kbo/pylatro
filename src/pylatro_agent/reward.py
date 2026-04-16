@@ -8,9 +8,9 @@ if TYPE_CHECKING:
     from pylatro.models import RunState
 
 
-WIN_REWARD = 50.0
-LOSS_PENALTY_BASE = -15.0
-STALL_EXTRA_PENALTY = 5.0
+WIN_REWARD = 20.0
+LOSS_PENALTY_BASE = -8.0
+STALL_EXTRA_PENALTY = 3.0
 
 SCORE_PROGRESS_SCALE = 0.25
 PRESSURE_PROGRESS_SCALE = 1.5
@@ -103,7 +103,6 @@ def default_reward_components(
 
     prev_ante = prev_info.get("ante", 1)
     curr_ante = state.round_resets.ante
-    shaping_scale = 1.0 / (1.0 + prev_ante)
 
     prev_score = float(prev_info.get("round_score", 0))
     curr_score = float(curr_info.get("round_score", 0))
@@ -111,7 +110,7 @@ def default_reward_components(
     prev_progress = min(prev_score / blind_target, 1.0)
     curr_progress = min(curr_score / blind_target, 1.0)
     if curr_progress > prev_progress:
-        components["score_progress"] += shaping_scale * SCORE_PROGRESS_SCALE * (curr_progress - prev_progress)
+        components["score_progress"] += SCORE_PROGRESS_SCALE * (curr_progress - prev_progress)
 
     prev_pressure = _blind_pressure(prev_info)
     curr_pressure = _blind_pressure(
@@ -119,17 +118,17 @@ def default_reward_components(
         cleared_blind=bool(curr_info.get("blind_just_beaten", False)),
     )
     if prev_pressure is not None and curr_pressure is not None:
-        components["pressure_progress"] += shaping_scale * PRESSURE_PROGRESS_SCALE * (prev_pressure - curr_pressure)
+        components["pressure_progress"] += PRESSURE_PROGRESS_SCALE * (prev_pressure - curr_pressure)
 
     if curr_info.get("blind_just_beaten", False):
-        components["blind_clear"] += shaping_scale * BLIND_CLEAR_REWARD
+        components["blind_clear"] += BLIND_CLEAR_REWARD
         hands_left = curr_info.get("hands_left", 0)
-        components["hands_bonus"] += shaping_scale * HANDS_LEFT_BONUS_SCALE * hands_left
+        components["hands_bonus"] += HANDS_LEFT_BONUS_SCALE * hands_left
 
     if curr_ante > prev_ante:
-        components["ante_bonus"] += shaping_scale * ANTE_ADVANCE_REWARD
+        components["ante_bonus"] += ANTE_ADVANCE_REWARD
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
-        components["interest_bonus"] += shaping_scale * INTEREST_BONUS_SCALE * min(interest_tier, 5)
+        components["interest_bonus"] += INTEREST_BONUS_SCALE * min(interest_tier, 5)
 
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
@@ -139,7 +138,7 @@ def default_reward_components(
             idle_penalty = min(idle_penalty, CONSUMABLE_TARGET_IDLE_CAP)
         else:
             idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
-        components["idle_penalty"] -= shaping_scale * idle_penalty
+        components["idle_penalty"] -= idle_penalty
 
     components["total"] = sum(components.values())
     return components

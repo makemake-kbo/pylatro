@@ -259,6 +259,7 @@ def main():
                 d_model=args.inf_d_model if args.inf_d_model is not None else args.d_model,
                 n_layers=args.inf_n_layers if args.inf_n_layers is not None else args.n_layers,
             )
+            gen_log_dir = log_dir or "runs/pretrain_from_checkpoint"
             records = generate_training_data_from_model(
                 ModelGenerateConfig(
                     checkpoint_path=args.inference_checkpoint,
@@ -269,6 +270,7 @@ def main():
                     sample_temperature=args.sample_temperature,
                     max_no_progress_steps=args.max_no_progress_steps_gen,
                     async_envs=not args.sync_envs,
+                    log_dir=gen_log_dir,
                 ),
                 agent_config=inf_config,
                 data=game_data,

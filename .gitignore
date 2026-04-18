@@ -18,5 +18,7 @@ src/pylatro/pylatro/
 
 # Data / artifacts
 checkpoints/
+logs/
 runs/
+*.pt
 .DS_Store

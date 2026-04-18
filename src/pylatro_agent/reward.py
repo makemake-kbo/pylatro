@@ -11,12 +11,18 @@ if TYPE_CHECKING:
 WIN_REWARD = 20.0
 LOSS_PENALTY_BASE = -8.0
 STALL_EXTRA_PENALTY = 3.0
+# Per-ante penalty for every ante between death and win_ante. Pushes the
+# policy to survive deeper instead of settling for a shallow-death local
+# optimum where dense shaping dominates the flat loss penalty.
+LOSS_PER_UNFINISHED_ANTE = 1.5
 
 SCORE_PROGRESS_SCALE = 0.25
 PRESSURE_PROGRESS_SCALE = 1.5
 DISCARD_RESOURCE_WEIGHT = 0.5
 BLIND_CLEAR_REWARD = 1.25
 HANDS_LEFT_BONUS_SCALE = 0.1
+# Bonus is scaled by the ante just reached, so later antes give a steeper
+# gradient and the win_reward isn't the only long-horizon signal.
 ANTE_ADVANCE_REWARD = 1.5
 INTEREST_BONUS_SCALE = 0.05
 
@@ -92,9 +98,12 @@ def default_reward_components(
         else:
             # Keep terminal outcomes larger than the dense shaping terms so
             # PPO cannot maximize local progress while still losing every run.
-            # Do not soften losses just because the run survived longer; that
-            # teaches the agent to preserve itself instead of closing blinds.
+            # Scale penalty by how many antes short of the win target we died
+            # at, so an early death is strictly worse than pushing deeper.
             loss_penalty = LOSS_PENALTY_BASE
+            death_ante = int(curr_info.get("ante", state.round_resets.ante))
+            antes_unfinished = max(0, state.win_ante - death_ante)
+            loss_penalty -= LOSS_PER_UNFINISHED_ANTE * antes_unfinished
             if curr_info.get("stalled", False):
                 loss_penalty -= STALL_EXTRA_PENALTY
             components["terminal"] += loss_penalty
@@ -126,7 +135,7 @@ def default_reward_components(
         components["hands_bonus"] += HANDS_LEFT_BONUS_SCALE * hands_left
 
     if curr_ante > prev_ante:
-        components["ante_bonus"] += ANTE_ADVANCE_REWARD
+        components["ante_bonus"] += ANTE_ADVANCE_REWARD * curr_ante
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         components["interest_bonus"] += INTEREST_BONUS_SCALE * min(interest_tier, 5)
 

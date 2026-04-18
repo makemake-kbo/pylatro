@@ -47,6 +47,7 @@ class ModelGenerateConfig:
     device: str = "cpu"
     async_envs: bool = True
     progress_interval_s: float = 60.0
+    log_dir: str | None = None
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -137,7 +138,16 @@ def generate_training_data_from_model(
     records: list[dict[str, Any]] = []
     attempted = 0
     kept = 0
+    wins = 0
     total_steps = 0
+    total_ep_steps: list[int] = []  # steps per completed episode
+    kept_antes: list[int] = []  # max ante of kept games
+    all_antes: list[int] = []  # max ante of all completed games
+
+    writer = None
+    if config.log_dir is not None:
+        from torch.utils.tensorboard import SummaryWriter
+        writer = SummaryWriter(config.log_dir)
 
     logger.info(
         "Generating %d qualifying games with %d envs (min_ante=%d, temperature=%.2f)",
@@ -191,6 +201,15 @@ def generate_training_data_from_model(
                     attempted += 1
                     won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
                     max_ante = ep_max_ante[i]
+                    ep_len = len(ep_obs[i])
+                    ep_return = sum(ep_rewards[i])
+                    total_ep_steps.append(ep_len)
+                    all_antes.append(max_ante)
+                    if writer is not None:
+                        writer.add_scalar("generate/ep_max_ante", max_ante, attempted)
+                        writer.add_scalar("generate/ep_length", ep_len, attempted)
+                        writer.add_scalar("generate/ep_return", ep_return, attempted)
+                        writer.add_scalar("generate/ep_won", float(won), attempted)
                     if won or max_ante >= config.min_ante:
                         returns_list = _discounted_returns(ep_rewards[i], config.gamma)
                         for obs_rec, action_rec, reward_rec, return_rec in zip(
@@ -205,6 +224,9 @@ def generate_training_data_from_model(
                                 "return_target": return_rec,
                             })
                         kept += 1
+                        kept_antes.append(max_ante)
+                        if won:
+                            wins += 1
 
                     ep_obs[i] = []
                     ep_actions[i] = []
@@ -219,26 +241,68 @@ def generate_training_data_from_model(
             now = time.monotonic()
             if now - last_report >= config.progress_interval_s:
                 elapsed = now - start_time
-                rate = kept / max(elapsed, 1e-6)
+                game_rate = kept / max(elapsed, 1e-6)
+                step_rate = total_steps / max(elapsed, 1e-6)
                 pct_valid = (kept / max(attempted, 1)) * 100
+                win_rate = (wins / max(kept, 1)) * 100
                 remaining = config.num_games - kept
-                eta = remaining / rate if rate > 0 else float("inf")
+                eta = remaining / game_rate if game_rate > 0 else float("inf")
+                avg_ep_len = sum(total_ep_steps) / max(len(total_ep_steps), 1)
+                avg_ante_kept = sum(kept_antes) / max(len(kept_antes), 1)
+                avg_ante_all = sum(all_antes) / max(len(all_antes), 1)
                 logger.info(
                     "Progress: %d/%d kept (%.1f%% of %d attempted) | "
-                    "rate=%.2f games/s | steps=%d | ETA=%s",
-                    kept, config.num_games, pct_valid, attempted, rate,
-                    total_steps, _format_eta(eta),
+                    "win_rate=%.1f%% | avg_ante=%.1f (kept=%.1f) | "
+                    "avg_ep_len=%.0f | %.0f steps/s | %.2f games/s | "
+                    "steps=%d | records=%d | elapsed=%s | ETA=%s",
+                    kept, config.num_games, pct_valid, attempted,
+                    win_rate, avg_ante_all, avg_ante_kept,
+                    avg_ep_len, step_rate, game_rate,
+                    total_steps, len(records), _format_eta(elapsed), _format_eta(eta),
                 )
+                if writer is not None:
+                    writer.add_scalar("generate/kept_games", kept, total_steps)
+                    writer.add_scalar("generate/attempted_games", attempted, total_steps)
+                    writer.add_scalar("generate/pass_rate", pct_valid / 100, total_steps)
+                    writer.add_scalar("generate/win_rate", win_rate / 100, total_steps)
+                    writer.add_scalar("generate/avg_ante_all", avg_ante_all, total_steps)
+                    writer.add_scalar("generate/avg_ante_kept", avg_ante_kept, total_steps)
+                    writer.add_scalar("generate/avg_ep_length", avg_ep_len, total_steps)
+                    writer.add_scalar("generate/steps_per_sec", step_rate, total_steps)
+                    writer.add_scalar("generate/games_per_sec", game_rate, total_steps)
+                    writer.add_scalar("generate/records", len(records), total_steps)
                 last_report = now
     finally:
         vec_env.close()
 
     elapsed = time.monotonic() - start_time
+    avg_ep_len = sum(total_ep_steps) / max(len(total_ep_steps), 1)
+    avg_ante_kept = sum(kept_antes) / max(len(kept_antes), 1)
+    avg_ante_all = sum(all_antes) / max(len(all_antes), 1)
     logger.info(
-        "Generated %d records from %d kept games (%d attempted, %.1f%% pass rate) in %.1fs",
+        "Done: %d records from %d kept games (%d attempted, %.1f%% pass rate) in %s | "
+        "win_rate=%.1f%% | avg_ante=%.1f (kept=%.1f) | avg_ep_len=%.0f | "
+        "%.0f steps/s | %.2f games/s",
         len(records), kept, attempted,
-        (kept / max(attempted, 1)) * 100, elapsed,
+        (kept / max(attempted, 1)) * 100, _format_eta(elapsed),
+        (wins / max(kept, 1)) * 100,
+        avg_ante_all, avg_ante_kept,
+        avg_ep_len,
+        total_steps / max(elapsed, 1e-6),
+        kept / max(elapsed, 1e-6),
     )
+    if writer is not None:
+        writer.add_scalar("generate/final/kept_games", kept, 0)
+        writer.add_scalar("generate/final/attempted_games", attempted, 0)
+        writer.add_scalar("generate/final/pass_rate", kept / max(attempted, 1), 0)
+        writer.add_scalar("generate/final/win_rate", wins / max(kept, 1), 0)
+        writer.add_scalar("generate/final/avg_ante_all", avg_ante_all, 0)
+        writer.add_scalar("generate/final/avg_ante_kept", avg_ante_kept, 0)
+        writer.add_scalar("generate/final/avg_ep_length", avg_ep_len, 0)
+        writer.add_scalar("generate/final/total_records", len(records), 0)
+        writer.add_scalar("generate/final/total_steps", total_steps, 0)
+        writer.add_scalar("generate/final/elapsed_s", elapsed, 0)
+        writer.close()
     return records
 
 

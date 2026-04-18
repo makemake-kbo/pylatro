@@ -7,10 +7,11 @@ import pytest
 from pylatro_agent.reward import default_reward
 
 
-def _dummy_state(ante: int = 1, interest_cap: int = 25) -> SimpleNamespace:
+def _dummy_state(ante: int = 1, interest_cap: int = 25, win_ante: int = 8) -> SimpleNamespace:
     return SimpleNamespace(
         round_resets=SimpleNamespace(ante=ante),
         interest_cap=interest_cap,
+        win_ante=win_ante,
     )
 
 
@@ -237,19 +238,22 @@ def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     ordinary_loss = default_reward(state, prev_info, {"stalled": False}, terminated=True, won=False)
     stalled_loss = default_reward(state, prev_info, {"stalled": True}, terminated=True, won=False)
 
-    assert ordinary_loss == pytest.approx(-8.0)
-    assert stalled_loss == pytest.approx(-11.0)
+    # Ante 1 death on an 8-ante win target: base -8, unfinished antes 7 * 1.5.
+    assert ordinary_loss == pytest.approx(-18.5)
+    assert stalled_loss == pytest.approx(-21.5)
     assert stalled_loss < ordinary_loss
 
 
-def test_default_reward_loss_penalty_does_not_recover_with_ante() -> None:
+def test_default_reward_loss_penalty_scales_with_unfinished_antes() -> None:
     prev_info = {"ante": 1}
 
     early_loss = default_reward(_dummy_state(ante=1), prev_info, {"stalled": False}, terminated=True, won=False)
     later_loss = default_reward(_dummy_state(ante=6), prev_info, {"stalled": False}, terminated=True, won=False)
 
-    assert early_loss == pytest.approx(-8.0)
-    assert later_loss == pytest.approx(-8.0)
+    # Dying earlier must strictly hurt more than dying deeper in the run.
+    assert early_loss == pytest.approx(-8.0 - 1.5 * 7)
+    assert later_loss == pytest.approx(-8.0 - 1.5 * 2)
+    assert early_loss < later_loss
 
 
 def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
@@ -258,4 +262,4 @@ def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
 
     reward = default_reward(state, prev_info, {"stalled": True}, terminated=False, won=False)
 
-    assert reward == pytest.approx(-11.0)
+    assert reward == pytest.approx(-21.5)

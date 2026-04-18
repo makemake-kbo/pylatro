@@ -6,6 +6,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -55,8 +56,14 @@ def train_supervised(
     config: SupervisedConfig,
     agent_config: AgentConfig | None = None,
     data: GameData | None = None,
+    records: list[dict[str, Any]] | None = None,
 ) -> BalatroAgent:
-    """Run supervised pretraining."""
+    """Run supervised pretraining.
+
+    If ``records`` is provided, heuristic data generation is skipped and the
+    trainee is fit directly on the supplied transitions. This is used by
+    pretraining workflows that build records from a separate model checkpoint.
+    """
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
@@ -73,21 +80,24 @@ def train_supervised(
 
     base_model = model.module if isinstance(model, nn.DataParallel) else model
     logger.info(f"Model parameters: {base_model.count_parameters():,}")
-    logger.info("Generating training data from heuristic agent...")
-    t_gen_start = time.monotonic()
-    records = generate_training_data(
-        config.num_games,
-        data=data,
-        vocab=vocab,
-        min_ante=config.min_ante,
-        gamma=config.gamma,
-        num_workers=config.num_workers,
-    )
-    t_gen_elapsed = time.monotonic() - t_gen_start
-    logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)
+    if records is None:
+        logger.info("Generating training data from heuristic agent...")
+        t_gen_start = time.monotonic()
+        records = generate_training_data(
+            config.num_games,
+            data=data,
+            vocab=vocab,
+            min_ante=config.min_ante,
+            gamma=config.gamma,
+            num_workers=config.num_workers,
+        )
+        t_gen_elapsed = time.monotonic() - t_gen_start
+        logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)
+    else:
+        logger.info("Using %d pre-generated training records", len(records))
 
     if not records:
-        logger.error("No training records generated — check min_ante or heuristic agent")
+        logger.error("No training records provided — check min_ante or the upstream generator")
         return model
 
     wins = sum(1 for r in records if r["won"])

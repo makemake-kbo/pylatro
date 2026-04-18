@@ -5,6 +5,8 @@ Usage:
     uv run python train.py supervised [--games 1000] [--epochs 5] [--device mps]
     uv run python train.py ppo [--pretrained PATH] [--steps 1000000] [--device mps]
     uv run python train.py self_play [--pretrained PATH] [--device mps]
+    uv run python train.py pretrain_from_checkpoint \\
+        --inference-checkpoint PATH [--min-ante 5] [--games 1000] [--data-path PATH]
 """
 
 from __future__ import annotations
@@ -17,7 +19,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 def main():
     parser = argparse.ArgumentParser(description="Train the Balatro agent")
-    parser.add_argument("phase", choices=["supervised", "ppo", "self_play"])
+    parser.add_argument(
+        "phase",
+        choices=["supervised", "ppo", "self_play", "pretrain_from_checkpoint"],
+    )
     parser.add_argument("--games", type=int, default=1000, help="Heuristic games for supervised (default: 1000)")
     parser.add_argument("--epochs", type=int, default=5, help="Supervised epochs (default: 5)")
     parser.add_argument(
@@ -115,6 +120,42 @@ def main():
         default=0.99,
         help="PPO discount factor (default: 0.99)",
     )
+    parser.add_argument(
+        "--inference-checkpoint",
+        type=str,
+        default=None,
+        help="Checkpoint used to generate games for pretrain_from_checkpoint",
+    )
+    parser.add_argument(
+        "--inf-d-model",
+        type=int,
+        default=None,
+        help="Model dim for the inference checkpoint (defaults to --d-model)",
+    )
+    parser.add_argument(
+        "--inf-n-layers",
+        type=int,
+        default=None,
+        help="Transformer layers for the inference checkpoint (defaults to --n-layers)",
+    )
+    parser.add_argument(
+        "--data-path",
+        type=str,
+        default=None,
+        help="Load records from this path if present; otherwise save generated records here",
+    )
+    parser.add_argument(
+        "--sample-temperature",
+        type=float,
+        default=1.0,
+        help="Softmax temperature for sampled actions during generation (default: 1.0)",
+    )
+    parser.add_argument(
+        "--max-no-progress-steps-gen",
+        type=int,
+        default=2000,
+        help="Per-env stall limit during data generation (default: 2000)",
+    )
     args = parser.parse_args()
 
     device = args.device
@@ -190,6 +231,64 @@ def main():
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,
+        )
+
+    elif args.phase == "pretrain_from_checkpoint":
+        if not args.inference_checkpoint:
+            parser.error("pretrain_from_checkpoint requires --inference-checkpoint PATH")
+
+        from pathlib import Path
+
+        from pylatro import load_game_data
+        from pylatro_agent.training.model_generate import (
+            ModelGenerateConfig,
+            generate_training_data_from_model,
+            load_records,
+            save_records,
+        )
+        from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
+        from pylatro_agent.vocab import build_vocab
+
+        data_path = Path(args.data_path) if args.data_path else None
+        if data_path is not None and data_path.exists():
+            records = load_records(data_path)
+        else:
+            game_data = load_game_data()
+            build_vocab(game_data)  # validate vocab builds
+            inf_config = AgentConfig(
+                d_model=args.inf_d_model if args.inf_d_model is not None else args.d_model,
+                n_layers=args.inf_n_layers if args.inf_n_layers is not None else args.n_layers,
+            )
+            records = generate_training_data_from_model(
+                ModelGenerateConfig(
+                    checkpoint_path=args.inference_checkpoint,
+                    num_games=args.games,
+                    num_envs=args.envs,
+                    min_ante=args.min_ante,
+                    device=device,
+                    sample_temperature=args.sample_temperature,
+                    max_no_progress_steps=args.max_no_progress_steps_gen,
+                    async_envs=not args.sync_envs,
+                ),
+                agent_config=inf_config,
+                data=game_data,
+            )
+            if data_path is not None:
+                save_records(records, data_path)
+
+        train_supervised(
+            SupervisedConfig(
+                num_games=args.games,
+                batch_size=args.batch,
+                max_epochs=args.epochs,
+                num_workers=args.workers,
+                min_ante=args.min_ante,
+                device=device,
+                save_dir=checkpoint_dir or "checkpoints/pretrain_from_checkpoint",
+                log_dir=log_dir or "runs/pretrain_from_checkpoint",
+            ),
+            agent_config=agent_config,
+            records=records,
         )
 
 

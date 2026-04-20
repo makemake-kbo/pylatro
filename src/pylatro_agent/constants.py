@@ -7,7 +7,7 @@ from enum import IntEnum, StrEnum
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
-TOKEN_DIM = 12
+TOKEN_DIM = 13
 SCALAR_DIM = 8  # reserved for future continuous scalar features
 
 MAX_HAND_SIZE = 16

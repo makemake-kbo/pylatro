@@ -97,6 +97,10 @@ class DeckCardEmbedding(nn.Module):
         self.location_emb = nn.Embedding(4, d_model)
         self.selected_emb = nn.Embedding(2, d_model)
         self.hand_slot_emb = hand_slot_emb
+        # Zero-init so checkpoints without this channel resume identically;
+        # PPO then learns to use it to see pending consumable hand targets.
+        self.pending_target_emb = nn.Embedding(2, d_model)
+        nn.init.zeros_(self.pending_target_emb.weight)
         self.proj = nn.Linear(d_model, d_model)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -109,11 +113,13 @@ class DeckCardEmbedding(nn.Module):
         loc = tokens[:, :, 5].clamp(0, 3)
         sel = tokens[:, :, 9].clamp(0, 1)
         slot = tokens[:, :, 11].clamp(0, self.hand_slot_emb.num_embeddings - 1)
+        pending = tokens[:, :, 12].clamp(0, 1)
 
         h = (
             self.rank_emb(rank) + self.suit_emb(suit) + self.enhancement_emb(enh)
             + self.edition_emb(ed) + self.seal_emb(seal) + self.location_emb(loc)
             + self.selected_emb(sel) + self.hand_slot_emb(slot)
+            + self.pending_target_emb(pending)
         )
         return self.proj(h)
 

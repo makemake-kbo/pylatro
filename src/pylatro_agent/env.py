@@ -355,6 +355,7 @@ class BalatroEnv(gymnasium.Env):
             self._sub_phase,
             selected_cards=self._selected_cards,
             action_mask=mask,
+            pending_consumable_hand_targets=self._pending_consumable_hand_targets,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:

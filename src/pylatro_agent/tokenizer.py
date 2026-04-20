@@ -89,6 +89,7 @@ class Tokenizer:
         sub_phase: SubPhase,
         selected_cards: set[int] | None = None,
         action_mask: np.ndarray | None = None,
+        pending_consumable_hand_targets: tuple[int, ...] = (),
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -100,6 +101,7 @@ class Tokenizer:
 
         if selected_cards is None:
             selected_cards = set()
+        pending_target_set = set(pending_consumable_hand_targets)
 
         _rank_to_id = RANK_TO_ID
         _suit_to_id = SUIT_TO_ID
@@ -159,6 +161,7 @@ class Tokenizer:
                 tokens[p, 9] = 1 if loc == 0 and ci in selected_cards else 0
                 tokens[p, 10] = card.forced_selection
                 tokens[p, 11] = ci if loc == 0 else 0
+                tokens[p, 12] = 1 if loc == 0 and ci in pending_target_set else 0
                 token_types[p] = TokenType.DECK
                 attn_mask[p] = 1
                 card_idx += 1

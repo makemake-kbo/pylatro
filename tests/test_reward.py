@@ -288,7 +288,22 @@ def test_default_reward_rewards_consumable_confirm() -> None:
 
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
-    assert reward == pytest.approx(0.15)
+    assert reward == pytest.approx(0.35)
+
+
+def test_default_reward_rewards_shop_reroll() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "shop_reroll",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.08)
 
 
 def test_default_reward_penalizes_shop_sell_joker() -> None:
@@ -327,9 +342,9 @@ def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     ordinary_loss = default_reward(state, prev_info, {"stalled": False}, terminated=True, won=False)
     stalled_loss = default_reward(state, prev_info, {"stalled": True}, terminated=True, won=False)
 
-    # Ante 1 death on an 8-ante win target: base -8, unfinished antes 7 * 1.5.
-    assert ordinary_loss == pytest.approx(-18.5)
-    assert stalled_loss == pytest.approx(-21.5)
+    # Ante 1 death on an 8-ante win target: base -16, unfinished antes 7 * 1.5.
+    assert ordinary_loss == pytest.approx(-26.5)
+    assert stalled_loss == pytest.approx(-29.5)
     assert stalled_loss < ordinary_loss
 
 
@@ -340,8 +355,8 @@ def test_default_reward_loss_penalty_scales_with_unfinished_antes() -> None:
     later_loss = default_reward(_dummy_state(ante=6), prev_info, {"stalled": False}, terminated=True, won=False)
 
     # Dying earlier must strictly hurt more than dying deeper in the run.
-    assert early_loss == pytest.approx(-8.0 - 1.5 * 7)
-    assert later_loss == pytest.approx(-8.0 - 1.5 * 2)
+    assert early_loss == pytest.approx(-16.0 - 1.5 * 7)
+    assert later_loss == pytest.approx(-16.0 - 1.5 * 2)
     assert early_loss < later_loss
 
 
@@ -351,4 +366,4 @@ def test_default_reward_stalled_truncation_uses_stall_penalty() -> None:
 
     reward = default_reward(state, prev_info, {"stalled": True}, terminated=False, won=False)
 
-    assert reward == pytest.approx(-21.5)
+    assert reward == pytest.approx(-29.5)

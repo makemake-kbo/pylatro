@@ -600,6 +600,7 @@ def train_ppo(
                     "reward_idle_penalty",
                     "reward_consumable_commit",
                     "reward_shop_sell_penalty",
+                    "reward_shop_reroll_reward",
                 ):
                     component_value = _extract_step_info_value(
                         infos,

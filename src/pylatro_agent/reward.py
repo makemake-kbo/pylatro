@@ -8,8 +8,8 @@ if TYPE_CHECKING:
     from pylatro.models import RunState
 
 
-WIN_REWARD = 20.0
-LOSS_PENALTY_BASE = -8.0
+WIN_REWARD = 40.0
+LOSS_PENALTY_BASE = -16.0
 STALL_EXTRA_PENALTY = 3.0
 # Per-ante penalty for every ante between death and win_ante. Pushes the
 # policy to survive deeper instead of settling for a shallow-death local
@@ -39,14 +39,21 @@ CONSUMABLE_TARGET_IDLE_CAP = 0.05
 CONSUMABLE_CANCEL_NO_COMMIT_PENALTY = 0.1
 # Flat reward for committing a consumable use. Without this the cancel
 # penalty alone teaches the policy to never open the menu at all, so it
-# stops using consumables entirely.
-CONSUMABLE_CONFIRM_REWARD = 0.15
+# stops using consumables entirely. Tuned up from 0.15 after the policy
+# overcorrected into never-use even when inventory was full.
+CONSUMABLE_CONFIRM_REWARD = 0.35
 # Flat penalty for selling jokers or consumables in the shop. The policy
 # found it could cash out inventory every shop for free dollars without
 # ever engaging with scaling mechanics; a small friction makes that
 # pattern unprofitable while still letting legitimate sells through if
 # follow-up shaping dominates.
 SHOP_SELL_PENALTY = 0.05
+# Flat reward for rerolling the shop. Reroll is the main engine-building
+# lever (swap junk for jokers that actually scale) but costs $5+, so the
+# policy avoided it in favor of buying whatever was on the shelf. Action
+# is only valid when the agent can afford it, so this can't trigger when
+# cash-starved.
+SHOP_REROLL_REWARD = 0.08
 
 
 class RewardFn(Protocol):
@@ -108,6 +115,7 @@ def default_reward_components(
         "idle_penalty": 0.0,
         "consumable_commit": 0.0,
         "shop_sell_penalty": 0.0,
+        "shop_reroll_reward": 0.0,
     }
 
     if terminated or curr_info.get("stalled", False):
@@ -171,6 +179,9 @@ def default_reward_components(
 
     if action_type in ("shop_sell_joker", "shop_sell_consumable"):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY
+
+    if action_type == "shop_reroll":
+        components["shop_reroll_reward"] += SHOP_REROLL_REWARD
 
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)

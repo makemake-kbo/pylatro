@@ -21,9 +21,11 @@ PRESSURE_PROGRESS_SCALE = 1.5
 DISCARD_RESOURCE_WEIGHT = 0.5
 BLIND_CLEAR_REWARD = 1.25
 HANDS_LEFT_BONUS_SCALE = 0.1
-# Bonus is scaled by the ante just reached, so later antes give a steeper
-# gradient and the win_reward isn't the only long-horizon signal.
+# Bonus is super-linear in the ante just reached so deeper antes give a
+# strictly steeper gradient than the per-unfinished-ante loss penalty can
+# cancel out. Growth is curr_ante ** ANTE_ADVANCE_EXPONENT.
 ANTE_ADVANCE_REWARD = 1.5
+ANTE_ADVANCE_EXPONENT = 1.5
 INTEREST_BONUS_SCALE = 0.05
 
 IDLE_PENALTY_BASE = 0.001
@@ -31,6 +33,20 @@ IDLE_PENALTY_RAMP = 0.0005
 IDLE_PENALTY_CAP = 0.02
 CONSUMABLE_TARGET_IDLE_MULT = 3.0
 CONSUMABLE_TARGET_IDLE_CAP = 0.05
+# Flat penalty for opening the consumable menu and cancelling without
+# selecting a slot — the open/cancel pair otherwise costs almost nothing
+# and the policy learned to dither inside it for free.
+CONSUMABLE_CANCEL_NO_COMMIT_PENALTY = 0.1
+# Flat reward for committing a consumable use. Without this the cancel
+# penalty alone teaches the policy to never open the menu at all, so it
+# stops using consumables entirely.
+CONSUMABLE_CONFIRM_REWARD = 0.15
+# Flat penalty for selling jokers or consumables in the shop. The policy
+# found it could cash out inventory every shop for free dollars without
+# ever engaging with scaling mechanics; a small friction makes that
+# pattern unprofitable while still letting legitimate sells through if
+# follow-up shaping dominates.
+SHOP_SELL_PENALTY = 0.05
 
 
 class RewardFn(Protocol):
@@ -90,6 +106,8 @@ def default_reward_components(
         "ante_bonus": 0.0,
         "interest_bonus": 0.0,
         "idle_penalty": 0.0,
+        "consumable_commit": 0.0,
+        "shop_sell_penalty": 0.0,
     }
 
     if terminated or curr_info.get("stalled", False):
@@ -135,9 +153,24 @@ def default_reward_components(
         components["hands_bonus"] += HANDS_LEFT_BONUS_SCALE * hands_left
 
     if curr_ante > prev_ante:
-        components["ante_bonus"] += ANTE_ADVANCE_REWARD * curr_ante
+        components["ante_bonus"] += ANTE_ADVANCE_REWARD * (curr_ante ** ANTE_ADVANCE_EXPONENT)
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         components["interest_bonus"] += INTEREST_BONUS_SCALE * min(interest_tier, 5)
+
+    action_type = curr_info.get("action_type", "")
+
+    if (
+        action_type == "consumable_cancel"
+        and curr_info.get("pre_sub_phase", "") == "consumable_target"
+        and not curr_info.get("pre_pending_action", "")
+    ):
+        components["idle_penalty"] -= CONSUMABLE_CANCEL_NO_COMMIT_PENALTY
+
+    if action_type == "consumable_confirm":
+        components["consumable_commit"] += CONSUMABLE_CONFIRM_REWARD
+
+    if action_type in ("shop_sell_joker", "shop_sell_consumable"):
+        components["shop_sell_penalty"] -= SHOP_SELL_PENALTY
 
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
@@ -168,6 +201,9 @@ def default_reward(
         blind_just_beaten: bool — whether a blind was beaten this step
         progress_made: bool — whether the environment state changed meaningfully
         steps_since_progress: int — idle streak length after the action
+        pre_sub_phase: SubPhase — sub_phase at the start of this step
+        pre_pending_action: str — pending action label before this step
+        action_type: ActionType — action type taken this step
     """
     return default_reward_components(state, prev_info, curr_info, terminated, won)["total"]
 

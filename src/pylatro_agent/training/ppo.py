@@ -598,6 +598,8 @@ def train_ppo(
                     "reward_ante_bonus",
                     "reward_interest_bonus",
                     "reward_idle_penalty",
+                    "reward_consumable_commit",
+                    "reward_shop_sell_penalty",
                 ):
                     component_value = _extract_step_info_value(
                         infos,

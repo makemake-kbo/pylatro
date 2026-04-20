@@ -232,6 +232,95 @@ def test_default_reward_caps_idle_penalty() -> None:
     assert reward == pytest.approx(-0.02)
 
 
+def test_default_reward_penalizes_consumable_cancel_without_commit() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 1,
+        "pre_sub_phase": "consumable_target",
+        "pre_pending_action": "",
+        "action_type": "consumable_cancel",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-(0.001 + 0.1))
+
+
+def test_default_reward_does_not_penalize_cancel_after_committing_slot() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 1,
+        "pre_sub_phase": "consumable_target",
+        "pre_pending_action": "consumable_slot",
+        "action_type": "consumable_cancel",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-0.001)
+
+
+def test_default_reward_rewards_consumable_confirm() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "consumable_confirm",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.15)
+
+
+def test_default_reward_penalizes_shop_sell_joker() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "shop_sell_joker",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-0.05)
+
+
+def test_default_reward_penalizes_shop_sell_consumable() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "shop_sell_consumable",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-0.05)
+
+
 def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1}

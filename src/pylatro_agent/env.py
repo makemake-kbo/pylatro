@@ -151,6 +151,9 @@ class BalatroEnv(gymnasium.Env):
         curr_info = self._capture_state_info()
         curr_info["blind_just_beaten"] = self._blind_just_beaten
         curr_info["hands_left"] = state.current_round.hands_left
+        curr_info["pre_sub_phase"] = pre_sub_phase
+        curr_info["pre_pending_action"] = pre_pending_action
+        curr_info["action_type"] = decoded.action_type
         progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
         curr_info["progress_made"] = progress_made
         if progress_made:

@@ -37,11 +37,26 @@ CONSUMABLE_TARGET_IDLE_CAP = 0.05
 # selecting a slot — the open/cancel pair otherwise costs almost nothing
 # and the policy learned to dither inside it for free.
 CONSUMABLE_CANCEL_NO_COMMIT_PENALTY = 0.1
+# Extra penalty on top of the no-commit penalty when the cancelled slot
+# required hand/joker targeting. Without it, the policy treats cancel as
+# a free escape from tarot targeting (hand_target head is cold-init from
+# supervised, so random targeting looks worse than -0.1 cancel), which
+# starves the hand_target branch of gradient entirely.
+CONSUMABLE_CANCEL_TARGETING_SLOT_EXTRA = 0.15
 # Flat reward for committing a consumable use. Without this the cancel
 # penalty alone teaches the policy to never open the menu at all, so it
 # stops using consumables entirely. Tuned up from 0.15 after the policy
 # overcorrected into never-use even when inventory was full.
 CONSUMABLE_CONFIRM_REWARD = 0.35
+# Flat reward for picking a consumable slot whose effect requires hand or
+# joker targeting. Without a positive pull into this branch the policy
+# never visits CONSUMABLE_HAND_TARGET / CONSUMABLE_JOKER_TARGET actions,
+# so those heads get zero gradient and stay cold-init forever. The
+# cancel penalty alone only discourages misuse — it doesn't create any
+# incentive to try. Sized so open+commit still beats open+cancel: pick
+# (+0.1) + confirm (+0.35) = +0.45, vs pick (+0.1) + cancel (-0.1 no
+# commit - 0.15 targeting extra) = -0.15.
+CONSUMABLE_SLOT_TARGETING_REWARD = 0.1
 # Flat penalty for selling jokers or consumables in the shop. The policy
 # found it could cash out inventory every shop for free dollars without
 # ever engaging with scaling mechanics; a small friction makes that
@@ -114,6 +129,7 @@ def default_reward_components(
         "interest_bonus": 0.0,
         "idle_penalty": 0.0,
         "consumable_commit": 0.0,
+        "consumable_slot_targeting": 0.0,
         "shop_sell_penalty": 0.0,
         "shop_reroll_reward": 0.0,
     }
@@ -174,8 +190,18 @@ def default_reward_components(
     ):
         components["idle_penalty"] -= CONSUMABLE_CANCEL_NO_COMMIT_PENALTY
 
+    if (
+        action_type == "consumable_cancel"
+        and curr_info.get("pre_sub_phase", "") == "consumable_target"
+        and curr_info.get("pre_requires_targeting", False)
+    ):
+        components["idle_penalty"] -= CONSUMABLE_CANCEL_TARGETING_SLOT_EXTRA
+
     if action_type == "consumable_confirm":
         components["consumable_commit"] += CONSUMABLE_CONFIRM_REWARD
+
+    if action_type == "consumable_slot" and curr_info.get("post_requires_targeting", False):
+        components["consumable_slot_targeting"] += CONSUMABLE_SLOT_TARGETING_REWARD
 
     if action_type in ("shop_sell_joker", "shop_sell_consumable"):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY

@@ -127,6 +127,17 @@ class BalatroEnv(gymnasium.Env):
         pre_sub_phase = self._sub_phase
         pre_pending_action = self._pending_action or ""
         pre_selected_count = len(self._selected_cards)
+        pre_requires_targeting = False
+        if (
+            pre_sub_phase == SubPhase.CONSUMABLE_TARGET
+            and self._pending_consumable_slot is not None
+        ):
+            state_pre = self._controller.state
+            if 0 <= self._pending_consumable_slot < len(state_pre.consumables):
+                cons = state_pre.consumables[self._pending_consumable_slot]
+                center = state_pre.data.centers[cons.center_key]
+                config = center.get("config") or {}
+                pre_requires_targeting = config.get("max_highlighted") is not None
 
         decoded = decode_action(action)
         terminated = False
@@ -153,7 +164,24 @@ class BalatroEnv(gymnasium.Env):
         curr_info["hands_left"] = state.current_round.hands_left
         curr_info["pre_sub_phase"] = pre_sub_phase
         curr_info["pre_pending_action"] = pre_pending_action
+        curr_info["pre_requires_targeting"] = pre_requires_targeting
         curr_info["action_type"] = decoded.action_type
+
+        post_requires_targeting = False
+        if (
+            decoded.action_type == "consumable_slot"
+            and self._pending_consumable_slot is not None
+        ):
+            if 0 <= self._pending_consumable_slot < len(state.consumables):
+                cons_post = state.consumables[self._pending_consumable_slot]
+                center_post = state.data.centers[cons_post.center_key]
+                config_post = center_post.get("config") or {}
+                needs_hand = config_post.get("max_highlighted") is not None
+                needs_joker = center_post.get("name", "") in (
+                    "The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh",
+                )
+                post_requires_targeting = needs_hand or needs_joker
+        curr_info["post_requires_targeting"] = post_requires_targeting
         progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
         curr_info["progress_made"] = progress_made
         if progress_made:

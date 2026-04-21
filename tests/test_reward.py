@@ -276,6 +276,84 @@ def test_default_reward_does_not_penalize_cancel_after_committing_slot() -> None
     assert reward == pytest.approx(-0.001)
 
 
+def test_default_reward_penalizes_cancel_after_committing_targeting_slot() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 1,
+        "pre_sub_phase": "consumable_target",
+        "pre_pending_action": "",
+        "pre_requires_targeting": True,
+        "action_type": "consumable_cancel",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-(0.001 + 0.1 + 0.15))
+
+
+def test_default_reward_targeting_cancel_penalty_independent_of_no_commit_branch() -> None:
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": False,
+        "steps_since_progress": 1,
+        "pre_sub_phase": "consumable_target",
+        "pre_pending_action": "consumable_slot",
+        "pre_requires_targeting": True,
+        "action_type": "consumable_cancel",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-(0.001 + 0.15))
+
+
+def test_default_reward_rewards_opening_targeting_consumable_slot() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "consumable_slot",
+        "post_requires_targeting": True,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.1)
+
+
+def test_default_reward_does_not_reward_non_targeting_consumable_slot() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "consumable_slot",
+        "post_requires_targeting": False,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
+
+
 def test_default_reward_rewards_consumable_confirm() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}

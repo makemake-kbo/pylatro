@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
+from ..survival import DEFAULT_MAX_ANTES
 
 
 class RolloutBuffer:
@@ -48,6 +49,12 @@ class RolloutBuffer:
         # Computed after rollout
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
         self.returns = np.zeros(self.total_size, dtype=np.float32)
+
+        # Per-step ante-survival aux targets, filled retroactively at
+        # episode-end by `set_episode_survival`. Defaults to mask=0 so
+        # unfinished episodes contribute nothing to the survival loss.
+        self.ante_survival_targets = np.zeros((self.total_size, DEFAULT_MAX_ANTES), dtype=np.float32)
+        self.ante_survival_masks = np.zeros((self.total_size, DEFAULT_MAX_ANTES), dtype=np.float32)
 
         # Write pointer per env
         self._step_counts = np.zeros(num_envs, dtype=np.int64)
@@ -117,6 +124,21 @@ class RolloutBuffer:
         self.bootstrap_values[indices] = bootstrap_values
 
         self._step_counts[:] = step + 1
+
+    def set_episode_survival(
+        self,
+        env_idx: int,
+        start_step: int,
+        end_step: int,
+        target: np.ndarray,
+        mask: np.ndarray,
+    ) -> None:
+        """Fill [start_step, end_step] inclusive of env_idx with survival target + mask."""
+        base = env_idx * self.rollout_length
+        lo = base + start_step
+        hi = base + end_step + 1
+        self.ante_survival_targets[lo:hi] = target
+        self.ante_survival_masks[lo:hi] = mask
 
     def compute_returns_and_advantages(self, last_values: np.ndarray | list[float]) -> None:
         """Compute GAE advantages per env, storing into pre-allocated arrays.
@@ -231,6 +253,8 @@ class RolloutBuffer:
                 "old_log_probs": torch.as_tensor(self.log_probs[idx], device=device),
                 "advantages": torch.as_tensor(self.advantages[idx], device=device),
                 "returns": torch.as_tensor(self.returns[idx], device=device),
+                "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
+                "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
             }
 
             if pin_memory and device.type == "cpu":

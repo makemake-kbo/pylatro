@@ -3,7 +3,7 @@
 import logging
 import math
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +20,7 @@ from ..agent import AgentConfig, BalatroAgent
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, SubPhase, TOKEN_DIM
 from ..distributions import MaskedCategorical
 from ..env import BalatroEnv
+from ..survival import compute_ante_survival_targets
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
 
@@ -68,7 +69,8 @@ _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
 
 def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
     """Load checkpoint, handling DataParallel prefix mismatch and head shape drift."""
-    state_dict = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    from ..checkpoint import load_checkpoint_payload
+    state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
 
     has_module_prefix = any(k.startswith("module.") for k in state_dict)
     is_wrapped = isinstance(model, nn.DataParallel)
@@ -169,6 +171,43 @@ class PPOConfig:
     # rather than leaving them to drift from arbitrary masked-out states. Set
     # to 0 to disable; requires pretrained_path to be provided.
     kl_anchor_coeff: float = 0.02
+    # Weight on the ante_survival auxiliary BCE loss. Small by default —
+    # the head is useful for analysis and as an auxiliary learning signal,
+    # but it shouldn't meaningfully pull the policy optimization.
+    survival_loss_coeff: float = 0.05
+
+
+@dataclass
+class _UpdateStats:
+    policy_losses: list[float]
+    value_losses: list[float]
+    survival_losses: list[float]
+    entropies: list[float]
+    normalized_entropies: list[float]
+    action_type_entropies: list[float]
+    clip_fracs: list[float]
+    approx_kls: list[float]
+    valid_action_counts: list[float]
+    valid_action_type_counts: list[float]
+    kl_to_ref: list[float]
+
+
+@dataclass
+class _RolloutMetrics:
+    """Per-rollout accumulators populated during the step loop."""
+    action_type_counts: Counter = field(default_factory=Counter)
+    step_rewards: list[float] = field(default_factory=list)
+    progress_flags: list[float] = field(default_factory=list)
+    steps_since_progress: list[float] = field(default_factory=list)
+    chosen_action_probs: list[float] = field(default_factory=list)
+    max_action_probs: list[float] = field(default_factory=list)
+    done_flags: list[float] = field(default_factory=list)
+    terminated_flags: list[float] = field(default_factory=list)
+    truncated_flags: list[float] = field(default_factory=list)
+    reward_component_values: defaultdict = field(default_factory=lambda: defaultdict(list))
+    pre_choose_action_flags: list[float] = field(default_factory=list)
+    play_subset_count: int = 0
+    discard_subset_count: int = 0
 
 
 def _unwrap_model(model: nn.Module) -> nn.Module:
@@ -176,10 +215,215 @@ def _unwrap_model(model: nn.Module) -> nn.Module:
     return model.module if isinstance(model, nn.DataParallel) else model
 
 
+def _validate_ppo_config(config: PPOConfig) -> None:
+    """Raise ValueError for invalid combinations; warn on risky ones."""
+    if config.log_interval <= 0:
+        raise ValueError("log_interval must be positive")
+    if config.checkpoint_interval <= 0:
+        raise ValueError("checkpoint_interval must be positive")
+    if config.eval_interval <= 0:
+        raise ValueError("eval_interval must be positive")
+    if config.ppo_epochs <= 0:
+        raise ValueError("ppo_epochs must be positive")
+    if config.rollout_length <= 0:
+        raise ValueError("rollout_length must be positive")
+    if config.max_no_progress_steps <= 0:
+        raise ValueError("max_no_progress_steps must be positive")
+    if config.lr <= 0.0:
+        raise ValueError("lr must be positive")
+    if config.entropy_coeff < 0.0:
+        raise ValueError("entropy_coeff must be non-negative")
+    if config.action_type_entropy_scale < 0.0:
+        raise ValueError("action_type_entropy_scale must be non-negative")
+    if config.adaptive_entropy:
+        if config.entropy_coeff <= 0.0:
+            raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
+        if config.alpha_lr <= 0.0:
+            raise ValueError("alpha_lr must be positive when adaptive entropy is enabled")
+        if config.alpha_min <= 0.0:
+            raise ValueError("alpha_min must be positive when adaptive entropy is enabled")
+        if config.alpha_max < config.alpha_min:
+            raise ValueError("alpha_max must be greater than or equal to alpha_min")
+        if not 0.0 <= config.target_entropy <= 1.0:
+            raise ValueError("target_entropy must be between 0 and 1 when using normalized entropy")
+        if not 0.0 <= config.entropy_ema_beta < 1.0:
+            raise ValueError("entropy_ema_beta must be in [0, 1)")
+        if config.target_entropy < 0.1:
+            logger.warning(
+                "target_entropy=%.3f is a very low normalized entropy target; "
+                "it will aggressively push the policy toward near-deterministic behavior.",
+                config.target_entropy,
+            )
+
+
+def _run_ppo_update(
+    model: nn.Module,
+    optimizer: Adam,
+    buffer: RolloutBuffer,
+    reference_model: nn.Module | None,
+    return_rms: "RunningMeanStd | None",
+    entropy_coeff: float,
+    config: PPOConfig,
+    accum_steps: int,
+    effective_batch_size: int,
+    device: torch.device,
+    use_pin_memory: bool,
+) -> _UpdateStats:
+    """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
+
+    Keeps dropout disabled so the PPO ratio compares the same policy function
+    that collected `old_log_probs`. Caller is responsible for the entropy-alpha
+    step and logging.
+    """
+    model.eval()
+    stats = _UpdateStats(
+        policy_losses=[], value_losses=[], survival_losses=[],
+        entropies=[], normalized_entropies=[], action_type_entropies=[],
+        clip_fracs=[], approx_kls=[],
+        valid_action_counts=[], valid_action_type_counts=[],
+        kl_to_ref=[],
+    )
+
+    for _ppo_epoch in range(config.ppo_epochs):
+        batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
+        optimizer.zero_grad()
+        for i, batch in enumerate(batches):
+            logits, value_dict = model(
+                batch["tokens"], batch["token_types"], batch["scalars"],
+                batch["attention_mask"], batch["action_mask"],
+            )
+            dist = MaskedCategorical(logits, batch["action_mask"])
+
+            new_log_probs = dist.log_prob(batch["actions"])
+            entropy_per_state = dist.entropy()
+            entropy = entropy_per_state.mean()
+            valid_action_counts = batch["action_mask"].sum(dim=-1)
+            normalized_entropy_per_state = _per_state_normalized_entropy(entropy_per_state, batch["action_mask"])
+            normalized_entropy = normalized_entropy_per_state.mean()
+            normalized_action_type_entropy = _mean_normalized_action_type_entropy(dist.probs, batch["action_mask"])
+            valid_action_type_count_mean = _mean_valid_action_type_count(batch["action_mask"])
+
+            # Policy loss (clipped PPO). Advantages are already normalized
+            # once over the full rollout in buffer.normalize_advantages();
+            # per-mini-batch normalization would let rare terminals
+            # dominate their batch and crush others to noise.
+            ratio = torch.exp(new_log_probs - batch["old_log_probs"])
+            advantages = batch["advantages"]
+            surr1 = ratio * advantages
+            surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
+            policy_loss = -torch.min(surr1, surr2).mean()
+
+            # Value loss (normalize targets so critic trains in unit-variance space)
+            returns_target = batch["returns"]
+            if return_rms is not None:
+                returns_target = (returns_target - return_rms.mean) / return_rms.std
+            value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
+
+            # Ante-survival aux loss (BCE masked by observed antes).
+            surv_mask = batch["ante_survival_mask"]
+            if surv_mask.sum() > 0:
+                surv_bce = F.binary_cross_entropy(
+                    value_dict["ante_survival"],
+                    batch["ante_survival_target"],
+                    reduction="none",
+                )
+                survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
+            else:
+                survival_loss = torch.zeros((), device=batch["scalars"].device)
+
+            # KL anchor to the frozen pretrained policy. Gives cold heads a
+            # gradient target even when their actions aren't sampled.
+            if reference_model is not None:
+                with torch.no_grad():
+                    ref_logits, _ = reference_model(
+                        batch["tokens"], batch["token_types"], batch["scalars"],
+                        batch["attention_mask"], batch["action_mask"],
+                    )
+                ref_dist = MaskedCategorical(ref_logits, batch["action_mask"])
+                kl_div = torch.distributions.kl_divergence(dist, ref_dist).mean()
+            else:
+                kl_div = torch.zeros((), device=batch["scalars"].device)
+
+            loss = (
+                policy_loss
+                + config.value_loss_coeff * value_loss
+                + config.survival_loss_coeff * survival_loss
+                - entropy_coeff
+                * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
+                + config.kl_anchor_coeff * kl_div
+            )
+            (loss / accum_steps).backward()
+
+            # Step every accum_steps micro-batches (or on last batch)
+            if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
+                nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+                optimizer.step()
+                optimizer.zero_grad()
+
+            with torch.no_grad():
+                clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
+                approx_kl = (batch["old_log_probs"] - new_log_probs).mean().item()
+                valid_action_count_mean = valid_action_counts.float().mean().item()
+            stats.policy_losses.append(policy_loss.item())
+            stats.value_losses.append(value_loss.item())
+            stats.survival_losses.append(survival_loss.item())
+            stats.entropies.append(entropy.item())
+            stats.normalized_entropies.append(normalized_entropy.item())
+            stats.action_type_entropies.append(normalized_action_type_entropy.item())
+            stats.clip_fracs.append(clip_frac)
+            stats.approx_kls.append(approx_kl)
+            stats.valid_action_counts.append(valid_action_count_mean)
+            stats.valid_action_type_counts.append(valid_action_type_count_mean)
+            stats.kl_to_ref.append(kl_div.item())
+
+    return stats
+
+
+def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> None:
+    """Write the rollout-collected metrics for one update to TensorBoard."""
+    writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rm.chosen_action_probs), update_count)
+    writer.add_scalar("debug/max_action_prob_mean", _safe_mean(rm.max_action_probs), update_count)
+    writer.add_scalar("debug/step_reward_mean", _safe_mean(rm.step_rewards), update_count)
+    writer.add_scalar("rollout/progress_rate", _safe_mean(rm.progress_flags), update_count)
+    writer.add_scalar("rollout/steps_since_progress_mean", _safe_mean(rm.steps_since_progress), update_count)
+    if rm.steps_since_progress:
+        writer.add_scalar(
+            "rollout/steps_since_progress_max",
+            float(np.max(rm.steps_since_progress)),
+            update_count,
+        )
+    writer.add_scalar("rollout/done_rate", _safe_mean(rm.done_flags), update_count)
+    writer.add_scalar("rollout/terminated_rate", _safe_mean(rm.terminated_flags), update_count)
+    writer.add_scalar("rollout/truncated_rate", _safe_mean(rm.truncated_flags), update_count)
+    writer.add_scalar("subphase/choose_action_fraction", _safe_mean(rm.pre_choose_action_flags), update_count)
+    total_play_discard = rm.play_subset_count + rm.discard_subset_count
+    if total_play_discard > 0:
+        writer.add_scalar("hand_choice/play_fraction", rm.play_subset_count / total_play_discard, update_count)
+        writer.add_scalar("hand_choice/discard_fraction", rm.discard_subset_count / total_play_discard, update_count)
+    else:
+        writer.add_scalar("hand_choice/play_fraction", float("nan"), update_count)
+        writer.add_scalar("hand_choice/discard_fraction", float("nan"), update_count)
+    total_action_count = sum(rm.action_type_counts.values())
+    if total_action_count > 0:
+        for action_type in ActionType:
+            writer.add_scalar(
+                f"actions/{action_type.value}_fraction",
+                rm.action_type_counts[action_type.value] / total_action_count,
+                update_count,
+            )
+    for component_name, component_values in rm.reward_component_values.items():
+        writer.add_scalar(
+            f"reward/{component_name.removeprefix('reward_')}_mean",
+            _safe_mean(component_values),
+            update_count,
+        )
+
+
 def _save_checkpoint(model: nn.Module, save_path: Path, update_count: int) -> Path:
     """Persist a numbered PPO checkpoint and return its path."""
+    from ..checkpoint import save_checkpoint
     checkpoint_path = save_path / f"ppo_update{update_count}.pt"
-    torch.save(_unwrap_model(model).state_dict(), checkpoint_path)
+    save_checkpoint(_unwrap_model(model), checkpoint_path)
     return checkpoint_path
 
 
@@ -341,43 +585,7 @@ def train_ppo(
     use_pin_memory = device.type == "cuda"
     model = BalatroAgent(agent_config, vocab).to(device)
 
-    if config.log_interval <= 0:
-        raise ValueError("log_interval must be positive")
-    if config.checkpoint_interval <= 0:
-        raise ValueError("checkpoint_interval must be positive")
-    if config.eval_interval <= 0:
-        raise ValueError("eval_interval must be positive")
-    if config.ppo_epochs <= 0:
-        raise ValueError("ppo_epochs must be positive")
-    if config.rollout_length <= 0:
-        raise ValueError("rollout_length must be positive")
-    if config.max_no_progress_steps <= 0:
-        raise ValueError("max_no_progress_steps must be positive")
-    if config.lr <= 0.0:
-        raise ValueError("lr must be positive")
-    if config.entropy_coeff < 0.0:
-        raise ValueError("entropy_coeff must be non-negative")
-    if config.action_type_entropy_scale < 0.0:
-        raise ValueError("action_type_entropy_scale must be non-negative")
-    if config.adaptive_entropy:
-        if config.entropy_coeff <= 0.0:
-            raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
-        if config.alpha_lr <= 0.0:
-            raise ValueError("alpha_lr must be positive when adaptive entropy is enabled")
-        if config.alpha_min <= 0.0:
-            raise ValueError("alpha_min must be positive when adaptive entropy is enabled")
-        if config.alpha_max < config.alpha_min:
-            raise ValueError("alpha_max must be greater than or equal to alpha_min")
-        if not 0.0 <= config.target_entropy <= 1.0:
-            raise ValueError("target_entropy must be between 0 and 1 when using normalized entropy")
-        if not 0.0 <= config.entropy_ema_beta < 1.0:
-            raise ValueError("entropy_ema_beta must be in [0, 1)")
-        if config.target_entropy < 0.1:
-            logger.warning(
-                "target_entropy=%.3f is a very low normalized entropy target; "
-                "it will aggressively push the policy toward near-deterministic behavior.",
-                config.target_entropy,
-            )
+    _validate_ppo_config(config)
 
     reference_model: BalatroAgent | None = None
     if pretrained_path:
@@ -494,6 +702,11 @@ def train_ppo(
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
+    # Per-env start step within the current rollout for the current episode.
+    # Reset to 0 at each rollout, advanced past every `done` step so the
+    # buffer can retroactively fill ante-survival targets for completed
+    # episodes only.
+    env_episode_start_step = np.zeros(config.num_envs, dtype=np.int64)
 
     while update_count < planned_updates:
         buffer = RolloutBuffer(
@@ -502,19 +715,8 @@ def train_ppo(
             gamma=config.gamma,
             gae_lambda=config.gae_lambda,
         )
-        rollout_action_type_counts: Counter[str] = Counter()
-        rollout_step_rewards: list[float] = []
-        rollout_progress_flags: list[float] = []
-        rollout_steps_since_progress: list[float] = []
-        rollout_chosen_action_probs: list[float] = []
-        rollout_max_action_probs: list[float] = []
-        rollout_done_flags: list[float] = []
-        rollout_terminated_flags: list[float] = []
-        rollout_truncated_flags: list[float] = []
-        rollout_reward_component_values: defaultdict[str, list[float]] = defaultdict(list)
-        rollout_pre_choose_action_flags: list[float] = []
-        rollout_play_subset_count = 0
-        rollout_discard_subset_count = 0
+        env_episode_start_step[:] = 0
+        rm = _RolloutMetrics()
 
         # === Collect rollouts (vectorized) ===
         model.eval()
@@ -579,14 +781,14 @@ def train_ppo(
             # Track per-env episode stats
             env_ep_reward += rewards
             env_ep_length += 1
-            rollout_step_rewards.extend(rewards.astype(np.float64).tolist())
-            rollout_chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
-            rollout_max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
-            rollout_done_flags.extend(dones.astype(np.float64).tolist())
-            rollout_terminated_flags.extend(terminated.astype(np.float64).tolist())
-            rollout_truncated_flags.extend(truncated.astype(np.float64).tolist())
+            rm.step_rewards.extend(rewards.astype(np.float64).tolist())
+            rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
+            rm.max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
+            rm.done_flags.extend(dones.astype(np.float64).tolist())
+            rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
+            rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
             for action_id in actions_np:
-                rollout_action_type_counts[_action_type_name(int(action_id))] += 1
+                rm.action_type_counts[_action_type_name(int(action_id))] += 1
             for env_idx in range(config.num_envs):
                 step_done = bool(dones[env_idx])
                 pre_sub_phase = _extract_step_info_value(
@@ -599,16 +801,16 @@ def train_ppo(
                 action_type_name = _action_type_name(int(actions_np[env_idx]))
 
                 in_choose_action = pre_sub_phase == "choose_action"
-                rollout_pre_choose_action_flags.append(float(in_choose_action))
+                rm.pre_choose_action_flags.append(float(in_choose_action))
                 if action_type_name == ActionType.PLAY_SUBSET.value:
-                    rollout_play_subset_count += 1
+                    rm.play_subset_count += 1
                 elif action_type_name == ActionType.DISCARD_SUBSET.value:
-                    rollout_discard_subset_count += 1
+                    rm.discard_subset_count += 1
 
-                rollout_progress_flags.append(
+                rm.progress_flags.append(
                     float(bool(_extract_step_info_value(infos, "progress_made", env_idx, done=step_done, default=False)))
                 )
-                rollout_steps_since_progress.append(
+                rm.steps_since_progress.append(
                     float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
                 )
                 for component_name in (
@@ -634,14 +836,30 @@ def train_ppo(
                         default=None,
                     )
                     if component_value is not None:
-                        rollout_reward_component_values[component_name].append(float(component_value))
+                        rm.reward_component_values[component_name].append(float(component_value))
 
             # Handle completed episodes (vectorized envs auto-reset)
             for i in np.where(dones)[0]:
                 episode_rewards.append(float(env_ep_reward[i]))
                 episode_lengths.append(int(env_ep_length[i]))
-                episode_wins.append(bool(_extract_step_info_value(infos, "won", i, done=True, default=False)))
-                episode_stalls.append(bool(_extract_step_info_value(infos, "stalled", i, done=True, default=False)))
+                ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
+                ep_stalled = bool(_extract_step_info_value(infos, "stalled", i, done=True, default=False))
+                ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+                episode_wins.append(ep_won)
+                episode_stalls.append(ep_stalled)
+                # Fill ante-survival targets for every step in this episode.
+                # Truncated-by-stall episodes have no conclusive outcome on
+                # their final ante, so leave mask=0 and skip the fill.
+                if not ep_stalled:
+                    surv_target, surv_mask = compute_ante_survival_targets(ep_ante, ep_won)
+                    buffer.set_episode_survival(
+                        env_idx=int(i),
+                        start_step=int(env_episode_start_step[i]),
+                        end_step=step,
+                        target=surv_target,
+                        mask=surv_mask,
+                    )
+                env_episode_start_step[i] = step + 1
                 env_ep_reward[i] = 0.0
                 env_ep_length[i] = 0
 
@@ -664,104 +882,30 @@ def train_ppo(
         if return_rms is not None:
             return_rms.update(buffer._flat_returns)
 
-        # === PPO update ===
-        # Keep dropout disabled so the PPO ratio compares the same policy
-        # function used to collect `old_log_probs`.
-        model.eval()
-        update_policy_losses = []
-        update_value_losses = []
-        update_entropies = []
-        update_normalized_entropies = []
-        update_action_type_entropies = []
-        update_clip_fracs = []
-        update_approx_kls = []
-        update_valid_action_counts = []
-        update_valid_action_type_counts = []
-        update_kl_to_ref = []
-
-        for _ppo_epoch in range(config.ppo_epochs):
-            batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
-            optimizer.zero_grad()
-            for i, batch in enumerate(batches):
-                logits, value_dict = model(
-                    batch["tokens"], batch["token_types"], batch["scalars"],
-                    batch["attention_mask"], batch["action_mask"],
-                )
-                dist = MaskedCategorical(logits, batch["action_mask"])
-
-                new_log_probs = dist.log_prob(batch["actions"])
-                entropy_per_state = dist.entropy()
-                entropy = entropy_per_state.mean()
-                valid_action_counts = batch["action_mask"].sum(dim=-1)
-                normalized_entropy_per_state = _per_state_normalized_entropy(entropy_per_state, batch["action_mask"])
-                normalized_entropy = normalized_entropy_per_state.mean()
-                normalized_action_type_entropy = _mean_normalized_action_type_entropy(dist.probs, batch["action_mask"])
-                valid_action_type_count_mean = _mean_valid_action_type_count(batch["action_mask"])
-
-                # Policy loss (clipped PPO). Advantages are already normalized
-                # once over the full rollout in buffer.normalize_advantages();
-                # per-mini-batch normalization would let rare terminals
-                # dominate their batch and crush others to noise.
-                ratio = torch.exp(new_log_probs - batch["old_log_probs"])
-                advantages = batch["advantages"]
-
-                surr1 = ratio * advantages
-                surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
-                policy_loss = -torch.min(surr1, surr2).mean()
-
-                # Value loss (normalize targets so critic trains in unit-variance space)
-                returns_target = batch["returns"]
-                if return_rms is not None:
-                    returns_target = (returns_target - return_rms.mean) / return_rms.std
-                value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
-
-                # KL anchor to the frozen pretrained policy. Keeps PPO from
-                # drifting into regions where the BC prior has no grounding
-                # and provides a gradient target for cold action heads whose
-                # logits never appear in the sampled action under masking.
-                if reference_model is not None:
-                    with torch.no_grad():
-                        ref_logits, _ = reference_model(
-                            batch["tokens"], batch["token_types"], batch["scalars"],
-                            batch["attention_mask"], batch["action_mask"],
-                        )
-                    ref_dist = MaskedCategorical(ref_logits, batch["action_mask"])
-                    kl_div = torch.distributions.kl_divergence(dist, ref_dist).mean()
-                else:
-                    kl_div = torch.zeros((), device=batch["scalars"].device)
-
-                # Align the entropy bonus with the controller signal.
-                # Using raw entropy here over-rewards high-branching phases
-                # like card selection, where the max entropy is much larger.
-                loss = (
-                    policy_loss
-                    + config.value_loss_coeff * value_loss
-                    - entropy_coeff
-                    * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
-                    + config.kl_anchor_coeff * kl_div
-                )
-                (loss / accum_steps).backward()
-
-                # Step every accum_steps micro-batches (or on last batch)
-                if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
-                    nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-                    optimizer.step()
-                    optimizer.zero_grad()
-
-                with torch.no_grad():
-                    clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
-                    approx_kl = (batch["old_log_probs"] - new_log_probs).mean().item()
-                    valid_action_count_mean = valid_action_counts.float().mean().item()
-                update_policy_losses.append(policy_loss.item())
-                update_value_losses.append(value_loss.item())
-                update_entropies.append(entropy.item())
-                update_normalized_entropies.append(normalized_entropy.item())
-                update_action_type_entropies.append(normalized_action_type_entropy.item())
-                update_clip_fracs.append(clip_frac)
-                update_approx_kls.append(approx_kl)
-                update_valid_action_counts.append(valid_action_count_mean)
-                update_valid_action_type_counts.append(valid_action_type_count_mean)
-                update_kl_to_ref.append(kl_div.item())
+        update_stats = _run_ppo_update(
+            model=model,
+            optimizer=optimizer,
+            buffer=buffer,
+            reference_model=reference_model,
+            return_rms=return_rms,
+            entropy_coeff=entropy_coeff,
+            config=config,
+            accum_steps=accum_steps,
+            effective_batch_size=effective_batch_size,
+            device=device,
+            use_pin_memory=use_pin_memory,
+        )
+        update_policy_losses = update_stats.policy_losses
+        update_value_losses = update_stats.value_losses
+        update_survival_losses = update_stats.survival_losses
+        update_entropies = update_stats.entropies
+        update_normalized_entropies = update_stats.normalized_entropies
+        update_action_type_entropies = update_stats.action_type_entropies
+        update_clip_fracs = update_stats.clip_fracs
+        update_approx_kls = update_stats.approx_kls
+        update_valid_action_counts = update_stats.valid_action_counts
+        update_valid_action_type_counts = update_stats.valid_action_type_counts
+        update_kl_to_ref = update_stats.kl_to_ref
 
         # Track the normalized entropy signal every update, even with fixed entropy.
         mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -786,6 +930,7 @@ def train_ppo(
         mean_entropy = float(np.mean(update_entropies))
         writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
         writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
+        writer.add_scalar("ppo/survival_loss", np.mean(update_survival_losses), update_count)
         writer.add_scalar("ppo/entropy", mean_entropy, update_count)
         writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
         writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
@@ -817,53 +962,7 @@ def train_ppo(
         writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
         writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
-        writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rollout_chosen_action_probs), update_count)
-        writer.add_scalar("debug/max_action_prob_mean", _safe_mean(rollout_max_action_probs), update_count)
-        writer.add_scalar("debug/step_reward_mean", _safe_mean(rollout_step_rewards), update_count)
-        writer.add_scalar("rollout/progress_rate", _safe_mean(rollout_progress_flags), update_count)
-        writer.add_scalar("rollout/steps_since_progress_mean", _safe_mean(rollout_steps_since_progress), update_count)
-        if rollout_steps_since_progress:
-            writer.add_scalar(
-                "rollout/steps_since_progress_max",
-                float(np.max(rollout_steps_since_progress)),
-                update_count,
-            )
-        writer.add_scalar("rollout/done_rate", _safe_mean(rollout_done_flags), update_count)
-        writer.add_scalar("rollout/terminated_rate", _safe_mean(rollout_terminated_flags), update_count)
-        writer.add_scalar("rollout/truncated_rate", _safe_mean(rollout_truncated_flags), update_count)
-        writer.add_scalar("subphase/choose_action_fraction", _safe_mean(rollout_pre_choose_action_flags), update_count)
-        writer.add_scalar(
-            "hand_choice/play_fraction",
-            (
-                float(rollout_play_subset_count / (rollout_play_subset_count + rollout_discard_subset_count))
-                if (rollout_play_subset_count + rollout_discard_subset_count) > 0
-                else float("nan")
-            ),
-            update_count,
-        )
-        writer.add_scalar(
-            "hand_choice/discard_fraction",
-            (
-                float(rollout_discard_subset_count / (rollout_play_subset_count + rollout_discard_subset_count))
-                if (rollout_play_subset_count + rollout_discard_subset_count) > 0
-                else float("nan")
-            ),
-            update_count,
-        )
-        total_action_count = sum(rollout_action_type_counts.values())
-        if total_action_count > 0:
-            for action_type in ActionType:
-                writer.add_scalar(
-                    f"actions/{action_type.value}_fraction",
-                    rollout_action_type_counts[action_type.value] / total_action_count,
-                    update_count,
-                )
-        for component_name, component_values in rollout_reward_component_values.items():
-            writer.add_scalar(
-                f"reward/{component_name.removeprefix('reward_')}_mean",
-                _safe_mean(component_values),
-                update_count,
-            )
+        _write_rollout_scalars(writer, update_count, rm)
 
         if return_rms is not None:
             writer.add_scalar("ppo/return_norm_mean", return_rms.mean, update_count)

@@ -16,6 +16,10 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+from pylatro_agent._cython_check import check_cython_freshness  # noqa: E402
+
+check_cython_freshness()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train the Balatro agent")

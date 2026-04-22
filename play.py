@@ -17,6 +17,7 @@ import torch
 
 from pylatro import load_game_data
 from pylatro_agent.agent import AgentConfig, BalatroAgent
+from pylatro_agent.checkpoint import load_checkpoint_payload
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.vocab import build_vocab
@@ -32,7 +33,8 @@ def play_model(checkpoint: str, num_games: int, seed: int, device: str, d_model:
 
     dev = torch.device(device)
     model = BalatroAgent(config, vocab).to(dev)
-    model.load_state_dict(torch.load(checkpoint, map_location=dev, weights_only=True))
+    payload = load_checkpoint_payload(checkpoint, dev)
+    model.load_state_dict(payload["state_dict"])
     model.eval()
     logger.info(f"Loaded checkpoint: {checkpoint} ({model.count_parameters():,} params)")
 

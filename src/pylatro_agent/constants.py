@@ -5,6 +5,12 @@ from __future__ import annotations
 import math
 from enum import IntEnum, StrEnum
 
+# Version of the tokenizer observation format. Bump whenever tokens,
+# token_types, scalars, hand_candidates, or action-mask layout changes in
+# a way that would break checkpoints trained against the previous shape.
+# Stamped into every checkpoint; `load_checkpoint` asserts it on read.
+TOKENIZER_VERSION = 1
+
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = 13
@@ -38,6 +44,13 @@ CONSUMABLE_ACTIONS_PER_SLOT = 1 + NUM_CONSUMABLE_HAND_SUBSETS + MAX_JOKER_SLOTS 
 CONSUMABLE_NO_TARGET_OFFSET = 0
 CONSUMABLE_HAND_SUBSET_OFFSET = 1
 CONSUMABLE_JOKER_OFFSET = 1 + NUM_CONSUMABLE_HAND_SUBSETS
+
+# Base-game consumables whose only legal target is a single joker (no hand
+# cards). The mask / heuristic / fast runner all need to agree on this set;
+# keep the single source of truth here.
+JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
+    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
+)
 
 POKER_HAND_NAMES = (
     "Flush Five",

@@ -18,7 +18,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
+from ..checkpoint import save_checkpoint
 from ..distributions import MaskedCategorical
+from ..survival import compute_ante_survival_targets
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
 
@@ -156,7 +158,15 @@ def train_supervised(
             score_loss = F.mse_loss(
                 value_dict["expected_score"], batch["value_target"]
             )
-            value_loss = win_loss + score_loss
+            # Per-ante survival: BCE masked by observed antes.
+            survival_mask = batch["ante_survival_mask"]
+            survival_per_elem = F.binary_cross_entropy(
+                value_dict["ante_survival"],
+                batch["ante_survival_target"],
+                reduction="none",
+            )
+            survival_loss = (survival_per_elem * survival_mask).sum() / survival_mask.sum().clamp(min=1.0)
+            value_loss = win_loss + score_loss + survival_loss
 
             loss = action_loss + config.value_loss_coeff * value_loss
 
@@ -194,6 +204,7 @@ def train_supervised(
             writer.add_scalar("train/entropy", dist.entropy().mean().item(), global_step)
             writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean().item(), global_step)
             writer.add_scalar("train/expected_score_mean", value_dict["expected_score"].mean().item(), global_step)
+            writer.add_scalar("train/survival_loss", survival_loss.item(), global_step)
 
             global_step += 1
 
@@ -216,8 +227,7 @@ def train_supervised(
         save_model = model.module if isinstance(model, nn.DataParallel) else model
         ckpt_path = save_path / f"supervised_epoch{epoch + 1}.pt"
         tmp_path = ckpt_path.with_suffix(".tmp")
-        with open(tmp_path, "wb") as f:
-            torch.save(save_model.state_dict(), f)
+        save_checkpoint(save_model, tmp_path)
         tmp_path.rename(ckpt_path)
 
     writer.close()
@@ -254,4 +264,21 @@ def _collate_batch(records: list[dict], device: torch.device) -> dict[str, torch
             ],
             dtype=torch.float32, device=device,
         ),
+        "ante_survival_target": torch.tensor(
+            np.array([_survival_target(r)[0] for r in records]),
+            dtype=torch.float32, device=device,
+        ),
+        "ante_survival_mask": torch.tensor(
+            np.array([_survival_target(r)[1] for r in records]),
+            dtype=torch.float32, device=device,
+        ),
     }
+
+
+def _survival_target(record: dict) -> tuple[np.ndarray, np.ndarray]:
+    if "ante_survival_target" in record and "ante_survival_mask" in record:
+        return record["ante_survival_target"], record["ante_survival_mask"]
+    return compute_ante_survival_targets(
+        int(record.get("max_ante", 1)),
+        bool(record.get("won", False)),
+    )

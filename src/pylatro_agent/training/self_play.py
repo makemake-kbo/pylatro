@@ -11,6 +11,7 @@ import torch
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
+from ..checkpoint import save_checkpoint
 from ..vocab import Vocab, build_vocab
 from .ppo import PPOConfig, evaluate_model, train_ppo
 
@@ -70,7 +71,7 @@ def train_self_play(
         logger.info(f"Stake {current_stake} win rate: {win_rate:.3f}")
 
         checkpoint_path = save_path / f"self_play_stake{current_stake}.pt"
-        torch.save(model.state_dict(), checkpoint_path)
+        save_checkpoint(model, checkpoint_path)
         current_model_path = str(checkpoint_path)
 
         if win_rate >= config.win_rate_threshold:

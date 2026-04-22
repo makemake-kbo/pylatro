@@ -21,4 +21,6 @@ checkpoints/
 logs/
 runs/
 *.pt
+*.pkl
+cache/
 .DS_Store

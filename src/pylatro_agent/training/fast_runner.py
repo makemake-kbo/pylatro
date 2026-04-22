@@ -22,6 +22,7 @@ from ..constants import (
     CONSUMABLE_HAND_SUBSET_OFFSET,
     CONSUMABLE_JOKER_OFFSET,
     CONSUMABLE_NO_TARGET_OFFSET,
+    JOKER_TARGET_CONSUMABLE_NAMES,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
     MAX_JOKER_SLOTS,
@@ -42,13 +43,6 @@ from ..subset_actions import (
 if TYPE_CHECKING:
     from pylatro.data import GameData
     from pylatro.models import RunState
-
-
-# Kept in sync with masks.py / env.py — the four base-game consumables
-# whose only legal target is a single joker.
-_JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
-    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
-)
 
 
 class FastRunner:
@@ -446,7 +440,7 @@ def _mask_consumable_flat(m, state, AR):
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
-        needs_joker_target = name in _JOKER_TARGET_CONSUMABLE_NAMES
+        needs_joker_target = name in JOKER_TARGET_CONSUMABLE_NAMES
 
         slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
 

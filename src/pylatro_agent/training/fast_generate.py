@@ -23,6 +23,7 @@ from pylatro_cli.controller import GamePhase
 
 from ..heuristic import HeuristicAgent
 from ..reward import default_reward
+from ..survival import compute_ante_survival_targets
 from ..tokenizer import Tokenizer
 from ..vocab import Vocab, build_vocab
 from .fast_runner import FastRunner, _blind_target
@@ -194,10 +195,13 @@ def _run_game_single_pass(
         obs = _build_obs(runner, tokenizer)
 
     return_targets = _discounted_returns(rewards, gamma)
+    survival_target, survival_mask = compute_ante_survival_targets(runner.max_ante, won)
     for rec, rt in zip(records, return_targets, strict=True):
         rec["won"] = won
         rec["max_ante"] = runner.max_ante
         rec["return_target"] = rt
+        rec["ante_survival_target"] = survival_target
+        rec["ante_survival_mask"] = survival_mask
 
     return records, runner.max_ante, won
 

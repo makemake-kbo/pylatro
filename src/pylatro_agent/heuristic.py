@@ -13,12 +13,14 @@ from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
 from .action import ActionType, encode_action
-from .constants import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS, ActionRange, SubPhase
-from .subset_actions import consumable_subset_index, subset_index
-
-_JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
-    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
+from .constants import (
+    JOKER_TARGET_CONSUMABLE_NAMES,
+    MAX_CONSUMABLE_SLOTS,
+    MAX_JOKER_SLOTS,
+    ActionRange,
+    SubPhase,
 )
+from .subset_actions import consumable_subset_index, subset_index
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard, RunState
@@ -735,7 +737,7 @@ class HeuristicAgent:
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
 
-        if name in _JOKER_TARGET_CONSUMABLE_NAMES:
+        if name in JOKER_TARGET_CONSUMABLE_NAMES:
             for joker_idx in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
                 action = encode_action(ActionType.USE_CONSUMABLE_JOKER, slot, joker_idx)
                 if mask[action]:

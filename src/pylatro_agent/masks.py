@@ -12,6 +12,7 @@ from .constants import (
     CONSUMABLE_HAND_SUBSET_OFFSET,
     CONSUMABLE_JOKER_OFFSET,
     CONSUMABLE_NO_TARGET_OFFSET,
+    JOKER_TARGET_CONSUMABLE_NAMES,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
     MAX_JOKER_SLOTS,
@@ -23,12 +24,6 @@ from .constants import (
     SubPhase,
 )
 from .subset_actions import legal_consumable_subset_mask, legal_subset_mask
-
-# Consumables that target exactly one joker (no hand cards). Kept in sync
-# with the runtime check in env.py / fast_runner.py.
-_JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
-    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
-)
 
 
 def compute_action_mask(
@@ -109,7 +104,7 @@ def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
-        needs_joker_target = name in _JOKER_TARGET_CONSUMABLE_NAMES
+        needs_joker_target = name in JOKER_TARGET_CONSUMABLE_NAMES
 
         slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
 

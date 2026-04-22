@@ -153,7 +153,6 @@ def _run_game_single_pass(
             mask,
             selected_cards=runner.selected_cards,
             pending_action=runner.pending_action,
-            pending_consumable_slot=runner.pending_consumable_slot,
         )
 
         current_obs = obs
@@ -217,7 +216,6 @@ def _run_game_fast_no_obs(
             mask,
             selected_cards=runner.selected_cards,
             pending_action=runner.pending_action,
-            pending_consumable_slot=runner.pending_consumable_slot,
         )
         runner.step(action)
     return runner.max_ante, runner.won

@@ -78,7 +78,6 @@ class TestFastRunnerTermination:
                 mask,
                 selected_cards=runner.selected_cards,
                 pending_action=runner.pending_action,
-                pending_consumable_slot=runner.pending_consumable_slot,
             )
             runner.step(action)
             steps += 1
@@ -100,7 +99,6 @@ class TestFastRunnerTermination:
                 mask,
                 selected_cards=runner.selected_cards,
                 pending_action=runner.pending_action,
-                pending_consumable_slot=runner.pending_consumable_slot,
             )
             runner.step(action)
             steps += 1
@@ -122,7 +120,6 @@ class TestFastRunnerTermination:
                     mask,
                     selected_cards=runner.selected_cards,
                     pending_action=runner.pending_action,
-                    pending_consumable_slot=runner.pending_consumable_slot,
                 )
                 runner.step(action)
                 steps += 1

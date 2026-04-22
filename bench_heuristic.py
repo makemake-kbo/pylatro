@@ -22,7 +22,6 @@ for seed in range(NUM_GAMES):
             mask,
             selected_cards=runner.selected_cards,
             pending_action=runner.pending_action,
-            pending_consumable_slot=runner.pending_consumable_slot,
         )
         runner.step(action)
     max_antes.append(runner.max_ante)

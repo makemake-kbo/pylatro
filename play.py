@@ -95,7 +95,6 @@ def play_heuristic(num_games: int, seed: int) -> None:
                 env.state, env._sub_phase, mask,
                 selected_cards=env._selected_cards,
                 pending_action=env._pending_action,
-                pending_consumable_slot=env._pending_consumable_slot,
             )
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated

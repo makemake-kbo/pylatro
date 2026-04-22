@@ -13,7 +13,7 @@ from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
 from .action import ActionType, encode_action
-from .constants import MAX_JOKER_SLOTS, ActionRange, SubPhase
+from .constants import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS, ActionRange, SubPhase
 from .subset_actions import consumable_subset_index, subset_index
 
 _JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
@@ -90,15 +90,16 @@ class HeuristicAgent:
 
     def _choose_action(self, state: RunState, mask: np.ndarray) -> int:
         # Planets first — they commit with no target, so the atomic action
-        # is the slot's no_target index.
-        for slot, cons in enumerate(state.consumables):
+        # is the slot's no_target index. Cap at MAX_CONSUMABLE_SLOTS to stay
+        # inside the action space (the game may temporarily hold more).
+        for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
             center = state.data.centers[cons.center_key]
             if center.get("set", "") != "Planet":
                 continue
             action = self._atomic_consumable_action(state, slot, mask)
             if action is not None:
                 return action
-        for slot, cons in enumerate(state.consumables):
+        for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
             center = state.data.centers[cons.center_key]
             if center.get("set", "") != "Tarot":
                 continue

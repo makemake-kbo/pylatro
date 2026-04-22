@@ -32,7 +32,6 @@ def bench_old():
                 env.state, env._sub_phase, mask,
                 selected_cards=env._selected_cards,
                 pending_action=env._pending_action,
-                pending_consumable_slot=env._pending_consumable_slot,
             )
             obs, reward, terminated, truncated, info = env.step(action)
             records += 1
@@ -55,7 +54,6 @@ def bench_new():
                 runner.state, runner.sub_phase, mask,
                 selected_cards=runner.selected_cards,
                 pending_action=runner.pending_action,
-                pending_consumable_slot=runner.pending_consumable_slot,
             )
             runner.step(action)
             steps += 1

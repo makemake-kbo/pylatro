@@ -143,7 +143,6 @@ def _advance_to_shop(data, seed: int = 42):
             mask,
             selected_cards=runner.selected_cards,
             pending_action=runner.pending_action,
-            pending_consumable_slot=runner.pending_consumable_slot,
         )
         runner.step(action)
     return runner
@@ -160,7 +159,6 @@ def _play_one_game(agent, data, seed: int) -> int:
             mask,
             selected_cards=runner.selected_cards,
             pending_action=runner.pending_action,
-            pending_consumable_slot=runner.pending_consumable_slot,
         )
         runner.step(action)
         steps += 1
@@ -322,7 +320,6 @@ def bench_heuristic(data) -> BenchGroup:
             mask_blind,
             selected_cards=set(),
             pending_action=None,
-            pending_consumable_slot=None,
         ),
         5000,
     )
@@ -339,7 +336,6 @@ def bench_heuristic(data) -> BenchGroup:
             mask_action,
             selected_cards=set(),
             pending_action=None,
-            pending_consumable_slot=None,
         ),
         5000,
     )
@@ -544,7 +540,6 @@ def _bench_filter_pass(agent, data, min_ante, iterations, warmup):
                 mask,
                 selected_cards=runner.selected_cards,
                 pending_action=runner.pending_action,
-                pending_consumable_slot=runner.pending_consumable_slot,
             )
             runner.step(action)
             steps += 1
@@ -601,7 +596,6 @@ def bench_per_step_breakdown(data) -> BenchGroup:
             mask_arr,
             selected_cards=set(),
             pending_action=None,
-            pending_consumable_slot=None,
         ),
         5000,
     )

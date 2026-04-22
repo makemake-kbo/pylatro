@@ -1,9 +1,9 @@
 """Lightweight game runner that bypasses Gymnasium overhead for fast data generation.
 
-Replicates the BalatroEnv state machine (sub-phase tracking, card selection,
-consumable targeting, shop/booster transitions) but skips observation building,
-reward computation, and numpy array creation per step.  Used by fast_generate.py
-to run games at minimal cost; qualifying games are replayed with full observations.
+Replicates the BalatroEnv state machine (sub-phase tracking, atomic consumable
+commits, shop/booster transitions) but skips observation building, reward
+computation, and numpy array creation per step.  Used by fast_generate.py to
+run games at minimal cost; qualifying games are replayed with full observations.
 """
 
 from __future__ import annotations
@@ -18,20 +18,37 @@ from pylatro.runtime import consumable_limit, joker_limit
 from pylatro_cli.controller import GameController, GamePhase
 
 from ..constants import (
+    CONSUMABLE_ACTIONS_PER_SLOT,
+    CONSUMABLE_HAND_SUBSET_OFFSET,
+    CONSUMABLE_JOKER_OFFSET,
+    CONSUMABLE_NO_TARGET_OFFSET,
+    MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
-    MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
+    NUM_CONSUMABLE_HAND_SUBSETS,
     ActionRange,
     SubPhase,
 )
-from ..subset_actions import legal_subset_mask, subset_indices
+from ..subset_actions import (
+    consumable_subset_indices,
+    legal_consumable_subset_mask,
+    legal_subset_mask,
+    subset_indices,
+)
 
 if TYPE_CHECKING:
     from pylatro.data import GameData
     from pylatro.models import RunState
+
+
+# Kept in sync with masks.py / env.py — the four base-game consumables
+# whose only legal target is a single joker.
+_JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
+    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
+)
 
 
 class FastRunner:
@@ -43,9 +60,6 @@ class FastRunner:
         "_max_ante",
         "_max_steps",
         "_pending_action",
-        "_pending_consumable_slot",
-        "_pending_hand_targets",
-        "_pending_joker_targets",
         "_prev_signature",
         "_round_score",
         "_selected_cards",
@@ -65,9 +79,6 @@ class FastRunner:
         self._sub_phase: SubPhase = SubPhase.BLIND_SELECT
         self._selected_cards: set[int] = set()
         self._pending_action: str | None = None
-        self._pending_consumable_slot: int | None = None
-        self._pending_hand_targets: tuple[int, ...] = ()
-        self._pending_joker_targets: tuple[int, ...] = ()
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
@@ -96,10 +107,6 @@ class FastRunner:
     @property
     def pending_action(self) -> str | None:
         return self._pending_action
-
-    @property
-    def pending_consumable_slot(self) -> int | None:
-        return self._pending_consumable_slot
 
     @property
     def max_ante(self) -> int:
@@ -150,15 +157,6 @@ class FastRunner:
             _mask_shop(mv, state, AR)
         elif sp == SubPhase.BOOSTER_PACK:
             _mask_booster(mv, state, AR)
-        elif sp == SubPhase.CONSUMABLE_TARGET:
-            _mask_consumable(
-                mv,
-                state,
-                AR,
-                self._pending_consumable_slot,
-                self._pending_hand_targets,
-                self._pending_joker_targets,
-            )
 
         return self._mask
 
@@ -208,6 +206,10 @@ class FastRunner:
         n_cards=cython.int,
         n_vouchers=cython.int,
         booster_idx=cython.int,
+        rel=cython.int,
+        slot=cython.int,
+        within=cython.int,
+        joker_idx=cython.int,
     )
     def _execute(self, aid: int) -> None:
         ctrl = self._ctrl
@@ -255,55 +257,22 @@ class FastRunner:
             ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif aid == AR.USE_CONSUMABLE:
-            self._pending_consumable_slot = None
-            self._pending_hand_targets = ()
-            self._pending_joker_targets = ()
-            self._sub_phase = SubPhase.CONSUMABLE_TARGET
-
-        elif AR.CONSUMABLE_SLOT_START <= aid <= AR.CONSUMABLE_SLOT_END:
-            self._pending_consumable_slot = aid - AR.CONSUMABLE_SLOT_START
-            self._pending_hand_targets = ()
-            self._pending_joker_targets = ()
-
-        elif AR.CONSUMABLE_HAND_TARGET_START <= aid <= AR.CONSUMABLE_HAND_TARGET_END:
-            idx = aid - AR.CONSUMABLE_HAND_TARGET_START
-            targets = list(self._pending_hand_targets)
-            if idx in targets:
-                targets.remove(idx)
+        elif AR.CONSUMABLE_FLAT_START <= aid <= AR.CONSUMABLE_FLAT_END:
+            rel = aid - int(AR.CONSUMABLE_FLAT_START)
+            slot = rel // CONSUMABLE_ACTIONS_PER_SLOT
+            within = rel - slot * CONSUMABLE_ACTIONS_PER_SLOT
+            if within == CONSUMABLE_NO_TARGET_OFFSET:
+                ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=())
+            elif (
+                CONSUMABLE_HAND_SUBSET_OFFSET
+                <= within
+                < CONSUMABLE_HAND_SUBSET_OFFSET + NUM_CONSUMABLE_HAND_SUBSETS
+            ):
+                hand_targets = consumable_subset_indices(within - CONSUMABLE_HAND_SUBSET_OFFSET)
+                ctrl.use_consumable_on(slot, hand_targets=hand_targets, joker_targets=())
             else:
-                targets.append(idx)
-            self._pending_hand_targets = tuple(targets)
-
-        elif AR.CONSUMABLE_JOKER_TARGET_START <= aid <= AR.CONSUMABLE_JOKER_TARGET_END:
-            idx = aid - AR.CONSUMABLE_JOKER_TARGET_START
-            targets = list(self._pending_joker_targets)
-            if idx in targets:
-                targets.remove(idx)
-            else:
-                targets.append(idx)
-            self._pending_joker_targets = tuple(targets)
-
-        elif aid == AR.CONSUMABLE_CONFIRM:
-            slot = self._pending_consumable_slot
-            if slot is not None:
-                ctrl.use_consumable_on(
-                    slot,
-                    hand_targets=self._pending_hand_targets,
-                    joker_targets=self._pending_joker_targets,
-                )
-            self._pending_consumable_slot = None
-            self._pending_hand_targets = ()
-            self._pending_joker_targets = ()
-            if ctrl.phase == GamePhase.HAND_PLAY:
-                self._sub_phase = SubPhase.CHOOSE_ACTION
-            elif ctrl.phase == GamePhase.SHOP:
-                self._sub_phase = SubPhase.SHOP
-
-        elif aid == AR.CONSUMABLE_CANCEL:
-            self._pending_consumable_slot = None
-            self._pending_hand_targets = ()
-            self._pending_joker_targets = ()
+                joker_idx = within - CONSUMABLE_JOKER_OFFSET
+                ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=(joker_idx,))
             if ctrl.phase == GamePhase.HAND_PLAY:
                 self._sub_phase = SubPhase.CHOOSE_ACTION
             elif ctrl.phase == GamePhase.SHOP:
@@ -364,11 +333,10 @@ def _mask_blind(m, state, AR):
 
 
 @cython.cfunc
-@cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int, _use=cython.int)
+@cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int)
 def _mask_action(m, state, AR):
     _play_start = AR.PLAY_SUBSET_START
     _disc_start = AR.DISCARD_SUBSET_START
-    _use = AR.USE_CONSUMABLE
     hand_size = len(state.hand_cards)
     forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
     legal_subsets = legal_subset_mask(hand_size, forced_slots)
@@ -378,10 +346,7 @@ def _mask_action(m, state, AR):
     if state.current_round.discards_left > 0 and hand_size > 0:
         for i in range(len(legal_subsets)):
             m[_disc_start + i] = cython.cast(cython.char, legal_subsets[i])
-    for cons in state.consumables:
-        if can_use_consumable(state, cons):
-            m[_use] = 1
-            break
+    _mask_consumable_flat(m, state, AR)
 
 
 @cython.cfunc
@@ -454,61 +419,59 @@ def _mask_booster(m, state, AR):
 @cython.cfunc
 @cython.locals(
     m=cython.char[:],
+    base=cython.int,
+    slot=cython.int,
+    slot_base=cython.int,
+    hand_size=cython.int,
+    num_jokers=cython.int,
+    min_size=cython.int,
+    max_size=cython.int,
+    j=cython.int,
+    start=cython.int,
+    end=cython.int,
     i=cython.int,
-    max_highlighted_int=cython.int,
-    required_min=cython.int,
-    required_max=cython.int,
-    current_count=cython.int,
-    _slot_start=cython.int,
-    _hand_target_start=cython.int,
-    _confirm=cython.int,
-    _joker_target_start=cython.int,
-    _cancel=cython.int,
 )
-def _mask_consumable(m, state, AR, pending_slot, hand_targets, joker_targets):
-    _slot_start = AR.CONSUMABLE_SLOT_START
-    _hand_target_start = AR.CONSUMABLE_HAND_TARGET_START
-    _confirm = AR.CONSUMABLE_CONFIRM
-    _joker_target_start = AR.CONSUMABLE_JOKER_TARGET_START
-    _cancel = AR.CONSUMABLE_CANCEL
-    if pending_slot is None:
-        for i, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
-            if can_use_consumable(state, cons):
-                m[_slot_start + i] = 1
-    else:
-        cons = state.consumables[pending_slot]
+def _mask_consumable_flat(m, state, AR):
+    base = int(AR.CONSUMABLE_FLAT_START)
+    num_jokers = min(len(state.jokers), MAX_JOKER_SLOTS)
+    hand_size = len(state.hand_cards)
+    if hand_size > 16:
+        hand_size = 16
+
+    for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
+        cons = state.consumables[slot]
+        if not can_use_consumable(state, cons):
+            continue
         center = state.data.centers[cons.center_key]
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
+        name = center.get("name", "")
+        needs_joker_target = name in _JOKER_TARGET_CONSUMABLE_NAMES
+
+        slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
+
+        if max_highlighted is None and not needs_joker_target:
+            if can_use_consumable(state, cons, hand_targets=(), joker_targets=()):
+                m[slot_base + CONSUMABLE_NO_TARGET_OFFSET] = 1
+            continue
 
         if max_highlighted is not None:
-            required_min = int(config.get("min_highlighted", 1) or 1)
-            required_max = int(max_highlighted or 0)
-            current_count = len(hand_targets)
+            min_size = int(config.get("min_highlighted", 1) or 1)
+            raw_max = int(max_highlighted)
+            max_size = raw_max if raw_max < MAX_CONSUMABLE_HAND_TARGETS else MAX_CONSUMABLE_HAND_TARGETS
+            subset_mask = legal_consumable_subset_mask(hand_size, min_size, max_size)
+            if subset_mask.any():
+                start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
+                end = start + NUM_CONSUMABLE_HAND_SUBSETS
+                sm = subset_mask.astype(np.int8)
+                for i in range(NUM_CONSUMABLE_HAND_SUBSETS):
+                    m[start + i] = sm[i]
 
-            if current_count < required_max:
-                for i in range(min(len(state.hand_cards), MAX_HAND_SIZE)):
-                    if i not in hand_targets:
-                        m[_hand_target_start + i] = 1
-
-            if required_min <= current_count <= required_max and can_use_consumable(
-                state,
-                cons,
-                hand_targets=hand_targets,
-                joker_targets=joker_targets,
-            ):
-                m[_confirm] = 1
-        else:
-            if can_use_consumable(state, cons, hand_targets=hand_targets, joker_targets=joker_targets):
-                m[_confirm] = 1
-
-        name = center.get("name", "")
-        if name in ("The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"):
-            for i in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
-                if i not in joker_targets:
-                    m[_joker_target_start + i] = 1
-
-    m[_cancel] = 1
+        if needs_joker_target:
+            start = slot_base + CONSUMABLE_JOKER_OFFSET
+            for j in range(num_jokers):
+                if can_use_consumable(state, cons, hand_targets=(), joker_targets=(j,)):
+                    m[start + j] = 1
 
 
 # ── progress signature (mirrors BalatroEnv._progress_signature) ──

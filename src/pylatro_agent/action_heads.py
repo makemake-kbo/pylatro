@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from .constants import (
     BLIND_SELECT_START,
+    CONSUMABLE_ACTIONS_PER_SLOT,
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
@@ -16,14 +17,20 @@ from .constants import (
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
+    NUM_ACTIONS,
+    NUM_CONSUMABLE_HAND_SUBSETS,
     SCALAR_DIM,
     MAX_SHOP_ITEMS,
-    NUM_ACTIONS,
     SHOP_START,
     ActionRange,
     TokenType,
 )
-from .subset_actions import HAND_SUBSET_MASKS, HAND_SUBSET_SIZES
+from .subset_actions import (
+    CONSUMABLE_HAND_SUBSET_MASKS,
+    CONSUMABLE_HAND_SUBSET_SIZES,
+    HAND_SUBSET_MASKS,
+    HAND_SUBSET_SIZES,
+)
 from .vocab import RANK_TO_ID, SEAL_TO_ID, Vocab
 
 
@@ -121,12 +128,6 @@ class HandPlayHead(nn.Module):
             nn.Linear(hidden_dim // 2, 1),
         )
 
-        self.use_consumable_proj = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
         self.rank_vocab_size = vocab.rank_size
         self.suit_vocab_size = vocab.suit_size
         self.register_buffer("subset_masks", torch.from_numpy(HAND_SUBSET_MASKS), persistent=False)
@@ -188,7 +189,6 @@ class HandPlayHead(nn.Module):
 
         logits[:, ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1] = play_scores
         logits[:, ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1] = discard_scores
-        logits[:, ActionRange.USE_CONSUMABLE] = self.use_consumable_proj(state_features).squeeze(-1)
         return logits
 
     def _gather_hand_slots(
@@ -352,50 +352,122 @@ class ShopHead(nn.Module):
         return logits
 
 
-class ConsumableHead(nn.Module):
-    """Produces logits for consumable selection and targeting."""
+class ConsumableFlatHead(nn.Module):
+    """Scores every atomic (slot, target) consumable action in one shot.
+
+    The action space is laid out per consumable slot as
+    [no_target, hand_subset_0..695, joker_0..7]. We compute a shared
+    context vector per slot (from the consumable token), per hand-subset
+    (from the gathered hand-card embeddings pooled by each subset mask),
+    and per joker (from joker tokens), then bilinearly score each
+    (slot, target) pair. A tiny per-slot head produces the no-target
+    score. Every consumable action share gradient paths through
+    slot_proj / hand_proj / joker_proj, so even rarely-sampled actions
+    keep their representation trained by the commonly-sampled ones.
+    """
 
     def __init__(self, d_model: int):
         super().__init__()
-        self.slot_proj = nn.Linear(d_model, 1)
-        self.hand_target_proj = nn.Linear(d_model, 1)
-        self.joker_target_proj = nn.Linear(d_model, 1)
-        self.confirm_cancel_mlp = nn.Sequential(
-            nn.Linear(d_model, d_model),
+        ctx = 64
+        self.slot_proj = nn.Linear(d_model, ctx)
+        self.hand_card_proj = nn.Linear(d_model, ctx)
+        self.joker_proj = nn.Linear(d_model, ctx)
+        self.no_target_score = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
             nn.GELU(),
-            nn.Linear(d_model, 2),
+            nn.Linear(d_model // 2, 1),
+        )
+        # (NUM_CONSUMABLE_HAND_SUBSETS, MAX_HAND_SIZE) float mask — 1.0 for
+        # cards in the subset, 0.0 otherwise. Pre-registered so it follows
+        # the module to GPU/MPS with .to(device).
+        self.register_buffer(
+            "subset_masks",
+            torch.from_numpy(CONSUMABLE_HAND_SUBSET_MASKS),
+            persistent=False,
+        )
+        self.register_buffer(
+            "subset_sizes",
+            torch.from_numpy(CONSUMABLE_HAND_SUBSET_SIZES).float(),
+            persistent=False,
         )
 
-    def forward(self, backbone_out: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        backbone_out: torch.Tensor,
+        attention_mask: torch.Tensor,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+    ) -> torch.Tensor:
         batch = backbone_out.shape[0]
-        logits = torch.full((batch, NUM_ACTIONS), -1e8, device=backbone_out.device)
+        device = backbone_out.device
+        logits = torch.full((batch, NUM_ACTIONS), -1e8, device=device)
 
-        # Consumable slot scores
-        cons_tokens = backbone_out[:, CONSUMABLE_START:CONSUMABLE_START + MAX_CONSUMABLE_SLOTS]
-        slot_scores = self.slot_proj(cons_tokens).squeeze(-1)
-        for i in range(MAX_CONSUMABLE_SLOTS):
-            logits[:, ActionRange.CONSUMABLE_SLOT_START + i] = slot_scores[:, i]
-
-        # Hand card target scores
-        hand_tokens = backbone_out[:, DECK_START:DECK_START + MAX_HAND_SIZE]
-        hand_scores = self.hand_target_proj(hand_tokens).squeeze(-1)
-        for i in range(MAX_HAND_SIZE):
-            logits[:, ActionRange.CONSUMABLE_HAND_TARGET_START + i] = hand_scores[:, i]
-
-        # Joker target scores
+        slot_tokens = backbone_out[:, CONSUMABLE_START:CONSUMABLE_START + MAX_CONSUMABLE_SLOTS]
         joker_tokens = backbone_out[:, JOKER_START:JOKER_START + MAX_JOKER_SLOTS]
-        joker_scores = self.joker_target_proj(joker_tokens).squeeze(-1)
-        for i in range(MAX_JOKER_SLOTS):
-            logits[:, ActionRange.CONSUMABLE_JOKER_TARGET_START + i] = joker_scores[:, i]
 
-        # Confirm/cancel
-        full_mask = attention_mask.unsqueeze(-1).float()
-        global_pool = (backbone_out * full_mask).sum(1) / full_mask.sum(1).clamp(min=1)
-        cc = self.confirm_cancel_mlp(global_pool)
-        logits[:, ActionRange.CONSUMABLE_CONFIRM] = cc[:, 0]
-        logits[:, ActionRange.CONSUMABLE_CANCEL] = cc[:, 1]
+        slot_ctx = self.slot_proj(slot_tokens)  # (B, S, ctx)
+        joker_ctx = self.joker_proj(joker_tokens)  # (B, J, ctx)
 
+        hand_repr, hand_present = self._gather_hand_slots(
+            backbone_out, attention_mask, tokens, token_types
+        )  # (B, H, d), (B, H)
+        hand_ctx = self.hand_card_proj(hand_repr) * hand_present.unsqueeze(-1)
+
+        # Per-subset mean over hand-card contexts. subset_masks is (T, H).
+        subset_masks = self.subset_masks.to(device=device, dtype=hand_ctx.dtype)
+        subset_sizes = self.subset_sizes.to(device=device, dtype=hand_ctx.dtype)
+        subset_ctx = torch.einsum("tk,bkc->btc", subset_masks, hand_ctx)
+        subset_ctx = subset_ctx / subset_sizes.view(1, -1, 1).clamp(min=1.0)
+
+        # Bilinear slot × target scoring.
+        hand_scores = torch.einsum("bsc,btc->bst", slot_ctx, subset_ctx)  # (B, S, T)
+        joker_scores = torch.einsum("bsc,bjc->bsj", slot_ctx, joker_ctx)  # (B, S, J)
+        no_target_scores = self.no_target_score(slot_tokens).squeeze(-1)  # (B, S)
+
+        per_slot = torch.cat(
+            [
+                no_target_scores.unsqueeze(-1),  # (B, S, 1)
+                hand_scores,                     # (B, S, T)
+                joker_scores,                    # (B, S, J)
+            ],
+            dim=-1,
+        )
+        assert per_slot.shape[-1] == CONSUMABLE_ACTIONS_PER_SLOT
+        flat = per_slot.reshape(batch, MAX_CONSUMABLE_SLOTS * CONSUMABLE_ACTIONS_PER_SLOT)
+        logits[:, ActionRange.CONSUMABLE_FLAT_START:ActionRange.CONSUMABLE_FLAT_END + 1] = flat
         return logits
+
+    def _gather_hand_slots(
+        self,
+        backbone_out: torch.Tensor,
+        attention_mask: torch.Tensor,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Same scatter-to-hand-slot logic as HandPlayHead.
+        deck_slice = slice(DECK_START, DECK_START + DECK_MAX)
+        deck_out = backbone_out[:, deck_slice]
+        deck_tokens = tokens[:, deck_slice]
+        deck_types = token_types[:, deck_slice]
+        deck_mask = attention_mask[:, deck_slice].bool()
+
+        hand_card_mask = (
+            deck_mask & deck_types.eq(int(TokenType.DECK)) & deck_tokens[:, :, 5].eq(0)
+        )
+        hand_slots = deck_tokens[:, :, 11].clamp(0, MAX_HAND_SIZE - 1).long()
+
+        batch, _, d_model = deck_out.shape
+        hand_repr = torch.zeros(
+            batch, MAX_HAND_SIZE, d_model, device=deck_out.device, dtype=deck_out.dtype
+        )
+        hand_present = torch.zeros(
+            batch, MAX_HAND_SIZE, device=deck_out.device, dtype=deck_out.dtype
+        )
+        ctx_index = hand_slots.unsqueeze(-1).expand(-1, -1, d_model)
+        hand_repr.scatter_add_(1, ctx_index, deck_out * hand_card_mask.unsqueeze(-1))
+        hand_present.scatter_add_(1, hand_slots, hand_card_mask.to(deck_out.dtype))
+        hand_present.clamp_(0.0, 1.0)
+        return hand_repr, hand_present
 
 
 class PackHead(nn.Module):

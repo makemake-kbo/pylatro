@@ -164,6 +164,34 @@ class RolloutBuffer:
 
             self.returns[start:end] = self.advantages[start:end] + env_values[:n]
 
+    def normalize_advantages(self, eps: float = 1e-8) -> None:
+        """Normalize advantages across the full rollout (not per mini-batch).
+
+        Per-mini-batch normalization lets rare high-magnitude transitions
+        (e.g. terminal rewards in a sparse-win setting) dominate only the
+        batch they land in, while batches without terminals see shaping
+        noise blown up to unit variance. Normalizing once over all valid
+        transitions keeps the relative scale of wins/losses vs shaping
+        consistent across every mini-batch.
+        """
+        valid: list[np.ndarray] = []
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            valid.append(self.advantages[start:start + n])
+        if not valid:
+            return
+        flat = np.concatenate(valid)
+        if flat.size == 0:
+            return
+        mean = float(flat.mean())
+        std = float(flat.std())
+        scale = 1.0 / (std + eps)
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            self.advantages[start:start + n] = (self.advantages[start:start + n] - mean) * scale
+
     def get_batches(
         self,
         batch_size: int,

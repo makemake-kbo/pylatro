@@ -12,8 +12,13 @@ from pylatro import can_use_consumable, evaluate_poker_hand
 from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
-from .constants import ActionRange, SubPhase
-from .subset_actions import subset_index
+from .action import ActionType, encode_action
+from .constants import MAX_JOKER_SLOTS, ActionRange, SubPhase
+from .subset_actions import consumable_subset_index, subset_index
+
+_JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
+    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
+)
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard, RunState
@@ -76,8 +81,6 @@ class HeuristicAgent:
             return self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
             return self._booster_pack(state, action_mask)
-        elif sub_phase == SubPhase.CONSUMABLE_TARGET:
-            return self._consumable_target(state, action_mask, kwargs.get("pending_consumable_slot"))
         return self._random_valid(action_mask)
 
     def _blind_select(self, state: RunState, mask: np.ndarray) -> int:
@@ -86,17 +89,22 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _choose_action(self, state: RunState, mask: np.ndarray) -> int:
-        if mask[ActionRange.USE_CONSUMABLE]:
-            for cons in state.consumables:
-                center = state.data.centers[cons.center_key]
-                cset = center.get("set", "")
-                if cset == "Planet" and can_use_consumable(state, cons):
-                    return ActionRange.USE_CONSUMABLE
-            for cons in state.consumables:
-                center = state.data.centers[cons.center_key]
-                cset = center.get("set", "")
-                if cset == "Tarot" and can_use_consumable(state, cons):
-                    return ActionRange.USE_CONSUMABLE
+        # Planets first — they commit with no target, so the atomic action
+        # is the slot's no_target index.
+        for slot, cons in enumerate(state.consumables):
+            center = state.data.centers[cons.center_key]
+            if center.get("set", "") != "Planet":
+                continue
+            action = self._atomic_consumable_action(state, slot, mask)
+            if action is not None:
+                return action
+        for slot, cons in enumerate(state.consumables):
+            center = state.data.centers[cons.center_key]
+            if center.get("set", "") != "Tarot":
+                continue
+            action = self._atomic_consumable_action(state, slot, mask)
+            if action is not None:
+                return action
 
         hand = state.hand_cards
         best_play = tuple(sorted(self._cached_best_hand(state, hand)))
@@ -706,32 +714,50 @@ class HeuristicAgent:
             return 3.0
         return 1.0
 
-    def _consumable_target(self, state: RunState, mask: np.ndarray, pending_slot: int | None) -> int:
-        if pending_slot is None:
-            for i, cons in enumerate(state.consumables):
-                action = ActionRange.CONSUMABLE_SLOT_START + i
-                if mask[action]:
-                    center = state.data.centers[cons.center_key]
-                    cset = center.get("set", "")
-                    if cset == "Planet":
-                        return action
-            for i, cons in enumerate(state.consumables):
-                action = ActionRange.CONSUMABLE_SLOT_START + i
+    def _atomic_consumable_action(
+        self, state: RunState, slot: int, mask: np.ndarray
+    ) -> int | None:
+        """Return the flat action id for using the consumable in `slot`, or None.
+
+        Picks the targeting variant that matches the consumable's config
+        and targets the first k hand cards (k = max_highlighted clamped
+        to hand size) for hand-targeted consumables — replacing the old
+        greedy multi-step sequence that walked CONSUMABLE_TARGET.
+        """
+        if slot >= len(state.consumables):
+            return None
+        cons = state.consumables[slot]
+        if not can_use_consumable(state, cons):
+            return None
+        center = state.data.centers[cons.center_key]
+        config = center.get("config") or {}
+        max_highlighted = config.get("max_highlighted")
+        name = center.get("name", "")
+
+        if name in _JOKER_TARGET_CONSUMABLE_NAMES:
+            for joker_idx in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
+                action = encode_action(ActionType.USE_CONSUMABLE_JOKER, slot, joker_idx)
                 if mask[action]:
                     return action
+            return None
 
-        if mask[ActionRange.CONSUMABLE_HAND_TARGET_START]:
-            hand = state.hand_cards
-            for i in range(min(len(hand), 5)):
-                action = ActionRange.CONSUMABLE_HAND_TARGET_START + i
-                if mask[action]:
-                    return action
+        if max_highlighted is not None:
+            min_size = int(config.get("min_highlighted", 1) or 1)
+            max_size = int(max_highlighted)
+            hand_size = len(state.hand_cards)
+            target_size = min(max_size, hand_size)
+            if target_size < min_size:
+                return None
+            subset = tuple(range(target_size))
+            action = encode_action(
+                ActionType.USE_CONSUMABLE_HAND_SUBSET,
+                slot,
+                consumable_subset_index(subset),
+            )
+            return action if mask[action] else None
 
-        if mask[ActionRange.CONSUMABLE_CONFIRM]:
-            return ActionRange.CONSUMABLE_CONFIRM
-        if mask[ActionRange.CONSUMABLE_CANCEL]:
-            return ActionRange.CONSUMABLE_CANCEL
-        return self._random_valid(mask)
+        action = encode_action(ActionType.USE_CONSUMABLE_NO_TARGET, slot)
+        return action if mask[action] else None
 
     def _random_valid(self, mask: np.ndarray) -> int:
         valid = np.where(mask == 1)[0]

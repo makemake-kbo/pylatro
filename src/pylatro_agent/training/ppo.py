@@ -17,7 +17,7 @@ from pylatro import GameData, load_game_data
 
 from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
-from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
+from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, SubPhase, TOKEN_DIM
 from ..distributions import MaskedCategorical
 from ..env import BalatroEnv
 from ..vocab import Vocab, build_vocab
@@ -163,6 +163,12 @@ class PPOConfig:
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     normalize_returns: bool = True  # Running mean/std normalization for value targets
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
+    # Anchor the training policy to a frozen copy of the pretrained checkpoint
+    # via KL(pi_new || pi_ref). Bounds cumulative drift (keeps clip_fraction
+    # from staying near the cap) and gives cold action heads a gradient target
+    # rather than leaving them to drift from arbitrary masked-out states. Set
+    # to 0 to disable; requires pretrained_path to be provided.
+    kl_anchor_coeff: float = 0.02
 
 
 def _unwrap_model(model: nn.Module) -> nn.Module:
@@ -205,16 +211,15 @@ def _make_policy_optimizer(parameters, lr: float) -> Adam:
     return Adam(parameters, lr=lr)
 
 
-def _mean_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
-    """Return mean entropy normalized by the log of each state's valid-action count."""
+def _per_state_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
+    """Return each state's entropy normalized by the log of its valid-action count."""
     valid_action_counts = action_mask.sum(dim=-1).to(entropy_per_state.dtype)
     max_entropy = torch.log(valid_action_counts.clamp_min(2.0))
-    normalized_entropy = torch.where(
+    return torch.where(
         valid_action_counts > 1.0,
         entropy_per_state / max_entropy,
         torch.zeros_like(entropy_per_state),
     )
-    return normalized_entropy.mean()
 
 
 def _mean_normalized_action_type_entropy(action_probs: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
@@ -374,9 +379,27 @@ def train_ppo(
                 config.target_entropy,
             )
 
+    reference_model: BalatroAgent | None = None
     if pretrained_path:
         _load_checkpoint_compatible(model, pretrained_path, device)
         logger.info(f"Loaded pretrained model from {pretrained_path}")
+        if config.kl_anchor_coeff > 0.0:
+            # Frozen reference for KL(pi_new || pi_ref). Keeps PPO from
+            # destroying the BC prior and gives cold action heads a
+            # non-zero gradient target during states where they would
+            # otherwise see no supervision.
+            reference_model = BalatroAgent(agent_config, vocab).to(device)
+            _load_checkpoint_compatible(reference_model, pretrained_path, device)
+            reference_model.eval()
+            for param in reference_model.parameters():
+                param.requires_grad = False
+            logger.info("KL anchor active (coeff=%.4f)", config.kl_anchor_coeff)
+    elif config.kl_anchor_coeff > 0.0:
+        logger.warning(
+            "kl_anchor_coeff=%.4f was requested but no pretrained_path was given; "
+            "disabling KL anchor for this run.",
+            config.kl_anchor_coeff,
+        )
 
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
     if use_multi_gpu:
@@ -599,6 +622,7 @@ def train_ppo(
                     "reward_interest_bonus",
                     "reward_idle_penalty",
                     "reward_consumable_commit",
+                    "reward_consumable_slot_targeting",
                     "reward_shop_sell_penalty",
                     "reward_shop_reroll_reward",
                 ):
@@ -636,6 +660,7 @@ def train_ppo(
                 last_values = return_rms.denormalize(last_values)
 
         buffer.compute_returns_and_advantages(last_values=last_values)
+        buffer.normalize_advantages()
         if return_rms is not None:
             return_rms.update(buffer._flat_returns)
 
@@ -652,6 +677,7 @@ def train_ppo(
         update_approx_kls = []
         update_valid_action_counts = []
         update_valid_action_type_counts = []
+        update_kl_to_ref = []
 
         for _ppo_epoch in range(config.ppo_epochs):
             batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
@@ -667,14 +693,17 @@ def train_ppo(
                 entropy_per_state = dist.entropy()
                 entropy = entropy_per_state.mean()
                 valid_action_counts = batch["action_mask"].sum(dim=-1)
-                normalized_entropy = _mean_normalized_entropy(entropy_per_state, batch["action_mask"])
+                normalized_entropy_per_state = _per_state_normalized_entropy(entropy_per_state, batch["action_mask"])
+                normalized_entropy = normalized_entropy_per_state.mean()
                 normalized_action_type_entropy = _mean_normalized_action_type_entropy(dist.probs, batch["action_mask"])
                 valid_action_type_count_mean = _mean_valid_action_type_count(batch["action_mask"])
 
-                # Policy loss (clipped PPO)
+                # Policy loss (clipped PPO). Advantages are already normalized
+                # once over the full rollout in buffer.normalize_advantages();
+                # per-mini-batch normalization would let rare terminals
+                # dominate their batch and crush others to noise.
                 ratio = torch.exp(new_log_probs - batch["old_log_probs"])
                 advantages = batch["advantages"]
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 surr1 = ratio * advantages
                 surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
@@ -686,6 +715,21 @@ def train_ppo(
                     returns_target = (returns_target - return_rms.mean) / return_rms.std
                 value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
 
+                # KL anchor to the frozen pretrained policy. Keeps PPO from
+                # drifting into regions where the BC prior has no grounding
+                # and provides a gradient target for cold action heads whose
+                # logits never appear in the sampled action under masking.
+                if reference_model is not None:
+                    with torch.no_grad():
+                        ref_logits, _ = reference_model(
+                            batch["tokens"], batch["token_types"], batch["scalars"],
+                            batch["attention_mask"], batch["action_mask"],
+                        )
+                    ref_dist = MaskedCategorical(ref_logits, batch["action_mask"])
+                    kl_div = torch.distributions.kl_divergence(dist, ref_dist).mean()
+                else:
+                    kl_div = torch.zeros((), device=batch["scalars"].device)
+
                 # Align the entropy bonus with the controller signal.
                 # Using raw entropy here over-rewards high-branching phases
                 # like card selection, where the max entropy is much larger.
@@ -694,6 +738,7 @@ def train_ppo(
                     + config.value_loss_coeff * value_loss
                     - entropy_coeff
                     * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
+                    + config.kl_anchor_coeff * kl_div
                 )
                 (loss / accum_steps).backward()
 
@@ -716,6 +761,7 @@ def train_ppo(
                 update_approx_kls.append(approx_kl)
                 update_valid_action_counts.append(valid_action_count_mean)
                 update_valid_action_type_counts.append(valid_action_type_count_mean)
+                update_kl_to_ref.append(kl_div.item())
 
         # Track the normalized entropy signal every update, even with fixed entropy.
         mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -745,6 +791,13 @@ def train_ppo(
         writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
         writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
         writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
+        if reference_model is not None:
+            writer.add_scalar("ppo/kl_to_ref", float(np.mean(update_kl_to_ref)), update_count)
+            writer.add_scalar(
+                "ppo/kl_to_ref_loss",
+                float(config.kl_anchor_coeff * np.mean(update_kl_to_ref)),
+                update_count,
+            )
         writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
         writer.add_scalar("ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)

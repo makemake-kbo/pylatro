@@ -6,7 +6,7 @@ from itertools import combinations
 
 import numpy as np
 
-from .constants import MAX_HAND_SIZE
+from .constants import MAX_CONSUMABLE_HAND_TARGETS, MAX_HAND_SIZE, NUM_CONSUMABLE_HAND_SUBSETS
 
 HAND_SUBSETS: tuple[tuple[int, ...], ...] = tuple(
     combo
@@ -28,6 +28,19 @@ for idx, subset in enumerate(HAND_SUBSETS):
         bitmask |= 1 << slot
     HAND_SUBSET_BITS[idx] = bitmask
 
+# Consumable targeting subsets are the size-1..MAX_CONSUMABLE_HAND_TARGETS
+# prefix of HAND_SUBSETS — since combinations enumerate by ascending size,
+# slicing the first NUM_CONSUMABLE_HAND_SUBSETS entries gives exactly the
+# valid targeting subsets in the same canonical order.
+CONSUMABLE_HAND_SUBSETS: tuple[tuple[int, ...], ...] = HAND_SUBSETS[:NUM_CONSUMABLE_HAND_SUBSETS]
+assert all(len(s) <= MAX_CONSUMABLE_HAND_TARGETS for s in CONSUMABLE_HAND_SUBSETS)
+CONSUMABLE_HAND_SUBSET_TO_INDEX = {
+    subset: idx for idx, subset in enumerate(CONSUMABLE_HAND_SUBSETS)
+}
+CONSUMABLE_HAND_SUBSET_SIZES = HAND_SUBSET_SIZES[:NUM_CONSUMABLE_HAND_SUBSETS].astype(np.int8)
+CONSUMABLE_HAND_SUBSET_BITS = HAND_SUBSET_BITS[:NUM_CONSUMABLE_HAND_SUBSETS]
+CONSUMABLE_HAND_SUBSET_MASKS = HAND_SUBSET_MASKS[:NUM_CONSUMABLE_HAND_SUBSETS]
+
 
 def subset_index(indices: tuple[int, ...] | list[int] | set[int]) -> int:
     """Return the canonical exhaustive subset index for sorted hand indices."""
@@ -38,6 +51,35 @@ def subset_index(indices: tuple[int, ...] | list[int] | set[int]) -> int:
 def subset_indices(index: int) -> tuple[int, ...]:
     """Return the hand-slot indices for an exhaustive subset id."""
     return HAND_SUBSETS[index]
+
+
+def consumable_subset_indices(index: int) -> tuple[int, ...]:
+    """Return the hand-slot indices for a consumable-target subset id."""
+    return CONSUMABLE_HAND_SUBSETS[index]
+
+
+def consumable_subset_index(indices: tuple[int, ...] | list[int]) -> int:
+    """Return the canonical consumable subset index for sorted hand indices."""
+    ordered = tuple(sorted(int(idx) for idx in indices))
+    return CONSUMABLE_HAND_SUBSET_TO_INDEX[ordered]
+
+
+def legal_consumable_subset_mask(hand_size: int, min_size: int, max_size: int) -> np.ndarray:
+    """Return a boolean mask over consumable subsets valid for this hand.
+
+    A subset is valid iff all its card indices are live (< hand_size) and
+    its size is in [min_size, max_size].
+    """
+    if hand_size <= 0 or max_size <= 0 or min_size > max_size:
+        return np.zeros(NUM_CONSUMABLE_HAND_SUBSETS, dtype=bool)
+    present_bits = (1 << hand_size) - 1
+    all_bits = (1 << MAX_HAND_SIZE) - 1
+    missing_bits = np.uint16(all_bits ^ present_bits)
+    size_ok = (CONSUMABLE_HAND_SUBSET_SIZES >= min_size) & (
+        CONSUMABLE_HAND_SUBSET_SIZES <= max_size
+    )
+    indices_ok = (CONSUMABLE_HAND_SUBSET_BITS & missing_bits) == 0
+    return size_ok & indices_ok
 
 
 def present_hand_bitmask(hand_size: int) -> int:

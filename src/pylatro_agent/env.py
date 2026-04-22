@@ -15,7 +15,7 @@ from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
 from .masks import compute_action_mask
 from .reward import RewardFn, default_reward, default_reward_components
-from .subset_actions import subset_indices
+from .subset_actions import consumable_subset_indices, subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
 
@@ -57,12 +57,11 @@ class BalatroEnv(gymnasium.Env):
         self._step_count = 0
         self._steps_since_progress = 0
 
-        # Multi-step state
+        # Multi-step state (only used by the legacy SELECT_CARDS flow; the
+        # consumable flow is now atomic — every consumable action commits
+        # slot + targets in one env.step() so no pending state is needed).
         self._selected_cards: set[int] = set()
         self._pending_action: str | None = None  # "play" or "discard"
-        self._pending_consumable_slot: int | None = None
-        self._pending_consumable_hand_targets: tuple[int, ...] = ()
-        self._pending_consumable_joker_targets: tuple[int, ...] = ()
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -108,9 +107,6 @@ class BalatroEnv(gymnasium.Env):
         self._steps_since_progress = 0
         self._selected_cards = set()
         self._pending_action = None
-        self._pending_consumable_slot = None
-        self._pending_consumable_hand_targets = ()
-        self._pending_consumable_joker_targets = ()
         self._round_score = 0
         self._blind_just_beaten = False
         self._prev_info = self._capture_state_info()
@@ -127,17 +123,6 @@ class BalatroEnv(gymnasium.Env):
         pre_sub_phase = self._sub_phase
         pre_pending_action = self._pending_action or ""
         pre_selected_count = len(self._selected_cards)
-        pre_requires_targeting = False
-        if (
-            pre_sub_phase == SubPhase.CONSUMABLE_TARGET
-            and self._pending_consumable_slot is not None
-        ):
-            state_pre = self._controller.state
-            if 0 <= self._pending_consumable_slot < len(state_pre.consumables):
-                cons = state_pre.consumables[self._pending_consumable_slot]
-                center = state_pre.data.centers[cons.center_key]
-                config = center.get("config") or {}
-                pre_requires_targeting = config.get("max_highlighted") is not None
 
         decoded = decode_action(action)
         terminated = False
@@ -162,26 +147,7 @@ class BalatroEnv(gymnasium.Env):
         curr_info = self._capture_state_info()
         curr_info["blind_just_beaten"] = self._blind_just_beaten
         curr_info["hands_left"] = state.current_round.hands_left
-        curr_info["pre_sub_phase"] = pre_sub_phase
-        curr_info["pre_pending_action"] = pre_pending_action
-        curr_info["pre_requires_targeting"] = pre_requires_targeting
         curr_info["action_type"] = decoded.action_type
-
-        post_requires_targeting = False
-        if (
-            decoded.action_type == "consumable_slot"
-            and self._pending_consumable_slot is not None
-        ):
-            if 0 <= self._pending_consumable_slot < len(state.consumables):
-                cons_post = state.consumables[self._pending_consumable_slot]
-                center_post = state.data.centers[cons_post.center_key]
-                config_post = center_post.get("config") or {}
-                needs_hand = config_post.get("max_highlighted") is not None
-                needs_joker = center_post.get("name", "") in (
-                    "The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh",
-                )
-                post_requires_targeting = needs_hand or needs_joker
-        curr_info["post_requires_targeting"] = post_requires_targeting
         progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
         curr_info["progress_made"] = progress_made
         if progress_made:
@@ -207,7 +173,6 @@ class BalatroEnv(gymnasium.Env):
         info = {
             "sub_phase": self._sub_phase,
             "pre_sub_phase": pre_sub_phase,
-            "pre_pending_action": pre_pending_action,
             "pre_selected_count": pre_selected_count,
             "ante": state.round_resets.ante,
             "dollars": state.dollars,
@@ -230,9 +195,6 @@ class BalatroEnv(gymnasium.Env):
             self._sub_phase,
             selected_cards=self._selected_cards,
             pending_action=self._pending_action,
-            pending_consumable_slot=self._pending_consumable_slot,
-            pending_consumable_targets_hand=self._pending_consumable_hand_targets,
-            pending_consumable_targets_joker=self._pending_consumable_joker_targets,
         )
 
     def _execute_action(self, decoded) -> None:
@@ -281,60 +243,22 @@ class BalatroEnv(gymnasium.Env):
             ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
-        elif at == ActionType.USE_CONSUMABLE:
-            self._pending_consumable_slot = None
-            self._pending_consumable_hand_targets = ()
-            self._pending_consumable_joker_targets = ()
-            self._sub_phase = SubPhase.CONSUMABLE_TARGET
+        elif at == ActionType.USE_CONSUMABLE_NO_TARGET:
+            ctrl.use_consumable_on(decoded.index, hand_targets=(), joker_targets=())
+            self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
 
-        elif at == ActionType.CONSUMABLE_SLOT:
-            self._pending_consumable_slot = decoded.index
-            self._pending_consumable_hand_targets = ()
-            self._pending_consumable_joker_targets = ()
+        elif at == ActionType.USE_CONSUMABLE_HAND_SUBSET:
+            hand_targets = consumable_subset_indices(decoded.detail)
+            ctrl.use_consumable_on(decoded.index, hand_targets=hand_targets, joker_targets=())
+            self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
 
-        elif at == ActionType.CONSUMABLE_HAND_TARGET:
-            targets = list(self._pending_consumable_hand_targets)
-            idx = decoded.index
-            if idx in targets:
-                targets.remove(idx)
-            else:
-                targets.append(idx)
-            self._pending_consumable_hand_targets = tuple(targets)
-
-        elif at == ActionType.CONSUMABLE_JOKER_TARGET:
-            targets = list(self._pending_consumable_joker_targets)
-            idx = decoded.index
-            if idx in targets:
-                targets.remove(idx)
-            else:
-                targets.append(idx)
-            self._pending_consumable_joker_targets = tuple(targets)
-
-        elif at == ActionType.CONSUMABLE_CONFIRM:
-            slot = self._pending_consumable_slot
-            if slot is not None:
-                ctrl.use_consumable_on(
-                    slot,
-                    hand_targets=self._pending_consumable_hand_targets,
-                    joker_targets=self._pending_consumable_joker_targets,
-                )
-            self._pending_consumable_slot = None
-            self._pending_consumable_hand_targets = ()
-            self._pending_consumable_joker_targets = ()
-            # Return to appropriate phase
-            if ctrl.phase == GamePhase.HAND_PLAY:
-                self._sub_phase = SubPhase.CHOOSE_ACTION
-            elif ctrl.phase == GamePhase.SHOP:
-                self._sub_phase = SubPhase.SHOP
-
-        elif at == ActionType.CONSUMABLE_CANCEL:
-            self._pending_consumable_slot = None
-            self._pending_consumable_hand_targets = ()
-            self._pending_consumable_joker_targets = ()
-            if ctrl.phase == GamePhase.HAND_PLAY:
-                self._sub_phase = SubPhase.CHOOSE_ACTION
-            elif ctrl.phase == GamePhase.SHOP:
-                self._sub_phase = SubPhase.SHOP
+        elif at == ActionType.USE_CONSUMABLE_JOKER:
+            ctrl.use_consumable_on(
+                decoded.index,
+                hand_targets=(),
+                joker_targets=(decoded.detail,),
+            )
+            self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
 
         elif at == ActionType.SHOP_BUY:
             idx = decoded.index
@@ -383,7 +307,6 @@ class BalatroEnv(gymnasium.Env):
             self._sub_phase,
             selected_cards=self._selected_cards,
             action_mask=mask,
-            pending_consumable_hand_targets=self._pending_consumable_hand_targets,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
@@ -457,3 +380,18 @@ class BalatroEnv(gymnasium.Env):
             info.get("pack_card_keys", ()),
             info.get("pack_choices_remaining", 0),
         )
+
+
+def _phase_to_sub_phase(phase: GamePhase, current: SubPhase) -> SubPhase:
+    """Map the post-action controller phase back to our sub-phase.
+
+    After an atomic consumable commit the controller may have transitioned
+    to a new phase (e.g., a card-adding consumable can push us into a
+    booster pack menu). Default to CHOOSE_ACTION for HAND_PLAY so the
+    policy stays in the same decision loop it came from.
+    """
+    if phase == GamePhase.HAND_PLAY:
+        return SubPhase.CHOOSE_ACTION
+    if phase == GamePhase.SHOP:
+        return SubPhase.SHOP
+    return current

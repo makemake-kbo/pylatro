@@ -8,16 +8,27 @@ from pylatro import can_use_consumable
 from pylatro.models import RunState
 
 from .constants import (
+    CONSUMABLE_ACTIONS_PER_SLOT,
+    CONSUMABLE_HAND_SUBSET_OFFSET,
+    CONSUMABLE_JOKER_OFFSET,
+    CONSUMABLE_NO_TARGET_OFFSET,
+    MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
-    MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
+    NUM_CONSUMABLE_HAND_SUBSETS,
     ActionRange,
     SubPhase,
 )
-from .subset_actions import legal_subset_mask
+from .subset_actions import legal_consumable_subset_mask, legal_subset_mask
+
+# Consumables that target exactly one joker (no hand cards). Kept in sync
+# with the runtime check in env.py / fast_runner.py.
+_JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
+    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
+)
 
 
 def compute_action_mask(
@@ -25,13 +36,9 @@ def compute_action_mask(
     sub_phase: SubPhase,
     selected_cards: set[int] | None = None,
     pending_action: str | None = None,
-    pending_consumable_slot: int | None = None,
-    pending_consumable_targets_hand: tuple[int, ...] = (),
-    pending_consumable_targets_joker: tuple[int, ...] = (),
 ) -> np.ndarray:
     """Return a binary mask of shape (NUM_ACTIONS,) where 1 = valid."""
     mask = np.zeros(NUM_ACTIONS, dtype=np.int8)
-    AR = ActionRange
 
     if selected_cards is None:
         selected_cards = set()
@@ -50,12 +57,6 @@ def compute_action_mask(
 
     elif sub_phase == SubPhase.BOOSTER_PACK:
         _mask_booster_pack(mask, state)
-
-    elif sub_phase == SubPhase.CONSUMABLE_TARGET:
-        _mask_consumable_target(
-            mask, state, pending_consumable_slot,
-            pending_consumable_targets_hand, pending_consumable_targets_joker,
-        )
 
     return mask
 
@@ -87,11 +88,50 @@ def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
     if state.current_round.discards_left > 0 and hand_size > 0:
         mask[AR.DISCARD_SUBSET_START:AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
-    # Use consumable if any is usable
-    for i, cons in enumerate(state.consumables):
-        if can_use_consumable(state, cons):
-            mask[AR.USE_CONSUMABLE] = 1
-            break
+    _mask_consumable_flat(mask, state)
+
+
+def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
+    """Enable atomic consumable actions for every usable slot.
+
+    For each slot the policy picks slot+target in one step; the layout is
+    [no_target, hand_subset_0..695, joker_0..7] contiguous per slot.
+    """
+    base = int(ActionRange.CONSUMABLE_FLAT_START)
+    num_jokers = min(len(state.jokers), MAX_JOKER_SLOTS)
+    hand_size = min(len(state.hand_cards), 16)
+
+    for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
+        cons = state.consumables[slot]
+        if not can_use_consumable(state, cons):
+            continue
+        center = state.data.centers[cons.center_key]
+        config = center.get("config") or {}
+        max_highlighted = config.get("max_highlighted")
+        name = center.get("name", "")
+        needs_joker_target = name in _JOKER_TARGET_CONSUMABLE_NAMES
+
+        slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
+
+        if max_highlighted is None and not needs_joker_target:
+            if can_use_consumable(state, cons, hand_targets=(), joker_targets=()):
+                mask[slot_base + CONSUMABLE_NO_TARGET_OFFSET] = 1
+            continue
+
+        if max_highlighted is not None:
+            min_size = int(config.get("min_highlighted", 1) or 1)
+            max_size = min(int(max_highlighted), MAX_CONSUMABLE_HAND_TARGETS)
+            subset_mask = legal_consumable_subset_mask(hand_size, min_size, max_size)
+            if subset_mask.any():
+                start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
+                end = start + NUM_CONSUMABLE_HAND_SUBSETS
+                mask[start:end] = subset_mask.astype(np.int8)
+
+        if needs_joker_target:
+            start = slot_base + CONSUMABLE_JOKER_OFFSET
+            for j in range(num_jokers):
+                if can_use_consumable(state, cons, hand_targets=(), joker_targets=(j,)):
+                    mask[start + j] = 1
 
 
 def _mask_select_cards(
@@ -152,55 +192,3 @@ def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:
 
     # Skip/close always valid
     mask[AR.PACK_SKIP] = 1
-
-
-def _mask_consumable_target(
-    mask: np.ndarray,
-    state: RunState,
-    pending_slot: int | None,
-    hand_targets: tuple[int, ...],
-    joker_targets: tuple[int, ...],
-) -> None:
-    AR = ActionRange
-
-    if pending_slot is None:
-        # Need to select which consumable to use
-        for i, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
-            if can_use_consumable(state, cons):
-                mask[AR.CONSUMABLE_SLOT_START + i] = 1
-    else:
-        # Consumable selected, need targets
-        cons = state.consumables[pending_slot]
-        center = state.data.centers[cons.center_key]
-        config = center.get("config") or {}
-        max_highlighted = config.get("max_highlighted")
-
-        if max_highlighted is not None:
-            # Need card targets
-            required_min = int(config.get("min_highlighted", 1) or 1)
-            required_max = int(max_highlighted or 0)
-            current_count = len(hand_targets)
-
-            if current_count < required_max:
-                for i in range(min(len(state.hand_cards), MAX_HAND_SIZE)):
-                    if i not in hand_targets:
-                        mask[AR.CONSUMABLE_HAND_TARGET_START + i] = 1
-
-            # Confirm if we have enough targets
-            if required_min <= current_count <= required_max:
-                if can_use_consumable(state, cons, hand_targets=hand_targets, joker_targets=joker_targets):
-                    mask[AR.CONSUMABLE_CONFIRM] = 1
-        else:
-            # No targeting needed (planets, hermit, etc.) — auto-confirm
-            if can_use_consumable(state, cons, hand_targets=hand_targets, joker_targets=joker_targets):
-                mask[AR.CONSUMABLE_CONFIRM] = 1
-
-        # Joker targets for certain consumables
-        name = center.get("name", "")
-        if name in ("The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"):
-            for i in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
-                if i not in joker_targets:
-                    mask[AR.CONSUMABLE_JOKER_TARGET_START + i] = 1
-
-    # Cancel always valid
-    mask[AR.CONSUMABLE_CANCEL] = 1

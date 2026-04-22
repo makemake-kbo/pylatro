@@ -8,55 +8,56 @@ if TYPE_CHECKING:
     from pylatro.models import RunState
 
 
-WIN_REWARD = 40.0
-LOSS_PENALTY_BASE = -16.0
-STALL_EXTRA_PENALTY = 3.0
+# All reward components are multiplied by REWARD_SCALE at the exit of
+# default_reward_components. The BC pretrain supervised the value head
+# on targets in the ±10 range; PPO reward magnitudes of 40 / -16+ made
+# the critic chase a 4× miscalibration, which showed up as a flat
+# value_loss and rollouts where shaping dominated terminal signal. The
+# constants below keep their "natural" units so the shaping math stays
+# readable; only the final sum gets scaled.
+REWARD_SCALE = 0.25
+
+# Previous shaping (ANTE_ADVANCE_REWARD=1.5, BLIND_CLEAR=1.25,
+# HANDS_LEFT_BONUS=0.1, LOSS_PENALTY_BASE=-16, LOSS_PER_UNFINISHED_ANTE=1.5)
+# made early deaths net positive: at a death ante of ~3 the cumulative
+# dense payout (ante_bonus + blind_clear + hands_bonus) already exceeded
+# the terminal penalty, so ppo_resume5 converged to ep_reward_mean ≈ +2.6
+# with a 0% win rate and no pressure to survive. The values below shrink
+# the stacked-per-ante payouts and amplify the terminal penalty so the
+# net raw reward stays strictly negative until roughly ante 7 while the
+# per-ante gradient (ante_bonus exponent 1.5 vs linear loss penalty)
+# remains monotone in favour of pushing deeper.
+WIN_REWARD = 60.0
+LOSS_PENALTY_BASE = -30.0
+STALL_EXTRA_PENALTY = 5.0
 # Per-ante penalty for every ante between death and win_ante. Pushes the
 # policy to survive deeper instead of settling for a shallow-death local
 # optimum where dense shaping dominates the flat loss penalty.
-LOSS_PER_UNFINISHED_ANTE = 1.5
+LOSS_PER_UNFINISHED_ANTE = 3.0
 
 SCORE_PROGRESS_SCALE = 0.25
 PRESSURE_PROGRESS_SCALE = 1.5
 DISCARD_RESOURCE_WEIGHT = 0.5
-BLIND_CLEAR_REWARD = 1.25
-HANDS_LEFT_BONUS_SCALE = 0.1
+BLIND_CLEAR_REWARD = 0.5
+HANDS_LEFT_BONUS_SCALE = 0.05
 # Bonus is super-linear in the ante just reached so deeper antes give a
 # strictly steeper gradient than the per-unfinished-ante loss penalty can
 # cancel out. Growth is curr_ante ** ANTE_ADVANCE_EXPONENT.
-ANTE_ADVANCE_REWARD = 1.5
+ANTE_ADVANCE_REWARD = 0.5
 ANTE_ADVANCE_EXPONENT = 1.5
 INTEREST_BONUS_SCALE = 0.05
 
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
 IDLE_PENALTY_CAP = 0.02
-CONSUMABLE_TARGET_IDLE_MULT = 3.0
-CONSUMABLE_TARGET_IDLE_CAP = 0.05
-# Flat penalty for opening the consumable menu and cancelling without
-# selecting a slot — the open/cancel pair otherwise costs almost nothing
-# and the policy learned to dither inside it for free.
-CONSUMABLE_CANCEL_NO_COMMIT_PENALTY = 0.1
-# Extra penalty on top of the no-commit penalty when the cancelled slot
-# required hand/joker targeting. Without it, the policy treats cancel as
-# a free escape from tarot targeting (hand_target head is cold-init from
-# supervised, so random targeting looks worse than -0.1 cancel), which
-# starves the hand_target branch of gradient entirely.
-CONSUMABLE_CANCEL_TARGETING_SLOT_EXTRA = 0.15
-# Flat reward for committing a consumable use. Without this the cancel
-# penalty alone teaches the policy to never open the menu at all, so it
-# stops using consumables entirely. Tuned up from 0.15 after the policy
-# overcorrected into never-use even when inventory was full.
-CONSUMABLE_CONFIRM_REWARD = 0.35
-# Flat reward for picking a consumable slot whose effect requires hand or
-# joker targeting. Without a positive pull into this branch the policy
-# never visits CONSUMABLE_HAND_TARGET / CONSUMABLE_JOKER_TARGET actions,
-# so those heads get zero gradient and stay cold-init forever. The
-# cancel penalty alone only discourages misuse — it doesn't create any
-# incentive to try. Sized so open+commit still beats open+cancel: pick
-# (+0.1) + confirm (+0.35) = +0.45, vs pick (+0.1) + cancel (-0.1 no
-# commit - 0.15 targeting extra) = -0.15.
-CONSUMABLE_SLOT_TARGETING_REWARD = 0.1
+# Flat reward for committing an atomic consumable use that touches a
+# targeting consumable (hand subset or joker target). The cold-head
+# problem that motivated the previous CONSUMABLE_TARGET / CONSUMABLE_SLOT
+# / CONSUMABLE_CONFIRM shaping cluster is gone — atomic actions keep
+# every projection in ConsumableFlatHead receiving gradient every time
+# any consumable is used — so we keep a single small pull toward
+# engaging with targeting consumables at all while the BC prior warms up.
+CONSUMABLE_TARGETED_USE_REWARD = 0.1
 # Flat penalty for selling jokers or consumables in the shop. The policy
 # found it could cash out inventory every shop for free dollars without
 # ever engaging with scaling mechanics; a small friction makes that
@@ -128,8 +129,7 @@ def default_reward_components(
         "ante_bonus": 0.0,
         "interest_bonus": 0.0,
         "idle_penalty": 0.0,
-        "consumable_commit": 0.0,
-        "consumable_slot_targeting": 0.0,
+        "consumable_targeted_use": 0.0,
         "shop_sell_penalty": 0.0,
         "shop_reroll_reward": 0.0,
     }
@@ -149,6 +149,8 @@ def default_reward_components(
             if curr_info.get("stalled", False):
                 loss_penalty -= STALL_EXTRA_PENALTY
             components["terminal"] += loss_penalty
+        for key in components:
+            components[key] *= REWARD_SCALE
         components["total"] = sum(components.values())
         return components
 
@@ -183,25 +185,8 @@ def default_reward_components(
 
     action_type = curr_info.get("action_type", "")
 
-    if (
-        action_type == "consumable_cancel"
-        and curr_info.get("pre_sub_phase", "") == "consumable_target"
-        and not curr_info.get("pre_pending_action", "")
-    ):
-        components["idle_penalty"] -= CONSUMABLE_CANCEL_NO_COMMIT_PENALTY
-
-    if (
-        action_type == "consumable_cancel"
-        and curr_info.get("pre_sub_phase", "") == "consumable_target"
-        and curr_info.get("pre_requires_targeting", False)
-    ):
-        components["idle_penalty"] -= CONSUMABLE_CANCEL_TARGETING_SLOT_EXTRA
-
-    if action_type == "consumable_confirm":
-        components["consumable_commit"] += CONSUMABLE_CONFIRM_REWARD
-
-    if action_type == "consumable_slot" and curr_info.get("post_requires_targeting", False):
-        components["consumable_slot_targeting"] += CONSUMABLE_SLOT_TARGETING_REWARD
+    if action_type in ("use_consumable_hand_subset", "use_consumable_joker"):
+        components["consumable_targeted_use"] += CONSUMABLE_TARGETED_USE_REWARD
 
     if action_type in ("shop_sell_joker", "shop_sell_consumable"):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY
@@ -212,13 +197,11 @@ def default_reward_components(
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
         idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
-        if curr_info.get("sub_phase", "") == "consumable_target":
-            idle_penalty *= CONSUMABLE_TARGET_IDLE_MULT
-            idle_penalty = min(idle_penalty, CONSUMABLE_TARGET_IDLE_CAP)
-        else:
-            idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
+        idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
         components["idle_penalty"] -= idle_penalty
 
+    for key in components:
+        components[key] *= REWARD_SCALE
     components["total"] = sum(components.values())
     return components
 
@@ -238,8 +221,6 @@ def default_reward(
         blind_just_beaten: bool — whether a blind was beaten this step
         progress_made: bool — whether the environment state changed meaningfully
         steps_since_progress: int — idle streak length after the action
-        pre_sub_phase: SubPhase — sub_phase at the start of this step
-        pre_pending_action: str — pending action label before this step
         action_type: ActionType — action type taken this step
     """
     return default_reward_components(state, prev_info, curr_info, terminated, won)["total"]

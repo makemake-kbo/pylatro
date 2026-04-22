@@ -121,6 +121,16 @@ def main():
         help="PPO discount factor (default: 0.99)",
     )
     parser.add_argument(
+        "--kl-anchor-coeff",
+        type=float,
+        default=0.02,
+        help=(
+            "Coefficient for KL(pi_new || pi_ref) against the pretrained checkpoint. "
+            "Prevents PPO from drifting off the BC prior and keeps cold action heads anchored. "
+            "Set to 0 to disable; requires --pretrained. Default: 0.02."
+        ),
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -216,6 +226,7 @@ def main():
                 action_type_entropy_scale=args.action_type_entropy_scale,
                 gamma=args.gamma,
                 async_envs=not args.sync_envs,
+                kl_anchor_coeff=args.kl_anchor_coeff,
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

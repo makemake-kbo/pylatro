@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
-from .constants import ActionRange, SubPhase
+from .constants import (
+    CONSUMABLE_ACTIONS_PER_SLOT,
+    CONSUMABLE_HAND_SUBSET_OFFSET,
+    CONSUMABLE_JOKER_OFFSET,
+    CONSUMABLE_NO_TARGET_OFFSET,
+    MAX_JOKER_SLOTS,
+    NUM_CONSUMABLE_HAND_SUBSETS,
+    ActionRange,
+)
 
 
 class ActionType(StrEnum):
@@ -15,12 +22,9 @@ class ActionType(StrEnum):
     BLIND_REROLL = "blind_reroll"
     PLAY_SUBSET = "play_subset"
     DISCARD_SUBSET = "discard_subset"
-    USE_CONSUMABLE = "use_consumable"
-    CONSUMABLE_SLOT = "consumable_slot"
-    CONSUMABLE_HAND_TARGET = "consumable_hand_target"
-    CONSUMABLE_JOKER_TARGET = "consumable_joker_target"
-    CONSUMABLE_CONFIRM = "consumable_confirm"
-    CONSUMABLE_CANCEL = "consumable_cancel"
+    USE_CONSUMABLE_NO_TARGET = "use_consumable_no_target"
+    USE_CONSUMABLE_HAND_SUBSET = "use_consumable_hand_subset"
+    USE_CONSUMABLE_JOKER = "use_consumable_joker"
     SHOP_BUY = "shop_buy"
     SHOP_REROLL = "shop_reroll"
     SHOP_SELL_JOKER = "shop_sell_joker"
@@ -33,7 +37,11 @@ class ActionType(StrEnum):
 @dataclass(slots=True)
 class DecodedAction:
     action_type: ActionType
-    index: int = 0  # slot/card index where applicable
+    index: int = 0  # primary index — slot/card/shop offset depending on action
+    # For USE_CONSUMABLE_HAND_SUBSET: hand-subset id inside the slot block.
+    # For USE_CONSUMABLE_JOKER: joker target index.
+    # For USE_CONSUMABLE_NO_TARGET: unused.
+    detail: int = 0
 
 
 def decode_action(action_id: int) -> DecodedAction:
@@ -50,19 +58,29 @@ def decode_action(action_id: int) -> DecodedAction:
         return DecodedAction(ActionType.PLAY_SUBSET, action_id - AR.PLAY_SUBSET_START)
     if AR.DISCARD_SUBSET_START <= action_id <= AR.DISCARD_SUBSET_END:
         return DecodedAction(ActionType.DISCARD_SUBSET, action_id - AR.DISCARD_SUBSET_START)
-    if action_id == AR.USE_CONSUMABLE:
-        return DecodedAction(ActionType.USE_CONSUMABLE)
 
-    if AR.CONSUMABLE_SLOT_START <= action_id <= AR.CONSUMABLE_SLOT_END:
-        return DecodedAction(ActionType.CONSUMABLE_SLOT, action_id - AR.CONSUMABLE_SLOT_START)
-    if AR.CONSUMABLE_HAND_TARGET_START <= action_id <= AR.CONSUMABLE_HAND_TARGET_END:
-        return DecodedAction(ActionType.CONSUMABLE_HAND_TARGET, action_id - AR.CONSUMABLE_HAND_TARGET_START)
-    if AR.CONSUMABLE_JOKER_TARGET_START <= action_id <= AR.CONSUMABLE_JOKER_TARGET_END:
-        return DecodedAction(ActionType.CONSUMABLE_JOKER_TARGET, action_id - AR.CONSUMABLE_JOKER_TARGET_START)
-    if action_id == AR.CONSUMABLE_CONFIRM:
-        return DecodedAction(ActionType.CONSUMABLE_CONFIRM)
-    if action_id == AR.CONSUMABLE_CANCEL:
-        return DecodedAction(ActionType.CONSUMABLE_CANCEL)
+    if AR.CONSUMABLE_FLAT_START <= action_id <= AR.CONSUMABLE_FLAT_END:
+        rel = action_id - int(AR.CONSUMABLE_FLAT_START)
+        slot, within = divmod(rel, CONSUMABLE_ACTIONS_PER_SLOT)
+        if within == CONSUMABLE_NO_TARGET_OFFSET:
+            return DecodedAction(ActionType.USE_CONSUMABLE_NO_TARGET, slot)
+        if (
+            CONSUMABLE_HAND_SUBSET_OFFSET
+            <= within
+            < CONSUMABLE_HAND_SUBSET_OFFSET + NUM_CONSUMABLE_HAND_SUBSETS
+        ):
+            return DecodedAction(
+                ActionType.USE_CONSUMABLE_HAND_SUBSET,
+                slot,
+                within - CONSUMABLE_HAND_SUBSET_OFFSET,
+            )
+        if CONSUMABLE_JOKER_OFFSET <= within < CONSUMABLE_JOKER_OFFSET + MAX_JOKER_SLOTS:
+            return DecodedAction(
+                ActionType.USE_CONSUMABLE_JOKER,
+                slot,
+                within - CONSUMABLE_JOKER_OFFSET,
+            )
+        raise ValueError(f"Invalid consumable flat offset: {within}")
 
     if AR.SHOP_BUY_START <= action_id <= AR.SHOP_BUY_END:
         return DecodedAction(ActionType.SHOP_BUY, action_id - AR.SHOP_BUY_START)
@@ -83,8 +101,16 @@ def decode_action(action_id: int) -> DecodedAction:
     raise ValueError(f"Invalid action ID: {action_id}")
 
 
-def encode_action(action_type: ActionType, index: int = 0) -> int:
-    """Convert ActionType + index to flat action ID."""
+def _consumable_slot_base(slot: int) -> int:
+    return int(ActionRange.CONSUMABLE_FLAT_START) + slot * CONSUMABLE_ACTIONS_PER_SLOT
+
+
+def encode_action(action_type: ActionType, index: int = 0, detail: int = 0) -> int:
+    """Convert ActionType + index(+detail) to flat action ID.
+
+    For USE_CONSUMABLE_HAND_SUBSET and USE_CONSUMABLE_JOKER, `index` is the
+    consumable slot and `detail` is the subset/joker offset.
+    """
     AR = ActionRange
 
     match action_type:
@@ -98,18 +124,12 @@ def encode_action(action_type: ActionType, index: int = 0) -> int:
             return AR.PLAY_SUBSET_START + index
         case ActionType.DISCARD_SUBSET:
             return AR.DISCARD_SUBSET_START + index
-        case ActionType.USE_CONSUMABLE:
-            return AR.USE_CONSUMABLE
-        case ActionType.CONSUMABLE_SLOT:
-            return AR.CONSUMABLE_SLOT_START + index
-        case ActionType.CONSUMABLE_HAND_TARGET:
-            return AR.CONSUMABLE_HAND_TARGET_START + index
-        case ActionType.CONSUMABLE_JOKER_TARGET:
-            return AR.CONSUMABLE_JOKER_TARGET_START + index
-        case ActionType.CONSUMABLE_CONFIRM:
-            return AR.CONSUMABLE_CONFIRM
-        case ActionType.CONSUMABLE_CANCEL:
-            return AR.CONSUMABLE_CANCEL
+        case ActionType.USE_CONSUMABLE_NO_TARGET:
+            return _consumable_slot_base(index) + CONSUMABLE_NO_TARGET_OFFSET
+        case ActionType.USE_CONSUMABLE_HAND_SUBSET:
+            return _consumable_slot_base(index) + CONSUMABLE_HAND_SUBSET_OFFSET + detail
+        case ActionType.USE_CONSUMABLE_JOKER:
+            return _consumable_slot_base(index) + CONSUMABLE_JOKER_OFFSET + detail
         case ActionType.SHOP_BUY:
             return AR.SHOP_BUY_START + index
         case ActionType.SHOP_REROLL:

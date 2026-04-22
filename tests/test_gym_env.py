@@ -7,7 +7,7 @@ import pytest
 from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import add_consumable, add_joker, load_game_data, populate_shop
-from pylatro_agent.constants import MAX_HAND_SIZE, NUM_ACTIONS, ActionRange, SubPhase
+from pylatro_agent.constants import MAX_HAND_SIZE, NUM_ACTIONS, TOKEN_DIM, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.training.ppo import _make_vectorized_envs
 from pylatro_agent.vocab import build_vocab
@@ -34,7 +34,7 @@ def test_env_reset(game_data, vocab):
     assert "attention_mask" in obs
     assert "action_mask" in obs
     assert "selected_cards" in obs
-    assert obs["tokens"].shape == (160, 12)
+    assert obs["tokens"].shape == (160, TOKEN_DIM)
     assert obs["action_mask"].shape == (NUM_ACTIONS,)
     assert obs["selected_cards"].shape == (MAX_HAND_SIZE,)
     assert info["sub_phase"] == "blind_select"
@@ -163,7 +163,10 @@ def test_env_play_subset_reports_progress(game_data, vocab):
     assert not info["stalled"]
 
 
-def test_env_consumable_open_cancel_does_not_reset_progress(game_data, vocab):
+def test_env_atomic_consumable_use_commits_in_one_step(game_data, vocab):
+    """A no-target consumable (Pluto = planet) is a single flat action now."""
+    from pylatro_agent.action import ActionType, encode_action
+
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=5)
     env.reset()
 
@@ -174,23 +177,15 @@ def test_env_consumable_open_cancel_does_not_reset_progress(game_data, vocab):
     assert env.state is not None
     add_consumable(env.state, "c_pluto")
     obs = env._obs_to_dict(env._build_obs())
-    assert obs["action_mask"][ActionRange.USE_CONSUMABLE] == 1
+    action = encode_action(ActionType.USE_CONSUMABLE_NO_TARGET, 0)
+    assert obs["action_mask"][action] == 1
 
-    _, reward, terminated, truncated, info = env.step(ActionRange.USE_CONSUMABLE)
+    _, _, terminated, truncated, info = env.step(action)
     assert not terminated
     assert not truncated
-    assert reward < 0.0
-    assert not info["progress_made"]
-    assert info["steps_since_progress"] == 1
-    assert info["sub_phase"] == SubPhase.CONSUMABLE_TARGET
-
-    _, reward, terminated, truncated, info = env.step(ActionRange.CONSUMABLE_CANCEL)
-    assert not terminated
-    assert not truncated
-    assert reward < 0.0
-    assert not info["progress_made"]
-    assert info["steps_since_progress"] == 2
+    # After committing Pluto we stay in CHOOSE_ACTION with the consumable consumed
     assert info["sub_phase"] == SubPhase.CHOOSE_ACTION
+    assert info["progress_made"], "using a planet bumps the hand-level tracker"
 
 
 def test_env_pack_skip_counts_as_progress_and_triggers_red_card(game_data, vocab):

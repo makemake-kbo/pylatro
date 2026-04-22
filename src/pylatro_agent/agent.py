@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from .action_heads import BlindSelectHead, ConsumableHead, HandPlayHead, PackHead, ShopHead
+from .action_heads import BlindSelectHead, ConsumableFlatHead, HandPlayHead, PackHead, ShopHead
 from .backbone import TransformerBackbone
 from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
 from .distributions import MaskedCategorical  # noqa: F401 — re-exported for callers
@@ -45,7 +45,7 @@ class BalatroAgent(nn.Module):
         self.blind_select_head = BlindSelectHead(d)
         self.hand_play_head = HandPlayHead(d, vocab)
         self.shop_head = ShopHead(d)
-        self.consumable_head = ConsumableHead(d)
+        self.consumable_flat_head = ConsumableFlatHead(d)
         self.pack_head = PackHead(d)
 
         # Value head
@@ -128,13 +128,17 @@ class BalatroAgent(nn.Module):
             if sp == SubPhase.BLIND_SELECT:
                 head_logits = self.blind_select_head(bo, am)
             elif sp == SubPhase.CHOOSE_ACTION:
-                head_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=False)
+                # Play/discard/consumable all live in CHOOSE_ACTION now.
+                # Each head writes to disjoint action-range slices and
+                # leaves the rest at -1e8, so elementwise max merges them
+                # without corrupting masked positions.
+                play_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=False)
+                cons_logits = self.consumable_flat_head(bo, am, tok, tok_types)
+                head_logits = torch.maximum(play_logits, cons_logits)
             elif sp == SubPhase.SELECT_CARDS:
                 head_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=True)
             elif sp == SubPhase.SHOP:
                 head_logits = self.shop_head(bo, am)
-            elif sp == SubPhase.CONSUMABLE_TARGET:
-                head_logits = self.consumable_head(bo, am)
             elif sp == SubPhase.BOOSTER_PACK:
                 head_logits = self.pack_head(bo, am)
             else:
@@ -152,8 +156,7 @@ class BalatroAgent(nn.Module):
             SubPhase.SELECT_CARDS,
             SubPhase.SHOP,
             SubPhase.BOOSTER_PACK,
-            SubPhase.CONSUMABLE_TARGET,
-        ][min(phase_id, 5)]
+        ][min(phase_id, 4)]
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

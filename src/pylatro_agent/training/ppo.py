@@ -339,8 +339,7 @@ def _run_ppo_update(
                         batch["tokens"], batch["token_types"], batch["scalars"],
                         batch["attention_mask"], batch["action_mask"],
                     )
-                ref_dist = MaskedCategorical(ref_logits, batch["action_mask"])
-                kl_div = torch.distributions.kl_divergence(dist, ref_dist).mean()
+                kl_div = _masked_kl_divergence(logits, ref_logits, batch["action_mask"])
             else:
                 kl_div = torch.zeros((), device=batch["scalars"].device)
 
@@ -464,6 +463,33 @@ def _per_state_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: 
         entropy_per_state / max_entropy,
         torch.zeros_like(entropy_per_state),
     )
+
+
+def _mean_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
+    """Return the batch mean of per-state normalized entropy."""
+    return _per_state_normalized_entropy(entropy_per_state, action_mask).mean()
+
+
+def _masked_kl_divergence(
+    policy_logits: torch.Tensor,
+    reference_logits: torch.Tensor,
+    action_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Return mean KL(policy || reference) over the valid-action support.
+
+    `torch.distributions.kl_divergence(Categorical, Categorical)` can report
+    `inf` when a valid tail action underflows to zero probability in the
+    reference policy. Computing KL from masked log-softmax values keeps the
+    valid support aligned and stays finite for extreme-yet-valid logits.
+    """
+    masked_policy_logits = policy_logits.masked_fill(action_mask == 0, -1e8)
+    masked_reference_logits = reference_logits.masked_fill(action_mask == 0, -1e8)
+    log_policy = F.log_softmax(masked_policy_logits, dim=-1)
+    log_reference = F.log_softmax(masked_reference_logits, dim=-1)
+    policy_probs = log_policy.exp()
+    valid_mask = (action_mask > 0).to(log_policy.dtype)
+    kl_per_state = (policy_probs * (log_policy - log_reference) * valid_mask).sum(dim=-1)
+    return kl_per_state.mean()
 
 
 def _mean_normalized_action_type_entropy(action_probs: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
@@ -823,8 +849,7 @@ def train_ppo(
                     "reward_ante_bonus",
                     "reward_interest_bonus",
                     "reward_idle_penalty",
-                    "reward_consumable_commit",
-                    "reward_consumable_slot_targeting",
+                    "reward_consumable_targeted_use",
                     "reward_shop_sell_penalty",
                     "reward_shop_reroll_reward",
                 ):

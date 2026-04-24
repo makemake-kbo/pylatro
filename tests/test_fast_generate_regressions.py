@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from pylatro import create_run_state, load_game_data, select_blind, start_blind
+from pylatro import add_consumable, create_run_state, load_game_data, select_blind, start_blind
+from pylatro_agent.action import ActionType, encode_action
+from pylatro_agent.constants import ActionRange
 from pylatro_agent.heuristic import HeuristicAgent
+from pylatro_agent.subset_actions import consumable_subset_index
 from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.training import fast_generate
+from pylatro_agent.training.fast_runner import FastRunner
 from pylatro_agent.vocab import build_vocab
 
 
@@ -54,3 +58,19 @@ def test_cached_best_hand_updates_after_in_place_mutation() -> None:
 
     assert cached == fresh
     assert cached != initial
+
+
+def test_fast_runner_unmasks_hand_targeted_consumable() -> None:
+    data = load_game_data()
+    runner = FastRunner(0, data)
+    runner.step(ActionRange.BLIND_PLAY)
+    add_consumable(runner.state, "c_lovers")
+
+    mask = runner.compute_mask()
+    action = encode_action(
+        ActionType.USE_CONSUMABLE_HAND_SUBSET,
+        0,
+        consumable_subset_index((0,)),
+    )
+
+    assert mask[action] == 1

@@ -22,6 +22,7 @@ from ..constants import (
     CONSUMABLE_HAND_SUBSET_OFFSET,
     CONSUMABLE_JOKER_OFFSET,
     CONSUMABLE_NO_TARGET_OFFSET,
+    HAND_TARGET_CONSUMABLE_LIMITS,
     JOKER_TARGET_CONSUMABLE_NAMES,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
@@ -434,32 +435,35 @@ def _mask_consumable_flat(m, state, AR):
 
     for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
         cons = state.consumables[slot]
-        if not can_use_consumable(state, cons):
-            continue
         center = state.data.centers[cons.center_key]
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
         needs_joker_target = name in JOKER_TARGET_CONSUMABLE_NAMES
+        fallback_hand_limits = HAND_TARGET_CONSUMABLE_LIMITS.get(name)
 
         slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
 
-        if max_highlighted is None and not needs_joker_target:
+        if max_highlighted is None and fallback_hand_limits is None and not needs_joker_target:
             if can_use_consumable(state, cons, hand_targets=(), joker_targets=()):
                 m[slot_base + CONSUMABLE_NO_TARGET_OFFSET] = 1
             continue
 
-        if max_highlighted is not None:
-            min_size = int(config.get("min_highlighted", 1) or 1)
-            raw_max = int(max_highlighted)
+        if max_highlighted is not None or fallback_hand_limits is not None:
+            if fallback_hand_limits is not None:
+                min_size, raw_max = fallback_hand_limits
+            else:
+                min_size = int(config.get("min_highlighted", 1) or 1)
+                raw_max = int(max_highlighted)
             max_size = raw_max if raw_max < MAX_CONSUMABLE_HAND_TARGETS else MAX_CONSUMABLE_HAND_TARGETS
             subset_mask = legal_consumable_subset_mask(hand_size, min_size, max_size)
-            if subset_mask.any():
-                start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
-                end = start + NUM_CONSUMABLE_HAND_SUBSETS
-                sm = subset_mask.astype(np.int8)
-                for i in range(NUM_CONSUMABLE_HAND_SUBSETS):
-                    m[start + i] = sm[i]
+            start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
+            for i in range(NUM_CONSUMABLE_HAND_SUBSETS):
+                if not subset_mask[i]:
+                    continue
+                hand_targets = consumable_subset_indices(i)
+                if can_use_consumable(state, cons, hand_targets=hand_targets, joker_targets=()):
+                    m[start + i] = 1
 
         if needs_joker_target:
             start = slot_base + CONSUMABLE_JOKER_OFFSET

@@ -14,7 +14,9 @@ from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
 from .action import ActionType, encode_action
 from .constants import (
+    HAND_TARGET_CONSUMABLE_LIMITS,
     JOKER_TARGET_CONSUMABLE_NAMES,
+    MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
     MAX_JOKER_SLOTS,
     ActionRange,
@@ -730,12 +732,11 @@ class HeuristicAgent:
         if slot >= len(state.consumables):
             return None
         cons = state.consumables[slot]
-        if not can_use_consumable(state, cons):
-            return None
         center = state.data.centers[cons.center_key]
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
+        fallback_hand_limits = HAND_TARGET_CONSUMABLE_LIMITS.get(name)
 
         if name in JOKER_TARGET_CONSUMABLE_NAMES:
             for joker_idx in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
@@ -744,21 +745,30 @@ class HeuristicAgent:
                     return action
             return None
 
-        if max_highlighted is not None:
-            min_size = int(config.get("min_highlighted", 1) or 1)
-            max_size = int(max_highlighted)
+        if max_highlighted is not None or fallback_hand_limits is not None:
+            if fallback_hand_limits is not None:
+                min_size, max_size = fallback_hand_limits
+            else:
+                min_size = int(config.get("min_highlighted", 1) or 1)
+                max_size = int(max_highlighted)
+            max_size = min(max_size, MAX_CONSUMABLE_HAND_TARGETS)
             hand_size = len(state.hand_cards)
-            target_size = min(max_size, hand_size)
-            if target_size < min_size:
-                return None
-            subset = tuple(range(target_size))
-            action = encode_action(
-                ActionType.USE_CONSUMABLE_HAND_SUBSET,
-                slot,
-                consumable_subset_index(subset),
-            )
-            return action if mask[action] else None
+            max_target_size = min(max_size, hand_size)
+            for target_size in range(max_target_size, min_size - 1, -1):
+                for subset in combinations(range(hand_size), target_size):
+                    if not can_use_consumable(state, cons, hand_targets=subset, joker_targets=()):
+                        continue
+                    action = encode_action(
+                        ActionType.USE_CONSUMABLE_HAND_SUBSET,
+                        slot,
+                        consumable_subset_index(subset),
+                    )
+                    if mask[action]:
+                        return action
+            return None
 
+        if not can_use_consumable(state, cons, hand_targets=(), joker_targets=()):
+            return None
         action = encode_action(ActionType.USE_CONSUMABLE_NO_TARGET, slot)
         return action if mask[action] else None
 

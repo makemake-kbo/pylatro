@@ -12,6 +12,7 @@ from .constants import (
     CONSUMABLE_HAND_SUBSET_OFFSET,
     CONSUMABLE_JOKER_OFFSET,
     CONSUMABLE_NO_TARGET_OFFSET,
+    HAND_TARGET_CONSUMABLE_LIMITS,
     JOKER_TARGET_CONSUMABLE_NAMES,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
@@ -23,7 +24,7 @@ from .constants import (
     ActionRange,
     SubPhase,
 )
-from .subset_actions import legal_consumable_subset_mask, legal_subset_mask
+from .subset_actions import consumable_subset_indices, legal_consumable_subset_mask, legal_subset_mask
 
 
 def compute_action_mask(
@@ -98,29 +99,33 @@ def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
 
     for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
         cons = state.consumables[slot]
-        if not can_use_consumable(state, cons):
-            continue
         center = state.data.centers[cons.center_key]
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
         needs_joker_target = name in JOKER_TARGET_CONSUMABLE_NAMES
+        fallback_hand_limits = HAND_TARGET_CONSUMABLE_LIMITS.get(name)
 
         slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
 
-        if max_highlighted is None and not needs_joker_target:
+        if max_highlighted is None and fallback_hand_limits is None and not needs_joker_target:
             if can_use_consumable(state, cons, hand_targets=(), joker_targets=()):
                 mask[slot_base + CONSUMABLE_NO_TARGET_OFFSET] = 1
             continue
 
-        if max_highlighted is not None:
-            min_size = int(config.get("min_highlighted", 1) or 1)
-            max_size = min(int(max_highlighted), MAX_CONSUMABLE_HAND_TARGETS)
+        if max_highlighted is not None or fallback_hand_limits is not None:
+            if fallback_hand_limits is not None:
+                min_size, max_size = fallback_hand_limits
+            else:
+                min_size = int(config.get("min_highlighted", 1) or 1)
+                max_size = int(max_highlighted)
+            max_size = min(max_size, MAX_CONSUMABLE_HAND_TARGETS)
             subset_mask = legal_consumable_subset_mask(hand_size, min_size, max_size)
-            if subset_mask.any():
-                start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
-                end = start + NUM_CONSUMABLE_HAND_SUBSETS
-                mask[start:end] = subset_mask.astype(np.int8)
+            start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
+            for subset_idx in np.where(subset_mask)[0]:
+                hand_targets = consumable_subset_indices(int(subset_idx))
+                if can_use_consumable(state, cons, hand_targets=hand_targets, joker_targets=()):
+                    mask[start + int(subset_idx)] = 1
 
         if needs_joker_target:
             start = slot_base + CONSUMABLE_JOKER_OFFSET

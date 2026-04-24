@@ -9,6 +9,7 @@ from pylatro_agent.training.ppo import (
     _entropy_alpha_loss,
     _extract_step_info_value,
     _make_alpha_optimizer,
+    _masked_kl_divergence,
     _make_policy_optimizer,
     _mean_normalized_action_type_entropy,
     _mean_normalized_entropy,
@@ -140,6 +141,27 @@ def test_mean_valid_action_type_count_counts_distinct_types() -> None:
     mean_count = _mean_valid_action_type_count(mask)
 
     assert mean_count == pytest.approx(2.5)
+
+
+def test_masked_kl_divergence_is_zero_for_identical_logits() -> None:
+    logits = torch.tensor([[2.0, 0.0, -4.0]], dtype=torch.float32)
+    mask = torch.tensor([[1.0, 1.0, 0.0]], dtype=torch.float32)
+
+    kl = _masked_kl_divergence(logits, logits, mask)
+
+    assert torch.isfinite(kl)
+    assert kl.item() == pytest.approx(0.0)
+
+
+def test_masked_kl_divergence_stays_finite_for_extreme_valid_logits() -> None:
+    policy_logits = torch.tensor([[0.0, -120.0]], dtype=torch.float32)
+    reference_logits = torch.tensor([[-120.0, 0.0]], dtype=torch.float32)
+    mask = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+
+    kl = _masked_kl_divergence(policy_logits, reference_logits, mask)
+
+    assert torch.isfinite(kl)
+    assert kl.item() > 0.0
 
 
 def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:

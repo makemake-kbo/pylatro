@@ -5,9 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pylatro import create_run_state, load_game_data, select_blind, start_blind
+from pylatro import add_consumable, create_run_state, load_game_data, select_blind, start_blind
+from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.constants import ActionRange, SubPhase
+from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.masks import compute_action_mask
+from pylatro_agent.subset_actions import consumable_subset_index
 
 
 @pytest.fixture(scope="module")
@@ -50,6 +53,41 @@ def test_choose_action_subset_ranges_are_bounded(hand_play_state):
     assert discard_mask.sum() >= 1
     assert play_mask.sum() <= len(play_mask)
     assert discard_mask.sum() <= len(discard_mask)
+
+
+def test_hand_targeted_consumable_actions_are_unmasked(hand_play_state):
+    add_consumable(hand_play_state, "c_lovers")
+
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+    action = encode_action(
+        ActionType.USE_CONSUMABLE_HAND_SUBSET,
+        0,
+        consumable_subset_index((0,)),
+    )
+
+    assert mask[action] == 1
+
+
+def test_aura_consumable_uses_hand_target_fallback(hand_play_state):
+    add_consumable(hand_play_state, "c_aura")
+
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+    action = encode_action(
+        ActionType.USE_CONSUMABLE_HAND_SUBSET,
+        0,
+        consumable_subset_index((0,)),
+    )
+
+    assert mask[action] == 1
+
+
+def test_heuristic_can_pick_hand_targeted_consumable(hand_play_state):
+    add_consumable(hand_play_state, "c_lovers")
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+
+    action = HeuristicAgent().select_action(hand_play_state, SubPhase.CHOOSE_ACTION, mask)
+
+    assert ActionRange.CONSUMABLE_FLAT_START <= action <= ActionRange.CONSUMABLE_FLAT_END
 
 
 def test_select_cards_mask_is_legacy_noop(hand_play_state):

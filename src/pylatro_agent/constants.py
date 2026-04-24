@@ -52,6 +52,12 @@ JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
     {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
 )
 
+# Consumables that require hand-card targets but do not declare
+# config.max_highlighted in game_data.json.
+HAND_TARGET_CONSUMABLE_LIMITS = {
+    "Aura": (1, 1),
+}
+
 POKER_HAND_NAMES = (
     "Flush Five",
     "Flush House",

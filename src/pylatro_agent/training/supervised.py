@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,14 +18,17 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from pylatro import GameData, load_game_data
 
+from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
+from ..constants import NUM_ACTIONS
 from ..distributions import MaskedCategorical
 from ..survival import compute_ante_survival_targets
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
 
 logger = logging.getLogger(__name__)
+_ACTION_ID_TO_TYPE = tuple(decode_action(action_id).action_type.value for action_id in range(NUM_ACTIONS))
 
 
 @dataclass
@@ -37,10 +41,12 @@ class SupervisedConfig:
     warmup_steps: int = 1000
     max_epochs: int = 10
     value_loss_coeff: float = 0.5
+    action_entropy_coeff: float = 0.001
     num_workers: int = 0  # 0 = auto-detect (all available cores)
     min_ante: int = 5
     save_dir: str = "checkpoints/supervised"
     log_dir: str = "runs/supervised"
+    log_interval: int = 10
     device: str = "cpu"
 
 
@@ -52,6 +58,26 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
         running_return = rewards[idx] + gamma * running_return
         returns[idx] = running_return
     return returns
+
+
+def _masked_action_loss(logits: torch.Tensor, action_mask: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+    """Return behavior-cloning NLL over the legal action support only."""
+    dist = MaskedCategorical(logits, action_mask)
+    return -dist.log_prob(actions).mean()
+
+
+def _action_type_dataset_stats(records: list[dict[str, Any]]) -> dict[str, Counter]:
+    """Summarize chosen and valid action families in generated BC records."""
+    chosen: Counter = Counter()
+    valid_states: Counter = Counter()
+    for record in records:
+        chosen[_ACTION_ID_TO_TYPE[int(record["action"])]] += 1
+        valid_types = {
+            _ACTION_ID_TO_TYPE[int(action_id)]
+            for action_id in np.flatnonzero(record["obs"]["action_mask"])
+        }
+        valid_states.update(valid_types)
+    return {"chosen": chosen, "valid_states": valid_states}
 
 
 def train_supervised(
@@ -110,12 +136,30 @@ def train_supervised(
         sum(max_antes) / len(max_antes),
         sorted(max_antes)[len(max_antes) // 2],
     )
+    action_type_stats = _action_type_dataset_stats(records)
+    chosen_counts = action_type_stats["chosen"]
+    valid_state_counts = action_type_stats["valid_states"]
+    logger.info("Action family stats (chosen_fraction / valid_state_fraction):")
+    for action_type in ActionType:
+        name = action_type.value
+        chosen_fraction = chosen_counts[name] / max(len(records), 1)
+        valid_state_fraction = valid_state_counts[name] / max(len(records), 1)
+        logger.info("  %-28s chosen=%.4f valid=%.4f", name, chosen_fraction, valid_state_fraction)
+    hand_target_name = ActionType.USE_CONSUMABLE_HAND_SUBSET.value
+    if valid_state_counts[hand_target_name] > 0 and chosen_counts[hand_target_name] == 0:
+        logger.warning(
+            "%s was valid in %d/%d records but never chosen; PPO will need to discover it from entropy alone.",
+            hand_target_name,
+            valid_state_counts[hand_target_name],
+            len(records),
+        )
 
     # Shuffle and batch
     n = len(records)
     steps_per_epoch = (n + config.batch_size - 1) // config.batch_size
     total_steps = steps_per_epoch * config.max_epochs
     scheduler = CosineAnnealingLR(optimizer, T_max=total_steps)
+    log_interval = max(int(config.log_interval), 1)
 
     save_path = Path(config.save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
@@ -123,14 +167,18 @@ def train_supervised(
     writer = SummaryWriter(config.log_dir)
     writer.add_scalar("data/num_records", n, 0)
     writer.add_scalar("data/num_games", config.num_games, 0)
+    for action_type in ActionType:
+        name = action_type.value
+        writer.add_scalar(f"data/action_chosen/{name}_fraction", chosen_counts[name] / n, 0)
+        writer.add_scalar(f"data/action_valid/{name}_state_fraction", valid_state_counts[name] / n, 0)
 
     global_step = 0
     for epoch in range(config.max_epochs):
         indices = np.random.permutation(n)
-        epoch_loss = 0.0
-        epoch_action_loss = 0.0
-        epoch_value_loss = 0.0
-        epoch_action_correct = 0
+        epoch_loss = torch.zeros((), device=device)
+        epoch_action_loss = torch.zeros((), device=device)
+        epoch_value_loss = torch.zeros((), device=device)
+        epoch_action_correct = torch.zeros((), device=device)
         epoch_count = 0
 
         model.train()
@@ -146,8 +194,13 @@ def train_supervised(
             )
             dist = MaskedCategorical(logits, batch["action_mask"])
 
-            # Action loss: cross-entropy
-            action_loss = F.cross_entropy(logits, batch["actions"])
+            # Action loss: behavior-cloning NLL over legal actions only.
+            #
+            # Raw cross-entropy treats every invalid action as a negative
+            # class. In this action space that pushes rarely-valid heads
+            # (notably hand-targeted consumables) to extreme negative logits
+            # before PPO ever gets a chance to explore them.
+            action_loss = -dist.log_prob(batch["actions"]).mean()
 
             # Value loss: BCE on win prediction + MSE on expected_score
             win_loss = F.binary_cross_entropy(
@@ -168,7 +221,8 @@ def train_supervised(
             survival_loss = (survival_per_elem * survival_mask).sum() / survival_mask.sum().clamp(min=1.0)
             value_loss = win_loss + score_loss + survival_loss
 
-            loss = action_loss + config.value_loss_coeff * value_loss
+            entropy_bonus = dist.entropy().mean()
+            loss = action_loss + config.value_loss_coeff * value_loss - config.action_entropy_coeff * entropy_bonus
 
             optimizer.zero_grad()
             loss.backward()
@@ -183,35 +237,39 @@ def train_supervised(
             else:
                 scheduler.step()
 
-            # Track accuracy
-            predicted = dist.logits.argmax(dim=-1)
-            correct = (predicted == batch["actions"]).sum().item()
-            batch_acc = correct / len(batch_records)
-
-            epoch_action_correct += correct
+            # Track epoch metrics on-device; synchronizing every batch is
+            # expensive on MPS and visibly lowers GPU utilization.
+            with torch.no_grad():
+                predicted = dist.logits.argmax(dim=-1)
+                correct = (predicted == batch["actions"]).sum()
+                epoch_loss += loss.detach() * len(batch_records)
+                epoch_action_loss += action_loss.detach() * len(batch_records)
+                epoch_value_loss += value_loss.detach() * len(batch_records)
+                epoch_action_correct += correct.detach()
             epoch_count += len(batch_records)
-            epoch_loss += loss.item() * len(batch_records)
-            epoch_action_loss += action_loss.item() * len(batch_records)
-            epoch_value_loss += value_loss.item() * len(batch_records)
 
-            # Per-step TensorBoard logging
-            writer.add_scalar("train/loss", loss.item(), global_step)
-            writer.add_scalar("train/action_loss", action_loss.item(), global_step)
-            writer.add_scalar("train/value_loss", value_loss.item(), global_step)
-            writer.add_scalar("train/accuracy", batch_acc, global_step)
-            writer.add_scalar("train/grad_norm", grad_norm.item(), global_step)
-            writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
-            writer.add_scalar("train/entropy", dist.entropy().mean().item(), global_step)
-            writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean().item(), global_step)
-            writer.add_scalar("train/expected_score_mean", value_dict["expected_score"].mean().item(), global_step)
-            writer.add_scalar("train/survival_loss", survival_loss.item(), global_step)
+            if global_step % log_interval == 0:
+                batch_acc = correct.float() / len(batch_records)
+                # TensorBoard scalar writes call .item() under the hood; keep
+                # them sparse so MPS can run without constant host syncs.
+                writer.add_scalar("train/loss", loss, global_step)
+                writer.add_scalar("train/action_loss", action_loss, global_step)
+                writer.add_scalar("train/value_loss", value_loss, global_step)
+                writer.add_scalar("train/accuracy", batch_acc, global_step)
+                writer.add_scalar("train/grad_norm", grad_norm, global_step)
+                writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
+                writer.add_scalar("train/entropy", entropy_bonus, global_step)
+                writer.add_scalar("train/action_entropy_bonus", config.action_entropy_coeff * entropy_bonus, global_step)
+                writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean(), global_step)
+                writer.add_scalar("train/expected_score_mean", value_dict["expected_score"].mean(), global_step)
+                writer.add_scalar("train/survival_loss", survival_loss, global_step)
 
             global_step += 1
 
-        avg_loss = epoch_loss / max(epoch_count, 1)
-        avg_action_loss = epoch_action_loss / max(epoch_count, 1)
-        avg_value_loss = epoch_value_loss / max(epoch_count, 1)
-        accuracy = epoch_action_correct / max(epoch_count, 1)
+        avg_loss = (epoch_loss / max(epoch_count, 1)).item()
+        avg_action_loss = (epoch_action_loss / max(epoch_count, 1)).item()
+        avg_value_loss = (epoch_value_loss / max(epoch_count, 1)).item()
+        accuracy = (epoch_action_correct / max(epoch_count, 1)).item()
 
         writer.add_scalar("epoch/loss", avg_loss, epoch + 1)
         writer.add_scalar("epoch/action_loss", avg_action_loss, epoch + 1)

@@ -30,6 +30,12 @@ def main():
     parser.add_argument("--games", type=int, default=1000, help="Heuristic games for supervised (default: 1000)")
     parser.add_argument("--epochs", type=int, default=5, help="Supervised epochs (default: 5)")
     parser.add_argument(
+        "--supervised-entropy-coeff",
+        type=float,
+        default=0.001,
+        help="Entropy bonus coefficient for supervised behavior cloning (default: 0.001)",
+    )
+    parser.add_argument(
         "--min-ante",
         type=int,
         default=5,
@@ -196,8 +202,10 @@ def main():
                 num_games=args.games,
                 batch_size=args.batch,
                 max_epochs=args.epochs,
+                action_entropy_coeff=args.supervised_entropy_coeff,
                 num_workers=args.workers,
                 min_ante=args.min_ante,
+                log_interval=args.log_interval,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/supervised",
                 log_dir=log_dir or "runs/supervised",

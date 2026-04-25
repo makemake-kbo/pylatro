@@ -321,15 +321,12 @@ def _run_ppo_update(
 
             # Ante-survival aux loss (BCE masked by observed antes).
             surv_mask = batch["ante_survival_mask"]
-            if surv_mask.sum() > 0:
-                surv_bce = F.binary_cross_entropy(
-                    value_dict["ante_survival"],
-                    batch["ante_survival_target"],
-                    reduction="none",
-                )
-                survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
-            else:
-                survival_loss = torch.zeros((), device=batch["scalars"].device)
+            surv_bce = F.binary_cross_entropy(
+                value_dict["ante_survival"],
+                batch["ante_survival_target"],
+                reduction="none",
+            )
+            survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
 
             # KL anchor to the frozen pretrained policy. Gives cold heads a
             # gradient target even when their actions aren't sampled.

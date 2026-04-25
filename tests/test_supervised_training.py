@@ -15,6 +15,7 @@ import torch
 
 from pylatro import load_game_data
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
+from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.training import fast_generate
@@ -26,8 +27,10 @@ from pylatro_agent.training.fast_generate import (
 from pylatro_agent.training.fast_runner import FastRunner
 from pylatro_agent.training.supervised import (
     SupervisedConfig,
+    _action_type_dataset_stats,
     _collate_batch,
     _discounted_returns,
+    _masked_action_loss,
     train_supervised,
 )
 from pylatro_agent.vocab import build_vocab
@@ -310,6 +313,28 @@ class TestCollation:
             torch.device("cpu"),
         )
         assert batch["value_target"].tolist() == [-7.0]
+
+    def test_masked_action_loss_ignores_invalid_logits(self):
+        logits = torch.tensor([[0.0, 100.0, -5.0]], dtype=torch.float32)
+        action_mask = torch.tensor([[1.0, 0.0, 1.0]], dtype=torch.float32)
+        actions = torch.tensor([0], dtype=torch.long)
+
+        loss = _masked_action_loss(logits, action_mask, actions)
+
+        expected = -torch.log_softmax(torch.tensor([[0.0, -5.0]]), dim=-1)[0, 0]
+        assert loss.item() == pytest.approx(expected.item())
+
+    def test_action_type_dataset_stats_separates_chosen_from_valid(self):
+        obs = _dummy_obs()
+        obs["action_mask"] = np.zeros((NUM_ACTIONS,), dtype=np.int8)
+        obs["action_mask"][0] = 1
+        obs["action_mask"][encode_action(ActionType.USE_CONSUMABLE_HAND_SUBSET, 0, 0)] = 1
+
+        stats = _action_type_dataset_stats([{"obs": obs, "action": 0}])
+
+        assert stats["chosen"][ActionType.BLIND_PLAY.value] == 1
+        assert stats["chosen"][ActionType.USE_CONSUMABLE_HAND_SUBSET.value] == 0
+        assert stats["valid_states"][ActionType.USE_CONSUMABLE_HAND_SUBSET.value] == 1
 
 
 # ── Discounted returns tests ──

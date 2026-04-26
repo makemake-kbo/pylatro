@@ -4,16 +4,18 @@ import numpy as np
 import pytest
 import torch
 
-from pylatro_agent.constants import ActionRange, NUM_ACTIONS
+from pylatro_agent.constants import NUM_ACTIONS, ActionRange
 from pylatro_agent.training.ppo import (
     _entropy_alpha_loss,
     _extract_step_info_value,
     _make_alpha_optimizer,
-    _masked_kl_divergence,
     _make_policy_optimizer,
+    _masked_kl_divergence,
     _mean_normalized_action_type_entropy,
     _mean_normalized_entropy,
     _mean_valid_action_type_count,
+    _record_action_diagnostics,
+    _RolloutMetrics,
     _smoothed_entropy_signal,
 )
 
@@ -186,3 +188,43 @@ def test_extract_step_info_value_uses_live_info_for_nonterminal_steps() -> None:
 
     assert _extract_step_info_value(infos, "progress_made", 0, done=False) is True
     assert _extract_step_info_value(infos, "progress_made", 1, done=False) is False
+
+
+def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
+    rm = _RolloutMetrics()
+    infos = {
+        "hand_play_observed": np.array([True]),
+        "_hand_play_observed": np.array([True]),
+        "hand_play_in_candidates": np.array([True]),
+        "_hand_play_in_candidates": np.array([True]),
+        "hand_play_top1": np.array([False]),
+        "_hand_play_top1": np.array([True]),
+        "hand_play_top3": np.array([True]),
+        "_hand_play_top3": np.array([True]),
+        "hand_play_candidate_value_ratio": np.array([0.75], dtype=np.float32),
+        "_hand_play_candidate_value_ratio": np.array([True]),
+        "hand_play_chosen_hand": np.array(["Pair"], dtype=object),
+        "_hand_play_chosen_hand": np.array([True]),
+        "hand_play_best_hand": np.array(["Flush"], dtype=object),
+        "_hand_play_best_hand": np.array([True]),
+        "planet_use_observed": np.array([True]),
+        "_planet_use_observed": np.array([True]),
+        "planet_use_played_hand": np.array([True]),
+        "_planet_use_played_hand": np.array([True]),
+        "planet_use_main_hand_match": np.array([False]),
+        "_planet_use_main_hand_match": np.array([True]),
+        "planet_use_key": np.array(["c_pluto"], dtype=object),
+        "_planet_use_key": np.array([True]),
+    }
+
+    _record_action_diagnostics(rm, infos, 0, done=False)
+
+    assert rm.hand_play_in_candidates == [1.0]
+    assert rm.hand_play_top1 == [0.0]
+    assert rm.hand_play_top3 == [1.0]
+    assert rm.hand_play_value_ratios == pytest.approx([0.75])
+    assert rm.hand_chosen_counts["Pair"] == 1
+    assert rm.hand_best_counts["Flush"] == 1
+    assert rm.planet_use_played_hand == [1.0]
+    assert rm.planet_use_main_hand_match == [0.0]
+    assert rm.planet_use_key_counts["c_pluto"] == 1

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 
 import pytest
 
-from pylatro_agent.reward import REWARD_SCALE, default_reward
+from pylatro_agent.reward import (
+    PLANET_FOOL_OVERWRITE_PENALTY,
+    PLANET_SKIP_PENALTY,
+    REWARD_SCALE,
+    STANDARD_OVERFULL_CARD_BASE_PENALTY,
+    STANDARD_OVERFULL_CARD_EXPONENT,
+    TAROT_SKIP_FIXING_PENALTY,
+    default_reward,
+)
 
 
 def _dummy_state(ante: int = 1, interest_cap: int = 25, win_ante: int = 8) -> SimpleNamespace:
@@ -13,6 +22,32 @@ def _dummy_state(ante: int = 1, interest_cap: int = 25, win_ante: int = 8) -> Si
         interest_cap=interest_cap,
         win_ante=win_ante,
     )
+
+
+def _card(rank: str, suit: str, center_key: str = "c_base", seal: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        rank=rank,
+        suit=suit,
+        center_key=center_key,
+        seal=seal,
+        destroyed=False,
+    )
+
+
+def _pack_detail(
+    rank: str,
+    suit: str,
+    center_key: str = "c_base",
+    seal: str = "",
+    edition: dict | None = None,
+) -> dict:
+    return {
+        "rank": rank,
+        "suit": suit,
+        "center_key": center_key,
+        "seal": seal,
+        "edition": edition or {},
+    }
 
 
 def test_default_reward_rewards_round_score_progress() -> None:
@@ -132,7 +167,9 @@ def test_default_reward_treats_blind_clear_as_full_pressure_relief() -> None:
     expected_score_progress = 0.25 * ((400 / 400) - (300 / 400))
     expected_pressure_progress = 1.5 * ((0.25) / (2 + 0.5 * 1))
     expected_blind_clear = 0.5 + 0.05
-    assert reward == pytest.approx(REWARD_SCALE * (expected_score_progress + expected_pressure_progress + expected_blind_clear))
+    assert reward == pytest.approx(
+        REWARD_SCALE * (expected_score_progress + expected_pressure_progress + expected_blind_clear)
+    )
 
 
 def test_default_reward_gives_idle_grace_before_ramping_penalty() -> None:
@@ -264,6 +301,268 @@ def test_default_reward_penalizes_shop_sell_consumable() -> None:
     reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
 
     assert reward == pytest.approx(-0.05 * REWARD_SCALE)
+
+
+def test_default_reward_penalizes_skipping_tarot_pack_with_deck_fixing_target() -> None:
+    state = _dummy_state(ante=2)
+    state.deck_cards = [
+        _card(rank, "Hearts")
+        for rank in ("A", "K", "Q", "J", "T", "9", "8", "7", "6", "5") * 2
+    ] + [_card(rank, "Spades") for rank in ("A", "K", "Q", "J", "T", "9", "8", "7")]
+    prev_info = {
+        "ante": 2,
+        "joker_keys": (),
+        "consumable_keys": (),
+        "last_tarot_planet": "",
+        "pack_state_name": "TAROT_PACK",
+        "pack_card_details": ({"center_key": "c_death"},),
+    }
+    curr_info = {
+        "ante": 2,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_skip",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-TAROT_SKIP_FIXING_PENALTY * REWARD_SCALE)
+
+
+def test_default_reward_does_not_penalize_tarot_pack_skip_without_legit_target() -> None:
+    state = _dummy_state(ante=2)
+    state.deck_cards = [
+        _card(rank, suit)
+        for suit in ("Hearts", "Diamonds", "Clubs", "Spades")
+        for rank in ("A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2")
+    ]
+    prev_info = {
+        "ante": 2,
+        "joker_keys": (),
+        "consumable_keys": (),
+        "last_tarot_planet": "",
+        "pack_state_name": "TAROT_PACK",
+        "pack_card_details": ({"center_key": "c_wheel_of_fortune"},),
+    }
+    curr_info = {
+        "ante": 2,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_skip",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
+
+
+def test_default_reward_does_not_penalize_tarot_pack_skip_for_fixed_deck() -> None:
+    state = _dummy_state(ante=6)
+    state.deck_cards = [
+        _card(rank, "Hearts", "m_steel", "Red")
+        for rank in ("A", "K", "Q", "J", "T", "9", "8", "7", "6", "5") * 3
+    ]
+    prev_info = {
+        "ante": 6,
+        "joker_keys": (),
+        "consumable_keys": (),
+        "last_tarot_planet": "",
+        "pack_state_name": "TAROT_PACK",
+        "pack_card_details": ({"center_key": "c_death"},),
+    }
+    curr_info = {
+        "ante": 6,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_skip",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
+
+
+def test_default_reward_does_not_penalize_high_ante_red_card_tarot_pack_skip() -> None:
+    state = _dummy_state(ante=5)
+    state.deck_cards = [_card("A", "Hearts") for _ in range(10)] + [_card("K", "Spades") for _ in range(20)]
+    prev_info = {
+        "ante": 5,
+        "joker_keys": ("j_red_card",),
+        "consumable_keys": (),
+        "last_tarot_planet": "",
+        "pack_state_name": "TAROT_PACK",
+        "pack_card_details": ({"center_key": "c_death"},),
+    }
+    curr_info = {
+        "ante": 5,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_skip",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
+
+
+def test_default_reward_penalizes_standard_pack_claim_when_unfixed_deck_is_overfull() -> None:
+    state = _dummy_state(ante=3)
+    state.deck_cards = [_card("A", "Hearts") for _ in range(20)] + [_card("K", "Spades") for _ in range(34)]
+    prev_info = {
+        "ante": 3,
+        "pack_state_name": "STANDARD_PACK",
+        "pack_card_details": (_pack_detail("9", "Clubs"),),
+    }
+    curr_info = {
+        "ante": 3,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_claim",
+        "action_index": 0,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    expected = STANDARD_OVERFULL_CARD_BASE_PENALTY * math.expm1(STANDARD_OVERFULL_CARD_EXPONENT * 2)
+    assert reward == pytest.approx(-expected * REWARD_SCALE)
+
+
+def test_default_reward_penalizes_buying_standard_pack_when_unfixed_deck_is_overfull() -> None:
+    state = _dummy_state(ante=3)
+    state.deck_cards = [_card("A", "Hearts") for _ in range(15)] + [_card("K", "Spades") for _ in range(38)]
+    prev_info = {
+        "ante": 3,
+        "shop_item_details": (
+            {"center_key": "j_joker", "pack_state_name": ""},
+            {"center_key": "p_standard_normal_1", "pack_state_name": "STANDARD_PACK"},
+        ),
+    }
+    curr_info = {
+        "ante": 3,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "shop_buy",
+        "action_index": 1,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    expected = STANDARD_OVERFULL_CARD_BASE_PENALTY * math.expm1(STANDARD_OVERFULL_CARD_EXPONENT)
+    assert reward == pytest.approx(-expected * REWARD_SCALE)
+
+
+def test_default_reward_does_not_penalize_standard_pack_claim_for_fixed_overfull_deck() -> None:
+    state = _dummy_state(ante=6)
+    state.deck_cards = [_card(rank, "Hearts", "m_steel", "Red") for rank in ("A", "K", "Q", "J", "T") * 11]
+    prev_info = {
+        "ante": 6,
+        "pack_state_name": "STANDARD_PACK",
+        "pack_card_details": (_pack_detail("9", "Clubs"),),
+    }
+    curr_info = {
+        "ante": 6,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_claim",
+        "action_index": 0,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
+
+
+def test_default_reward_penalizes_planet_pack_skip_unless_fool_protects_high_value_tarot() -> None:
+    state = _dummy_state(ante=3)
+    prev_info = {
+        "ante": 3,
+        "pack_state_name": "PLANET_PACK",
+        "consumable_keys": (),
+        "last_tarot_planet": "",
+    }
+    curr_info = {
+        "ante": 3,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_skip",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-PLANET_SKIP_PENALTY * REWARD_SCALE)
+
+
+def test_default_reward_allows_planet_pack_skip_when_fool_protects_death() -> None:
+    state = _dummy_state(ante=3)
+    prev_info = {
+        "ante": 3,
+        "pack_state_name": "PLANET_PACK",
+        "consumable_keys": ("c_fool",),
+        "last_tarot_planet": "c_death",
+    }
+    curr_info = {
+        "ante": 3,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_skip",
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
+
+
+def test_default_reward_penalizes_opening_planet_pack_when_fool_would_overwrite_temperance() -> None:
+    state = _dummy_state(ante=3)
+    prev_info = {
+        "ante": 3,
+        "consumable_keys": ("c_fool",),
+        "last_tarot_planet": "c_temperance",
+        "shop_item_details": ({"center_key": "p_celestial_normal_1", "pack_state_name": "PLANET_PACK"},),
+    }
+    curr_info = {
+        "ante": 3,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "shop_buy",
+        "action_index": 0,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(-PLANET_FOOL_OVERWRITE_PENALTY * REWARD_SCALE)
+
+
+def test_default_reward_allows_opening_planet_pack_when_target_tarot_is_in_inventory() -> None:
+    state = _dummy_state(ante=3)
+    prev_info = {
+        "ante": 3,
+        "consumable_keys": ("c_fool", "c_temperance"),
+        "last_tarot_planet": "c_temperance",
+        "shop_item_details": ({"center_key": "p_celestial_normal_1", "pack_state_name": "PLANET_PACK"},),
+    }
+    curr_info = {
+        "ante": 3,
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "shop_buy",
+        "action_index": 0,
+    }
+
+    reward = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+
+    assert reward == pytest.approx(0.0)
 
 
 def test_default_reward_stalled_terminal_is_harsher_than_true_loss() -> None:

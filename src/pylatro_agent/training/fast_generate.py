@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GamePhase
 
+from ..action import decode_action
 from ..heuristic import HeuristicAgent
 from ..reward import default_reward
 from ..survival import compute_ante_survival_targets
@@ -79,9 +80,13 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
         "free_rerolls": state.current_round.free_rerolls,
         "joker_keys": tuple(state.joker_keys),
         "consumable_keys": tuple(state.consumable_keys),
+        "last_tarot_planet": state.last_tarot_planet or "",
         "shop_keys": tuple(item.center_key for item in shop_items),
+        "shop_item_details": tuple(_shop_item_detail(state, item) for item in shop_items),
         "pack_booster_key": state.pack.booster_key if state.pack is not None else "",
         "pack_card_keys": tuple(card.center_key for card in pack_cards),
+        "pack_state_name": state.pack.state_name if state.pack is not None else "",
+        "pack_card_details": tuple(_pack_card_detail(state, card) for card in pack_cards),
         "pack_choices_remaining": pack_cr,
         "blind_just_beaten": runner.blind_just_beaten,
         "progress_made": False,
@@ -104,11 +109,49 @@ def _info_signature(info: dict[str, Any]) -> tuple[Any, ...]:
         info.get("free_rerolls", 0),
         info.get("joker_keys", ()),
         info.get("consumable_keys", ()),
+        info.get("last_tarot_planet", ""),
         info.get("shop_keys", ()),
         info.get("pack_booster_key", ""),
         info.get("pack_card_keys", ()),
         info.get("pack_choices_remaining", 0),
     )
+
+
+def _pack_card_detail(state, card) -> dict[str, object]:
+    front_key = card.front_key or ""
+    front = state.data.cards.get(front_key, {}) if front_key else {}
+    return {
+        "center_key": card.center_key,
+        "front_key": front_key,
+        "rank": front_key[2:] if len(front_key) > 2 else "",
+        "suit": str(front.get("suit", "")),
+        "seal": card.seal or "",
+        "edition": card.edition or {},
+    }
+
+
+def _shop_item_detail(state, card) -> dict[str, object]:
+    center = state.data.centers.get(card.center_key, {})
+    return {
+        "center_key": card.center_key,
+        "card_type": getattr(card, "card_type", ""),
+        "pack_state_name": _pack_state_name_for_shop_card(center),
+    }
+
+
+def _pack_state_name_for_shop_card(center: dict) -> str:
+    name = str(center.get("name", ""))
+    if "Arcana" in name:
+        return "TAROT_PACK"
+    if "Celestial" in name:
+        return "PLANET_PACK"
+    if "Spectral" in name:
+        return "SPECTRAL_PACK"
+    if "Standard" in name:
+        return "STANDARD_PACK"
+    if "Buffoon" in name:
+        return "BUFFOON_PACK"
+    return ""
 
 
 def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray]:
@@ -181,6 +224,10 @@ def _run_game_single_pass(
         curr_info["blind_just_beaten"] = runner.blind_just_beaten
         curr_info["progress_made"] = progress_made
         curr_info["steps_since_progress"] = steps_since_progress
+        decoded = decode_action(action)
+        curr_info["action_type"] = decoded.action_type
+        curr_info["action_index"] = decoded.index
+        curr_info["action_detail"] = decoded.detail
 
         reward = default_reward(state, current_prev_info, curr_info, terminated, won)
         rewards.append(float(reward))

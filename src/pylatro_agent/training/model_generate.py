@@ -18,19 +18,20 @@ import pickle
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import torch
 from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
-from ..distributions import MaskedCategorical
 from ..env import BalatroEnv
 from ..vocab import Vocab, build_vocab
-from .ppo import _ObsBuffer, _extract_step_info_value, _load_checkpoint_compatible
+from .ppo import _extract_step_info_value, _load_checkpoint_compatible, _ObsBuffer
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -167,13 +168,11 @@ def generate_training_data_from_model(
             pre_action_mask = obs_buf._np_action_mask
 
             with torch.no_grad():
-                logits, _ = model(
+                dist, _ = model.action_distribution(
                     obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
                     obs_buf.attention_mask, obs_buf.action_mask,
+                    temperature=temperature,
                 )
-                if temperature != 1.0:
-                    logits = logits / temperature
-                dist = MaskedCategorical(logits, obs_buf.action_mask)
                 actions = dist.sample()
 
             actions_np = actions.cpu().numpy()

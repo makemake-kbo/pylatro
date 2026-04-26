@@ -17,8 +17,7 @@ from pylatro import GameData, load_game_data
 
 from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
-from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, SubPhase, TOKEN_DIM
-from ..distributions import MaskedCategorical
+from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..env import BalatroEnv
 from ..survival import compute_ante_survival_targets
 from ..vocab import Vocab, build_vocab
@@ -196,6 +195,11 @@ class _UpdateStats:
 class _RolloutMetrics:
     """Per-rollout accumulators populated during the step loop."""
     action_type_counts: Counter = field(default_factory=Counter)
+    hand_chosen_counts: Counter = field(default_factory=Counter)
+    hand_best_counts: Counter = field(default_factory=Counter)
+    planet_use_key_counts: Counter = field(default_factory=Counter)
+    planet_claim_key_counts: Counter = field(default_factory=Counter)
+    pack_skip_state_counts: Counter = field(default_factory=Counter)
     step_rewards: list[float] = field(default_factory=list)
     progress_flags: list[float] = field(default_factory=list)
     steps_since_progress: list[float] = field(default_factory=list)
@@ -206,6 +210,19 @@ class _RolloutMetrics:
     truncated_flags: list[float] = field(default_factory=list)
     reward_component_values: defaultdict = field(default_factory=lambda: defaultdict(list))
     pre_choose_action_flags: list[float] = field(default_factory=list)
+    hand_play_observed: list[float] = field(default_factory=list)
+    hand_play_in_candidates: list[float] = field(default_factory=list)
+    hand_play_top1: list[float] = field(default_factory=list)
+    hand_play_top3: list[float] = field(default_factory=list)
+    hand_play_value_ratios: list[float] = field(default_factory=list)
+    hand_play_not_in_candidates: list[float] = field(default_factory=list)
+    planet_use_observed: list[float] = field(default_factory=list)
+    planet_use_played_hand: list[float] = field(default_factory=list)
+    planet_use_main_hand_match: list[float] = field(default_factory=list)
+    planet_claim_observed: list[float] = field(default_factory=list)
+    planet_claim_played_hand: list[float] = field(default_factory=list)
+    planet_claim_main_hand_match: list[float] = field(default_factory=list)
+    planet_pack_skip: list[float] = field(default_factory=list)
     play_subset_count: int = 0
     discard_subset_count: int = 0
 
@@ -213,6 +230,18 @@ class _RolloutMetrics:
 def _unwrap_model(model: nn.Module) -> nn.Module:
     """Return the underlying model when wrapped for multi-GPU training."""
     return model.module if isinstance(model, nn.DataParallel) else model
+
+
+def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor], temperature: float = 1.0):
+    base_model = _unwrap_model(model)
+    return base_model.action_distribution(
+        batch["tokens"],
+        batch["token_types"],
+        batch["scalars"],
+        batch["attention_mask"],
+        batch["action_mask"],
+        temperature=temperature,
+    )
 
 
 def _validate_ppo_config(config: PPOConfig) -> None:
@@ -288,11 +317,7 @@ def _run_ppo_update(
         batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
         optimizer.zero_grad()
         for i, batch in enumerate(batches):
-            logits, value_dict = model(
-                batch["tokens"], batch["token_types"], batch["scalars"],
-                batch["attention_mask"], batch["action_mask"],
-            )
-            dist = MaskedCategorical(logits, batch["action_mask"])
+            dist, value_dict = _grammar_distribution(model, batch)
 
             new_log_probs = dist.log_prob(batch["actions"])
             entropy_per_state = dist.entropy()
@@ -300,7 +325,7 @@ def _run_ppo_update(
             valid_action_counts = batch["action_mask"].sum(dim=-1)
             normalized_entropy_per_state = _per_state_normalized_entropy(entropy_per_state, batch["action_mask"])
             normalized_entropy = normalized_entropy_per_state.mean()
-            normalized_action_type_entropy = _mean_normalized_action_type_entropy(dist.probs, batch["action_mask"])
+            normalized_action_type_entropy = dist.normalized_action_type_entropy()
             valid_action_type_count_mean = _mean_valid_action_type_count(batch["action_mask"])
 
             # Policy loss (clipped PPO). Advantages are already normalized
@@ -332,11 +357,8 @@ def _run_ppo_update(
             # gradient target even when their actions aren't sampled.
             if reference_model is not None:
                 with torch.no_grad():
-                    ref_logits, _ = reference_model(
-                        batch["tokens"], batch["token_types"], batch["scalars"],
-                        batch["attention_mask"], batch["action_mask"],
-                    )
-                kl_div = _masked_kl_divergence(logits, ref_logits, batch["action_mask"])
+                    ref_dist, _ = _grammar_distribution(reference_model, batch)
+                kl_div = dist.kl_divergence(ref_dist)
             else:
                 kl_div = torch.zeros((), device=batch["scalars"].device)
 
@@ -407,12 +429,47 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
                 rm.action_type_counts[action_type.value] / total_action_count,
                 update_count,
             )
+
+    writer.add_scalar("hand/play_observed_count", float(len(rm.hand_play_observed)), update_count)
+    writer.add_scalar("hand/not_in_candidates_fraction", _safe_mean(rm.hand_play_not_in_candidates), update_count)
+    writer.add_scalar("hand/in_candidates_fraction", _safe_mean(rm.hand_play_in_candidates), update_count)
+    writer.add_scalar("hand/top1_match_fraction", _safe_mean(rm.hand_play_top1), update_count)
+    writer.add_scalar("hand/top3_match_fraction", _safe_mean(rm.hand_play_top3), update_count)
+    writer.add_scalar("hand/candidate_value_ratio_mean", _safe_mean(rm.hand_play_value_ratios), update_count)
+    _write_counter_fractions(writer, "hand/chosen", rm.hand_chosen_counts, update_count)
+    _write_counter_fractions(writer, "hand/best", rm.hand_best_counts, update_count)
+
+    writer.add_scalar("planet/use_count", float(len(rm.planet_use_observed)), update_count)
+    writer.add_scalar("planet/use_played_hand_fraction", _safe_mean(rm.planet_use_played_hand), update_count)
+    writer.add_scalar("planet/use_main_hand_match_fraction", _safe_mean(rm.planet_use_main_hand_match), update_count)
+    _write_counter_fractions(writer, "planet/use_key", rm.planet_use_key_counts, update_count)
+
+    writer.add_scalar("planet/claim_count", float(len(rm.planet_claim_observed)), update_count)
+    writer.add_scalar("planet/claim_played_hand_fraction", _safe_mean(rm.planet_claim_played_hand), update_count)
+    writer.add_scalar(
+        "planet/claim_main_hand_match_fraction",
+        _safe_mean(rm.planet_claim_main_hand_match),
+        update_count,
+    )
+    _write_counter_fractions(writer, "planet/claim_key", rm.planet_claim_key_counts, update_count)
+
+    writer.add_scalar("pack/planet_skip_fraction", _safe_mean(rm.planet_pack_skip), update_count)
+    _write_counter_fractions(writer, "pack/skip_state", rm.pack_skip_state_counts, update_count)
+
     for component_name, component_values in rm.reward_component_values.items():
         writer.add_scalar(
             f"reward/{component_name.removeprefix('reward_')}_mean",
             _safe_mean(component_values),
             update_count,
         )
+
+
+def _write_counter_fractions(writer, prefix: str, counter: Counter, update_count: int) -> None:
+    total = sum(counter.values())
+    if total <= 0:
+        return
+    for key, count in counter.items():
+        writer.add_scalar(f"{prefix}/{_sanitize_tag_part(str(key))}_fraction", count / total, update_count)
 
 
 def _save_checkpoint(model: nn.Module, save_path: Path, update_count: int) -> Path:
@@ -564,9 +621,111 @@ def _extract_step_info_value(info_dict: dict, key: str, env_idx: int, *, done: b
     return default if value is _MISSING else value
 
 
+def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *, done: bool) -> None:
+    """Aggregate optional env-provided decision-quality diagnostics."""
+    if _extract_step_info_value(infos, "hand_play_observed", env_idx, done=done, default=False):
+        rm.hand_play_observed.append(1.0)
+        not_in_candidates = bool(
+            _extract_step_info_value(infos, "hand_play_not_in_candidates", env_idx, done=done, default=False)
+        )
+        in_candidates = bool(
+            _extract_step_info_value(infos, "hand_play_in_candidates", env_idx, done=done, default=False)
+        )
+        rm.hand_play_not_in_candidates.append(float(not_in_candidates))
+        rm.hand_play_in_candidates.append(float(in_candidates))
+
+        if in_candidates:
+            rm.hand_play_top1.append(float(_extract_step_info_value(
+                infos,
+                "hand_play_top1",
+                env_idx,
+                done=done,
+                default=False,
+            )))
+            rm.hand_play_top3.append(float(_extract_step_info_value(
+                infos,
+                "hand_play_top3",
+                env_idx,
+                done=done,
+                default=False,
+            )))
+            value_ratio = _extract_step_info_value(
+                infos,
+                "hand_play_candidate_value_ratio",
+                env_idx,
+                done=done,
+                default=None,
+            )
+            if value_ratio is not None:
+                rm.hand_play_value_ratios.append(float(value_ratio))
+            chosen_hand = _extract_step_info_value(infos, "hand_play_chosen_hand", env_idx, done=done, default="")
+            if chosen_hand:
+                rm.hand_chosen_counts[str(chosen_hand)] += 1
+
+        best_hand = _extract_step_info_value(infos, "hand_play_best_hand", env_idx, done=done, default="")
+        if best_hand:
+            rm.hand_best_counts[str(best_hand)] += 1
+
+    if _extract_step_info_value(infos, "planet_use_observed", env_idx, done=done, default=False):
+        rm.planet_use_observed.append(1.0)
+        rm.planet_use_played_hand.append(float(_extract_step_info_value(
+            infos,
+            "planet_use_played_hand",
+            env_idx,
+            done=done,
+            default=False,
+        )))
+        rm.planet_use_main_hand_match.append(float(_extract_step_info_value(
+            infos,
+            "planet_use_main_hand_match",
+            env_idx,
+            done=done,
+            default=False,
+        )))
+        planet_key = _extract_step_info_value(infos, "planet_use_key", env_idx, done=done, default="")
+        if planet_key:
+            rm.planet_use_key_counts[str(planet_key)] += 1
+
+    if _extract_step_info_value(infos, "planet_claim_observed", env_idx, done=done, default=False):
+        rm.planet_claim_observed.append(1.0)
+        rm.planet_claim_played_hand.append(float(_extract_step_info_value(
+            infos,
+            "planet_claim_played_hand",
+            env_idx,
+            done=done,
+            default=False,
+        )))
+        rm.planet_claim_main_hand_match.append(float(_extract_step_info_value(
+            infos,
+            "planet_claim_main_hand_match",
+            env_idx,
+            done=done,
+            default=False,
+        )))
+        planet_key = _extract_step_info_value(infos, "planet_claim_key", env_idx, done=done, default="")
+        if planet_key:
+            rm.planet_claim_key_counts[str(planet_key)] += 1
+
+    if _extract_step_info_value(infos, "planet_pack_skip", env_idx, done=done, default=None) is not None:
+        rm.planet_pack_skip.append(float(_extract_step_info_value(
+            infos,
+            "planet_pack_skip",
+            env_idx,
+            done=done,
+            default=False,
+        )))
+        pack_state_name = _extract_step_info_value(infos, "pack_skip_state_name", env_idx, done=done, default="")
+        if pack_state_name:
+            rm.pack_skip_state_counts[str(pack_state_name)] += 1
+
+
 def _safe_mean(values: list[float]) -> float:
     """Return the mean of a list or NaN when empty."""
     return float(np.mean(values)) if values else float("nan")
+
+
+def _sanitize_tag_part(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value) or "unknown"
 
 
 def _action_type_name(action_id: int) -> str:
@@ -745,17 +904,18 @@ def train_ppo(
         model.eval()
         for step in range(config.rollout_length):
             with torch.no_grad():
-                logits, value_dict = model(
-                    obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
-                    obs_buf.attention_mask, obs_buf.action_mask,
+                dist, value_dict = _unwrap_model(model).action_distribution(
+                    obs_buf.tokens,
+                    obs_buf.token_types,
+                    obs_buf.scalars,
+                    obs_buf.attention_mask,
+                    obs_buf.action_mask,
                 )
-                dist = MaskedCategorical(logits, obs_buf.action_mask)
                 actions = dist.sample()
                 log_probs = dist.log_prob(actions)
                 values = value_dict["expected_score"]
-                action_probs = dist.probs
-                chosen_action_probs = action_probs.gather(1, actions.unsqueeze(-1)).squeeze(-1)
-                max_action_probs = action_probs.max(dim=-1).values
+                chosen_action_probs = dist.selected_prob(actions)
+                max_action_probs = dist.max_prob()
 
             actions_np = actions.cpu().numpy()
             log_probs_np = log_probs.cpu().numpy()
@@ -776,13 +936,7 @@ def train_ppo(
                 if truncated_indices:
                     final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
                     with torch.no_grad():
-                        _, truncated_value_dict = model(
-                            final_obs_batch["tokens"],
-                            final_obs_batch["token_types"],
-                            final_obs_batch["scalars"],
-                            final_obs_batch["attention_mask"],
-                            final_obs_batch["action_mask"],
-                        )
+                        _, truncated_value_dict = _grammar_distribution(model, final_obs_batch)
                     truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
                     if return_rms is not None:
                         truncated_vals = return_rms.denormalize(truncated_vals)
@@ -831,7 +985,17 @@ def train_ppo(
                     rm.discard_subset_count += 1
 
                 rm.progress_flags.append(
-                    float(bool(_extract_step_info_value(infos, "progress_made", env_idx, done=step_done, default=False)))
+                    float(
+                        bool(
+                            _extract_step_info_value(
+                                infos,
+                                "progress_made",
+                                env_idx,
+                                done=step_done,
+                                default=False,
+                            )
+                        )
+                    )
                 )
                 rm.steps_since_progress.append(
                     float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
@@ -849,6 +1013,10 @@ def train_ppo(
                     "reward_consumable_targeted_use",
                     "reward_shop_sell_penalty",
                     "reward_shop_reroll_reward",
+                    "reward_tarot_skip_penalty",
+                    "reward_planet_skip_penalty",
+                    "reward_planet_fool_overwrite_penalty",
+                    "reward_standard_overfull_penalty",
                 ):
                     component_value = _extract_step_info_value(
                         infos,
@@ -859,6 +1027,8 @@ def train_ppo(
                     )
                     if component_value is not None:
                         rm.reward_component_values[component_name].append(float(component_value))
+
+                _record_action_diagnostics(rm, infos, env_idx, done=step_done)
 
             # Handle completed episodes (vectorized envs auto-reset)
             for i in np.where(dones)[0]:
@@ -891,9 +1061,12 @@ def train_ppo(
 
         # Bootstrap values for GAE
         with torch.no_grad():
-            _, value_dict = model(
-                obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
-                obs_buf.attention_mask, obs_buf.action_mask,
+            _, value_dict = _unwrap_model(model).action_distribution(
+                obs_buf.tokens,
+                obs_buf.token_types,
+                obs_buf.scalars,
+                obs_buf.attention_mask,
+                obs_buf.action_mask,
             )
             last_values = value_dict["expected_score"].cpu().numpy()
             if return_rms is not None:
@@ -1139,12 +1312,8 @@ def evaluate_model(
         while not done:
             with torch.no_grad():
                 batch = _single_obs_to_batch(obs, device)
-                logits, _ = model(
-                    batch["tokens"], batch["token_types"], batch["scalars"],
-                    batch["attention_mask"], batch["action_mask"],
-                )
-                masked_logits = logits.masked_fill(batch["action_mask"] == 0, -1e8)
-                action = masked_logits.argmax(dim=-1).item()
+                dist, _ = _grammar_distribution(model, batch)
+                action = dist.mode().item()
 
             obs, _reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated

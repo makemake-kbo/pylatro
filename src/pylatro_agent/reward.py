@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -11,7 +13,7 @@ if TYPE_CHECKING:
 # All reward components are multiplied by REWARD_SCALE at the exit of
 # default_reward_components. The BC pretrain supervised the value head
 # on targets in the ±10 range; PPO reward magnitudes of 40 / -16+ made
-# the critic chase a 4× miscalibration, which showed up as a flat
+# the critic chase a 4x miscalibration, which showed up as a flat
 # value_loss and rollouts where shaping dominated terminal signal. The
 # constants below keep their "natural" units so the shaping math stays
 # readable; only the final sum gets scaled.
@@ -70,6 +72,35 @@ SHOP_SELL_PENALTY = 0.05
 # is only valid when the agent can afford it, so this can't trigger when
 # cash-starved.
 SHOP_REROLL_REWARD = 0.08
+# Penalty for skipping a Tarot pack when it contains at least one real
+# deck-fixing/economy target. Standard packs are handled separately below:
+# once the deck is already over 52 cards, adding random playing cards is a
+# liability unless the deck is already fixed.
+TAROT_SKIP_FIXING_PENALTY = 0.12
+PLANET_SKIP_PENALTY = 0.08
+PLANET_FOOL_OVERWRITE_PENALTY = 0.12
+STANDARD_OVERFULL_CARD_BASE_PENALTY = 0.03
+STANDARD_OVERFULL_CARD_EXPONENT = 0.35
+STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
+
+_FIXED_DECK_SIGNATURE_SHARE = 0.70
+_FIXED_DECK_MIN_SIGNATURE_COUNT = 8
+_TAROT_FIXING_TARGETS = {
+    "c_death",
+    "c_hanged_man",
+    "c_strength",
+    "c_chariot",
+    "c_justice",
+    "c_magician",
+    "c_lovers",
+    "c_star",
+    "c_moon",
+    "c_sun",
+    "c_world",
+    "c_tower",
+}
+_TAROT_ECONOMY_TARGETS = {"c_hermit", "c_temperance"}
+_FOOL_PROTECT_TARGETS = {"c_death", "c_hermit", "c_temperance"}
 
 
 class RewardFn(Protocol):
@@ -132,6 +163,10 @@ def default_reward_components(
         "consumable_targeted_use": 0.0,
         "shop_sell_penalty": 0.0,
         "shop_reroll_reward": 0.0,
+        "tarot_skip_penalty": 0.0,
+        "planet_skip_penalty": 0.0,
+        "planet_fool_overwrite_penalty": 0.0,
+        "standard_overfull_penalty": 0.0,
     }
 
     if terminated or curr_info.get("stalled", False):
@@ -194,6 +229,22 @@ def default_reward_components(
     if action_type == "shop_reroll":
         components["shop_reroll_reward"] += SHOP_REROLL_REWARD
 
+    if action_type == "pack_skip":
+        if _should_penalize_tarot_skip(state, prev_info, curr_info):
+            components["tarot_skip_penalty"] -= TAROT_SKIP_FIXING_PENALTY
+        if _should_penalize_planet_skip(prev_info):
+            components["planet_skip_penalty"] -= PLANET_SKIP_PENALTY
+
+    if (
+        action_type == "shop_buy"
+        and _is_buying_planet_pack(prev_info, curr_info)
+        and _should_penalize_planet_pack_open(prev_info)
+    ):
+        components["planet_fool_overwrite_penalty"] -= PLANET_FOOL_OVERWRITE_PENALTY
+
+    if _is_standard_overfull_action(prev_info, curr_info):
+        components["standard_overfull_penalty"] -= _standard_overfull_penalty(state)
+
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
         idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
@@ -224,6 +275,183 @@ def default_reward(
         action_type: ActionType — action type taken this step
     """
     return default_reward_components(state, prev_info, curr_info, terminated, won)["total"]
+
+
+def _should_penalize_tarot_skip(state: RunState, prev_info: dict, curr_info: dict) -> bool:
+    if _ante(curr_info, state) > 4 and "j_red_card" in _keys(prev_info.get("joker_keys", ())):
+        return False
+
+    if not _is_tarot_pack(prev_info):
+        return False
+
+    pack_cards = tuple(prev_info.get("pack_card_details", ()))
+    if not pack_cards:
+        return False
+
+    deck_cards = tuple(getattr(state, "deck_cards", ()) or ())
+    if not deck_cards:
+        return False
+
+    if _deck_is_fixed(deck_cards):
+        return False
+
+    return _tarot_pack_has_legit_target(pack_cards, prev_info)
+
+
+def _is_standard_pack(info: dict) -> bool:
+    state_name = str(info.get("pack_state_name", ""))
+    if state_name == "STANDARD_PACK":
+        return True
+    booster_key = str(info.get("pack_booster_key", "")).lower()
+    return "standard" in booster_key
+
+
+def _is_tarot_pack(info: dict) -> bool:
+    state_name = str(info.get("pack_state_name", ""))
+    if state_name == "TAROT_PACK":
+        return True
+    booster_key = str(info.get("pack_booster_key", "")).lower()
+    return "arcana" in booster_key
+
+
+def _is_planet_pack(info: dict) -> bool:
+    state_name = str(info.get("pack_state_name", ""))
+    if state_name == "PLANET_PACK":
+        return True
+    booster_key = str(info.get("pack_booster_key", "")).lower()
+    return "celestial" in booster_key
+
+
+def _ante(info: dict, state: RunState) -> int:
+    fallback = getattr(getattr(state, "round_resets", None), "ante", 1)
+    return int(info.get("ante", fallback) or fallback)
+
+
+def _keys(value) -> tuple[str, ...]:
+    return tuple(str(item) for item in (value or ()))
+
+
+def _deck_is_fixed(deck_cards: tuple) -> bool:
+    active_cards = tuple(card for card in deck_cards if not getattr(card, "destroyed", False))
+    signatures = Counter(_card_signature(card) for card in active_cards)
+    if not signatures:
+        return False
+    signature, count = signatures.most_common(1)[0]
+    share = count / max(sum(signatures.values()), 1)
+    if count >= _FIXED_DECK_MIN_SIGNATURE_COUNT and share >= _FIXED_DECK_SIGNATURE_SHARE:
+        rank, suit, center_key, seal = signature
+        has_identity = bool(rank) and bool(suit)
+        has_modifier = center_key != "c_base" or bool(seal)
+        if has_identity and (has_modifier or share >= 0.85):
+            return True
+
+    total = max(len(active_cards), 1)
+    fixed_dimensions = 0
+    fixed_dimensions += _dominant_share(active_cards, "rank") >= 0.70
+    fixed_dimensions += _dominant_share(active_cards, "suit") >= 0.85
+    center_key, center_share = _dominant_nonbase(active_cards, "center_key", empty_values={"", "c_base"})
+    seal, seal_share = _dominant_nonbase(active_cards, "seal", empty_values={"", None})
+    center_fixed = bool(center_key) and center_share >= 0.70
+    seal_fixed = bool(seal) and seal_share >= 0.70
+    fixed_dimensions += center_fixed
+    fixed_dimensions += seal_fixed
+    return total >= _FIXED_DECK_MIN_SIGNATURE_COUNT and fixed_dimensions >= 3 and (center_fixed or seal_fixed)
+
+
+def _card_signature(card) -> tuple[str, str, str, str]:
+    return (
+        str(getattr(card, "rank", "") or ""),
+        str(getattr(card, "suit", "") or ""),
+        str(getattr(card, "center_key", "c_base") or "c_base"),
+        str(getattr(card, "seal", "") or ""),
+    )
+
+
+def _dominant_share(cards: tuple, attr: str) -> float:
+    counts = Counter(str(getattr(card, attr, "") or "") for card in cards)
+    counts.pop("", None)
+    if not counts:
+        return 0.0
+    return counts.most_common(1)[0][1] / max(len(cards), 1)
+
+
+def _dominant_nonbase(cards: tuple, attr: str, *, empty_values: set) -> tuple[str, float]:
+    counts = Counter(str(getattr(card, attr, "") or "") for card in cards)
+    for value in empty_values:
+        counts.pop(str(value or ""), None)
+    if not counts:
+        return "", 0.0
+    value, count = counts.most_common(1)[0]
+    return value, count / max(len(cards), 1)
+
+
+def _tarot_pack_has_legit_target(pack_cards: tuple, prev_info: dict) -> bool:
+    for card in pack_cards:
+        key = str(card.get("center_key", "") or "")
+        if key in _TAROT_FIXING_TARGETS or key in _TAROT_ECONOMY_TARGETS:
+            return True
+        if key == "c_fool" and _last_tarot_planet(prev_info) in (_TAROT_FIXING_TARGETS | _TAROT_ECONOMY_TARGETS):
+            return True
+    return False
+
+
+def _should_penalize_planet_skip(prev_info: dict) -> bool:
+    return _is_planet_pack(prev_info) and not _has_protected_fool(prev_info)
+
+
+def _should_penalize_planet_pack_open(prev_info: dict) -> bool:
+    if not _has_protected_fool(prev_info):
+        return False
+    inventory = set(_keys(prev_info.get("consumable_keys", ())))
+    return inventory.isdisjoint(_FOOL_PROTECT_TARGETS)
+
+
+def _has_protected_fool(info: dict) -> bool:
+    return "c_fool" in _keys(info.get("consumable_keys", ())) and _last_tarot_planet(info) in _FOOL_PROTECT_TARGETS
+
+
+def _last_tarot_planet(info: dict) -> str:
+    return str(info.get("last_tarot_planet", "") or "")
+
+
+def _is_buying_planet_pack(prev_info: dict, curr_info: dict) -> bool:
+    item = _bought_shop_item(prev_info, curr_info)
+    return item is not None and str(item.get("pack_state_name", "")) == "PLANET_PACK"
+
+
+def _is_standard_overfull_action(prev_info: dict, curr_info: dict) -> bool:
+    action_type = curr_info.get("action_type", "")
+    if action_type == "pack_claim":
+        return _is_standard_pack(prev_info)
+    if action_type == "shop_buy":
+        item = _bought_shop_item(prev_info, curr_info)
+        return item is not None and str(item.get("pack_state_name", "")) == "STANDARD_PACK"
+    return False
+
+
+def _bought_shop_item(prev_info: dict, curr_info: dict) -> dict | None:
+    action_index = curr_info.get("action_index")
+    if action_index is None:
+        return None
+    try:
+        index = int(action_index)
+    except (TypeError, ValueError):
+        return None
+    shop_items = tuple(prev_info.get("shop_item_details", ()))
+    if index < 0 or index >= len(shop_items):
+        return None
+    item = shop_items[index]
+    return item if isinstance(item, dict) else None
+
+
+def _standard_overfull_penalty(state: RunState) -> float:
+    deck_cards = tuple(getattr(state, "deck_cards", ()) or ())
+    active_cards = tuple(card for card in deck_cards if not getattr(card, "destroyed", False))
+    overfull = max(len(active_cards) - 52, 0)
+    if overfull <= 0 or _deck_is_fixed(tuple(active_cards)):
+        return 0.0
+    penalty = STANDARD_OVERFULL_CARD_BASE_PENALTY * math.expm1(STANDARD_OVERFULL_CARD_EXPONENT * overfull)
+    return min(penalty, STANDARD_OVERFULL_CARD_PENALTY_CAP)
 
 
 def sparse_reward(

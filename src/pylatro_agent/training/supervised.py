@@ -66,6 +66,18 @@ def _masked_action_loss(logits: torch.Tensor, action_mask: torch.Tensor, actions
     return -dist.log_prob(actions).mean()
 
 
+def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor]):
+    """Return the structured policy distribution, unwrapping DataParallel if present."""
+    base_model = model.module if isinstance(model, nn.DataParallel) else model
+    return base_model.action_distribution(
+        batch["tokens"],
+        batch["token_types"],
+        batch["scalars"],
+        batch["attention_mask"],
+        batch["action_mask"],
+    )
+
+
 def _action_type_dataset_stats(records: list[dict[str, Any]]) -> dict[str, Counter]:
     """Summarize chosen and valid action families in generated BC records."""
     chosen: Counter = Counter()
@@ -188,11 +200,7 @@ def train_supervised(
             batch_records = [records[i] for i in batch_idx]
 
             batch = _collate_batch(batch_records, device)
-            logits, value_dict = model(
-                batch["tokens"], batch["token_types"], batch["scalars"],
-                batch["attention_mask"], batch["action_mask"],
-            )
-            dist = MaskedCategorical(logits, batch["action_mask"])
+            dist, value_dict = _grammar_distribution(model, batch)
 
             # Action loss: behavior-cloning NLL over legal actions only.
             #
@@ -240,7 +248,7 @@ def train_supervised(
             # Track epoch metrics on-device; synchronizing every batch is
             # expensive on MPS and visibly lowers GPU utilization.
             with torch.no_grad():
-                predicted = dist.logits.argmax(dim=-1)
+                predicted = dist.mode()
                 correct = (predicted == batch["actions"]).sum()
                 epoch_loss += loss.detach() * len(batch_records)
                 epoch_action_loss += action_loss.detach() * len(batch_records)
@@ -259,7 +267,11 @@ def train_supervised(
                 writer.add_scalar("train/grad_norm", grad_norm, global_step)
                 writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
                 writer.add_scalar("train/entropy", entropy_bonus, global_step)
-                writer.add_scalar("train/action_entropy_bonus", config.action_entropy_coeff * entropy_bonus, global_step)
+                writer.add_scalar(
+                    "train/action_entropy_bonus",
+                    config.action_entropy_coeff * entropy_bonus,
+                    global_step,
+                )
                 writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean(), global_step)
                 writer.add_scalar("train/expected_score_mean", value_dict["expected_score"].mean(), global_step)
                 writer.add_scalar("train/survival_loss", survival_loss, global_step)

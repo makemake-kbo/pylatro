@@ -13,6 +13,7 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from .hand_candidates import generate_hand_candidates
 from .masks import compute_action_mask
 from .reward import RewardFn, default_reward, default_reward_components
 from .subset_actions import consumable_subset_indices, subset_indices
@@ -121,10 +122,10 @@ class BalatroEnv(gymnasium.Env):
         self._step_count += 1
         self._blind_just_beaten = False
         pre_sub_phase = self._sub_phase
-        pre_pending_action = self._pending_action or ""
         pre_selected_count = len(self._selected_cards)
 
         decoded = decode_action(action)
+        action_diagnostics = self._action_diagnostics(decoded)
         terminated = False
         truncated = False
 
@@ -148,6 +149,8 @@ class BalatroEnv(gymnasium.Env):
         curr_info["blind_just_beaten"] = self._blind_just_beaten
         curr_info["hands_left"] = state.current_round.hands_left
         curr_info["action_type"] = decoded.action_type
+        curr_info["action_index"] = decoded.index
+        curr_info["action_detail"] = decoded.detail
         progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
         curr_info["progress_made"] = progress_made
         if progress_made:
@@ -184,6 +187,7 @@ class BalatroEnv(gymnasium.Env):
         }
         for component_name, component_value in reward_components.items():
             info[f"reward_{component_name}"] = component_value
+        info.update(action_diagnostics)
         return self._obs_to_dict(obs), reward, terminated, truncated, info
 
     def action_masks(self) -> np.ndarray:
@@ -319,6 +323,64 @@ class BalatroEnv(gymnasium.Env):
             "selected_cards": obs.selected_cards,
         }
 
+    def _action_diagnostics(self, decoded) -> dict[str, Any]:
+        """Return policy-quality diagnostics for the pre-action state."""
+        if self._controller is None or self._controller.state is None:
+            return {}
+        state = self._controller.state
+
+        if decoded.action_type == ActionType.PLAY_SUBSET:
+            diagnostics: dict[str, Any] = {"hand_play_observed": True}
+            indices = tuple(subset_indices(decoded.index))
+            if any(index >= len(state.hand_cards) for index in indices):
+                diagnostics["hand_play_not_in_candidates"] = True
+                return diagnostics
+            play_candidates, _discard_candidates = generate_hand_candidates(state)
+            if not play_candidates:
+                diagnostics["hand_play_not_in_candidates"] = True
+                return diagnostics
+
+            chosen = next((candidate for candidate in play_candidates if candidate.indices == indices), None)
+            if chosen is None:
+                diagnostics["hand_play_not_in_candidates"] = True
+                diagnostics["hand_play_best_hand"] = play_candidates[0].hand_name
+                return diagnostics
+
+            best = play_candidates[0]
+            diagnostics.update({
+                "hand_play_in_candidates": True,
+                "hand_play_top1": chosen.indices == best.indices,
+                "hand_play_top3": any(candidate.indices == chosen.indices for candidate in play_candidates[:3]),
+                "hand_play_candidate_value_ratio": float(chosen.estimated_score / max(best.estimated_score, 1e-9)),
+                "hand_play_chosen_hand": chosen.hand_name,
+                "hand_play_best_hand": best.hand_name,
+            })
+            return diagnostics
+
+        if decoded.action_type == ActionType.USE_CONSUMABLE_NO_TARGET:
+            if decoded.index >= len(state.consumables):
+                return {}
+            center_key = _center_key(state.consumables[decoded.index])
+            if _center_set(state, center_key) != "Planet":
+                return {}
+            return _planet_diagnostics(state, center_key, prefix="planet_use")
+
+        if decoded.action_type == ActionType.PACK_CLAIM:
+            if state.pack is None or decoded.index >= len(state.pack.cards):
+                return {}
+            center_key = _center_key(state.pack.cards[decoded.index])
+            if _center_set(state, center_key) != "Planet":
+                return {}
+            return _planet_diagnostics(state, center_key, prefix="planet_claim")
+
+        if decoded.action_type == ActionType.PACK_SKIP and state.pack is not None:
+            return {
+                "pack_skip_state_name": state.pack.state_name,
+                "planet_pack_skip": state.pack.state_name == "PLANET_PACK",
+            }
+
+        return {}
+
     def _capture_state_info(self) -> dict:
         if self._controller is None or self._controller.state is None:
             return {}
@@ -342,9 +404,13 @@ class BalatroEnv(gymnasium.Env):
             "free_rerolls": state.current_round.free_rerolls,
             "joker_keys": tuple(state.joker_keys),
             "consumable_keys": tuple(state.consumable_keys),
+            "last_tarot_planet": state.last_tarot_planet or "",
             "shop_keys": tuple(item.center_key for item in shop_items),
+            "shop_item_details": tuple(_shop_item_detail(state, item) for item in shop_items),
             "pack_booster_key": state.pack.booster_key if state.pack is not None else "",
             "pack_card_keys": tuple(card.center_key for card in pack_cards),
+            "pack_state_name": state.pack.state_name if state.pack is not None else "",
+            "pack_card_details": tuple(_pack_card_detail(state, card) for card in pack_cards),
             "pack_choices_remaining": pack_choices_remaining,
         }
 
@@ -375,6 +441,7 @@ class BalatroEnv(gymnasium.Env):
             info.get("free_rerolls", 0),
             info.get("joker_keys", ()),
             info.get("consumable_keys", ()),
+            info.get("last_tarot_planet", ""),
             info.get("shop_keys", ()),
             info.get("pack_booster_key", ""),
             info.get("pack_card_keys", ()),
@@ -395,3 +462,84 @@ def _phase_to_sub_phase(phase: GamePhase, current: SubPhase) -> SubPhase:
     if phase == GamePhase.SHOP:
         return SubPhase.SHOP
     return current
+
+
+def _pack_card_detail(state, card) -> dict[str, object]:
+    front_key = card.front_key or ""
+    front = state.data.cards.get(front_key, {}) if front_key else {}
+    return {
+        "center_key": card.center_key,
+        "front_key": front_key,
+        "rank": front_key[2:] if len(front_key) > 2 else "",
+        "suit": str(front.get("suit", "")),
+        "seal": card.seal or "",
+        "edition": card.edition or {},
+    }
+
+
+def _shop_item_detail(state, card) -> dict[str, object]:
+    center = state.data.centers.get(card.center_key, {})
+    return {
+        "center_key": card.center_key,
+        "card_type": getattr(card, "card_type", ""),
+        "pack_state_name": _pack_state_name_for_shop_card(center),
+    }
+
+
+def _pack_state_name_for_shop_card(center: dict) -> str:
+    name = str(center.get("name", ""))
+    if "Arcana" in name:
+        return "TAROT_PACK"
+    if "Celestial" in name:
+        return "PLANET_PACK"
+    if "Spectral" in name:
+        return "SPECTRAL_PACK"
+    if "Standard" in name:
+        return "STANDARD_PACK"
+    if "Buffoon" in name:
+        return "BUFFOON_PACK"
+    return ""
+
+
+def _center_key(card) -> str:
+    return str(getattr(card, "center_key", "") or "")
+
+
+def _center_set(state, center_key: str) -> str:
+    center = state.data.centers.get(center_key, {})
+    return str(center.get("set", "") or "")
+
+
+def _planet_hand_type(state, center_key: str) -> str:
+    center = state.data.centers.get(center_key, {})
+    config = center.get("config", {}) or {}
+    return str(config.get("hand_type", "") or "")
+
+
+def _main_hand_proxy(state) -> str:
+    rows: list[tuple[int, int, float, str]] = []
+    for name, hand in state.hands.items():
+        rows.append((
+            int(hand.get("played", 0) or 0),
+            int(hand.get("level", 1) or 1),
+            float(hand.get("chips", 0) or 0) * float(hand.get("mult", 1) or 1),
+            str(name),
+        ))
+    rows.sort(reverse=True)
+    if not rows or rows[0][0] <= 0:
+        return ""
+    return rows[0][3]
+
+
+def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any]:
+    hand_type = _planet_hand_type(state, center_key)
+    main_hand = _main_hand_proxy(state)
+    hand_info = state.hands.get(hand_type, {}) if hand_type else {}
+    return {
+        f"{prefix}_observed": True,
+        f"{prefix}_key": center_key,
+        f"{prefix}_hand_type": hand_type,
+        f"{prefix}_played_hand": bool(hand_info.get("played", 0) if hand_info else False),
+        f"{prefix}_main_hand": main_hand,
+        f"{prefix}_main_hand_match": bool(hand_type and hand_type == main_hand),
+    }

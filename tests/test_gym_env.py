@@ -161,6 +161,8 @@ def test_env_play_subset_reports_progress(game_data, vocab):
     assert info["progress_made"]
     assert info["steps_since_progress"] == 0
     assert not info["stalled"]
+    assert info["hand_play_observed"]
+    assert info.get("hand_play_in_candidates") or info.get("hand_play_not_in_candidates")
 
 
 def test_env_atomic_consumable_use_commits_in_one_step(game_data, vocab):
@@ -186,6 +188,9 @@ def test_env_atomic_consumable_use_commits_in_one_step(game_data, vocab):
     # After committing Pluto we stay in CHOOSE_ACTION with the consumable consumed
     assert info["sub_phase"] == SubPhase.CHOOSE_ACTION
     assert info["progress_made"], "using a planet bumps the hand-level tracker"
+    assert info["planet_use_observed"]
+    assert info["planet_use_key"] == "c_pluto"
+    assert info["planet_use_hand_type"] == "High Card"
 
 
 def test_env_pack_skip_counts_as_progress_and_triggers_red_card(game_data, vocab):

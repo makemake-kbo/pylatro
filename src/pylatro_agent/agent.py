@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
+from .action_grammar import ActionGrammarDistribution, ActionGrammarHead
 from .action_heads import BlindSelectHead, ConsumableFlatHead, HandPlayHead, PackHead, ShopHead
 from .backbone import TransformerBackbone
-from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SubPhase
 from .distributions import MaskedCategorical  # noqa: F401 — re-exported for callers
 from .embeddings import ContentEmbeddingLayer
 from .value_head import ValueHead
-from .vocab import Vocab
+
+if TYPE_CHECKING:
+    from .vocab import Vocab
 
 
 @dataclass
@@ -47,6 +51,7 @@ class BalatroAgent(nn.Module):
         self.shop_head = ShopHead(d)
         self.consumable_flat_head = ConsumableFlatHead(d)
         self.pack_head = PackHead(d)
+        self.action_grammar_head = ActionGrammarHead(d)
 
         # Value head
         self.value_head = ValueHead(d)
@@ -96,6 +101,27 @@ class BalatroAgent(nn.Module):
         # Return raw logits — callers construct MaskedCategorical.
         # This is necessary for nn.DataParallel which can only gather tensors.
         return logits, value_dict
+
+    def action_distribution(
+        self,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
+        attention_mask: torch.Tensor,
+        action_mask: torch.Tensor,
+        temperature: float = 1.0,
+    ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
+        """Return the structured action-grammar distribution and value head output.
+
+        This is the training/rollout path. The legacy ``forward`` method still
+        returns dense flat logits for compatibility tests and old callers.
+        """
+        x = self.embedding(tokens, token_types, scalars)
+        padding_mask = (attention_mask == 0)
+        x = self.backbone(x, padding_mask=padding_mask)
+        grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
+        value_dict = self.value_head(x, attention_mask)
+        return ActionGrammarDistribution(grammar_output, action_mask, temperature=temperature), value_dict
 
     def _compute_logits(
         self,

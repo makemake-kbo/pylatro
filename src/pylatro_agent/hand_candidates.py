@@ -6,13 +6,17 @@ import math
 from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Iterable
+from typing import TYPE_CHECKING
 
 from pylatro import get_poker_hand_info
-from pylatro.models import PlayingCard, RunState
 from pylatro.scoring import RANK_TO_NOMINAL
 
 from .constants import MAX_DISCARD_CANDIDATES, MAX_PLAY_CANDIDATES, POKER_HAND_NAMES
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from pylatro.models import PlayingCard, RunState
 
 HAND_NAME_TO_ID = {name: idx + 1 for idx, name in enumerate(POKER_HAND_NAMES)}
 
@@ -175,7 +179,8 @@ def _structural_candidates(
 
     results: list[tuple[int, ...]] = []
 
-    def _add(indices: set[int]) -> None:
+    def _add(indices) -> None:
+        indices = set(indices)
         if not forced.issubset(indices):
             return
         if not (min_size <= len(indices) <= max_size):
@@ -199,7 +204,7 @@ def _structural_candidates(
                 _add(set(t_idxs[:3]) | set(p_idxs[:2]))
 
     # --- Flushes ---
-    for suit, idxs in by_suit.items():
+    for _suit, idxs in by_suit.items():
         unique = list(dict.fromkeys(idxs))
         if len(unique) >= flush_req:
             unique.sort(key=lambda i: nominals[i], reverse=True)
@@ -226,13 +231,13 @@ def _structural_candidates(
             else:
                 break
         if len(run_ranks) >= straight_req:
-            combo: set[int] = set()
+            straight_indices = set()
             for r in run_ranks[:5]:
-                combo.add(by_rank[r][0])
-            _add(combo)
+                straight_indices.add(by_rank[r][0])
+            _add(straight_indices)
 
     # --- Straight flushes ---
-    for suit, idxs in by_suit.items():
+    for _suit, idxs in by_suit.items():
         unique = list(dict.fromkeys(idxs))
         if len(unique) < straight_req:
             continue
@@ -278,8 +283,8 @@ def _structural_candidates(
             if fill_size == 0:
                 _add(set(forced))
             else:
-                for combo in combinations(remaining[:6], fill_size):
-                    _add(set(forced) | set(combo))
+                for fill_indices in combinations(remaining[:6], fill_size):
+                    _add(set(forced) | set(fill_indices))
 
     return results
 
@@ -460,7 +465,7 @@ def _blind_target(state: RunState) -> int:
     from pylatro import get_blind_amount
 
     base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
-    return int(math.floor(base * float(blind.get("mult", 1) or 1)))
+    return math.floor(base * float(blind.get("mult", 1) or 1))
 
 
 def _card_nominal(card: PlayingCard) -> float:

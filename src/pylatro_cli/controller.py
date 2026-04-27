@@ -80,7 +80,10 @@ class GameController:
         if self.blind_beaten():
             pass  # caller transitions to shop
         elif self.state.current_round.hands_left <= 0:
-            self.phase = GamePhase.GAME_OVER
+            if pylatro.check_mr_bones(self.state, self.round_score, self.blind_target()):
+                self.round_score = 0
+            else:
+                self.phase = GamePhase.GAME_OVER
         return result
 
     def discard_selected(self, indices: list[int]) -> DiscardResult:

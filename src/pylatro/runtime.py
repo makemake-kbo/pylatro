@@ -214,7 +214,7 @@ def apply_using_consumable(
         if joker.debuff:
             continue
         name = state.data.centers[joker.center_key]["name"]
-        if name == "Glass Joker" and center["name"] == "The Hanged Man" and destroyed_glass and isinstance(joker.extra, (int, float)):
+        if name == "Glass Joker" and destroyed_glass and isinstance(joker.extra, (int, float)):
             joker.x_mult += len(destroyed_glass) * float(joker.extra)
         elif name == "Constellation" and set_name == "Planet" and isinstance(joker.extra, (int, float)):
             joker.x_mult += float(joker.extra)
@@ -250,7 +250,7 @@ def apply_setting_blind(state: RunState) -> dict[str, list[str]]:
         elif name == "Burglar" and isinstance(joker.extra, int):
             state.current_round.discards_left = 0
             state.current_round.hands_left += joker.extra
-        elif name == "Riff-raff":
+        elif name == "Riff-Raff":
             to_create = min(2, joker_limit(state) - len(state.jokers))
             for _ in range(max(0, to_create)):
                 created = add_generated_joker(state, rarity=0.0, append="rif", source="pack")
@@ -281,6 +281,11 @@ def apply_setting_blind(state: RunState) -> dict[str, list[str]]:
 
 
 def apply_end_shop(state: RunState) -> list[str]:
+    # TODO: Perkeo creates Negative copies of consumables, but add_consumable
+    # does not expand consumable_slots for Negative edition the way add_joker
+    # does for joker_slots. This means Perkeo cannot create copies when all
+    # consumable slots are full. Fixing this requires changes to how the agent
+    # handles consumable slot tracking.
     created: list[str] = []
     for joker in state.jokers:
         if joker.debuff or state.data.centers[joker.center_key]["name"] != "Perkeo":
@@ -300,7 +305,7 @@ def apply_end_shop(state: RunState) -> list[str]:
     return created
 
 
-def apply_end_of_round(state: RunState, *, game_over: bool = False) -> dict[str, int | bool]:
+def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     results: dict[str, int | bool] = {"dollars": 0, "saved": False}
     blind = state.round_resets.blind or {}
     is_boss = bool(blind.get("boss"))
@@ -371,11 +376,6 @@ def apply_end_of_round(state: RunState, *, game_over: bool = False) -> dict[str,
         elif name == "Delayed Gratification" and isinstance(joker.extra, int):
             if state.current_round.discards_used == 0 and state.current_round.discards_left > 0:
                 results["dollars"] = int(results["dollars"]) + state.current_round.discards_left * joker.extra
-        elif name == "Mr. Bones" and game_over and state.round_resets.blind and state.round_resets.blind.get("chips"):
-            chips = float(state.round_resets.blind["chips"] or 0)
-            if chips > 0 and (state.dollar_buffer / chips) >= 0.25:
-                results["saved"] = True
-                to_remove.append(joker)
 
     for joker in to_remove:
         remove_joker(state, joker)
@@ -412,29 +412,58 @@ def apply_end_of_round(state: RunState, *, game_over: bool = False) -> dict[str,
     return results
 
 
+def check_mr_bones(state: RunState, round_score: int, blind_target: int) -> bool:
+    if blind_target <= 0 or round_score < floor(blind_target * 0.25):
+        return False
+    to_remove: list[JokerInstance] = []
+    for joker in state.jokers:
+        if joker.debuff:
+            continue
+        if state.data.centers[joker.center_key]["name"] == "Mr. Bones":
+            to_remove.append(joker)
+    if not to_remove:
+        return False
+    for joker in to_remove:
+        remove_joker(state, joker)
+    state.current_round.hands_left += 1
+    sync_all_jokers(state)
+    return True
+
+
 def sell_joker(state: RunState, index: int) -> JokerInstance:
     joker = state.jokers[index]
     name = state.data.centers[joker.center_key]["name"]
+
+    invis_duplicate = None
     if name == "Luchador" and bool((state.round_resets.blind or {}).get("boss")):
         state.blind_disabled = True
     elif name == "Diet Cola":
         state.tags.append("tag_double")
     elif name == "Invisible Joker" and isinstance(joker.extra, int) and joker.invis_rounds >= joker.extra:
         others = [other for other in state.jokers if other is not joker]
-        if others and can_add_joker(state):
+        if others:
             chosen, _ = state.pseudorandom.pseudorandom_element(others, state.pseudorandom.pseudoseed("invisible"))
-            add_joker(
-                state,
-                chosen.center_key,
-                edition=deepcopy(chosen.edition) if chosen.edition and not chosen.edition.get("negative") else None,
-                eternal=chosen.eternal,
-                perishable=chosen.perishable,
-                rental=chosen.rental,
-            )
+            invis_duplicate = {
+                "key": chosen.center_key,
+                "edition": deepcopy(chosen.edition) if chosen.edition and not chosen.edition.get("negative") else None,
+                "eternal": chosen.eternal,
+                "perishable": chosen.perishable,
+                "rental": chosen.rental,
+            }
 
     sold_value = joker.sell_cost
     remove_joker(state, joker)
     state.dollars += sold_value
+
+    if invis_duplicate:
+        add_joker(
+            state,
+            invis_duplicate["key"],
+            edition=invis_duplicate["edition"],
+            eternal=invis_duplicate["eternal"],
+            perishable=invis_duplicate["perishable"],
+            rental=invis_duplicate["rental"],
+        )
 
     for other in state.jokers:
         if other.debuff:

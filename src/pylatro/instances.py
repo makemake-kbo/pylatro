@@ -99,7 +99,7 @@ def create_joker_instance(
                 state.pseudorandom.pseudoseed("to_do"),
             )
             instance.to_do_poker_hand = hand_name
-    elif name == "Caino":
+    elif name == "Canio":
         instance.caino_xmult = 1
     elif name == "Yorick" and isinstance(extra, dict):
         instance.yorick_discards = int(extra.get("discards", 0) or 0)

@@ -6,9 +6,17 @@ from typing import TYPE_CHECKING, Iterable
 from .blind import select_blind
 from .instances import sync_all_jokers
 from .models import PlayingCard
-from .runtime import apply_setting_blind
-from .scoring import POKER_HAND_ORDER, RANK_TO_ID, RANK_TO_NOMINAL, SUIT_TO_NOMINAL, ScoreResult, get_poker_hand_info, resolve_after_hand, score_hand
-from .runtime import add_generated_consumable
+from .runtime import add_generated_consumable, apply_playing_card_added, apply_setting_blind
+from .scoring import (
+    POKER_HAND_ORDER,
+    RANK_TO_ID,
+    RANK_TO_NOMINAL,
+    SUIT_TO_NOMINAL,
+    ScoreResult,
+    get_poker_hand_info,
+    resolve_after_hand,
+    score_hand,
+)
 
 if TYPE_CHECKING:
     from .models import JokerInstance, RunState
@@ -104,7 +112,7 @@ def discard_cards(
         last = index == len(selected) - 1
         removed = False
 
-        for joker in state.jokers:
+        for joker in list(state.jokers):
             if joker.debuff:
                 continue
             removed = _discard_effect(state, joker, card, selected, last=last, face_tally=face_tally) or removed
@@ -334,6 +342,7 @@ def _first_hand_drawn(state: RunState) -> None:
         )
         state.deck_cards.append(new_card)
         state.hand_cards.append(new_card)
+        apply_playing_card_added(state, [new_card])
 
 
 def _pre_discard(state: RunState, selected: list[PlayingCard]) -> None:
@@ -397,7 +406,7 @@ def _apply_removed_card_effects(state: RunState, removed: list[PlayingCard]) -> 
     shattered = sum(1 for card in removed if card.shattered)
     for joker in state.jokers:
         name = state.data.centers[joker.center_key]["name"]
-        if name == "Caino" and removed_faces and isinstance(joker.extra, (int, float)):
+        if name == "Canio" and removed_faces and isinstance(joker.extra, (int, float)):
             joker.caino_xmult += removed_faces * float(joker.extra)
         elif name == "Glass Joker" and shattered and isinstance(joker.extra, (int, float)):
             joker.x_mult += shattered * float(joker.extra)

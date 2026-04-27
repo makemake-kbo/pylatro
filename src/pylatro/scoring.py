@@ -513,7 +513,7 @@ def _evaluate_joker(
             play_more_than = int(state.hands[scoring_name]["played"] or 0)
             reset = True
             for hand_name, hand in state.hands.items():
-                if hand_name != scoring_name and hand["visible"] and int(hand["played"]) >= play_more_than:
+                if hand_name != scoring_name and hand["visible"] and int(hand["played"]) > play_more_than:
                     reset = False
                     break
             if reset:
@@ -671,7 +671,7 @@ def _evaluate_joker(
         aces = sum(1 for card in scoring_hand if _card_id(state, card) == 14)
         if aces >= 1 and poker_hands["Straight"]:
             add_generated_consumable(state, "Tarot", append="sup")
-    if name == "Seance" and isinstance(joker.extra, dict):
+    if name == "Séance" and isinstance(joker.extra, dict):
         if poker_hands[str(joker.extra.get("poker_hand", ""))]:
             add_generated_consumable(state, "Spectral", append="sea")
     if name == "Flower Pot" and isinstance(joker.extra, (int, float)):
@@ -747,7 +747,7 @@ def _evaluate_joker(
         return {"mult": float(joker.mult)}
     if name == "Joker":
         return {"mult": float(joker.mult)}
-    if name in {"Spare Trousers", "Ride the Bus", "Flash Card", "Popcorn", "Green Joker"} and joker.mult > 0:
+    if name in {"Spare Trousers", "Ride the Bus", "Flash Card", "Popcorn", "Green Joker", "Red Card"} and joker.mult > 0:
         return {"mult": float(joker.mult)}
     if name == "Fortune Teller" and state.consumeable_usage_total["tarot"] > 0:
         return {"mult": float(state.consumeable_usage_total["tarot"])}
@@ -764,7 +764,7 @@ def _evaluate_joker(
             factor = floor((state.dollars + state.dollar_buffer) / dollars)
             if factor >= 1:
                 return {"mult": float(mult * factor)}
-    if name == "Caino" and joker.caino_xmult > 1:
+    if name == "Canio" and joker.caino_xmult > 1:
         return {"x_mult": float(joker.caino_xmult)}
     if name == "Matador" and state.blind_triggered and isinstance(joker.extra, int):
         return {"dollars": float(joker.extra)}
@@ -985,27 +985,27 @@ def score_hand(
                 mult = _mod_mult(mult * effect["x_mult"])
             if "dollars" in effect:
                 _add_money(state, int(effect["dollars"]))
-        for other in state.jokers:
-            other_index = state.jokers.index(other)
-            on_joker = _evaluate_joker(
-                state,
-                other,
-                index=other_index,
-                phase="other_joker",
-                full_hand=full_hand,
-                scoring_hand=scoring_cards,
-                held_hand=held_cards,
-                scoring_name=scoring_name,
-                poker_hands=poker_hands,
-                other_joker=joker,
-            )
-            if on_joker:
-                if "chips" in on_joker:
-                    hand_chips = _mod_chips(state, hand_chips + on_joker["chips"])
-                if "mult" in on_joker:
-                    mult = _mod_mult(mult + on_joker["mult"])
-                if "x_mult" in on_joker:
-                    mult = _mod_mult(mult * on_joker["x_mult"])
+            for other in state.jokers:
+                other_index = state.jokers.index(other)
+                on_joker = _evaluate_joker(
+                    state,
+                    other,
+                    index=other_index,
+                    phase="other_joker",
+                    full_hand=full_hand,
+                    scoring_hand=scoring_cards,
+                    held_hand=held_cards,
+                    scoring_name=scoring_name,
+                    poker_hands=poker_hands,
+                    other_joker=joker,
+                )
+                if on_joker:
+                    if "chips" in on_joker:
+                        hand_chips = _mod_chips(state, hand_chips + on_joker["chips"])
+                    if "mult" in on_joker:
+                        mult = _mod_mult(mult + on_joker["mult"])
+                    if "x_mult" in on_joker:
+                        mult = _mod_mult(mult * on_joker["x_mult"])
 
     for consumable in state.consumables:
         effect = _evaluate_planet_consumable(state, consumable, scoring_name=scoring_name)

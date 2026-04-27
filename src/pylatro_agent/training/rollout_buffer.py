@@ -45,6 +45,9 @@ class RolloutBuffer:
         self.terminated = np.zeros(self.total_size, dtype=np.bool_)
         self.truncated = np.zeros(self.total_size, dtype=np.bool_)
         self.bootstrap_values = np.zeros(self.total_size, dtype=np.float32)
+        # Heuristic teacher action per step. -1 = no valid teacher (skipped
+        # in distillation loss).
+        self.teacher_actions = np.full(self.total_size, -1, dtype=np.int64)
 
         # Computed after rollout
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
@@ -104,11 +107,14 @@ class RolloutBuffer:
         terminated: np.ndarray,
         truncated: np.ndarray,
         bootstrap_values: np.ndarray | None = None,
+        teacher_actions: np.ndarray | None = None,
     ) -> None:
         """Store one timestep for all environments at once (vectorized)."""
         indices = np.arange(self.num_envs) * self.rollout_length + step
         if bootstrap_values is None:
             bootstrap_values = np.zeros(self.num_envs, dtype=np.float32)
+        if teacher_actions is None:
+            teacher_actions = np.full(self.num_envs, -1, dtype=np.int64)
 
         self.tokens[indices] = obs["tokens"]
         self.token_types[indices] = obs["token_types"]
@@ -122,6 +128,7 @@ class RolloutBuffer:
         self.terminated[indices] = terminated
         self.truncated[indices] = truncated
         self.bootstrap_values[indices] = bootstrap_values
+        self.teacher_actions[indices] = teacher_actions
 
         self._step_counts[:] = step + 1
 
@@ -255,6 +262,7 @@ class RolloutBuffer:
                 "returns": torch.as_tensor(self.returns[idx], device=device),
                 "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
                 "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
+                "teacher_actions": torch.as_tensor(self.teacher_actions[idx], device=device),
             }
 
             if pin_memory and device.type == "cpu":

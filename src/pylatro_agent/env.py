@@ -14,6 +14,7 @@ from pylatro_cli.controller import GameController, GamePhase
 from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
 from .hand_candidates import generate_hand_candidates
+from .heuristic import HeuristicAgent
 from .masks import compute_action_mask
 from .reward import RewardFn, default_reward, default_reward_components
 from .subset_actions import consumable_subset_indices, subset_indices
@@ -68,6 +69,11 @@ class BalatroEnv(gymnasium.Env):
         self._prev_info: dict[str, Any] = {}
         self._round_score: int = 0
         self._blind_just_beaten: bool = False
+
+        # Heuristic teacher for distillation. One instance per env (process)
+        # — the cache is per-instance and keyed on hand+joker signature, so
+        # parallel envs are isolated naturally.
+        self._teacher = HeuristicAgent()
 
         # Gymnasium spaces
         self.observation_space = spaces.Dict({
@@ -124,6 +130,18 @@ class BalatroEnv(gymnasium.Env):
         pre_sub_phase = self._sub_phase
         pre_selected_count = len(self._selected_cards)
 
+        # Query the heuristic teacher with the pre-action mask + state.
+        # Used by PPO for distillation; -1 sentinel means "no valid teacher".
+        try:
+            pre_mask = self.action_masks()
+            teacher_action = int(
+                self._teacher.select_action(self._controller.state, self._sub_phase, pre_mask)
+            )
+            if teacher_action < 0 or teacher_action >= NUM_ACTIONS or not pre_mask[teacher_action]:
+                teacher_action = -1
+        except Exception:
+            teacher_action = -1
+
         decoded = decode_action(action)
         action_diagnostics = self._action_diagnostics(decoded)
         terminated = False
@@ -138,7 +156,11 @@ class BalatroEnv(gymnasium.Env):
             logging.getLogger(__name__).warning(f"Action {action} raised {type(e).__name__}: {e}")
             reward = -1.0
             obs = self._build_obs()
-            info = {"sub_phase": self._sub_phase, "error": str(e)}
+            info = {
+                "sub_phase": self._sub_phase,
+                "error": str(e),
+                "teacher_action": teacher_action,
+            }
             return self._obs_to_dict(obs), reward, False, False, info
 
         # Check terminal conditions driven by the underlying game state.
@@ -165,6 +187,11 @@ class BalatroEnv(gymnasium.Env):
         else:
             curr_info["stalled"] = False
 
+        # Surface action diagnostics to the reward fn so per-step regret
+        # signals (hand_play_candidate_value_ratio, planet_use_main_hand_match,
+        # ...) can be turned into reward components.
+        curr_info.update(action_diagnostics)
+
         reward_components: dict[str, float] = {}
         if self._reward_fn is default_reward:
             reward_components = default_reward_components(state, self._prev_info, curr_info, terminated, won)
@@ -188,6 +215,7 @@ class BalatroEnv(gymnasium.Env):
         for component_name, component_value in reward_components.items():
             info[f"reward_{component_name}"] = component_value
         info.update(action_diagnostics)
+        info["teacher_action"] = teacher_action
         return self._obs_to_dict(obs), reward, terminated, truncated, info
 
     def action_masks(self) -> np.ndarray:

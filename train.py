@@ -131,14 +131,21 @@ def main():
         help="PPO discount factor (default: 0.99)",
     )
     parser.add_argument(
-        "--kl-anchor-coeff",
+        "--heuristic-distill-coeff",
         type=float,
-        default=0.02,
+        default=0.3,
         help=(
-            "Coefficient for KL(pi_new || pi_ref) against the pretrained checkpoint. "
-            "Prevents PPO from drifting off the BC prior and keeps cold action heads anchored. "
-            "Set to 0 to disable; requires --pretrained. Default: 0.02."
+            "Initial coefficient for the heuristic-teacher distillation loss "
+            "(NLL of HeuristicAgent.select_action under the policy). Decays "
+            "linearly to --heuristic-distill-min over total_timesteps. "
+            "Default: 0.3."
         ),
+    )
+    parser.add_argument(
+        "--heuristic-distill-min",
+        type=float,
+        default=0.03,
+        help="Floor for the distillation coefficient after linear decay (default: 0.03).",
     )
     parser.add_argument(
         "--inference-checkpoint",
@@ -238,7 +245,8 @@ def main():
                 action_type_entropy_scale=args.action_type_entropy_scale,
                 gamma=args.gamma,
                 async_envs=not args.sync_envs,
-                kl_anchor_coeff=args.kl_anchor_coeff,
+                heuristic_distill_coeff=args.heuristic_distill_coeff,
+                heuristic_distill_min=args.heuristic_distill_min,
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

@@ -164,12 +164,14 @@ class PPOConfig:
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     normalize_returns: bool = True  # Running mean/std normalization for value targets
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
-    # Anchor the training policy to a frozen copy of the pretrained checkpoint
-    # via KL(pi_new || pi_ref). Bounds cumulative drift (keeps clip_fraction
-    # from staying near the cap) and gives cold action heads a gradient target
-    # rather than leaving them to drift from arbitrary masked-out states. Set
-    # to 0 to disable; requires pretrained_path to be provided.
-    kl_anchor_coeff: float = 0.02
+    # Continuous distillation from the heuristic teacher. At each step the
+    # env emits HeuristicAgent.select_action(...) into info["teacher_action"];
+    # PPO adds a NLL term -log pi(a_teacher | s) under the structured
+    # ActionGrammarDistribution to its loss. Replaces the previous
+    # frozen-reference KL anchor — denser per-state supervision and no extra
+    # forward pass through a second model.
+    heuristic_distill_coeff: float = 0.3
+    heuristic_distill_min: float = 0.03
     # Weight on the ante_survival auxiliary BCE loss. Small by default —
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
@@ -188,7 +190,8 @@ class _UpdateStats:
     approx_kls: list[float]
     valid_action_counts: list[float]
     valid_action_type_counts: list[float]
-    kl_to_ref: list[float]
+    distill_losses: list[float]
+    teacher_match_fractions: list[float]
 
 
 @dataclass
@@ -289,9 +292,9 @@ def _run_ppo_update(
     model: nn.Module,
     optimizer: Adam,
     buffer: RolloutBuffer,
-    reference_model: nn.Module | None,
     return_rms: "RunningMeanStd | None",
     entropy_coeff: float,
+    distill_coeff: float,
     config: PPOConfig,
     accum_steps: int,
     effective_batch_size: int,
@@ -310,7 +313,7 @@ def _run_ppo_update(
         entropies=[], normalized_entropies=[], action_type_entropies=[],
         clip_fracs=[], approx_kls=[],
         valid_action_counts=[], valid_action_type_counts=[],
-        kl_to_ref=[],
+        distill_losses=[], teacher_match_fractions=[],
     )
 
     for _ppo_epoch in range(config.ppo_epochs):
@@ -353,14 +356,19 @@ def _run_ppo_update(
             )
             survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
 
-            # KL anchor to the frozen pretrained policy. Gives cold heads a
-            # gradient target even when their actions aren't sampled.
-            if reference_model is not None:
-                with torch.no_grad():
-                    ref_dist, _ = _grammar_distribution(reference_model, batch)
-                kl_div = dist.kl_divergence(ref_dist)
-            else:
-                kl_div = torch.zeros((), device=batch["scalars"].device)
+            # Heuristic distillation: NLL of the teacher action under the
+            # current structured distribution. Replaces the frozen-reference
+            # KL anchor; per-state supervision rather than a snapshot
+            # comparison. Sentinel -1 means "no valid teacher this step".
+            teacher = batch["teacher_actions"]
+            valid = (teacher >= 0).float()
+            valid_count = valid.sum().clamp(min=1.0)
+            teacher_safe = teacher.clamp(min=0)
+            teacher_lp = dist.log_prob(teacher_safe)
+            distill_loss = -(teacher_lp * valid).sum() / valid_count
+            with torch.no_grad():
+                sampled = batch["actions"]
+                teacher_match = (((sampled == teacher_safe).float() * valid).sum() / valid_count).item()
 
             loss = (
                 policy_loss
@@ -368,7 +376,7 @@ def _run_ppo_update(
                 + config.survival_loss_coeff * survival_loss
                 - entropy_coeff
                 * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
-                + config.kl_anchor_coeff * kl_div
+                + distill_coeff * distill_loss
             )
             (loss / accum_steps).backward()
 
@@ -392,7 +400,8 @@ def _run_ppo_update(
             stats.approx_kls.append(approx_kl)
             stats.valid_action_counts.append(valid_action_count_mean)
             stats.valid_action_type_counts.append(valid_action_type_count_mean)
-            stats.kl_to_ref.append(kl_div.item())
+            stats.distill_losses.append(distill_loss.item())
+            stats.teacher_match_fractions.append(teacher_match)
 
     return stats
 
@@ -769,26 +778,14 @@ def train_ppo(
 
     _validate_ppo_config(config)
 
-    reference_model: BalatroAgent | None = None
     if pretrained_path:
         _load_checkpoint_compatible(model, pretrained_path, device)
         logger.info(f"Loaded pretrained model from {pretrained_path}")
-        if config.kl_anchor_coeff > 0.0:
-            # Frozen reference for KL(pi_new || pi_ref). Keeps PPO from
-            # destroying the BC prior and gives cold action heads a
-            # non-zero gradient target during states where they would
-            # otherwise see no supervision.
-            reference_model = BalatroAgent(agent_config, vocab).to(device)
-            _load_checkpoint_compatible(reference_model, pretrained_path, device)
-            reference_model.eval()
-            for param in reference_model.parameters():
-                param.requires_grad = False
-            logger.info("KL anchor active (coeff=%.4f)", config.kl_anchor_coeff)
-    elif config.kl_anchor_coeff > 0.0:
-        logger.warning(
-            "kl_anchor_coeff=%.4f was requested but no pretrained_path was given; "
-            "disabling KL anchor for this run.",
-            config.kl_anchor_coeff,
+    if config.heuristic_distill_coeff > 0.0:
+        logger.info(
+            "Heuristic distillation active (coeff=%.4f, floor=%.4f)",
+            config.heuristic_distill_coeff,
+            config.heuristic_distill_min,
         )
 
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
@@ -929,6 +926,17 @@ def train_ppo(
             next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
             dones = terminated | truncated
             bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
+            teacher_actions_np = np.asarray(
+                [
+                    int(
+                        _extract_step_info_value(
+                            infos, "teacher_action", env_idx, done=bool(dones[env_idx]), default=-1
+                        )
+                    )
+                    for env_idx in range(config.num_envs)
+                ],
+                dtype=np.int64,
+            )
 
             if np.any(truncated) and "final_obs" in infos:
                 final_obs_arr = infos["final_obs"]
@@ -953,6 +961,7 @@ def train_ppo(
                 terminated=terminated,
                 truncated=truncated,
                 bootstrap_values=bootstrap_values_np,
+                teacher_actions=teacher_actions_np,
             )
 
             # Track per-env episode stats
@@ -1077,13 +1086,23 @@ def train_ppo(
         if return_rms is not None:
             return_rms.update(buffer._flat_returns)
 
+        # Linearly decay the distillation coefficient from
+        # heuristic_distill_coeff -> heuristic_distill_min over total_timesteps.
+        # Early on, hold the policy near the heuristic; late, let PPO push past.
+        distill_progress = min(1.0, total_steps / max(1, config.total_timesteps))
+        distill_coeff_now = max(
+            config.heuristic_distill_min,
+            config.heuristic_distill_coeff
+            - (config.heuristic_distill_coeff - config.heuristic_distill_min) * distill_progress,
+        )
+
         update_stats = _run_ppo_update(
             model=model,
             optimizer=optimizer,
             buffer=buffer,
-            reference_model=reference_model,
             return_rms=return_rms,
             entropy_coeff=entropy_coeff,
+            distill_coeff=distill_coeff_now,
             config=config,
             accum_steps=accum_steps,
             effective_batch_size=effective_batch_size,
@@ -1100,7 +1119,8 @@ def train_ppo(
         update_approx_kls = update_stats.approx_kls
         update_valid_action_counts = update_stats.valid_action_counts
         update_valid_action_type_counts = update_stats.valid_action_type_counts
-        update_kl_to_ref = update_stats.kl_to_ref
+        update_distill_losses = update_stats.distill_losses
+        update_teacher_match_fractions = update_stats.teacher_match_fractions
 
         # Track the normalized entropy signal every update, even with fixed entropy.
         mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -1131,13 +1151,13 @@ def train_ppo(
         writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
         writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
         writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
-        if reference_model is not None:
-            writer.add_scalar("ppo/kl_to_ref", float(np.mean(update_kl_to_ref)), update_count)
-            writer.add_scalar(
-                "ppo/kl_to_ref_loss",
-                float(config.kl_anchor_coeff * np.mean(update_kl_to_ref)),
-                update_count,
-            )
+        writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
+        writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
+        writer.add_scalar(
+            "ppo/teacher_match_fraction",
+            float(np.mean(update_teacher_match_fractions)),
+            update_count,
+        )
         writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
         writer.add_scalar("ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count)
         writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)

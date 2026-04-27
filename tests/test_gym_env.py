@@ -67,6 +67,24 @@ def test_env_random_rollout(game_data, vocab):
     assert steps > 0, "Should have taken at least one step"
 
 
+def test_env_step_returns_teacher_action_in_info(game_data, vocab):
+    """The env should expose a heuristic-teacher action via info["teacher_action"]."""
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100)
+    obs, _ = env.reset()
+    pre_mask = obs["action_mask"]
+    valid = np.where(pre_mask == 1)[0]
+    assert len(valid) > 0
+    _obs, _r, _t, _tr, info = env.step(int(valid[0]))
+    assert "teacher_action" in info
+    teacher = info["teacher_action"]
+    assert isinstance(teacher, int)
+    # -1 sentinel allowed; otherwise must be in range AND have been valid under
+    # the pre-step mask.
+    if teacher >= 0:
+        assert teacher < NUM_ACTIONS
+        assert pre_mask[teacher] == 1
+
+
 def test_env_multiple_resets(game_data, vocab):
     """Ensure environment can be reset multiple times."""
     env = BalatroEnv(seed=1, data=game_data, vocab=vocab, max_steps=100)

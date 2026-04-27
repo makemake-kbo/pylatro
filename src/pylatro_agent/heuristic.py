@@ -93,33 +93,69 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _choose_action(self, state: RunState, mask: np.ndarray) -> int:
-        # Planets first — they commit with no target, so the atomic action
-        # is the slot's no_target index. Cap at MAX_CONSUMABLE_SLOTS to stay
-        # inside the action space (the game may temporarily hold more).
-        for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
-            center = state.data.centers[cons.center_key]
-            if center.get("set", "") != "Planet":
-                continue
-            action = self._atomic_consumable_action(state, slot, mask)
-            if action is not None:
-                return action
-        for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
-            center = state.data.centers[cons.center_key]
-            if center.get("set", "") != "Tarot":
-                continue
-            action = self._atomic_consumable_action(state, slot, mask)
-            if action is not None:
-                return action
-
         hand = state.hand_cards
-        best_play = tuple(sorted(self._cached_best_hand(state, hand)))
-        best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand)))))
+        best_play = tuple(sorted(self._cached_best_hand(state, hand))) if hand else ()
+        best_play_cards = [hand[i] for i in best_play] if hand else []
+        best_hand_quality_now = self._quick_hand_quality(state, best_play_cards) if best_play_cards else ""
+        best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand))))) if hand else ()
         can_discard = (
             bool(best_discard)
             and state.current_round.discards_left > 0
             and mask[ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)]
         )
         hand_quality = self._evaluate_hand_quality(state, hand) if hand else 0
+
+        best_planet_score = -1
+        best_planet_action = None
+        for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
+            center = state.data.centers[cons.center_key]
+            if center.get("set", "") != "Planet":
+                continue
+            action = self._atomic_consumable_action(state, slot, mask)
+            if action is None:
+                continue
+            planet_hand_type = center.get("config", {}).get("hand_type", "")
+            score = 0
+            if planet_hand_type == best_hand_quality_now:
+                score += 10
+            score += self._hand_type_synergy(state, planet_hand_type)
+            if state.hands.get(planet_hand_type, {}).get("played", 0) > 0:
+                score += 5
+            if score > best_planet_score:
+                best_planet_score = score
+                best_planet_action = action
+        if best_planet_action is not None:
+            can_defer = best_planet_score <= 0 and len(state.consumables) < consumable_limit(state)
+            if not can_defer:
+                return best_planet_action
+
+        _BUFF_TAROTS = frozenset({
+            "The Magician", "The Empress", "The Hierophant", "The Lovers",
+            "The Chariot", "Justice", "Strength", "The Star", "The Moon",
+            "The Sun", "The World", "The Wheel of Fortune",
+        })
+        _DESTROY_TAROTS = frozenset({
+            "Death", "The Hanged Man", "The Devil", "The Tower", "Judgement",
+        })
+
+        for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
+            center = state.data.centers[cons.center_key]
+            if center.get("set", "") != "Tarot":
+                continue
+            name = center.get("name", "")
+            preferred = None
+            if name in _BUFF_TAROTS:
+                preferred = best_play if best_play else None
+            elif name in _DESTROY_TAROTS:
+                worst = tuple(sorted(self._find_worst_cards(state, hand, max_discard=2)))
+                preferred = worst if worst else None
+            action = self._atomic_consumable_action(state, slot, mask, preferred_indices=preferred)
+            if action is not None:
+                return action
+
+        draw_discard = self._should_discard_for_draw(state, hand, mask)
+        if draw_discard is not None:
+            return ActionRange.DISCARD_SUBSET_START + subset_index(draw_discard)
 
         if hand_quality < 1 and can_discard and state.current_round.hands_left > 1:
             return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
@@ -599,6 +635,111 @@ class HeuristicAgent:
         ranked = sorted(range(len(hand)), key=lambda idx: keep_scores[idx])
         return set(ranked[:max_discard])
 
+    def _should_discard_for_draw(self, state: RunState, hand: list[PlayingCard], mask: np.ndarray) -> tuple[int, ...] | None:
+        if state.current_round.discards_left <= 0 or state.current_round.hands_left < 2:
+            return None
+        best = self._cached_best_hand(state, hand)
+        best_cards = [hand[i] for i in best]
+        best_quality = self._quick_hand_quality(state, best_cards)
+        quality_above_sf = {"Flush Five", "Flush House", "Five of a Kind", "Straight Flush"}
+
+        centers = state.data.centers
+        by_suit: dict[str, list[int]] = {}
+        for i, card in enumerate(hand):
+            center = centers.get(card.center_key)
+            effect = center.get("effect", "") if center else ""
+            if effect == "Wild Card":
+                for s in ("Spades", "Hearts", "Clubs", "Diamonds"):
+                    by_suit.setdefault(s, []).append(i)
+            else:
+                by_suit.setdefault(card.suit, []).append(i)
+                if state.has_joker("Smeared Joker"):
+                    if card.suit in ("Hearts", "Diamonds"):
+                        other = "Diamonds" if card.suit == "Hearts" else "Hearts"
+                    else:
+                        other = "Clubs" if card.suit == "Spades" else "Spades"
+                    by_suit.setdefault(other, []).append(i)
+
+        # Rule 1: Flush draw
+        if best_quality not in quality_above_sf:
+            for suit, idxs in by_suit.items():
+                unique = list(dict.fromkeys(idxs))
+                if len(unique) >= 4:
+                    suit_set = set(unique)
+                    off_suit = [i for i in range(len(hand)) if i not in suit_set]
+                    off_suit.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
+                    to_discard = tuple(sorted(off_suit[:5]))
+                    if to_discard and self._discard_mask_ok(state, mask, to_discard):
+                        return to_discard
+
+        # Rule 2: Straight draw
+        if not state.has_joker("Shortcut"):
+            rank_ids = [(i, RANK_TO_ID[hand[i].rank]) for i in range(len(hand))]
+            all_ranks = set()
+            rank_to_indices: dict[int, list[int]] = {}
+            for i, rid in rank_ids:
+                all_ranks.add(rid)
+                rank_to_indices.setdefault(rid, []).append(i)
+                if rid == 14:
+                    all_ranks.add(1)
+                    rank_to_indices.setdefault(1, []).append(i)
+            for low in range(1, 11):
+                window = set(range(low, low + 5))
+                covered = window & all_ranks
+                if len(covered) >= 4:
+                    window_indices: set[int] = set()
+                    for r in window:
+                        if r in rank_to_indices:
+                            for idx in rank_to_indices[r]:
+                                window_indices.add(idx)
+                                break
+                    outside = [i for i in range(len(hand)) if i not in window_indices]
+                    outside.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
+                    to_discard = tuple(sorted(outside[:5]))
+                    if to_discard and self._discard_mask_ok(state, mask, to_discard):
+                        return to_discard
+
+        # Rule 3: Pair -> Trips/Two-Pair
+        if best_quality == "Pair" and state.current_round.hands_left >= 2:
+            pair_ranks: dict[int, list[int]] = {}
+            for i in range(len(hand)):
+                rid = RANK_TO_ID[hand[i].rank]
+                pair_ranks.setdefault(rid, []).append(i)
+            pair_rank_id = None
+            for rid, idxs in pair_ranks.items():
+                if len(idxs) >= 2:
+                    pair_rank_id = rid
+                    break
+            if pair_rank_id is not None:
+                non_pair = [i for i in range(len(hand)) if RANK_TO_ID[hand[i].rank] != pair_rank_id]
+                non_pair.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
+                to_discard = tuple(sorted(non_pair[:3]))
+                if to_discard and self._discard_mask_ok(state, mask, to_discard):
+                    return to_discard
+
+        # Rule 4: Trips -> Quad/Full House
+        if best_quality == "Three of a Kind":
+            trip_ranks: dict[int, list[int]] = {}
+            for i in range(len(hand)):
+                rid = RANK_TO_ID[hand[i].rank]
+                trip_ranks.setdefault(rid, []).append(i)
+            trip_rank_id = None
+            for rid, idxs in trip_ranks.items():
+                if len(idxs) >= 3:
+                    trip_rank_id = rid
+                    break
+            if trip_rank_id is not None:
+                non_trip = [i for i in range(len(hand)) if RANK_TO_ID[hand[i].rank] != trip_rank_id]
+                non_trip.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
+                to_discard = tuple(sorted(non_trip[:2]))
+                if to_discard and self._discard_mask_ok(state, mask, to_discard):
+                    return to_discard
+
+        return None
+
+    def _discard_mask_ok(self, state: RunState, mask: np.ndarray, indices: tuple[int, ...]) -> bool:
+        return bool(mask[ActionRange.DISCARD_SUBSET_START + subset_index(indices)])
+
     def _shop(self, state: RunState, mask: np.ndarray) -> int:
         all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
         joker_slots_left = joker_limit(state) - len(state.jokers)
@@ -720,7 +861,7 @@ class HeuristicAgent:
         return 1.0
 
     def _atomic_consumable_action(
-        self, state: RunState, slot: int, mask: np.ndarray
+        self, state: RunState, slot: int, mask: np.ndarray, *, preferred_indices: tuple[int, ...] | None = None
     ) -> int | None:
         """Return the flat action id for using the consumable in `slot`, or None.
 
@@ -754,8 +895,27 @@ class HeuristicAgent:
             max_size = min(max_size, MAX_CONSUMABLE_HAND_TARGETS)
             hand_size = len(state.hand_cards)
             max_target_size = min(max_size, hand_size)
+
+            if preferred_indices is not None:
+                pref_set = set(preferred_indices)
+                pref_and_valid = [i for i in preferred_indices if i < hand_size]
+                pref_max = min(len(pref_and_valid), max_target_size)
+                for target_size in range(pref_max, min_size - 1, -1):
+                    for subset in combinations(pref_and_valid, target_size):
+                        if not can_use_consumable(state, cons, hand_targets=subset, joker_targets=()):
+                            continue
+                        action = encode_action(
+                            ActionType.USE_CONSUMABLE_HAND_SUBSET,
+                            slot,
+                            consumable_subset_index(subset),
+                        )
+                        if mask[action]:
+                            return action
+
             for target_size in range(max_target_size, min_size - 1, -1):
                 for subset in combinations(range(hand_size), target_size):
+                    if preferred_indices is not None and set(subset).issubset(set(preferred_indices)):
+                        continue
                     if not can_use_consumable(state, cons, hand_targets=subset, joker_targets=()):
                         continue
                     action = encode_action(

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from pylatro_agent.reward import (
-    HAND_SUBSET_REGRET_SCALE,
+    HAND_SUBSET_BONUS_SCALE,
     PLANET_FOOL_OVERWRITE_PENALTY,
-    PLANET_MISMATCH_PENALTY,
+    PLANET_MATCH_BONUS,
     PLANET_SKIP_PENALTY,
     REWARD_SCALE,
     STANDARD_OVERFULL_CARD_BASE_PENALTY,
@@ -261,7 +261,7 @@ def test_default_reward_does_not_reward_notarget_consumable_use() -> None:
     assert reward == pytest.approx(0.0)
 
 
-def test_hand_subset_regret_penalty_scales_with_value_ratio() -> None:
+def test_hand_subset_bonus_scales_with_value_ratio() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
     curr_info = {
@@ -272,11 +272,11 @@ def test_hand_subset_regret_penalty_scales_with_value_ratio() -> None:
         "hand_play_candidate_value_ratio": 0.5,
     }
     components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
-    expected = -HAND_SUBSET_REGRET_SCALE * 0.5 * REWARD_SCALE
-    assert components["hand_subset_regret"] == pytest.approx(expected)
+    expected = HAND_SUBSET_BONUS_SCALE * 0.5 * REWARD_SCALE
+    assert components["hand_subset_bonus"] == pytest.approx(expected)
 
 
-def test_hand_subset_regret_full_penalty_when_not_in_candidates() -> None:
+def test_hand_subset_bonus_zero_when_not_in_candidates() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
     curr_info = {
@@ -288,11 +288,10 @@ def test_hand_subset_regret_full_penalty_when_not_in_candidates() -> None:
         "hand_play_candidate_value_ratio": 0.0,
     }
     components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
-    expected = -HAND_SUBSET_REGRET_SCALE * REWARD_SCALE
-    assert components["hand_subset_regret"] == pytest.approx(expected)
+    assert components["hand_subset_bonus"] == pytest.approx(0.0)
 
 
-def test_hand_subset_regret_zero_for_non_play_actions() -> None:
+def test_hand_subset_bonus_zero_for_non_play_actions() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
     curr_info = {
@@ -300,29 +299,13 @@ def test_hand_subset_regret_zero_for_non_play_actions() -> None:
         "blind_target": 300,
         "progress_made": True,
         "action_type": "shop_buy",
-        "hand_play_candidate_value_ratio": 0.0,
+        "hand_play_candidate_value_ratio": 1.0,
     }
     components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
-    assert components["hand_subset_regret"] == pytest.approx(0.0)
+    assert components["hand_subset_bonus"] == pytest.approx(0.0)
 
 
-def test_planet_mismatch_penalizes_wrong_hand_type() -> None:
-    state = _dummy_state()
-    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
-    curr_info = {
-        "round_score": 0,
-        "blind_target": 300,
-        "progress_made": True,
-        "action_type": "use_consumable_no_target",
-        "planet_use_observed": True,
-        "planet_use_main_hand_match": False,
-    }
-    components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
-    expected = -PLANET_MISMATCH_PENALTY * REWARD_SCALE
-    assert components["planet_mismatch"] == pytest.approx(expected)
-
-
-def test_planet_mismatch_no_penalty_when_match() -> None:
+def test_planet_match_bonus_rewards_correct_hand_type() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
     curr_info = {
@@ -334,7 +317,23 @@ def test_planet_mismatch_no_penalty_when_match() -> None:
         "planet_use_main_hand_match": True,
     }
     components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
-    assert components["planet_mismatch"] == pytest.approx(0.0)
+    expected = PLANET_MATCH_BONUS * REWARD_SCALE
+    assert components["planet_match_bonus"] == pytest.approx(expected)
+
+
+def test_planet_match_bonus_zero_when_mismatch() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "use_consumable_no_target",
+        "planet_use_observed": True,
+        "planet_use_main_hand_match": False,
+    }
+    components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
+    assert components["planet_match_bonus"] == pytest.approx(0.0)
 
 
 def test_default_reward_rewards_shop_reroll() -> None:

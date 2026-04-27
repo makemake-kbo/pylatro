@@ -192,6 +192,7 @@ class _UpdateStats:
     valid_action_type_counts: list[float]
     distill_losses: list[float]
     teacher_match_fractions: list[float]
+    distill_weight_means: list[float]
 
 
 @dataclass
@@ -313,7 +314,7 @@ def _run_ppo_update(
         entropies=[], normalized_entropies=[], action_type_entropies=[],
         clip_fracs=[], approx_kls=[],
         valid_action_counts=[], valid_action_type_counts=[],
-        distill_losses=[], teacher_match_fractions=[],
+        distill_losses=[], teacher_match_fractions=[], distill_weight_means=[],
     )
 
     for _ppo_epoch in range(config.ppo_epochs):
@@ -365,10 +366,18 @@ def _run_ppo_update(
             valid_count = valid.sum().clamp(min=1.0)
             teacher_safe = teacher.clamp(min=0)
             teacher_lp = dist.log_prob(teacher_safe)
-            distill_loss = -(teacher_lp * valid).sum() / valid_count
+            distill_weights = batch["distill_weights"]
+            # Per-step weighting: regret signals (out-of-candidates,
+            # mismatched planet use) up-weight teacher NLL on those steps
+            # so distillation pressure concentrates where the policy
+            # diverged from the heuristic on a high-stakes decision.
+            distill_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
             with torch.no_grad():
                 sampled = batch["actions"]
                 teacher_match = (((sampled == teacher_safe).float() * valid).sum() / valid_count).item()
+                distill_weight_mean = (
+                    (distill_weights * valid).sum() / valid_count
+                ).item()
 
             loss = (
                 policy_loss
@@ -402,6 +411,7 @@ def _run_ppo_update(
             stats.valid_action_type_counts.append(valid_action_type_count_mean)
             stats.distill_losses.append(distill_loss.item())
             stats.teacher_match_fractions.append(teacher_match)
+            stats.distill_weight_means.append(distill_weight_mean)
 
     return stats
 
@@ -628,6 +638,41 @@ def _extract_step_info_value(info_dict: dict, key: str, env_idx: int, *, done: b
 
     value = _extract_vector_info_value(info_dict, key, env_idx, _MISSING)
     return default if value is _MISSING else value
+
+
+_REGRET_DISTILL_WEIGHT_MAX = 3.0
+
+
+def _compute_distill_weight(infos: dict, env_idx: int, *, done: bool) -> float:
+    """Return a per-step distillation weight in [1.0, _REGRET_DISTILL_WEIGHT_MAX].
+
+    Weights >1 amplify the teacher-NLL gradient on steps where the agent
+    diverged from the heuristic on a high-stakes decision: an
+    out-of-candidates hand subset, a low-ratio in-candidates play, or a
+    mismatched planet use. Steps without diagnostics keep weight 1.0.
+    """
+    weight = 1.0
+    action_type = _extract_step_info_value(infos, "action_type", env_idx, done=done, default="")
+    if action_type == "play_subset":
+        if bool(_extract_step_info_value(infos, "hand_play_not_in_candidates", env_idx, done=done, default=False)):
+            weight = max(weight, _REGRET_DISTILL_WEIGHT_MAX)
+        else:
+            ratio = _extract_step_info_value(
+                infos, "hand_play_candidate_value_ratio", env_idx, done=done, default=None
+            )
+            if ratio is not None:
+                gap = max(0.0, 1.0 - float(ratio))
+                weight = max(weight, 1.0 + (_REGRET_DISTILL_WEIGHT_MAX - 1.0) * gap)
+    planet_used = bool(
+        _extract_step_info_value(infos, "planet_use_observed", env_idx, done=done, default=False)
+    )
+    if planet_used:
+        match = bool(
+            _extract_step_info_value(infos, "planet_use_main_hand_match", env_idx, done=done, default=False)
+        )
+        if not match:
+            weight = max(weight, _REGRET_DISTILL_WEIGHT_MAX)
+    return weight
 
 
 def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *, done: bool) -> None:
@@ -937,6 +982,13 @@ def train_ppo(
                 ],
                 dtype=np.int64,
             )
+            distill_weights_np = np.asarray(
+                [
+                    _compute_distill_weight(infos, env_idx, done=bool(dones[env_idx]))
+                    for env_idx in range(config.num_envs)
+                ],
+                dtype=np.float32,
+            )
 
             if np.any(truncated) and "final_obs" in infos:
                 final_obs_arr = infos["final_obs"]
@@ -962,6 +1014,7 @@ def train_ppo(
                 truncated=truncated,
                 bootstrap_values=bootstrap_values_np,
                 teacher_actions=teacher_actions_np,
+                distill_weights=distill_weights_np,
             )
 
             # Track per-env episode stats
@@ -1026,6 +1079,8 @@ def train_ppo(
                     "reward_planet_skip_penalty",
                     "reward_planet_fool_overwrite_penalty",
                     "reward_standard_overfull_penalty",
+                    "reward_hand_subset_bonus",
+                    "reward_planet_match_bonus",
                 ):
                     component_value = _extract_step_info_value(
                         infos,
@@ -1121,6 +1176,7 @@ def train_ppo(
         update_valid_action_type_counts = update_stats.valid_action_type_counts
         update_distill_losses = update_stats.distill_losses
         update_teacher_match_fractions = update_stats.teacher_match_fractions
+        update_distill_weight_means = update_stats.distill_weight_means
 
         # Track the normalized entropy signal every update, even with fixed entropy.
         mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -1156,6 +1212,11 @@ def train_ppo(
         writer.add_scalar(
             "ppo/teacher_match_fraction",
             float(np.mean(update_teacher_match_fractions)),
+            update_count,
+        )
+        writer.add_scalar(
+            "ppo/distill_weight_mean",
+            float(np.mean(update_distill_weight_means)),
             update_count,
         )
         writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)

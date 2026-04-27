@@ -83,14 +83,13 @@ STANDARD_OVERFULL_CARD_BASE_PENALTY = 0.03
 STANDARD_OVERFULL_CARD_EXPONENT = 0.35
 STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
 
-# Per-step regret penalties driven by env action diagnostics. The agent
-# already logs `hand/candidate_value_ratio_mean` and
-# `planet/use_main_hand_match_fraction` as diagnostics; converting them
-# into reward gives PPO a *local* gradient for "this play was worse than
-# the heuristic's pick" without waiting for a terminal signal that's
-# uniform across episodes.
-HAND_SUBSET_REGRET_SCALE = 0.4
-PLANET_MISMATCH_PENALTY = 0.3
+# Per-step shaping bonuses driven by env action diagnostics. Asymmetric
+# (positive-only) so the agent can't reduce expected reward by
+# terminating sooner — staying alive and playing well is the only path
+# to accumulating the bonus. Negative shaping created a die-fast
+# pathology in the v1 run; positive shaping flips the incentive.
+HAND_SUBSET_BONUS_SCALE = 0.3
+PLANET_MATCH_BONUS = 0.2
 
 _FIXED_DECK_SIGNATURE_SHARE = 0.70
 _FIXED_DECK_MIN_SIGNATURE_COUNT = 8
@@ -176,8 +175,8 @@ def default_reward_components(
         "planet_skip_penalty": 0.0,
         "planet_fool_overwrite_penalty": 0.0,
         "standard_overfull_penalty": 0.0,
-        "hand_subset_regret": 0.0,
-        "planet_mismatch": 0.0,
+        "hand_subset_bonus": 0.0,
+        "planet_match_bonus": 0.0,
     }
 
     if terminated or curr_info.get("stalled", False):
@@ -234,27 +233,23 @@ def default_reward_components(
     if action_type in ("use_consumable_hand_subset", "use_consumable_joker"):
         components["consumable_targeted_use"] += CONSUMABLE_TARGETED_USE_REWARD
 
-    # Hand-subset regret: penalize plays that don't match the heuristic's
-    # candidate enumeration. `hand_play_*` keys come from
-    # BalatroEnv._action_diagnostics and are only populated for play_subset
-    # steps that actually executed.
-    if action_type == "play_subset":
-        if curr_info.get("hand_play_not_in_candidates", False):
-            components["hand_subset_regret"] -= HAND_SUBSET_REGRET_SCALE
-        else:
-            ratio = curr_info.get("hand_play_candidate_value_ratio")
-            if ratio is not None:
-                components["hand_subset_regret"] -= HAND_SUBSET_REGRET_SCALE * (
-                    1.0 - float(ratio)
-                )
+    # Hand-subset bonus: reward in-candidates plays scaled by their value
+    # ratio. Out-of-candidates plays get nothing (no penalty), so the
+    # agent's only path to accumulating reward is to play well rather
+    # than terminating early.
+    if action_type == "play_subset" and not curr_info.get(
+        "hand_play_not_in_candidates", False
+    ):
+        ratio = curr_info.get("hand_play_candidate_value_ratio")
+        if ratio is not None:
+            components["hand_subset_bonus"] += HAND_SUBSET_BONUS_SCALE * float(ratio)
 
-    # Planet mismatch: planet was used but its hand_type does not match the
-    # agent's main played hand type. `planet_use_observed` and
-    # `planet_use_main_hand_match` come from action diagnostics.
-    if curr_info.get("planet_use_observed", False) and not bool(
+    # Planet match bonus: planet used and its hand_type matches the
+    # agent's main played hand type. Mismatches get nothing.
+    if curr_info.get("planet_use_observed", False) and bool(
         curr_info.get("planet_use_main_hand_match", False)
     ):
-        components["planet_mismatch"] -= PLANET_MISMATCH_PENALTY
+        components["planet_match_bonus"] += PLANET_MATCH_BONUS
 
     if action_type in ("shop_sell_joker", "shop_sell_consumable"):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY

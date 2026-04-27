@@ -148,3 +148,36 @@ def test_teacher_actions_omitted_defaults_to_sentinel() -> None:
         truncated=np.array([False, False]),
     )
     assert (buffer.teacher_actions[:2] == -1).all()
+
+
+def test_distill_weights_default_to_one() -> None:
+    buffer = RolloutBuffer(num_envs=2, rollout_length=2)
+    assert (buffer.distill_weights == 1.0).all()
+
+
+def test_distill_weights_round_trip_through_add_batch() -> None:
+    import torch
+
+    buffer = RolloutBuffer(num_envs=2, rollout_length=1, gamma=0.99, gae_lambda=0.95)
+    weights = np.array([1.0, 3.0], dtype=np.float32)
+    buffer.add_batch(
+        step=0,
+        obs=_dummy_obs(num_envs=2),
+        actions=np.array([0, 0], dtype=np.int64),
+        rewards=np.array([0.0, 0.0], dtype=np.float32),
+        values=np.array([0.0, 0.0], dtype=np.float32),
+        log_probs=np.array([0.0, 0.0], dtype=np.float32),
+        terminated=np.array([False, False]),
+        truncated=np.array([False, False]),
+        distill_weights=weights,
+    )
+
+    assert buffer.distill_weights[0] == 1.0
+    assert buffer.distill_weights[1] == 3.0
+
+    buffer.compute_returns_and_advantages(last_values=np.array([0.0, 0.0], dtype=np.float32))
+    batches = buffer.get_batches(batch_size=4, device=torch.device("cpu"))
+    assert len(batches) == 1
+    weight_tensor = batches[0]["distill_weights"]
+    assert weight_tensor.dtype == torch.float32
+    assert sorted(weight_tensor.tolist()) == [1.0, 3.0]

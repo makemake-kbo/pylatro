@@ -135,7 +135,12 @@ class BalatroEnv(gymnasium.Env):
         try:
             pre_mask = self.action_masks()
             teacher_action = int(
-                self._teacher.select_action(self._controller.state, self._sub_phase, pre_mask)
+                self._teacher.select_action(
+                    self._controller.state,
+                    self._sub_phase,
+                    pre_mask,
+                    round_score=self._controller.round_score,
+                )
             )
             if teacher_action < 0 or teacher_action >= NUM_ACTIONS or not pre_mask[teacher_action]:
                 teacher_action = -1

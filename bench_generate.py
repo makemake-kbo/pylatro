@@ -54,6 +54,7 @@ def bench_new():
                 runner.state, runner.sub_phase, mask,
                 selected_cards=runner.selected_cards,
                 pending_action=runner.pending_action,
+                round_score=runner.round_score,
             )
             runner.step(action)
             steps += 1

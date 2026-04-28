@@ -170,7 +170,7 @@ def play_cards(state: RunState, cards: Iterable[PlayingCard | int]) -> PlayResul
     hand_debuffed = _debuff_hand(state, play_list, hand_name_pre, poker_hands_pre)
 
     held_hand = list(state.hand_cards)
-    result = score_hand(state, list(state.play_cards), held_hand=held_hand, hand_debuffed=hand_debuffed)
+    result = score_hand(state, list(state.play_cards), held_hand=held_hand, hand_debuffed=hand_debuffed, precomputed_hand_name=hand_name_pre, precomputed_poker_hands=poker_hands_pre)
     state.hands_played += 1
     state.current_round.hands_played += 1
 

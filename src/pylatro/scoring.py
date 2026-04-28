@@ -777,12 +777,26 @@ def score_hand(
     *,
     held_hand: list[PlayingCard] | None = None,
     hand_debuffed: bool = False,
+    precomputed_hand_name: str | None = None,
+    precomputed_poker_hands: dict | None = None,
 ) -> ScoreResult:
     held_cards = list(held_hand or [])
     state.dollar_buffer = 0
     sync_all_jokers(state)
 
-    scoring_name, display_name, poker_hands, scoring_hand = get_poker_hand_info(state, full_hand)
+    if precomputed_hand_name is not None and precomputed_poker_hands is not None:
+        scoring_name = precomputed_hand_name
+        poker_hands = precomputed_poker_hands
+        display_name = scoring_name
+        scoring_hand = []
+        for ht in POKER_HAND_ORDER:
+            if poker_hands.get(ht) and any(poker_hands[ht]):
+                scoring_name = ht
+                display_name = ht
+                scoring_hand = poker_hands[ht][0]
+                break
+    else:
+        scoring_name, display_name, poker_hands, scoring_hand = get_poker_hand_info(state, full_hand)
     state.hands[scoring_name]["played"] += 1
     state.hands[scoring_name]["played_this_round"] += 1
     state.hands[scoring_name]["visible"] = True

@@ -133,25 +133,23 @@ class FastRunner:
 
     # ── action mask (pre-allocated buffer) ──
 
-    @cython.locals(mv=cython.char[:])
     def compute_mask(self) -> np.ndarray:
         m = self._mask
         m.fill(0)
-        mv = m
         AR = ActionRange
         state = self._state
         sp = self._sub_phase
 
         if sp == SubPhase.BLIND_SELECT:
-            _mask_blind(mv, state, AR)
+            _mask_blind(m, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
-            _mask_action(mv, state, AR)
+            _mask_action(m, state, AR)
         elif sp == SubPhase.SELECT_CARDS:
-            _mask_cards(mv, state, AR, self._selected_cards, self._pending_action)
+            _mask_cards(m, state, AR, self._selected_cards, self._pending_action)
         elif sp == SubPhase.SHOP:
-            _mask_shop(mv, state, AR)
+            _mask_shop(m, state, AR)
         elif sp == SubPhase.BOOSTER_PACK:
-            _mask_booster(mv, state, AR)
+            _mask_booster(m, state, AR)
 
         return self._mask
 
@@ -181,7 +179,7 @@ class FastRunner:
 
         self._max_ante = max(self._max_ante, state.round_resets.ante)
 
-        sig = _progress_signature(state, self._ctrl.phase, self._sub_phase, self._round_score)
+        sig = self._progress_signature()
         if self._prev_signature is not None and sig != self._prev_signature:
             self._steps_since_progress = 0
         else:
@@ -310,6 +308,18 @@ class FastRunner:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
 
+    def _progress_signature(self):
+        state = self._state
+        return (
+            state.round_resets.ante,
+            state.blind_on_deck or "",
+            self._round_score,
+            state.current_round.hands_left,
+            state.current_round.discards_left,
+            state.dollars,
+            self._sub_phase,
+        )
+
 # ── mask helpers (module-level for speed) ──
 
 
@@ -335,12 +345,19 @@ def _mask_action(m, state, AR):
     hand_size = len(state.hand_cards)
     forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
     legal_subsets = legal_subset_mask(hand_size, forced_slots)
+    n_subsets = len(legal_subsets)
     if state.current_round.hands_left > 0 and hand_size > 0:
-        for i in range(len(legal_subsets)):
-            m[_play_start + i] = cython.cast(cython.char, legal_subsets[i])
+        if cython.compiled:
+            for i in range(n_subsets):
+                m[_play_start + i] = 1 if legal_subsets[i] else 0
+        else:
+            m[_play_start : _play_start + n_subsets] = legal_subsets
     if state.current_round.discards_left > 0 and hand_size > 0:
-        for i in range(len(legal_subsets)):
-            m[_disc_start + i] = cython.cast(cython.char, legal_subsets[i])
+        if cython.compiled:
+            for i in range(n_subsets):
+                m[_disc_start + i] = 1 if legal_subsets[i] else 0
+        else:
+            m[_disc_start : _disc_start + n_subsets] = legal_subsets
     _mask_consumable_flat(m, state, AR)
 
 
@@ -474,33 +491,6 @@ def _mask_consumable_flat(m, state, AR):
 
 # ── progress signature (mirrors BalatroEnv._progress_signature) ──
 
-
-@cython.locals(round_score=cython.int, shop_count=cython.int, pack_choices=cython.int)
-def _progress_signature(state, phase, sub_phase, round_score):
-    pack_choices = state.pack.choices_remaining if state.pack is not None else 0
-    shop_keys = tuple(
-        item.center_key for item in list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
-    )
-    pack_booster_key = state.pack.booster_key if state.pack is not None else ""
-    pack_card_keys = tuple(card.center_key for card in state.pack.cards) if state.pack is not None else ()
-    return (
-        state.round_resets.ante,
-        state.blind_on_deck or "",
-        _blind_target(state),
-        round_score,
-        state.current_round.hands_left,
-        state.current_round.discards_left,
-        state.dollars,
-        phase,
-        state.current_round.reroll_cost,
-        state.current_round.free_rerolls,
-        tuple(state.joker_keys),
-        tuple(state.consumable_keys),
-        shop_keys,
-        pack_booster_key,
-        pack_card_keys,
-        pack_choices,
-    )
 
 
 @cython.locals(ante=cython.int, scaling=cython.int, base=cython.int)

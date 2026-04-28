@@ -22,7 +22,7 @@ from .constants import (
     ActionRange,
     SubPhase,
 )
-from .subset_actions import consumable_subset_index, subset_index
+from .subset_actions import consumable_subset_index, subset_index, subset_indices
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard, RunState
@@ -130,12 +130,81 @@ class HeuristicAgent:
     def __init__(self) -> None:
         self._hand_cache_key = ()
         self._hand_cache_val = set()
+        self._round_progress: dict[str, int] = {}
+        self._pending_play_score: dict[str, tuple[int, str, int, int]] = {}
+        self._main_type_cache_key: tuple = ()
+        self._main_type_cache_val: str = "Pair"
+        self._synergy_cache_key: tuple = ()
+        self._synergy_cache: dict[str, float] = {}
+        self._joker_names_cache_key: tuple = ()
+        self._joker_names_cache: frozenset[str] = frozenset()
+        self._quality_cache: dict[tuple, str] = {}
+        self._score_cache: dict[tuple, int] = {}
+        self._score_cache_joker_key: tuple = ()
+
+    def _run_key(self, state: RunState) -> str:
+        return str(getattr(state, "seed", id(state)))
+
+    def _round_key(self, state: RunState) -> str:
+        return f"{self._run_key(state)}:{state.round_resets.ante}:{state.blind_on_deck or ''}"
+
+    def _observe_round_progress(self, state: RunState, round_score: int | None = None) -> None:
+        if round_score is not None:
+            run_key = self._run_key(state)
+            key = self._round_key(state)
+            self._round_progress[key] = int(round_score)
+            self._pending_play_score.pop(run_key, None)
+            current_prefix = f"{run_key}:{state.round_resets.ante}:"
+            for old_key in list(self._round_progress):
+                if old_key != key or not old_key.startswith(current_prefix):
+                    self._round_progress.pop(old_key, None)
+            return
+
+        run_key = self._run_key(state)
+        pending = self._pending_play_score.pop(run_key, None)
+        if pending is not None:
+            pending_hands_left, pending_blind, pending_ante, score = pending
+            if (
+                pending_blind == (state.blind_on_deck or "")
+                and pending_ante == state.round_resets.ante
+                and state.current_round.hands_left == pending_hands_left - 1
+            ):
+                key = self._round_key(state)
+                self._round_progress[key] = self._round_progress.get(key, 0) + score
+
+        key = self._round_key(state)
+        current_prefix = f"{run_key}:{state.round_resets.ante}:"
+        for old_key in list(self._round_progress):
+            if old_key != key or not old_key.startswith(current_prefix):
+                self._round_progress.pop(old_key, None)
+
+    def _current_round_score_estimate(self, state: RunState) -> int:
+        return self._round_progress.get(self._round_key(state), 0)
+
+    def _record_selected_action(self, state: RunState, sub_phase: SubPhase, action: int) -> None:
+        if sub_phase != SubPhase.CHOOSE_ACTION:
+            return
+        if ActionRange.PLAY_SUBSET_START <= action <= ActionRange.PLAY_SUBSET_END:
+            rel_action = action - ActionRange.PLAY_SUBSET_START
+            indices = tuple(i for i in subset_indices(rel_action) if i < len(state.hand_cards))
+            score = self._score_play_for_progress(state, indices)
+            self._pending_play_score[self._run_key(state)] = (
+                state.current_round.hands_left,
+                state.blind_on_deck or "",
+                state.round_resets.ante,
+                score,
+            )
+
+    def _score_play_for_progress(self, state: RunState, indices: tuple[int, ...]) -> int:
+        if not indices:
+            return 0
+        approx = self._estimate_hand_score(state, indices)
+        return max(0, int(approx * 0.75))
 
     def _cached_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
         key = (
             tuple(
                 (
-                    id(card),
                     card.rank,
                     card.suit,
                     card.center_key,
@@ -166,6 +235,20 @@ class HeuristicAgent:
     def _estimate_hand_score(self, state: RunState, hand_indices: tuple[int, ...]) -> int:
         if not hand_indices:
             return 0
+        joker_key = self._joker_keys_sig(state)
+        cache_key = (hand_indices, joker_key, state.dollars, state.current_round.discards_left, state.round_resets.ante)
+        if joker_key != self._score_cache_joker_key:
+            self._score_cache.clear()
+            self._score_cache_joker_key = joker_key
+        if cache_key in self._score_cache:
+            return self._score_cache[cache_key]
+        result = self._estimate_hand_score_compute(state, hand_indices)
+        if len(self._score_cache) > 2000:
+            self._score_cache.clear()
+        self._score_cache[cache_key] = result
+        return result
+
+    def _estimate_hand_score_compute(self, state: RunState, hand_indices: tuple[int, ...]) -> int:
         hand = state.hand_cards
         cards = [hand[i] for i in hand_indices]
         hand_type = self._quick_hand_quality(state, cards)
@@ -181,8 +264,9 @@ class HeuristicAgent:
         n_scoring = _SCORING_COUNT.get(hand_type, len(cards))
 
         card_chip_values = []
+        centers_get = state.data.centers.get
         for c in cards:
-            center = state.data.centers.get(c.center_key)
+            center = centers_get(c.center_key)
             effect = center.get("effect", "") if center else ""
             if effect == "Stone Card":
                 card_chip_values.append(50 + c.perma_bonus)
@@ -194,6 +278,15 @@ class HeuristicAgent:
         total_chips = base_chips + card_chips
         total_mult = base_mult
         x_mult_acc = 1.0
+
+        scoring_cards = cards[:n_scoring]
+        scoring_ranks = tuple(c.rank for c in scoring_cards)
+        scoring_suits = tuple(c.suit for c in scoring_cards)
+        held_cards = [hand[i] for i in range(len(hand)) if i not in hand_indices]
+
+        dollars = state.dollars
+        discards_left = state.current_round.discards_left
+        ante = state.round_resets.ante
 
         for j in state.jokers:
             if j.debuff:
@@ -211,7 +304,10 @@ class HeuristicAgent:
             if j.x_mult and j.x_mult > 1 and (not j.type or j.type == hand_type):
                 x_mult_acc *= j.x_mult
 
-            jname = state.data.centers.get(j.center_key, {}).get("name", "")
+            center = centers_get(j.center_key)
+            if not center:
+                continue
+            jname = center.get("name", "")
 
             extra = j.extra
             if isinstance(extra, dict):
@@ -226,39 +322,39 @@ class HeuristicAgent:
                     x_mult_acc *= exm
 
             if jname == "Fibonacci":
-                for c in cards[:n_scoring]:
-                    if c.rank in ("2", "3", "5", "8", "14", "Ace"):
+                for r in scoring_ranks:
+                    if r in ("2", "3", "5", "8", "14", "Ace"):
                         total_mult += 8
             elif jname == "Even Steven":
-                for c in cards[:n_scoring]:
-                    if c.rank in ("2", "4", "6", "8", "10"):
+                for r in scoring_ranks:
+                    if r in ("2", "4", "6", "8", "10"):
                         total_mult += 4
             elif jname == "Odd Todd":
-                for c in cards[:n_scoring]:
-                    if c.rank in ("Ace", "3", "5", "7", "9"):
+                for r in scoring_ranks:
+                    if r in ("Ace", "3", "5", "7", "9"):
                         total_chips += 31
             elif jname == "Scary Face":
-                for c in cards[:n_scoring]:
-                    if c.rank in ("Jack", "Queen", "King"):
+                for r in scoring_ranks:
+                    if r in ("Jack", "Queen", "King"):
                         total_chips += 30
             elif jname == "Smiley Face":
-                for c in cards[:n_scoring]:
-                    if c.rank in ("Jack", "Queen", "King"):
+                for r in scoring_ranks:
+                    if r in ("Jack", "Queen", "King"):
                         total_mult += 5
             elif jname == "Scholar":
-                for c in cards[:n_scoring]:
-                    if c.rank == "Ace":
+                for r in scoring_ranks:
+                    if r == "Ace":
                         total_chips += 20
                         total_mult += 4
             elif jname == "Walkie Talkie":
-                for c in cards[:n_scoring]:
-                    if c.rank in ("4", "10"):
+                for r in scoring_ranks:
+                    if r in ("4", "10"):
                         total_chips += 10
                         total_mult += 4
             elif jname == "Photograph":
                 face_found = False
-                for c in cards[:n_scoring]:
-                    if c.rank in ("Jack", "Queen", "King") and not face_found:
+                for r in scoring_ranks:
+                    if r in ("Jack", "Queen", "King") and not face_found:
                         x_mult_acc *= 2
                         face_found = True
             elif jname in ("Greedy Joker", "Lusty Joker", "Wrathful Joker", "Gluttonous Joker"):
@@ -270,82 +366,88 @@ class HeuristicAgent:
                 }
                 target_suit = suit_map[jname]
                 sv = 3 if isinstance(j.extra, dict) else (j.extra or 3)
-                for c in cards[:n_scoring]:
-                    if c.suit == target_suit:
+                for s in scoring_suits:
+                    if s == target_suit:
                         total_mult += sv
             elif jname == "Onyx Agate":
-                for c in cards[:n_scoring]:
-                    if c.suit == "Clubs":
+                for s in scoring_suits:
+                    if s == "Clubs":
                         total_mult += 7
             elif jname == "Arrowhead":
-                for c in cards[:n_scoring]:
-                    if c.suit == "Spades":
+                for s in scoring_suits:
+                    if s == "Spades":
                         total_chips += 50
             elif jname == "Shoot the Moon":
-                held = [hand[i] for i in range(len(hand)) if i not in hand_indices]
-                for c in held:
+                for c in held_cards:
                     if c.rank == "Queen":
                         total_mult += 13
             elif jname == "Baron":
-                held = [hand[i] for i in range(len(hand)) if i not in hand_indices]
-                for c in held:
+                for c in held_cards:
                     if c.rank == "King":
                         x_mult_acc *= 1.5
             elif jname == "Bootstraps":
-                total_mult += (state.dollars // 5) * 2
+                total_mult += (dollars // 5) * 2
             elif jname == "Half Joker":
                 if len(cards) <= 3:
                     total_mult += 20
             elif jname == "Mystic Summit":
-                if state.current_round.discards_left == 0:
+                if discards_left == 0:
                     total_mult += 15
             elif jname == "Banner":
-                total_chips += state.current_round.discards_left * 30
+                total_chips += discards_left * 30
             elif jname == "Abstract Joker":
                 total_mult += len([jj for jj in state.jokers if not jj.debuff])
             elif jname == "Supernova":
-                played = state.hands.get(hand_type, {}).get("played", 0)
+                played = hand_info.get("played", 0) if hand_info else 0
                 total_mult += played
             elif jname == "Green Joker":
-                ante = state.round_resets.ante
                 total_mult += max(ante * 2, 0)
             elif jname == "Runner":
-                ante = state.round_resets.ante
                 total_chips += ante * 10
             elif jname == "Square Joker":
-                ante = state.round_resets.ante
                 total_chips += ante * 4
             elif jname == "Ride the Bus":
-                ante = state.round_resets.ante
                 total_mult += ante * 2
             elif jname == "Fortune Teller":
-                ante = state.round_resets.ante
                 total_mult += ante * 2
             elif jname == "Flash":
-                ante = state.round_resets.ante
                 total_chips += ante * 10
             elif jname == "Constellation":
-                ante = state.round_resets.ante
                 x_mult_acc *= 1 + ante * 0.1
             elif jname == "Hologram":
-                ante = state.round_resets.ante
                 x_mult_acc *= 1 + ante * 0.15
             elif jname == "Bull":
-                total_chips += state.dollars * 2 * n_scoring
+                total_chips += dollars * 2 * n_scoring
             elif jname == "Bootstraps":
-                total_mult += (state.dollars // 5) * 2
+                total_mult += (dollars // 5) * 2
 
         return int(total_chips * total_mult * x_mult_acc)
 
+    def _get_joker_names(self, state: RunState) -> frozenset[str]:
+        keys = state.joker_keys
+        if keys != self._joker_names_cache_key:
+            self._joker_names_cache = frozenset(
+                state.data.centers[k]["name"] for k in keys
+            )
+            self._joker_names_cache_key = keys
+        return self._joker_names_cache
+
+    def _joker_keys_sig(self, state: RunState) -> tuple:
+        return tuple(j.center_key for j in state.jokers)
+
     def _get_main_hand_type(self, state: RunState) -> str:
+        sig = self._joker_keys_sig(state)
+        if sig == self._main_type_cache_key:
+            return self._main_type_cache_val
         best = "Pair"
         best_score = 1.0
         for ht in ("Pair", "Two Pair", "Three of a Kind", "Full House",
                     "Flush", "Straight", "High Card", "Four of a Kind",
                     "Straight Flush", "Five of a Kind", "Flush House", "Flush Five"):
             synergy = self._hand_type_synergy(state, ht)
-            played = state.hands.get(ht, {}).get("played", 0)
-            level = state.hands.get(ht, {}).get("level", 1)
+            ht_info = state.hands.get(ht)
+            played = ht_info.get("played", 0) if ht_info else 0
+            level = ht_info.get("level", 1) if ht_info else 1
             score = synergy * 3 + played * 1.0 + level * 5
             if ht == "Pair":
                 score += 3.0
@@ -354,11 +456,16 @@ class HeuristicAgent:
             if score > best_score:
                 best_score = score
                 best = ht
+        self._main_type_cache_key = sig
+        self._main_type_cache_val = best
         return best
 
     def _find_type_hand(self, state: RunState, hand: list[PlayingCard], type_name: str) -> tuple[int, ...] | None:
         if not hand:
             return None
+
+        hand_len = len(hand)
+        nominals = [RANK_TO_NOMINAL.get(c.rank, 0) for c in hand]
 
         by_rank: dict[str, list[int]] = {}
         for i, card in enumerate(hand):
@@ -368,7 +475,12 @@ class HeuristicAgent:
             for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 2:
                     pair = indices[:2]
-                    kickers = sorted([i for i in range(len(hand)) if i not in pair], key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+                    pair_set = set(pair)
+                    kickers = sorted(
+                        [i for i in range(hand_len) if i not in pair_set],
+                        key=lambda i: nominals[i],
+                        reverse=True,
+                    )
                     return tuple(sorted(pair + kickers[:3]))
 
         elif type_name == "Two Pair":
@@ -377,21 +489,36 @@ class HeuristicAgent:
                 if len(indices) >= 2 and len(pairs) < 4:
                     pairs.extend(indices[:2])
             if len(pairs) >= 4:
-                kickers = sorted([i for i in range(len(hand)) if i not in pairs], key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+                pairs_set = set(pairs)
+                kickers = sorted(
+                    [i for i in range(hand_len) if i not in pairs_set],
+                    key=lambda i: nominals[i],
+                    reverse=True,
+                )
                 return tuple(sorted(pairs + kickers[:1]))
 
         elif type_name == "Three of a Kind":
             for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 3:
                     trip = indices[:3]
-                    kickers = sorted([i for i in range(len(hand)) if i not in trip], key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+                    trip_set = set(trip)
+                    kickers = sorted(
+                        [i for i in range(hand_len) if i not in trip_set],
+                        key=lambda i: nominals[i],
+                        reverse=True,
+                    )
                     return tuple(sorted(trip + kickers[:2]))
 
         elif type_name == "Four of a Kind":
             for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 4:
                     quad = indices[:4]
-                    kickers = sorted([i for i in range(len(hand)) if i not in quad], key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+                    quad_set = set(quad)
+                    kickers = sorted(
+                        [i for i in range(hand_len) if i not in quad_set],
+                        key=lambda i: nominals[i],
+                        reverse=True,
+                    )
                     return tuple(sorted(quad + kickers[:1]))
 
         elif type_name == "Flush":
@@ -408,23 +535,29 @@ class HeuristicAgent:
             for suit, indices in by_suit.items():
                 unique = list(dict.fromkeys(indices))
                 if len(unique) >= 5:
-                    unique.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+                    unique.sort(key=lambda i: nominals[i], reverse=True)
                     return tuple(sorted(unique[:5]))
 
         return None
 
     def select_action(self, state: RunState, sub_phase: SubPhase, action_mask: np.ndarray, **kwargs) -> int:
+        round_score = kwargs.get("round_score")
+        self._observe_round_progress(state, int(round_score) if round_score is not None else None)
         if sub_phase == SubPhase.BLIND_SELECT:
-            return self._blind_select(state, action_mask)
+            action = self._blind_select(state, action_mask)
         elif sub_phase == SubPhase.CHOOSE_ACTION:
-            return self._choose_action(state, action_mask)
+            action = self._choose_action(state, action_mask)
         elif sub_phase == SubPhase.SELECT_CARDS:
-            return self._random_valid(action_mask)
+            action = self._random_valid(action_mask)
         elif sub_phase == SubPhase.SHOP:
-            return self._shop(state, action_mask)
+            action = self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
-            return self._booster_pack(state, action_mask)
-        return self._random_valid(action_mask)
+            action = self._booster_pack(state, action_mask)
+        else:
+            action = self._random_valid(action_mask)
+        if round_score is None:
+            self._record_selected_action(state, sub_phase, action)
+        return action
 
     def _blind_select(self, state: RunState, mask: np.ndarray) -> int:
         if mask[ActionRange.BLIND_PLAY]:
@@ -468,44 +601,48 @@ class HeuristicAgent:
 
         est_score = self._estimate_hand_score(state, best_play) if best_play else 0
 
+        blind_target = self._get_blind_target(state)
+        target_remaining = max(0, blind_target - self._current_round_score_estimate(state))
+        hands_left = state.current_round.hands_left
+        discards_left = state.current_round.discards_left
+        can_win_now = est_score >= target_remaining
+
         main_type = self._get_main_hand_type(state)
         main_synergy = self._hand_type_synergy(state, main_type)
 
-        alt_types = ["Pair", "Two Pair", "Three of a Kind", "Four of a Kind", "Flush"]
-        if main_type in alt_types:
-            alt_types.remove(main_type)
-            alt_types.insert(0, main_type)
+        if not can_win_now:
+            alt_types = ["Pair", "Two Pair", "Three of a Kind", "Four of a Kind", "Flush"]
+            if main_type in alt_types:
+                alt_types.remove(main_type)
+                alt_types.insert(0, main_type)
 
-        if main_type in ("Pair", "Two Pair", "Three of a Kind"):
-            main_hand = self._find_type_hand(state, hand, main_type)
-            if main_hand:
-                main_score = self._estimate_hand_score(state, main_hand)
-                if main_score >= est_score * 0.8:
-                    best_play = main_hand
-                    est_score = main_score
-                    best_play_cards = [hand[i] for i in best_play]
-                    best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
+            if main_type in ("Pair", "Two Pair", "Three of a Kind"):
+                main_hand = self._find_type_hand(state, hand, main_type)
+                if main_hand:
+                    main_score = self._estimate_hand_score(state, main_hand)
+                    if main_score >= est_score * 0.8:
+                        best_play = main_hand
+                        est_score = main_score
+                        best_play_cards = [hand[i] for i in best_play]
+                        best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
 
-        for alt_type in alt_types:
-            if best_hand_quality_now == alt_type:
-                continue
-            alt_hand = self._find_type_hand(state, hand, alt_type)
-            if alt_hand:
-                alt_score = self._estimate_hand_score(state, alt_hand)
-                if alt_type == main_type and main_synergy > 0:
-                    if alt_score > est_score * 0.7:
+            for alt_type in alt_types:
+                if best_hand_quality_now == alt_type:
+                    continue
+                alt_hand = self._find_type_hand(state, hand, alt_type)
+                if alt_hand:
+                    alt_score = self._estimate_hand_score(state, alt_hand)
+                    if alt_type == main_type and main_synergy > 0:
+                        if alt_score > est_score * 0.7:
+                            best_play = alt_hand
+                            est_score = alt_score
+                            best_play_cards = [hand[i] for i in best_play]
+                            best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
+                    elif alt_score > est_score:
                         best_play = alt_hand
                         est_score = alt_score
                         best_play_cards = [hand[i] for i in best_play]
                         best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
-                elif alt_score > est_score:
-                    best_play = alt_hand
-                    est_score = alt_score
-                    best_play_cards = [hand[i] for i in best_play]
-                    best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
-        blind_target = self._get_blind_target(state)
-        hands_left = state.current_round.hands_left
-        discards_left = state.current_round.discards_left
 
         best_planet_score = -1
         best_planet_action = None
@@ -518,7 +655,6 @@ class HeuristicAgent:
                 continue
             planet_hand_type = center.get("config", {}).get("hand_type", "")
             score = 0
-            main_type = self._get_main_hand_type(state)
             if planet_hand_type == main_type:
                 score += 20
             if planet_hand_type == best_hand_quality_now:
@@ -566,18 +702,18 @@ class HeuristicAgent:
             if action is not None:
                 return action
 
-        if best_play and est_score >= blind_target:
+        if best_play and est_score >= target_remaining:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
                 return play_action
 
-        if best_play and est_score * hands_left >= blind_target:
+        if best_play and est_score * hands_left >= target_remaining:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
                 return play_action
 
         draw_discard = self._should_discard_for_draw(state, hand, mask)
-        if draw_discard is not None and est_score * max(hands_left - 1, 1) < blind_target:
+        if draw_discard is not None and est_score * max(hands_left - 1, 1) < target_remaining:
             return ActionRange.DISCARD_SUBSET_START + subset_index(draw_discard)
 
         best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand))))) if hand else ()
@@ -587,7 +723,7 @@ class HeuristicAgent:
             and mask[ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)]
         )
 
-        if can_discard and hands_left > 1 and est_score * hands_left < blind_target:
+        if can_discard and hands_left > 1 and est_score * hands_left < target_remaining:
             if not self._has_scaling_jokers(state):
                 return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
 
@@ -648,8 +784,11 @@ class HeuristicAgent:
         n = len(cards)
         if n == 0:
             return "High Card"
-        ranks = [RANK_TO_ID[c.rank] for c in cards]
-        suits = [c.suit for c in cards]
+        ranks = tuple(RANK_TO_ID[c.rank] for c in cards)
+        suits = tuple(c.suit for c in cards)
+        cache_key = (ranks, suits)
+        if cache_key in self._quality_cache:
+            return self._quality_cache[cache_key]
         rank_counts: dict[int, int] = {}
         for r in ranks:
             rank_counts[r] = rank_counts.get(r, 0) + 1
@@ -667,27 +806,34 @@ class HeuristicAgent:
 
         if is_flush and is_straight:
             if counts[0] >= 4:
-                return "Flush Five"
-            if counts[0] >= 3 and len(counts) >= 2 and counts[1] >= 2:
-                return "Flush House"
-            return "Straight Flush"
-        if counts[0] >= 5:
-            return "Five of a Kind"
-        if counts[0] >= 4:
-            return "Four of a Kind"
-        if counts[0] >= 3 and len(counts) >= 2 and counts[1] >= 2:
-            return "Full House"
-        if is_flush:
-            return "Flush"
-        if is_straight:
-            return "Straight"
-        if counts[0] >= 3:
-            return "Three of a Kind"
-        if len(counts) >= 2 and counts[0] >= 2 and counts[1] >= 2:
-            return "Two Pair"
-        if counts[0] >= 2:
-            return "Pair"
-        return "High Card"
+                result = "Flush Five"
+            elif counts[0] >= 3 and len(counts) >= 2 and counts[1] >= 2:
+                result = "Flush House"
+            else:
+                result = "Straight Flush"
+        elif counts[0] >= 5:
+            result = "Five of a Kind"
+        elif counts[0] >= 4:
+            result = "Four of a Kind"
+        elif counts[0] >= 3 and len(counts) >= 2 and counts[1] >= 2:
+            result = "Full House"
+        elif is_flush:
+            result = "Flush"
+        elif is_straight:
+            result = "Straight"
+        elif counts[0] >= 3:
+            result = "Three of a Kind"
+        elif len(counts) >= 2 and counts[0] >= 2 and counts[1] >= 2:
+            result = "Two Pair"
+        elif counts[0] >= 2:
+            result = "Pair"
+        else:
+            result = "High Card"
+
+        if len(self._quality_cache) > 2000:
+            self._quality_cache.clear()
+        self._quality_cache[cache_key] = result
+        return result
 
     def _score_joker_value(self, state: RunState, center_key: str) -> float:
         center = state.data.centers.get(center_key, {})
@@ -947,6 +1093,13 @@ class HeuristicAgent:
     def _hand_type_synergy(self, state: RunState, hand_type: str) -> float:
         if not hand_type:
             return 0.0
+        sig = self._joker_keys_sig(state)
+        if sig != self._synergy_cache_key:
+            self._synergy_cache.clear()
+            self._synergy_cache_key = sig
+        cache_key = hand_type
+        if cache_key in self._synergy_cache:
+            return self._synergy_cache[cache_key]
         synergy = 0.0
         for j in state.jokers:
             jc = state.data.centers.get(j.center_key, {})
@@ -965,6 +1118,7 @@ class HeuristicAgent:
                     exm = extra.get("Xmult", 0)
                     if isinstance(exm, (int, float)) and exm > 1:
                         synergy += (exm - 1) * 10
+        self._synergy_cache[cache_key] = synergy
         return synergy
 
     def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
@@ -982,6 +1136,11 @@ class HeuristicAgent:
         card_ids: list[int] = []
         by_rank: dict[int, list[int]] = {}
         by_suit: dict[str, list[int]] = {}
+        joker_names = self._get_joker_names(state)
+        has_smeared = "Smeared Joker" in joker_names
+        has_four_fingers = "Four Fingers" in joker_names
+        has_shortcut = "Shortcut" in joker_names
+        has_pareidolia = "Pareidolia" in joker_names
         for i, card in enumerate(hand):
             center = centers.get(card.center_key)
             effect = center.get("effect", "") if center else ""
@@ -1001,7 +1160,7 @@ class HeuristicAgent:
                         by_suit.setdefault(s, []).append(i)
                 else:
                     by_suit.setdefault(card.suit, []).append(i)
-                    if state.has_joker("Smeared Joker"):
+                    if has_smeared:
                         if card.suit in ("Hearts", "Diamonds"):
                             other = "Diamonds" if card.suit == "Hearts" else "Hearts"
                         else:
@@ -1022,11 +1181,10 @@ class HeuristicAgent:
                 if j.center_key == key:
                     suit_bonus[suit] = suit_bonus.get(suit, 0) + bonus
 
-        four_fingers_flag = state.has_joker("Four Fingers")
-        flush_req = 4 if four_fingers_flag else 5
-        straight_req = 4 if four_fingers_flag else 5
+        flush_req = 4 if has_four_fingers else 5
+        straight_req = 4 if has_four_fingers else 5
 
-        if has_stone or state.has_joker("Shortcut") or state.has_joker("Pareidolia"):
+        if has_stone or has_shortcut or has_pareidolia:
             return self._find_best_hand_brute(state, hand, max_cards)
 
         groups = sorted(by_rank.items(), key=lambda x: x[0], reverse=True)
@@ -1201,29 +1359,28 @@ class HeuristicAgent:
             "High Card",
         ]
         hand_rank = {name: i for i, name in enumerate(hand_order)}
-        best_hand_name = "High Card"
         best_indices: set[int] = set()
         best_score = float("-inf")
+        best_hand_rank = len(hand_order)
+
+        nominals = [RANK_TO_NOMINAL.get(c.rank, 0) for c in hand]
 
         for size in range(max_cards, 0, -1):
             for combo in combinations(range(len(hand)), size):
                 cards = [hand[i] for i in combo]
-                try:
-                    result = evaluate_poker_hand(state, cards)
-                except Exception:
-                    continue
-                for hand_name in hand_order:
-                    if result.get(hand_name) and any(result[hand_name]):
-                        rank = hand_rank[hand_name]
-                        score = -rank * 10000 + sum(RANK_TO_NOMINAL.get(c.rank, 0) for c in cards)
-                        if score > best_score:
-                            best_score = score
-                            best_indices = set(combo)
-                            best_hand_name = hand_name
-                        break
+                hand_name = self._quick_hand_quality(state, cards)
+                rank = hand_rank.get(hand_name, len(hand_order) - 1)
+                if rank < best_hand_rank or (rank == best_hand_rank and size == max_cards):
+                    score = -rank * 10000 + sum(nominals[i] for i in combo)
+                    if score > best_score:
+                        best_score = score
+                        best_indices = set(combo)
+                        best_hand_rank = rank
+                    if rank == 0:
+                        return best_indices
 
-        if best_hand_name == "High Card" or not best_indices:
-            ranked = sorted(range(len(hand)), key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0), reverse=True)
+        if not best_indices:
+            ranked = sorted(range(len(hand)), key=lambda i: nominals[i], reverse=True)
             best_indices = set(ranked[:max_cards])
         return best_indices
 
@@ -1234,22 +1391,25 @@ class HeuristicAgent:
         rank_counts = Counter(ranks)
         nominals = [RANK_TO_NOMINAL.get(r, 0) for r in ranks]
         sorted_nominals = sorted(nominals)
+        n_sorted = len(sorted_nominals)
 
         main_type = self._get_main_hand_type(state)
         main_synergy = self._hand_type_synergy(state, main_type)
+        is_pair_type = main_type in ("Pair", "Two Pair", "Three of a Kind", "Full House", "Four of a Kind") and main_synergy > 0
+        is_flush_type = main_type == "Flush" and main_synergy > 0
+        is_sf_type = main_type == "Straight Flush" and main_synergy > 0
+        high_ranks = frozenset(("Ace", "King", "Queen", "Jack", "10"))
 
         keep_scores: list[float] = []
         for i, card in enumerate(hand):
             score = nominals[i] * 0.1
 
             rank_n = rank_counts[card.rank]
-            if main_type in ("Pair", "Two Pair", "Three of a Kind", "Full House", "Four of a Kind") and main_synergy > 0:
+            if is_pair_type:
                 if rank_n >= 3:
                     score += 40.0
                 elif rank_n >= 2:
                     score += 25.0
-                else:
-                    score += 0.0
             else:
                 if rank_n >= 3:
                     score += 25.0
@@ -1257,17 +1417,24 @@ class HeuristicAgent:
                     score += 15.0
 
             suit_n = suit_counts[card.suit]
-            if main_type == "Flush" and main_synergy > 0:
+            if is_flush_type:
                 if suit_n >= 4:
                     score += 30.0
                 elif suit_n >= 3:
                     score += 15.0
-            elif main_type == "Straight Flush" and main_synergy > 0:
+            elif is_sf_type:
                 if suit_n >= 4:
                     score += 25.0
                 elif suit_n >= 3:
                     score += 12.0
-                nearby_count = sum(1 for j, n in enumerate(sorted_nominals) if abs(n - nominals[i]) <= 4)
+                lo = max(nominals[i] - 4, 0)
+                hi = nominals[i] + 4
+                nearby_count = 0
+                for j in range(n_sorted):
+                    if sorted_nominals[j] > hi:
+                        break
+                    if sorted_nominals[j] >= lo:
+                        nearby_count += 1
                 if nearby_count >= 4:
                     score += 10.0
             else:
@@ -1280,12 +1447,12 @@ class HeuristicAgent:
             lo = max(nom - 4, 0)
             hi = nom + 4
             lo_idx = 0
-            for j in range(len(sorted_nominals)):
+            for j in range(n_sorted):
                 if sorted_nominals[j] >= lo:
                     lo_idx = j
                     break
             nearby = 0
-            for j in range(lo_idx, len(sorted_nominals)):
+            for j in range(lo_idx, n_sorted):
                 if sorted_nominals[j] > hi:
                     break
                 nearby += 1
@@ -1293,7 +1460,7 @@ class HeuristicAgent:
             if nearby >= 3:
                 score += 5.0
 
-            if card.rank in ("Ace", "King", "Queen", "Jack", "10"):
+            if card.rank in high_ranks:
                 score += 2.0
 
             keep_scores.append(score)
@@ -1339,6 +1506,7 @@ class HeuristicAgent:
                 return to_discard
 
         centers = state.data.centers
+        has_smeared = "Smeared Joker" in self._get_joker_names(state)
         by_suit: dict[str, list[int]] = {}
         for i, card in enumerate(hand):
             center = centers.get(card.center_key)
@@ -1348,7 +1516,7 @@ class HeuristicAgent:
                     by_suit.setdefault(s, []).append(i)
             else:
                 by_suit.setdefault(card.suit, []).append(i)
-                if state.has_joker("Smeared Joker"):
+                if has_smeared:
                     if card.suit in ("Hearts", "Diamonds"):
                         other = "Diamonds" if card.suit == "Hearts" else "Hearts"
                     else:
@@ -1368,7 +1536,7 @@ class HeuristicAgent:
                         return to_discard
 
         # Rule 2: Straight draw
-        if not state.has_joker("Shortcut"):
+        if not ("Shortcut" in self._get_joker_names(state)):
             rank_ids = [(i, RANK_TO_ID[hand[i].rank]) for i in range(len(hand))]
             all_ranks = set()
             rank_to_indices: dict[int, list[int]] = {}
@@ -1690,6 +1858,15 @@ class HeuristicAgent:
                 post_buy = dollars - item_cost
                 if post_buy >= 0:
                     return best_joker_action
+
+        if joker_slots_left > 0 and n_jokers < 3 and ante <= 2:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster" and "Buffoon" in center.get("name", "") and item.cost <= 4:
+                    return action
 
         # ═══ PRIORITY 2.5: Economy joker if cheap and we have room (NOT before ante 3) ═══
         if (best_economy_action >= 0 and joker_slots_left > 0

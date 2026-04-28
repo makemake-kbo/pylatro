@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "pylatro"
 SRC_AGENT = ROOT / "src" / "pylatro_agent"
 
-MODULES = [
+MODULES: list[str] = [
     "rng",
     "scoring",
     "flow",

@@ -32,33 +32,23 @@ _LOW_VALUE_JOKERS = frozenset(
         "j_oops",
         "j_chaos",
         "j_credit_card",
-        "j_egg",
-        "j_diet_cola",
         "j_superposition",
         "j_luchador",
         "j_splash",
-        "j_certificate",
-        "j_cartomancer",
         "j_invisible",
         "j_faceless",
-        "j_delayed_grat",
         "j_matador",
-        "j_troubadour",
-        "j_turtle_bean",
         "j_space",
         "j_seance",
         "j_midas_mask",
         "j_marble",
         "j_hallucination",
         "j_ramen",
-        "j_vagabond",
         "j_sixth_sense",
         "j_satellite",
         "j_gift",
         "j_trading",
         "j_ring_master",
-        "j_dna",
-        "j_raised_fist",
     }
 )
 
@@ -246,12 +236,36 @@ class HeuristicAgent:
             elif jname == "Supernova":
                 played = state.hands.get(hand_type, {}).get("played", 0)
                 total_mult += played
+            elif jname == "Green Joker":
+                ante = state.round_resets.ante
+                total_mult += max(ante * 2, 0)
+            elif jname == "Runner":
+                ante = state.round_resets.ante
+                total_chips += ante * 10
+            elif jname == "Square Joker":
+                ante = state.round_resets.ante
+                total_chips += ante * 4
+            elif jname == "Ride the Bus":
+                ante = state.round_resets.ante
+                total_mult += ante * 2
+            elif jname == "Fortune Teller":
+                ante = state.round_resets.ante
+                total_mult += ante * 2
+            elif jname == "Flash":
+                ante = state.round_resets.ante
+                total_chips += ante * 10
+            elif jname == "Constellation":
+                ante = state.round_resets.ante
+                x_mult_acc *= 1 + ante * 0.1
+            elif jname == "Hologram":
+                ante = state.round_resets.ante
+                x_mult_acc *= 1 + ante * 0.15
 
         return int(total_chips * total_mult * x_mult_acc)
 
     def _get_main_hand_type(self, state: RunState) -> str:
         best = "Pair"
-        best_score = 0.0
+        best_score = 1.0
         for ht in ("Pair", "Two Pair", "Three of a Kind", "Full House",
                     "Flush", "Straight", "High Card", "Four of a Kind",
                     "Straight Flush", "Five of a Kind", "Flush House", "Flush Five"):
@@ -259,6 +273,8 @@ class HeuristicAgent:
             played = state.hands.get(ht, {}).get("played", 0)
             level = state.hands.get(ht, {}).get("level", 1)
             score = synergy * 2 + played * 0.5 + level * 3
+            if ht in ("Pair", "Two Pair"):
+                score += 1.0
             if score > best_score:
                 best_score = score
                 best = ht
@@ -427,24 +443,21 @@ class HeuristicAgent:
             planet_hand_type = center.get("config", {}).get("hand_type", "")
             score = 0
             main_type = self._get_main_hand_type(state)
-            if planet_hand_type == best_hand_quality_now:
-                score += 10
             if planet_hand_type == main_type:
-                score += 8
+                score += 20
+            if planet_hand_type == best_hand_quality_now:
+                score += 15
             score += self._hand_type_synergy(state, planet_hand_type)
             played_count = state.hands.get(planet_hand_type, {}).get("played", 0)
             if played_count > 0:
-                score += min(played_count, 10)
+                score += 10
+            if score == 0:
+                score = 1
             if score > best_planet_score:
                 best_planet_score = score
                 best_planet_action = action
         if best_planet_action is not None:
             return best_planet_action
-
-        if best_play and est_score >= blind_target:
-            play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
-            if mask[play_action]:
-                return play_action
 
         _BUFF_TAROTS = frozenset({
             "The Magician", "The Empress", "The Hierophant", "The Lovers",
@@ -466,9 +479,21 @@ class HeuristicAgent:
             elif name in _DESTROY_TAROTS:
                 worst = tuple(sorted(self._find_worst_cards(state, hand, max_discard=2)))
                 preferred = worst if worst else None
+            elif name in ("The Fool", "The Emperor", "The High Priestess", "Judgement"):
+                action = self._atomic_consumable_action(state, slot, mask)
+                if action is not None:
+                    return action
+                continue
+            else:
+                continue
             action = self._atomic_consumable_action(state, slot, mask, preferred_indices=preferred)
             if action is not None:
                 return action
+
+        if best_play and est_score >= blind_target:
+            play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
+            if mask[play_action]:
+                return play_action
 
         if best_play and est_score * hands_left >= blind_target:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
@@ -476,7 +501,7 @@ class HeuristicAgent:
                 return play_action
 
         draw_discard = self._should_discard_for_draw(state, hand, mask)
-        if draw_discard is not None:
+        if draw_discard is not None and est_score * max(hands_left - 1, 1) < blind_target:
             return ActionRange.DISCARD_SUBSET_START + subset_index(draw_discard)
 
         best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand))))) if hand else ()
@@ -606,14 +631,20 @@ class HeuristicAgent:
 
         mult = config.get("mult")
         if isinstance(mult, (int, float)) and mult:
-            score += mult * 5.0
+            n_jokers_current = len(state.jokers)
+            if n_jokers_current < 3:
+                score += mult * 12.0
+            elif n_jokers_current < 5:
+                score += mult * 9.0
+            else:
+                score += mult * 6.0
 
         t_mult = config.get("t_mult")
         hand_type = config.get("type", "")
         _COMMITTED_TYPES = {"Pair", "High Card", "Two Pair", "Three of a Kind"}
         if isinstance(t_mult, (int, float)) and t_mult:
             if hand_type == main_type:
-                score += t_mult * 8.0
+                score += t_mult * 10.0
             elif self._hand_type_synergy(state, hand_type) > 0:
                 score += t_mult * 6.0
             elif hand_type in _COMMITTED_TYPES and not has_main_synergy:
@@ -621,18 +652,18 @@ class HeuristicAgent:
             elif hand_type in _COMMITTED_TYPES:
                 score += t_mult * 2.0
             else:
-                score += t_mult * 0.5
+                score -= t_mult * 1.0
 
         t_chips = config.get("t_chips")
         if isinstance(t_chips, (int, float)) and t_chips:
             if hand_type == main_type:
-                score += t_chips * 1.5
+                score += t_chips * 2.0
             elif self._hand_type_synergy(state, hand_type) > 0:
-                score += t_chips * 0.8
+                score += t_chips * 1.0
             elif hand_type in _COMMITTED_TYPES and not has_main_synergy:
-                score += t_chips * 0.4
+                score += t_chips * 0.6
             else:
-                score += t_chips * 0.1
+                score += t_chips * 0.2
 
         x_mult = config.get("Xmult")
         if isinstance(x_mult, (int, float)) and x_mult and x_mult > 1:
@@ -665,8 +696,16 @@ class HeuristicAgent:
                 score += hand_add * 8.0
 
             ex_mult = extra.get("Xmult")
-            if isinstance(ex_mult, (int, float)) and ex_mult:
-                score += ex_mult * 10.0
+            if isinstance(ex_mult, (int, float)) and ex_mult and ex_mult > 1:
+                total_add = sum(j.mult for j in state.jokers) + sum(j.t_mult for j in state.jokers)
+                exm_score = (ex_mult - 1) * 20.0
+                if not hand_type:
+                    exm_score *= 3.0
+                if total_add >= 8:
+                    exm_score *= 2.5
+                elif total_add >= 4:
+                    exm_score *= 2.0
+                score += exm_score
 
             mult_val = extra.get("mult")
             if isinstance(mult_val, (int, float)) and mult_val:
@@ -706,12 +745,12 @@ class HeuristicAgent:
             score += 15.0 if len(state.jokers) >= 2 else 3.0
 
         _PER_CARD_JOKERS = {
-            "j_fibonacci": 5.0, "j_even_steven": 4.0, "j_odd_todd": 2.5,
-            "j_smiley": 4.0, "j_scary_face": 2.0, "j_scholar": 4.0,
-            "j_walkie_talkie": 3.0, "j_photograph": 8.0,
-            "j_greedy_joker": 4.0, "j_lusty_joker": 4.0,
-            "j_wrathful_joker": 4.0, "j_gluttenous_joker": 4.0,
-            "j_onyx_agate": 5.0, "j_arrowhead": 3.0,
+            "j_fibonacci": 7.0, "j_even_steven": 6.0, "j_odd_todd": 3.5,
+            "j_smiley": 6.0, "j_scary_face": 3.0, "j_scholar": 5.0,
+            "j_walkie_talkie": 4.0, "j_photograph": 10.0,
+            "j_greedy_joker": 5.0, "j_lusty_joker": 5.0,
+            "j_wrathful_joker": 5.0, "j_gluttenous_joker": 5.0,
+            "j_onyx_agate": 6.0, "j_arrowhead": 4.0,
         }
         if center_key in _PER_CARD_JOKERS:
             score += _PER_CARD_JOKERS[center_key]
@@ -722,36 +761,60 @@ class HeuristicAgent:
         if center_key in _HELD_CARD_JOKERS:
             score += _HELD_CARD_JOKERS[center_key]
 
+        _SCALING_JOKERS = {
+            "j_runner": 10.0, "j_green_joker": 10.0, "j_ride_the_bus": 8.0,
+            "j_square": 8.0, "j_fortune_teller": 7.0, "j_supernova": 7.0,
+            "j_steel_joker": 9.0, "j_constellation": 9.0, "j_hologram": 9.0,
+            "j_campfire": 8.0, "j_hit_the_road": 7.0, "j_flash": 7.0,
+        }
+        if center_key in _SCALING_JOKERS:
+            n_jokers_current = len(state.jokers)
+            if n_jokers_current < 4:
+                score += _SCALING_JOKERS[center_key] * 1.5
+            else:
+                score += _SCALING_JOKERS[center_key]
+
+        _RETRIGGER_JOKERS = {
+            "j_hanging_chad": 12.0, "j_sock_and_buskin": 14.0,
+            "j_selzer": 10.0, "j_mime": 12.0,
+        }
+        if center_key in _RETRIGGER_JOKERS:
+            score += _RETRIGGER_JOKERS[center_key]
+
         if jname == "Bootstraps":
             score += 6.0
         elif jname == "Banner":
-            score += 3.0
+            score += 6.0
         elif jname == "Abstract Joker":
-            score += 2.0
+            score += 8.0
         elif jname == "Mystic Summit":
-            score += 5.0
-        elif jname == "Half Joker":
-            score += 2.0
+            score += 7.0
         elif jname == "Supernova":
-            score += 3.0
+            score += 4.0
         elif jname == "Cavendish":
             score += 8.0
         elif jname == "Gros Michel":
-            score += 6.0
+            score += 7.0
         elif jname == "Misprint":
-            score += 4.0
-        elif jname == "Hanging Chad":
-            score += 5.0
-        elif jname == "Sock and Buskin":
-            score += 6.0
-        elif jname == "Seltzer":
-            score += 5.0
-        elif jname == "Mime":
-            score += 5.0
-        elif jname == "Mr. Bones":
-            score += 4.0
+            score += 7.0
         elif jname == "Burglar":
+            score += 7.0
+        elif jname == "Runner":
+            score += 7.0
+        elif jname == "Green Joker":
+            score += 7.0
+        elif jname == "Steel Joker":
+            score += 7.0
+        elif jname == "Constellation":
+            score += 7.0
+        elif jname == "Hologram":
+            score += 7.0
+        elif jname == "Campfire":
             score += 6.0
+        elif jname == "Hit the Road":
+            score += 5.0
+        elif jname == "Obelisk":
+            score += 5.0
 
         if cost <= 3:
             score *= 1.2
@@ -780,6 +843,11 @@ class HeuristicAgent:
                 xm = jcfg.get("Xmult", 0) or 0
                 if xm > 1:
                     synergy += (xm - 1) * 10
+                extra = jcfg.get("extra")
+                if isinstance(extra, dict):
+                    exm = extra.get("Xmult", 0)
+                    if isinstance(exm, (int, float)) and exm > 1:
+                        synergy += (exm - 1) * 10
         return synergy
 
     def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
@@ -1060,9 +1128,9 @@ class HeuristicAgent:
             rank_n = rank_counts[card.rank]
             if main_type in ("Pair", "Two Pair", "Three of a Kind", "Full House", "Four of a Kind") and main_synergy > 0:
                 if rank_n >= 3:
-                    score += 30.0
+                    score += 40.0
                 elif rank_n >= 2:
-                    score += 20.0
+                    score += 25.0
                 else:
                     score += 0.0
             else:
@@ -1074,9 +1142,17 @@ class HeuristicAgent:
             suit_n = suit_counts[card.suit]
             if main_type == "Flush" and main_synergy > 0:
                 if suit_n >= 4:
+                    score += 30.0
+                elif suit_n >= 3:
+                    score += 15.0
+            elif main_type == "Straight Flush" and main_synergy > 0:
+                if suit_n >= 4:
                     score += 25.0
                 elif suit_n >= 3:
                     score += 12.0
+                nearby_count = sum(1 for j, n in enumerate(sorted_nominals) if abs(n - nominals[i]) <= 4)
+                if nearby_count >= 4:
+                    score += 10.0
             else:
                 if suit_n >= 4:
                     score += 20.0
@@ -1242,6 +1318,24 @@ class HeuristicAgent:
     def _discard_mask_ok(self, state: RunState, mask: np.ndarray, indices: tuple[int, ...]) -> bool:
         return bool(mask[ActionRange.DISCARD_SUBSET_START + subset_index(indices)])
 
+    def _has_xmult_joker(self, state: RunState) -> bool:
+        for j in state.jokers:
+            if j.debuff:
+                continue
+            jc = state.data.centers.get(j.center_key, {})
+            jcfg = jc.get("config", {})
+            if not isinstance(jcfg, dict):
+                continue
+            xm = jcfg.get("Xmult", 0)
+            if xm and xm > 1:
+                return True
+            extra = jcfg.get("extra")
+            if isinstance(extra, dict):
+                exm = extra.get("Xmult", 0)
+                if isinstance(exm, (int, float)) and exm > 1:
+                    return True
+        return False
+
     def _shop(self, state: RunState, mask: np.ndarray) -> int:
         all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
         joker_slots_left = joker_limit(state) - len(state.jokers)
@@ -1253,88 +1347,155 @@ class HeuristicAgent:
 
         best_joker_action = -1
         best_joker_score = -1e9
+        best_xmult_action = -1
+        best_xmult_cost = 999
+        main_planet_action = -1
+        judgement_action = -1
         for i, item in enumerate(all_items):
             action = ActionRange.SHOP_BUY_START + i
             if not mask[action]:
                 continue
             center = state.data.centers.get(item.center_key, {})
-            if center.get("set") == "Joker":
+            cset = center.get("set", "")
+            if cset == "Joker":
                 jscore = self._score_joker_value(state, item.center_key)
                 if jscore > best_joker_score:
                     best_joker_score = jscore
                     best_joker_action = action
-
-        for i, item in enumerate(all_items):
-            action = ActionRange.SHOP_BUY_START + i
-            if not mask[action]:
-                continue
-            center = state.data.centers.get(item.center_key, {})
-            if center.get("set") == "Voucher":
-                return action
-
-        _SHOP_MONEY_TAROTS = frozenset({"The Hermit", "Temperance"})
-        if cons_slots_left > 0:
-            for i, item in enumerate(all_items):
-                action = ActionRange.SHOP_BUY_START + i
-                if not mask[action]:
-                    continue
-                center = state.data.centers.get(item.center_key, {})
-                name = center.get("name", "")
-                if name in _SHOP_MONEY_TAROTS and item.cost <= 4:
-                    return action
-
-        if joker_slots_left > 0:
-            for i, item in enumerate(all_items):
-                action = ActionRange.SHOP_BUY_START + i
-                if not mask[action]:
-                    continue
-                center = state.data.centers.get(item.center_key, {})
-                if center.get("set") == "Joker" and item.center_key == "j_joker":
-                    return action
+                cfg = center.get("config", {})
+                if isinstance(cfg, dict):
+                    xm = cfg.get("Xmult", 0)
+                    if not xm or xm <= 1:
+                        extra_cfg = cfg.get("extra")
+                        if isinstance(extra_cfg, dict):
+                            xm = extra_cfg.get("Xmult", 0)
+                    jtype = cfg.get("type", "")
+                    if xm and xm > 1:
+                        if best_xmult_action < 0 or item.cost < best_xmult_cost:
+                            best_xmult_action = action
+                            best_xmult_cost = item.cost
+            elif cset == "Planet":
+                planet_type = center.get("config", {}).get("hand_type", "")
+                if planet_type == main_type and main_planet_action < 0:
+                    main_planet_action = action
+            elif cset == "Tarot":
+                if center.get("name") == "Judgement" and judgement_action < 0:
+                    judgement_action = action
 
         n_jokers = len(state.jokers)
-        joker_threshold = -5 if ante <= 2 else (0 if ante <= 4 else 5)
-        if best_joker_action >= 0 and joker_slots_left > 0 and best_joker_score > joker_threshold:
-            item_idx = best_joker_action - ActionRange.SHOP_BUY_START
-            if item_idx < len(all_items):
-                item_cost = all_items[item_idx].cost
-                post_buy = dollars - item_cost
-                if post_buy >= 4 or best_joker_score > 15:
-                    return best_joker_action
+        no_xmult = not self._has_xmult_joker(state)
 
-        if len(state.jokers) > 0 and best_joker_score > 0:
+        def _worst_consumable_sell(score_threshold: int = 50) -> int:
+            worst_cons_slot = -1
+            worst_cons_score = 1e9
+            for ci, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
+                cc = state.data.centers.get(cons.center_key, {})
+                cs = cc.get("set", "")
+                score = 10
+                if cs == "Planet":
+                    pt = cc.get("config", {}).get("hand_type", "")
+                    if pt == main_type:
+                        score = 100
+                    elif self._hand_type_synergy(state, pt) > 0:
+                        score = 50
+                elif cs == "Tarot":
+                    cname = cc.get("name", "")
+                    if cname in ("The Hermit", "Temperance"):
+                        score = 80
+                    elif cname in ("Judgement", "The High Priestess", "The Emperor"):
+                        score = 60
+                if score < worst_cons_score:
+                    worst_cons_score = score
+                    worst_cons_slot = ci
+            if worst_cons_slot >= 0 and worst_cons_score < score_threshold:
+                sell_action = ActionRange.SHOP_SELL_CONSUMABLE_START + worst_cons_slot
+                if mask[sell_action]:
+                    return sell_action
+            return -1
+
+        def _worst_joker_sell(skip_xmult: bool = True) -> tuple[int, int, int]:
             worst_score = 1e9
             worst_sell_action = -1
+            worst_sell_value = 0
             for i, j in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
                 if j.eternal:
                     continue
+                if skip_xmult:
+                    jc = state.data.centers.get(j.center_key, {})
+                    jcfg = jc.get("config", {})
+                    if isinstance(jcfg, dict):
+                        jxm = jcfg.get("Xmult", 0)
+                        if not jxm or jxm <= 1:
+                            jextra = jcfg.get("extra")
+                            if isinstance(jextra, dict):
+                                jxm = jextra.get("Xmult", 0)
+                        if jxm and jxm > 1:
+                            continue
                 jscore = self._score_joker_value(state, j.center_key)
                 if jscore < worst_score:
                     worst_score = jscore
                     worst_sell_action = ActionRange.SHOP_SELL_JOKER_START + i
-            if worst_sell_action >= 0 and mask[worst_sell_action]:
-                if best_joker_action >= 0:
-                    best_item = all_items[best_joker_action - ActionRange.SHOP_BUY_START]
-                    best_center = state.data.centers.get(best_item.center_key, {})
-                    best_cfg = best_center.get("config", {})
-                    if not isinstance(best_cfg, dict):
-                        best_cfg = {}
-                    best_xmult = best_cfg.get("Xmult", 0)
-                    best_jtype = best_cfg.get("type", "")
-                    if best_xmult and best_xmult > 1 and best_jtype == main_type:
-                        if worst_score < best_joker_score:
-                            return worst_sell_action
-                if best_xmult and best_xmult > 1 and best_jtype == main_type:
-                    if worst_score < best_joker_score:
-                        return worst_sell_action
-                if len(state.jokers) >= 5 and worst_score < best_joker_score - 10:
-                    return worst_sell_action
-                if worst_score < -50 and dollars < 5:
-                    return worst_sell_action
+                    worst_sell_value = j.sell_cost
+            return worst_sell_action, worst_score, worst_sell_value
 
-        if n_jokers < 3 and joker_slots_left > 0 and mask[ActionRange.SHOP_REROLL] and dollars >= reroll_cost + 6 and ante <= 3:
-            return ActionRange.SHOP_REROLL
+        # ═══ PRIORITY 1: X-mult joker — ALWAYS buy if affordable ═══
+        if n_jokers > 0 and joker_slots_left == 0 and best_xmult_action >= 0:
+            sell_act, _, sell_val = _worst_joker_sell(skip_xmult=True)
+            if sell_act >= 0 and mask[sell_act]:
+                xm_idx = best_xmult_action - ActionRange.SHOP_BUY_START
+                if xm_idx < len(all_items):
+                    xm_cost = all_items[xm_idx].cost
+                    if dollars + sell_val >= xm_cost:
+                        return sell_act
 
+        if best_xmult_action >= 0 and joker_slots_left > 0:
+            item_idx = best_xmult_action - ActionRange.SHOP_BUY_START
+            if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
+                return best_xmult_action
+
+        # ═══ PRIORITY 1.5: Buy planet + joker if both affordable ═══
+        if (cons_slots_left > 0 and main_planet_action >= 0
+                and best_joker_action >= 0 and joker_slots_left > 0
+                and best_joker_score > -5):
+            planet_idx = main_planet_action - ActionRange.SHOP_BUY_START
+            joker_idx = best_joker_action - ActionRange.SHOP_BUY_START
+            if planet_idx < len(all_items) and joker_idx < len(all_items):
+                total_cost = all_items[planet_idx].cost + all_items[joker_idx].cost
+                if dollars >= total_cost:
+                    return main_planet_action
+
+        # ═══ PRIORITY 2: Buy joker (additive mult is crucial early) ═══
+        # Keep 1 slot open for x_mult when we have 3+ jokers and no x_mult
+        save_xmult_slot = (no_xmult and joker_slots_left <= 2 and n_jokers >= 2
+                           and 1 <= ante <= 7)
+        joker_threshold = -10 if ante <= 1 else (-5 if ante <= 2 else (0 if ante <= 4 else 5))
+        if (best_joker_action >= 0 and joker_slots_left > 0
+                and best_joker_score > joker_threshold
+                and not (save_xmult_slot and best_joker_score <= 25)):
+            item_idx = best_joker_action - ActionRange.SHOP_BUY_START
+            if item_idx < len(all_items):
+                item_cost = all_items[item_idx].cost
+                post_buy = dollars - item_cost
+                min_reserve = 0 if n_jokers < 3 else (1 if ante <= 4 else 2)
+                if post_buy >= min_reserve or best_joker_score > 10:
+                    return best_joker_action
+
+        # ═══ PRIORITY 3: Sell worst joker for much better joker ═══
+        if n_jokers > 0 and joker_slots_left == 0 and best_joker_action >= 0 and best_joker_score > 5:
+            sell_act, sell_sc, _ = _worst_joker_sell(skip_xmult=False)
+            if sell_act >= 0 and mask[sell_act]:
+                if best_joker_score - sell_sc > 10 or (n_jokers >= 5 and best_joker_score - sell_sc > 5):
+                    return sell_act
+
+        # ═══ PRIORITY 3.5: Main-type planet BUY (moved up — critical for scaling!) ═══
+        if cons_slots_left > 0 and main_planet_action >= 0:
+            item_idx = main_planet_action - ActionRange.SHOP_BUY_START
+            if item_idx < len(all_items):
+                planet_cost = all_items[item_idx].cost
+                if dollars >= planet_cost:
+                    return main_planet_action
+
+        # ═══ PRIORITY 3.6: ANY played-type planet BUY ═══
         if cons_slots_left > 0:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -1342,13 +1503,31 @@ class HeuristicAgent:
                     continue
                 center = state.data.centers.get(item.center_key, {})
                 if center.get("set") == "Planet":
-                    planet_type = center.get("config", {}).get("hand_type", "")
-                    if planet_type == main_type:
-                        return action
-                    if self._hand_type_synergy(state, planet_type) > 0:
+                    pt = center.get("config", {}).get("hand_type", "")
+                    played = state.hands.get(pt, {}).get("played", 0)
+                    if played > 0 and item.cost <= 4 and dollars >= item.cost:
                         return action
 
-        if joker_slots_left > 0:
+        # ═══ PRIORITY 3.7: Sell consumable for main-type planet ═══
+        if cons_slots_left == 0 and main_planet_action >= 0:
+            sell_act = _worst_consumable_sell(40)
+            if sell_act >= 0:
+                return sell_act
+
+        # ═══ PRIORITY 4: Celestial pack (ALWAYS — primary planet source) ═══
+        if dollars > 3:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster":
+                    name = center.get("name", "")
+                    if "Celestial" in name and item.cost <= 4:
+                        return action
+
+        # ═══ PRIORITY 4.5: Buffoon pack when no x_mult (need joker slot!) ═══
+        if no_xmult and joker_slots_left > 0 and dollars > 3:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
                 if not mask[action]:
@@ -1359,17 +1538,102 @@ class HeuristicAgent:
                     if "Buffoon" in name and item.cost <= 4:
                         return action
 
-        for i, item in enumerate(all_items):
-            action = ActionRange.SHOP_BUY_START + i
-            if not mask[action]:
-                continue
-            center = state.data.centers.get(item.center_key, {})
-            if center.get("set") == "Booster":
+        # ═══ PRIORITY 4.6: Sell joker for Buffoon pack (no x_mult, worst score < 5) ═══
+        if no_xmult and joker_slots_left == 0 and n_jokers >= 4 and dollars > 3:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster":
+                    name = center.get("name", "")
+                    if "Buffoon" in name and item.cost <= 4:
+                        sell_act, sell_sc, sell_val = _worst_joker_sell(skip_xmult=True)
+                        if sell_act >= 0 and mask[sell_act] and sell_sc < 5:
+                            return sell_act
+
+        # ═══ PRIORITY 4.7: Buffoon pack even with x_mult (need slot) ═══
+        if joker_slots_left > 0 and dollars > 4 and n_jokers >= 2:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster":
+                    name = center.get("name", "")
+                    if "Buffoon" in name and item.cost <= 4:
+                        return action
+
+        # ═══ PRIORITY 5: Sell consumable for Buffoon pack when no x_mult ═══
+        if no_xmult and cons_slots_left == 0 and joker_slots_left > 0 and n_jokers >= 2 and ante >= 2:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster":
+                    name = center.get("name", "")
+                    if "Buffoon" in name:
+                        sell_act = _worst_consumable_sell(60)
+                        if sell_act >= 0:
+                            return sell_act
+
+        # ═══ PRIORITY 6: Reroll for x_mult when missing (ante 3+) ═══
+        if no_xmult and joker_slots_left > 0 and best_xmult_action < 0 and ante >= 3:
+            reroll_dollar_threshold = 5 if ante <= 4 else 4
+            max_rerolls_xmult = 2
+            if (mask[ActionRange.SHOP_REROLL]
+                    and dollars >= reroll_cost + reroll_dollar_threshold
+                    and state.current_round.reroll_cost_increase < max_rerolls_xmult):
+                return ActionRange.SHOP_REROLL
+
+        # ═══ PRIORITY 6.5: Reroll if very few jokers (ante 1-4) ═══
+        if n_jokers < 3 and joker_slots_left > 0 and 1 <= ante <= 4 and mask[ActionRange.SHOP_REROLL] and dollars >= reroll_cost + 5:
+            return ActionRange.SHOP_REROLL
+
+        # ═══ PRIORITY 7: (moved to 3.5/3.7) ═══
+
+        # ═══ PRIORITY 8: Sell consumable to make room (only if pack/planet in shop) ═══
+        if cons_slots_left == 0:
+            has_target = main_planet_action >= 0
+            if not has_target:
+                for i, item in enumerate(all_items):
+                    center = state.data.centers.get(item.center_key, {})
+                    if center.get("set") == "Booster":
+                        name = center.get("name", "")
+                        if "Celestial" in name or "Buffoon" in name:
+                            has_target = True
+                            break
+            if has_target:
+                sell_act = _worst_consumable_sell(60)
+                if sell_act >= 0:
+                    return sell_act
+
+        # ═══ PRIORITY 10: Judgement tarot (creates random joker → x_mult chance) ═══
+        if judgement_action >= 0 and joker_slots_left > 0:
+            if cons_slots_left == 0:
+                sell_act = _worst_consumable_sell(50)
+                if sell_act >= 0:
+                    return sell_act
+            if cons_slots_left > 0:
+                item_idx = judgement_action - ActionRange.SHOP_BUY_START
+                if item_idx < len(all_items) and dollars > all_items[item_idx].cost:
+                    return judgement_action
+
+        # ═══ PRIORITY 10: Money tarots (Hermit, Temperance) — only when wealthy ═══
+        _SHOP_MONEY_TAROTS = frozenset({"The Hermit", "Temperance"})
+        if cons_slots_left > 0 and dollars > 7:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
                 name = center.get("name", "")
-                if "Celestial" in name and item.cost <= 4:
+                if name in _SHOP_MONEY_TAROTS and item.cost <= 4:
                     return action
 
-        if cons_slots_left > 0:
+        # ═══ PRIORITY 11: Arcana pack — only buy when wealthy ═══
+        if cons_slots_left > 0 and dollars > 8:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
                 if not mask[action]:
@@ -1380,6 +1644,18 @@ class HeuristicAgent:
                     if "Arcana" in name and item.cost <= 4:
                         return action
 
+        # ═══ PRIORITY 12: Utility tarots (Emperor, High Priestess) — only when wealthy ═══
+        _UTILITY_TAROTS = frozenset({"The High Priestess", "The Emperor"})
+        if cons_slots_left > 0 and dollars > 8:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("name") in _UTILITY_TAROTS and item.cost <= 4 and dollars > 8:
+                    return action
+
+        # ═══ PRIORITY 13: Synergy planets ═══
         if cons_slots_left > 0:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -1387,40 +1663,65 @@ class HeuristicAgent:
                     continue
                 center = state.data.centers.get(item.center_key, {})
                 if center.get("set") == "Planet":
-                    return action
+                    planet_type = center.get("config", {}).get("hand_type", "")
+                    if self._hand_type_synergy(state, planet_type) > 0 and dollars > 4:
+                        return action
 
+        # ═══ PRIORITY 14: Planets for played types ═══
+        if cons_slots_left > 0 and dollars > 4:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Planet" and item.cost <= 4:
+                    planet_type = center.get("config", {}).get("hand_type", "")
+                    if state.hands.get(planet_type, {}).get("played", 0) > 0:
+                        return action
+
+        # ═══ PRIORITY 15: Other boosters — only when wealthy ═══
         for i, item in enumerate(all_items):
             action = ActionRange.SHOP_BUY_START + i
             if not mask[action]:
                 continue
             center = state.data.centers.get(item.center_key, {})
-            if center.get("set") == "Booster":
+            if center.get("set") == "Booster" and item.cost <= 4 and dollars > 8:
                 return action
 
-        if best_joker_action >= 0 and joker_slots_left > 0 and best_joker_score > -5:
+        # ═══ PRIORITY 16: Vouchers ═══
+        for i, item in enumerate(all_items):
+            action = ActionRange.SHOP_BUY_START + i
+            if not mask[action]:
+                continue
+            center = state.data.centers.get(item.center_key, {})
+            if center.get("set") == "Voucher":
+                post_buy = dollars - item.cost
+                if post_buy >= 15:
+                    return action
+
+        # ═══ PRIORITY 17: Buy any affordable joker as filler (only if decent) ═══
+        if (best_joker_action >= 0 and joker_slots_left > 0
+                and best_joker_score > 0
+                and not (save_xmult_slot and best_joker_score <= 15)):
             item_idx = best_joker_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
                 item_cost = all_items[item_idx].cost
-                if dollars - item_cost >= 3 or best_joker_score > 10:
+                if dollars - item_cost >= 1 or best_joker_score > 5:
                     return best_joker_action
 
-        max_rerolls = 2 if ante <= 3 else 1
-        should_reroll = (
-            mask[ActionRange.SHOP_REROLL]
-            and joker_slots_left > 0
-            and best_joker_score < 10
-            and dollars >= reroll_cost + 5
-            and state.current_round.reroll_cost_increase < max_rerolls
-        )
-        if should_reroll:
+        # ═══ PRIORITY 18: General reroll ═══
+        max_rerolls = 4 if ante <= 2 else (3 if ante <= 4 else 1)
+        if (mask[ActionRange.SHOP_REROLL]
+                and joker_slots_left > 0
+                and best_joker_score < 10
+                and dollars >= reroll_cost + 4
+                and state.current_round.reroll_cost_increase < max_rerolls):
             return ActionRange.SHOP_REROLL
 
-        if (mask[ActionRange.SHOP_REROLL]
-            and joker_slots_left > 0
-            and best_joker_score < 5
-            and dollars >= 20
-            and state.current_round.reroll_cost_increase < 3):
-            return ActionRange.SHOP_REROLL
+        # ═══ PRIORITY 19: Late reroll for x_mult with excess money ═══
+        if no_xmult and joker_slots_left > 0 and ante >= 5 and dollars >= 20:
+            if mask[ActionRange.SHOP_REROLL] and state.current_round.reroll_cost_increase < 1:
+                return ActionRange.SHOP_REROLL
 
         if mask[ActionRange.SHOP_LEAVE]:
             return ActionRange.SHOP_LEAVE
@@ -1462,12 +1763,14 @@ class HeuristicAgent:
             planet_type = center.get("config", {}).get("hand_type", "")
             main_type = self._get_main_hand_type(state)
             if planet_type == main_type:
+                return 25.0
+            if state.hands.get(planet_type, {}).get("played", 0) > 0:
                 return 15.0
+            if planet_type in ("Pair", "Two Pair"):
+                return 12.0
             if self._hand_type_synergy(state, planet_type) > 0:
                 return 10.0
-            if state.hands.get(planet_type, {}).get("played", 0) > 0:
-                return 8.0
-            return 5.0
+            return 3.0
         elif cset == "Tarot":
             cons_slots = consumable_limit(state) - len(state.consumables)
             if cons_slots <= 0:

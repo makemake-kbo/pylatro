@@ -24,3 +24,6 @@ runs/
 *.pkl
 cache/
 .DS_Store
+
+# Proprietary vendor code (never commit)
+vendor/balatro_lua/

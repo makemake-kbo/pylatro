@@ -54,7 +54,7 @@ def main():
     parser.add_argument("--pretrained", type=str, default=None, help="Path to pretrained checkpoint")
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
     parser.add_argument("--lr", type=float, default=1e-4, help="PPO learning rate (default: 1e-4)")
-    parser.add_argument("--d-model", type=int, default=512, help="Model dimension (default: 512)")
+    parser.add_argument("--d-model", type=int, default=384, help="Model dimension (default: 384)")
     parser.add_argument("--n-layers", type=int, default=12, help="Transformer layers (default: 12)")
     parser.add_argument(
         "--checkpoint-dir",

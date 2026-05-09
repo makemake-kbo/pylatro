@@ -4,6 +4,7 @@ import torch
 
 from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.action_grammar import (
+    ACTION_TYPE_TO_GRAMMAR_INDEX,
     NUM_GRAMMAR_ACTIONS,
     ActionGrammarDistribution,
     ActionGrammarOutput,
@@ -82,3 +83,22 @@ def test_action_grammar_log_prob_has_gradients_for_components() -> None:
     assert output.macro_logits.grad is not None
     assert output.hand_count_logits.grad is not None
     assert output.hand_card_logits.grad is not None
+
+
+def test_action_grammar_temperature_changes_log_prob_consistently() -> None:
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    leave = encode_action(ActionType.SHOP_LEAVE)
+    reroll = encode_action(ActionType.SHOP_REROLL)
+    action_mask[0, leave] = 1
+    action_mask[0, reroll] = 1
+
+    output = _blank_output(batch_size=1)
+    output.macro_logits[0, :] = -10.0
+    output.macro_logits[0, ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE]] = 1.0
+    output.macro_logits[0, ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_REROLL]] = 0.0
+
+    cool = ActionGrammarDistribution(output, action_mask, temperature=0.5)
+    warm = ActionGrammarDistribution(output, action_mask, temperature=1.0)
+
+    assert cool.log_prob(torch.tensor([leave])).item() > warm.log_prob(torch.tensor([leave])).item()
+    assert cool.log_prob(torch.tensor([reroll])).item() < warm.log_prob(torch.tensor([reroll])).item()

@@ -53,6 +53,10 @@ class RolloutBuffer:
         # (out-of-candidates hand subset, mismatched planet use). Default
         # 1.0 keeps the baseline distillation strength unchanged.
         self.distill_weights = np.ones(self.total_size, dtype=np.float32)
+        # True when the env executed the heuristic action instead of the
+        # sampled policy action. These rows are off-policy for PPO's clipped
+        # objective, but still valid for teacher imitation and value learning.
+        self.teacher_forced = np.zeros(self.total_size, dtype=np.bool_)
 
         # Computed after rollout
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
@@ -114,6 +118,7 @@ class RolloutBuffer:
         bootstrap_values: np.ndarray | None = None,
         teacher_actions: np.ndarray | None = None,
         distill_weights: np.ndarray | None = None,
+        teacher_forced: np.ndarray | None = None,
     ) -> None:
         """Store one timestep for all environments at once (vectorized)."""
         indices = np.arange(self.num_envs) * self.rollout_length + step
@@ -123,6 +128,8 @@ class RolloutBuffer:
             teacher_actions = np.full(self.num_envs, -1, dtype=np.int64)
         if distill_weights is None:
             distill_weights = np.ones(self.num_envs, dtype=np.float32)
+        if teacher_forced is None:
+            teacher_forced = np.zeros(self.num_envs, dtype=np.bool_)
 
         self.tokens[indices] = obs["tokens"]
         self.token_types[indices] = obs["token_types"]
@@ -138,6 +145,7 @@ class RolloutBuffer:
         self.bootstrap_values[indices] = bootstrap_values
         self.teacher_actions[indices] = teacher_actions
         self.distill_weights[indices] = distill_weights
+        self.teacher_forced[indices] = teacher_forced
 
         self._step_counts[:] = step + 1
 
@@ -189,10 +197,7 @@ class RolloutBuffer:
                     # final observation; do not leak GAE across the reset boundary.
                     gae_continue_mask = 0.0
                 else:
-                    if t == n - 1:
-                        next_value = last_values[env_idx]
-                    else:
-                        next_value = env_values[t + 1]
+                    next_value = last_values[env_idx] if t == n - 1 else env_values[t + 1]
                     bootstrap_mask = 1.0
                     gae_continue_mask = 1.0
 
@@ -273,6 +278,7 @@ class RolloutBuffer:
                 "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
                 "teacher_actions": torch.as_tensor(self.teacher_actions[idx], device=device),
                 "distill_weights": torch.as_tensor(self.distill_weights[idx], device=device),
+                "teacher_forced": torch.as_tensor(self.teacher_forced[idx], device=device),
             }
 
             if pin_memory and device.type == "cpu":

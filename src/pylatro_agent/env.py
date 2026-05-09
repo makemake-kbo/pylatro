@@ -41,6 +41,7 @@ class BalatroEnv(gymnasium.Env):
         reward_fn: RewardFn | None = None,
         data: GameData | None = None,
         vocab: Vocab | None = None,
+        win_ante: int | None = None,
     ):
         super().__init__()
         self._data = data or load_game_data()
@@ -50,6 +51,11 @@ class BalatroEnv(gymnasium.Env):
         self._deck_key = deck_key
         self._objective = objective
         self._max_steps = max_steps
+        # Override the run's victory threshold for curriculum training. None
+        # uses the engine default (win_ante=8). Lower values let PPO see
+        # frequent wins early so it can bootstrap a value signal — the
+        # heuristic teacher only wins ~1% at ante 8 but ~39% at ante 4.
+        self._win_ante_override = win_ante
         self._reward_fn = reward_fn or default_reward
         self._seed = seed
         self._initial_seed_pending = seed is not None
@@ -108,6 +114,8 @@ class BalatroEnv(gymnasium.Env):
 
         self._controller = GameController(data=self._data)
         self._controller.new_run(str(effective_seed), stake=self._stake, deck_key=self._deck_key)
+        if self._win_ante_override is not None and self._controller.state is not None:
+            self._controller.state.win_ante = int(self._win_ante_override)
 
         self._sub_phase = SubPhase.BLIND_SELECT
         self._step_count = 0
@@ -119,7 +127,10 @@ class BalatroEnv(gymnasium.Env):
         self._prev_info = self._capture_state_info()
 
         obs = self._build_obs()
-        return self._obs_to_dict(obs), {"sub_phase": self._sub_phase}
+        return self._obs_to_dict(obs), {
+            "sub_phase": self._sub_phase,
+            "teacher_action": self._current_teacher_action(),
+        }
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
         assert self._controller is not None and self._controller.state is not None
@@ -178,6 +189,8 @@ class BalatroEnv(gymnasium.Env):
         curr_info["action_type"] = decoded.action_type
         curr_info["action_index"] = decoded.index
         curr_info["action_detail"] = decoded.detail
+        curr_info["teacher_action"] = teacher_action
+        curr_info["teacher_action_match"] = teacher_action >= 0 and int(action) == teacher_action
         progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
         curr_info["progress_made"] = progress_made
         if progress_made:
@@ -221,7 +234,29 @@ class BalatroEnv(gymnasium.Env):
             info[f"reward_{component_name}"] = component_value
         info.update(action_diagnostics)
         info["teacher_action"] = teacher_action
+        info["teacher_action_match"] = curr_info["teacher_action_match"]
+        info["next_teacher_action"] = -1 if terminated or truncated else self._current_teacher_action()
         return self._obs_to_dict(obs), reward, terminated, truncated, info
+
+    def _current_teacher_action(self) -> int:
+        """Return the heuristic action for the current state, or -1 if unavailable."""
+        if self._controller is None or self._controller.state is None:
+            return -1
+        try:
+            mask = self.action_masks()
+            teacher_action = int(
+                self._teacher.select_action(
+                    self._controller.state,
+                    self._sub_phase,
+                    mask,
+                    round_score=self._controller.round_score,
+                )
+            )
+            if teacher_action < 0 or teacher_action >= NUM_ACTIONS or not mask[teacher_action]:
+                return -1
+            return teacher_action
+        except Exception:
+            return -1
 
     def action_masks(self) -> np.ndarray:
         """Return current valid action mask."""
@@ -344,6 +379,7 @@ class BalatroEnv(gymnasium.Env):
             self._sub_phase,
             selected_cards=self._selected_cards,
             action_mask=mask,
+            round_score=self._round_score,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:

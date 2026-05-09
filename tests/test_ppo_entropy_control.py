@@ -4,10 +4,13 @@ import numpy as np
 import pytest
 import torch
 
-from pylatro_agent.constants import NUM_ACTIONS, ActionRange
+from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, TOKENIZER_VERSION, ActionRange
+from pylatro_agent.survival import DEFAULT_MAX_ANTES
 from pylatro_agent.training.ppo import (
+    PPOConfig,
     _entropy_alpha_loss,
     _extract_step_info_value,
+    _load_checkpoint_compatible,
     _make_alpha_optimizer,
     _make_policy_optimizer,
     _masked_kl_divergence,
@@ -16,8 +19,129 @@ from pylatro_agent.training.ppo import (
     _mean_valid_action_type_count,
     _record_action_diagnostics,
     _RolloutMetrics,
+    _run_dagger_bc_update,
+    _run_ppo_update,
     _smoothed_entropy_signal,
+    _validate_ppo_config,
 )
+from pylatro_agent.training.rollout_buffer import RolloutBuffer
+
+
+class _TinyPpoDistribution:
+    def __init__(self, logits: torch.Tensor, action_mask: torch.Tensor, temperature: float = 1.0) -> None:
+        masked_logits = logits / temperature
+        self.dist = torch.distributions.Categorical(logits=masked_logits.masked_fill(action_mask <= 0, -1e8))
+
+    def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        return self.dist.log_prob(actions)
+
+    def entropy(self) -> torch.Tensor:
+        return self.dist.entropy()
+
+    def normalized_action_type_entropy(self) -> torch.Tensor:
+        return torch.zeros((), dtype=self.dist.logits.dtype, device=self.dist.logits.device)
+
+
+class _TinyPpoModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.logits = torch.nn.Parameter(torch.zeros(NUM_ACTIONS))
+        self.value = torch.nn.Parameter(torch.zeros(()))
+
+    def action_distribution(
+        self,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
+        attention_mask: torch.Tensor,
+        action_mask: torch.Tensor,
+        temperature: float = 1.0,
+    ) -> tuple[_TinyPpoDistribution, dict[str, torch.Tensor]]:
+        batch = action_mask.shape[0]
+        logits = self.logits.unsqueeze(0).expand(batch, -1)
+        values = self.value.expand(batch)
+        survival = torch.full((batch, DEFAULT_MAX_ANTES), 0.5, dtype=logits.dtype, device=logits.device)
+        return _TinyPpoDistribution(logits, action_mask, temperature), {
+            "expected_score": values,
+            "ante_survival": survival,
+        }
+
+
+class _TinyDecoupledCriticModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.trunk = torch.nn.Linear(1, 1, bias=False)
+        self.policy_head = torch.nn.Linear(1, NUM_ACTIONS, bias=False)
+        self.value_head = torch.nn.Linear(1, 1, bias=False)
+        torch.nn.init.constant_(self.trunk.weight, 1.0)
+        torch.nn.init.zeros_(self.policy_head.weight)
+        torch.nn.init.zeros_(self.value_head.weight)
+
+    def action_distribution(
+        self,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
+        attention_mask: torch.Tensor,
+        action_mask: torch.Tensor,
+        temperature: float = 1.0,
+    ) -> tuple[_TinyPpoDistribution, dict[str, torch.Tensor]]:
+        batch = action_mask.shape[0]
+        h = self.trunk(torch.ones(batch, 1, device=action_mask.device))
+        logits = self.policy_head(h)
+        values = self.value_head(h).squeeze(-1)
+        survival = torch.full((batch, DEFAULT_MAX_ANTES), 0.5, dtype=logits.dtype, device=logits.device)
+        return _TinyPpoDistribution(logits, action_mask, temperature), {
+            "expected_score": values,
+            "ante_survival": survival,
+        }
+
+
+def _dummy_obs(num_envs: int) -> dict[str, np.ndarray]:
+    action_mask = np.zeros((num_envs, NUM_ACTIONS), dtype=np.float32)
+    action_mask[:, int(ActionRange.SHOP_REROLL)] = 1.0
+    action_mask[:, int(ActionRange.SHOP_LEAVE)] = 1.0
+    return {
+        "tokens": np.zeros((num_envs, MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
+        "token_types": np.zeros((num_envs, MAX_SEQ_LEN), dtype=np.int8),
+        "scalars": np.zeros((num_envs, SCALAR_DIM), dtype=np.float32),
+        "attention_mask": np.ones((num_envs, MAX_SEQ_LEN), dtype=np.int8),
+        "action_mask": action_mask,
+    }
+
+
+def _make_signal_buffer(
+    *,
+    actions: list[int],
+    advantages: list[float],
+    teacher_actions: list[int] | None = None,
+    teacher_forced: list[bool] | None = None,
+) -> RolloutBuffer:
+    buffer = RolloutBuffer(num_envs=1, rollout_length=len(actions), gamma=0.99, gae_lambda=0.95)
+    obs = _dummy_obs(num_envs=1)
+    old_log_prob = np.array([math.log(0.5)], dtype=np.float32)
+    for step, action in enumerate(actions):
+        teacher = None
+        if teacher_actions is not None:
+            teacher = np.array([teacher_actions[step]], dtype=np.int64)
+        forced = None
+        if teacher_forced is not None:
+            forced = np.array([teacher_forced[step]], dtype=np.bool_)
+        buffer.add_batch(
+            step=step,
+            obs=obs,
+            actions=np.array([action], dtype=np.int64),
+            rewards=np.array([0.0], dtype=np.float32),
+            values=np.array([0.0], dtype=np.float32),
+            log_probs=old_log_prob,
+            terminated=np.array([False]),
+            truncated=np.array([False]),
+            teacher_actions=teacher,
+            teacher_forced=forced,
+        )
+    buffer.advantages[:len(actions)] = np.asarray(advantages, dtype=np.float32)
+    buffer.returns[:len(actions)] = 0.0
+    return buffer
 
 
 def test_smoothed_entropy_signal_uses_current_value_first() -> None:
@@ -81,6 +205,267 @@ def test_policy_optimizer_uses_adam_without_weight_decay() -> None:
 
     assert isinstance(optimizer, torch.optim.Adam)
     assert optimizer.defaults["weight_decay"] == pytest.approx(0.0)
+
+
+def test_ppo_update_increases_probability_of_positive_advantage_action() -> None:
+    good_action = int(ActionRange.SHOP_LEAVE)
+    bad_action = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    buffer = _make_signal_buffer(
+        actions=[good_action, bad_action],
+        advantages=[1.0, -1.0],
+        teacher_actions=[-1, -1],
+    )
+    config = PPOConfig(
+        ppo_epochs=8,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=0.0,
+        heuristic_distill_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+
+    obs = _dummy_obs(num_envs=1)
+    action_mask = torch.as_tensor(obs["action_mask"])
+    with torch.no_grad():
+        before = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)[good_action].item()
+
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    with torch.no_grad():
+        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
+    assert probs[good_action].item() > before
+    assert probs[good_action].item() > probs[bad_action].item()
+    assert stats.approx_kls
+    assert min(stats.approx_kls) >= 0.0
+
+
+def test_heuristic_distillation_increases_teacher_action_probability_without_advantage() -> None:
+    teacher_action = int(ActionRange.SHOP_LEAVE)
+    sampled_action = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    buffer = _make_signal_buffer(
+        actions=[sampled_action, sampled_action],
+        advantages=[0.0, 0.0],
+        teacher_actions=[teacher_action, teacher_action],
+    )
+    config = PPOConfig(
+        ppo_epochs=8,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+
+    obs = _dummy_obs(num_envs=1)
+    action_mask = torch.as_tensor(obs["action_mask"])
+    with torch.no_grad():
+        before = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)[teacher_action].item()
+
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=1.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    with torch.no_grad():
+        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
+    assert probs[teacher_action].item() > before
+    assert probs[teacher_action].item() > probs[sampled_action].item()
+    assert stats.distill_losses[0] > stats.distill_losses[-1]
+
+
+def test_teacher_forced_samples_do_not_drive_ppo_policy_loss() -> None:
+    good_action = int(ActionRange.SHOP_LEAVE)
+    bad_action = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    buffer = _make_signal_buffer(
+        actions=[good_action, bad_action],
+        advantages=[1.0, -1.0],
+        teacher_actions=[-1, -1],
+        teacher_forced=[True, True],
+    )
+    config = PPOConfig(
+        ppo_epochs=8,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=0.0,
+        heuristic_distill_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+
+    before = model.logits.detach().clone()
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert torch.allclose(model.logits.detach(), before)
+    assert stats.on_policy_fractions
+    assert max(stats.on_policy_fractions) == 0.0
+
+
+def test_dagger_bc_update_increases_teacher_action_probability() -> None:
+    teacher_action = int(ActionRange.SHOP_LEAVE)
+    sampled_action = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    buffer = _make_signal_buffer(
+        actions=[sampled_action, sampled_action],
+        advantages=[0.0, 0.0],
+        teacher_actions=[teacher_action, teacher_action],
+        teacher_forced=[True, True],
+    )
+    config = PPOConfig(
+        ppo_epochs=1,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+        dagger_bc_epochs=4,
+        dagger_bc_coeff=1.0,
+    )
+
+    obs = _dummy_obs(num_envs=1)
+    action_mask = torch.as_tensor(obs["action_mask"])
+    with torch.no_grad():
+        before = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)[teacher_action].item()
+
+    losses, _matches = _run_dagger_bc_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        coeff=1.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    with torch.no_grad():
+        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
+    assert probs[teacher_action].item() > before
+    assert probs[teacher_action].item() > probs[sampled_action].item()
+    assert losses[0] > losses[-1]
+
+
+def test_ppo_value_loss_updates_value_head_not_shared_trunk() -> None:
+    action = int(ActionRange.SHOP_LEAVE)
+    model = _TinyDecoupledCriticModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0], teacher_actions=[-1, -1])
+    buffer.returns[:2] = 10.0
+    config = PPOConfig(
+        ppo_epochs=1,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=1.0,
+        survival_loss_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+
+    trunk_before = model.trunk.weight.detach().clone()
+    value_before = model.value_head.weight.detach().clone()
+    _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert torch.allclose(model.trunk.weight.detach(), trunk_before)
+    assert not torch.allclose(model.value_head.weight.detach(), value_before)
+
+
+def test_load_checkpoint_compatible_rejects_architecture_mismatch(tmp_path) -> None:
+    model = torch.nn.Linear(2, 2)
+    ckpt = tmp_path / "bad.pt"
+    torch.save(
+        {
+            "tokenizer_version": TOKENIZER_VERSION,
+            "state_dict": {
+                "weight": torch.zeros(3, 2),
+                "bias": torch.zeros(3),
+            },
+        },
+        ckpt,
+    )
+
+    with pytest.raises(RuntimeError, match="architecture-incompatible"):
+        _load_checkpoint_compatible(model, str(ckpt), torch.device("cpu"))
+
+
+def test_ppo_config_rejects_nonpositive_rollout_temperature() -> None:
+    with pytest.raises(ValueError, match="rollout_temperature"):
+        _validate_ppo_config(PPOConfig(rollout_temperature=0.0))
+
+
+def test_ppo_config_rejects_nonpositive_target_kl_when_set() -> None:
+    with pytest.raises(ValueError, match="target_kl"):
+        _validate_ppo_config(PPOConfig(target_kl=0.0))
+
+
+def test_ppo_config_allows_disabled_target_kl() -> None:
+    _validate_ppo_config(PPOConfig(target_kl=None))
+
+
+def test_ppo_config_rejects_teacher_rollout_prob_outside_unit_interval() -> None:
+    with pytest.raises(ValueError, match="teacher_rollout_prob"):
+        _validate_ppo_config(PPOConfig(teacher_rollout_prob=1.1))
 
 
 def test_mean_normalized_entropy_is_one_for_uniform_binary_policy() -> None:

@@ -10,44 +10,32 @@ if TYPE_CHECKING:
     from pylatro.models import RunState
 
 
-# All reward components are multiplied by REWARD_SCALE at the exit of
-# default_reward_components. The BC pretrain supervised the value head
-# on targets in the ±10 range; PPO reward magnitudes of 40 / -16+ made
-# the critic chase a 4x miscalibration, which showed up as a flat
-# value_loss and rollouts where shaping dominated terminal signal. The
-# constants below keep their "natural" units so the shaping math stays
-# readable; only the final sum gets scaled.
+# All dense reward components are multiplied by REWARD_SCALE at the exit of
+# default_reward_components. Terminal outcomes are converted to the same
+# ±10-ish scale used by supervised value pretraining, then represented in raw
+# component units so the final scaled component equals that target.
 REWARD_SCALE = 0.25
 
-# Previous shaping (ANTE_ADVANCE_REWARD=1.5, BLIND_CLEAR=1.25,
-# HANDS_LEFT_BONUS=0.1, LOSS_PENALTY_BASE=-16, LOSS_PER_UNFINISHED_ANTE=1.5)
-# made early deaths net positive: at a death ante of ~3 the cumulative
-# dense payout (ante_bonus + blind_clear + hands_bonus) already exceeded
-# the terminal penalty, so ppo_resume5 converged to ep_reward_mean ≈ +2.6
-# with a 0% win rate and no pressure to survive. The values below shrink
-# the stacked-per-ante payouts and amplify the terminal penalty so the
-# net raw reward stays strictly negative until roughly ante 7 while the
-# per-ante gradient (ante_bonus exponent 1.5 vs linear loss penalty)
-# remains monotone in favour of pushing deeper.
-WIN_REWARD = 60.0
-LOSS_PENALTY_BASE = -30.0
-STALL_EXTRA_PENALTY = 5.0
-# Per-ante penalty for every ante between death and win_ante. Pushes the
-# policy to survive deeper instead of settling for a shallow-death local
-# optimum where dense shaping dominates the flat loss penalty.
-LOSS_PER_UNFINISHED_ANTE = 3.0
+# PPO terminal targets stay close to the supervised value-head scale for losses,
+# while wins get a larger positive value so rare successes survive rollout noise.
+PRETRAIN_WIN_VALUE = 20.0
+PRETRAIN_LOSS_BASE = -10.0
+PRETRAIN_ANTE_PROGRESS_VALUE = 1.0
+PRETRAIN_STALL_EXTRA_PENALTY = 2.0
 
-SCORE_PROGRESS_SCALE = 0.25
-PRESSURE_PROGRESS_SCALE = 1.5
+WIN_REWARD = PRETRAIN_WIN_VALUE / REWARD_SCALE
+LOSS_PENALTY_BASE = PRETRAIN_LOSS_BASE / REWARD_SCALE
+STALL_EXTRA_PENALTY = PRETRAIN_STALL_EXTRA_PENALTY / REWARD_SCALE
+LOSS_PER_UNFINISHED_ANTE = 0.0
+
+SCORE_PROGRESS_SCALE = 0.15
+PRESSURE_PROGRESS_SCALE = 0.4
 DISCARD_RESOURCE_WEIGHT = 0.5
-BLIND_CLEAR_REWARD = 0.5
-HANDS_LEFT_BONUS_SCALE = 0.05
-# Bonus is super-linear in the ante just reached so deeper antes give a
-# strictly steeper gradient than the per-unfinished-ante loss penalty can
-# cancel out. Growth is curr_ante ** ANTE_ADVANCE_EXPONENT.
-ANTE_ADVANCE_REWARD = 0.5
-ANTE_ADVANCE_EXPONENT = 1.5
-INTEREST_BONUS_SCALE = 0.05
+BLIND_CLEAR_REWARD = 0.2
+HANDS_LEFT_BONUS_SCALE = 0.02
+ANTE_ADVANCE_REWARD = 0.15
+ANTE_ADVANCE_EXPONENT = 1.0
+INTEREST_BONUS_SCALE = 0.02
 
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
@@ -59,26 +47,26 @@ IDLE_PENALTY_CAP = 0.02
 # every projection in ConsumableFlatHead receiving gradient every time
 # any consumable is used — so we keep a single small pull toward
 # engaging with targeting consumables at all while the BC prior warms up.
-CONSUMABLE_TARGETED_USE_REWARD = 0.1
+CONSUMABLE_TARGETED_USE_REWARD = 0.05
 # Flat penalty for selling jokers or consumables in the shop. The policy
 # found it could cash out inventory every shop for free dollars without
 # ever engaging with scaling mechanics; a small friction makes that
 # pattern unprofitable while still letting legitimate sells through if
 # follow-up shaping dominates.
-SHOP_SELL_PENALTY = 0.05
+SHOP_SELL_PENALTY = 0.03
 # Flat reward for rerolling the shop. Reroll is the main engine-building
 # lever (swap junk for jokers that actually scale) but costs $5+, so the
 # policy avoided it in favor of buying whatever was on the shelf. Action
 # is only valid when the agent can afford it, so this can't trigger when
 # cash-starved.
-SHOP_REROLL_REWARD = 0.08
+SHOP_REROLL_REWARD = 0.04
 # Penalty for skipping a Tarot pack when it contains at least one real
 # deck-fixing/economy target. Standard packs are handled separately below:
 # once the deck is already over 52 cards, adding random playing cards is a
 # liability unless the deck is already fixed.
-TAROT_SKIP_FIXING_PENALTY = 0.12
-PLANET_SKIP_PENALTY = 0.08
-PLANET_FOOL_OVERWRITE_PENALTY = 0.12
+TAROT_SKIP_FIXING_PENALTY = 0.08
+PLANET_SKIP_PENALTY = 0.05
+PLANET_FOOL_OVERWRITE_PENALTY = 0.08
 STANDARD_OVERFULL_CARD_BASE_PENALTY = 0.03
 STANDARD_OVERFULL_CARD_EXPONENT = 0.35
 STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
@@ -88,8 +76,35 @@ STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
 # terminating sooner — staying alive and playing well is the only path
 # to accumulating the bonus. Negative shaping created a die-fast
 # pathology in the v1 run; positive shaping flips the incentive.
-HAND_SUBSET_BONUS_SCALE = 0.3
-PLANET_MATCH_BONUS = 0.2
+HAND_SUBSET_BONUS_SCALE = 0.1
+HAND_TOP1_BONUS = 0.12
+HAND_TOP3_BONUS = 0.05
+PLANET_MATCH_BONUS = 0.08
+PLANET_PLAYED_HAND_BONUS = 0.04
+
+REWARD_COMPONENT_NAMES = (
+    "terminal",
+    "score_progress",
+    "pressure_progress",
+    "blind_clear",
+    "hands_bonus",
+    "ante_bonus",
+    "interest_bonus",
+    "idle_penalty",
+    "consumable_targeted_use",
+    "shop_sell_penalty",
+    "shop_reroll_reward",
+    "tarot_skip_penalty",
+    "planet_skip_penalty",
+    "planet_fool_overwrite_penalty",
+    "standard_overfull_penalty",
+    "hand_subset_bonus",
+    "hand_top1_bonus",
+    "hand_top3_bonus",
+    "planet_match_bonus",
+    "planet_played_hand_bonus",
+)
+REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
 
 _FIXED_DECK_SIGNATURE_SHARE = 0.70
 _FIXED_DECK_MIN_SIGNATURE_COUNT = 8
@@ -120,6 +135,24 @@ class RewardFn(Protocol):
         terminated: bool,
         won: bool,
     ) -> float: ...
+
+
+def pretraining_outcome_value(
+    *,
+    won: bool,
+    ante: int,
+    win_ante: int = 8,
+    stalled: bool = False,
+) -> float:
+    """Terminal value target used by both supervised fallback and PPO rewards."""
+    if won:
+        return PRETRAIN_WIN_VALUE
+
+    capped_ante = min(max(int(ante), 1), max(int(win_ante), 1))
+    value = PRETRAIN_LOSS_BASE + PRETRAIN_ANTE_PROGRESS_VALUE * capped_ante
+    if stalled:
+        value -= PRETRAIN_STALL_EXTRA_PENALTY
+    return value
 
 
 def _blind_pressure(info: dict, *, cleared_blind: bool = False) -> float | None:
@@ -159,41 +192,19 @@ def default_reward_components(
     won: bool,
 ) -> dict[str, float]:
     """Return the default reward broken down into named components."""
-    components = {
-        "terminal": 0.0,
-        "score_progress": 0.0,
-        "pressure_progress": 0.0,
-        "blind_clear": 0.0,
-        "hands_bonus": 0.0,
-        "ante_bonus": 0.0,
-        "interest_bonus": 0.0,
-        "idle_penalty": 0.0,
-        "consumable_targeted_use": 0.0,
-        "shop_sell_penalty": 0.0,
-        "shop_reroll_reward": 0.0,
-        "tarot_skip_penalty": 0.0,
-        "planet_skip_penalty": 0.0,
-        "planet_fool_overwrite_penalty": 0.0,
-        "standard_overfull_penalty": 0.0,
-        "hand_subset_bonus": 0.0,
-        "planet_match_bonus": 0.0,
-    }
+    components = {name: 0.0 for name in REWARD_COMPONENT_NAMES}
 
     if terminated or curr_info.get("stalled", False):
-        if won:
-            components["terminal"] += WIN_REWARD
-        else:
-            # Keep terminal outcomes larger than the dense shaping terms so
-            # PPO cannot maximize local progress while still losing every run.
-            # Scale penalty by how many antes short of the win target we died
-            # at, so an early death is strictly worse than pushing deeper.
-            loss_penalty = LOSS_PENALTY_BASE
-            death_ante = int(curr_info.get("ante", state.round_resets.ante))
-            antes_unfinished = max(0, state.win_ante - death_ante)
-            loss_penalty -= LOSS_PER_UNFINISHED_ANTE * antes_unfinished
-            if curr_info.get("stalled", False):
-                loss_penalty -= STALL_EXTRA_PENALTY
-            components["terminal"] += loss_penalty
+        death_ante = int(curr_info.get("ante", state.round_resets.ante))
+        win_ante = int(getattr(state, "win_ante", 8) or 8)
+        # Store in raw component units because the common exit path applies
+        # REWARD_SCALE to every component.
+        components["terminal"] += pretraining_outcome_value(
+            won=won,
+            ante=death_ante,
+            win_ante=win_ante,
+            stalled=bool(curr_info.get("stalled", False)),
+        ) / REWARD_SCALE
         for key in components:
             components[key] *= REWARD_SCALE
         components["total"] = sum(components.values())
@@ -243,13 +254,21 @@ def default_reward_components(
         ratio = curr_info.get("hand_play_candidate_value_ratio")
         if ratio is not None:
             components["hand_subset_bonus"] += HAND_SUBSET_BONUS_SCALE * float(ratio)
+        if curr_info.get("hand_play_top1", False):
+            components["hand_top1_bonus"] += HAND_TOP1_BONUS
+        elif curr_info.get("hand_play_top3", False):
+            components["hand_top3_bonus"] += HAND_TOP3_BONUS
 
-    # Planet match bonus: planet used and its hand_type matches the
-    # agent's main played hand type. Mismatches get nothing.
-    if curr_info.get("planet_use_observed", False) and bool(
-        curr_info.get("planet_use_main_hand_match", False)
-    ):
-        components["planet_match_bonus"] += PLANET_MATCH_BONUS
+    # Planet alignment bonus: rewards using or claiming planets that match
+    # already-played hand types, with extra weight for the main hand. This is
+    # deliberately state-conditional so random planet use does not get paid.
+    for prefix in ("planet_use", "planet_claim"):
+        if not curr_info.get(f"{prefix}_observed", False):
+            continue
+        if curr_info.get(f"{prefix}_played_hand", False):
+            components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
+        if curr_info.get(f"{prefix}_main_hand_match", False):
+            components["planet_match_bonus"] += PLANET_MATCH_BONUS
 
     if action_type in ("shop_sell_joker", "shop_sell_consumable"):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY

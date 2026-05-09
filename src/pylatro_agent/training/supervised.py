@@ -23,6 +23,7 @@ from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
 from ..constants import NUM_ACTIONS
 from ..distributions import MaskedCategorical
+from ..reward import pretraining_outcome_value
 from ..survival import compute_ante_survival_targets
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
@@ -329,7 +330,13 @@ def _collate_batch(records: list[dict], device: torch.device) -> dict[str, torch
         ),
         "value_target": torch.tensor(
             [
-                r.get("return_target", 10.0 if r["won"] else (-10.0 + min(r.get("max_ante", 1), 8) * 1.0))
+                r.get(
+                    "return_target",
+                    pretraining_outcome_value(
+                        won=bool(r["won"]),
+                        ante=int(r.get("max_ante", 1)),
+                    ),
+                )
                 for r in records
             ],
             dtype=torch.float32, device=device,

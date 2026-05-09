@@ -89,6 +89,7 @@ class Tokenizer:
         sub_phase: SubPhase,
         selected_cards: set[int] | None = None,
         action_mask: np.ndarray | None = None,
+        round_score: int = 0,
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -132,6 +133,12 @@ class Tokenizer:
         scalars[5] = float(state.current_round.discards_left)
         scalars[6] = float(state.current_round.hand_size)
         scalars[7] = float(self._sub_phase_id(sub_phase))
+        blind_target = float(self._blind_target(state))
+        round_score_f = max(float(round_score), 0.0)
+        score_remaining = max(blind_target - round_score_f, 0.0)
+        scalars[8] = sign_log(round_score_f)
+        scalars[9] = sign_log(score_remaining)
+        scalars[10] = min(round_score_f / max(blind_target, 1.0), 1.0)
 
         pos = DECK_START
         hand_cards = state.hand_cards

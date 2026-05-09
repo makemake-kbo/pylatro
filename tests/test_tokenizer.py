@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from pylatro import create_run_state, load_game_data, select_blind, start_blind
-from pylatro_agent.constants import MAX_HAND_SIZE, MAX_SEQ_LEN, TOKEN_DIM, SubPhase, TokenType
+from pylatro_agent.constants import MAX_HAND_SIZE, MAX_SEQ_LEN, SCALAR_DIM, TOKEN_DIM, SubPhase, TokenType
 from pylatro_agent.tokenizer import Tokenizer, sign_log
 from pylatro_agent.vocab import build_vocab
 
@@ -42,6 +42,7 @@ def test_tokenize_shape(run_state, vocab):
 
     assert obs.tokens.shape == (MAX_SEQ_LEN, TOKEN_DIM)
     assert obs.token_types.shape == (MAX_SEQ_LEN,)
+    assert obs.scalars.shape == (SCALAR_DIM,)
     assert obs.attention_mask.shape == (MAX_SEQ_LEN,)
     assert obs.selected_cards.shape == (MAX_HAND_SIZE,)
 
@@ -88,3 +89,13 @@ def test_tokenize_blind_select_tokens(game_data, vocab):
     # Should have blind select tokens
     blind_types = obs.token_types[99:102]
     assert (blind_types == TokenType.BLIND_SELECT).sum() > 0
+
+
+def test_tokenize_includes_round_score_context(run_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(run_state, SubPhase.CHOOSE_ACTION, round_score=125)
+    blind_target = tok._blind_target(run_state)
+
+    assert obs.scalars[8] == pytest.approx(sign_log(125.0))
+    assert obs.scalars[9] == pytest.approx(sign_log(max(blind_target - 125.0, 0.0)))
+    assert obs.scalars[10] == pytest.approx(min(125.0 / max(blind_target, 1.0), 1.0))

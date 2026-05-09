@@ -56,6 +56,8 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4, help="PPO learning rate (default: 1e-4)")
     parser.add_argument("--d-model", type=int, default=384, help="Model dimension (default: 384)")
     parser.add_argument("--n-layers", type=int, default=12, help="Transformer layers (default: 12)")
+    parser.add_argument("--n-heads", type=int, default=8, help="Transformer attention heads (default: 8)")
+    parser.add_argument("--d-ff", type=int, default=1536, help="Transformer feed-forward dimension (default: 1536)")
     parser.add_argument(
         "--checkpoint-dir",
         type=str,
@@ -82,7 +84,7 @@ def main():
         default=50,
         help="PPO checkpoint interval in updates (default: 50)",
     )
-    parser.add_argument("--eval-interval", type=int, default=50, help="PPO eval interval in updates (default: 50)")
+    parser.add_argument("--eval-interval", type=int, default=5, help="PPO eval interval in updates (default: 5)")
     parser.add_argument(
         "--max-idle-steps",
         type=int,
@@ -92,14 +94,48 @@ def main():
     parser.add_argument(
         "--target-entropy",
         type=float,
-        default=0.5,
-        help="PPO target normalized entropy ratio in [0, 1] (default: 0.5)",
+        default=0.15,
+        help="PPO target normalized entropy ratio in [0, 1] when adaptive entropy is enabled (default: 0.15)",
+    )
+    parser.add_argument(
+        "--win-ante",
+        type=int,
+        default=None,
+        help=(
+            "Curriculum: cap the run's victory ante below the engine default of 8. "
+            "Heuristic-teacher win rates: ~39%% at ante 4, ~12%% at 5, ~2%% at 6, "
+            "~1%% at 8. Lower values give PPO frequent positive-reward terminals "
+            "to learn from; raise as the policy improves. Default: engine default (8)."
+        ),
+    )
+    parser.add_argument(
+        "--eval-games",
+        type=int,
+        default=50,
+        help="Games per PPO eval pass (default: 50). Wins are rare; small samples are noisy.",
+    )
+    parser.add_argument(
+        "--rollout-temperature",
+        type=float,
+        default=0.7,
+        help=(
+            "Softmax temperature applied at all PPO distribution sites (rollout sampling, "
+            "training forward pass, value bootstraps). <1 sharpens the policy so sampled "
+            "trajectories actually finish blinds and PPO sees positive-advantage rollouts. "
+            "Set to 1.0 to disable sharpening (default: 0.7)."
+        ),
     )
     parser.add_argument(
         "--entropy-coeff",
         type=float,
-        default=0.01,
-        help="PPO entropy coefficient; set to 0 with --no-adaptive-entropy for ablation (default: 0.01)",
+        default=0.001,
+        help="PPO entropy coefficient (default: 0.001)",
+    )
+    parser.add_argument(
+        "--target-kl",
+        type=float,
+        default=0.03,
+        help="Stop each PPO epoch early when approximate KL exceeds this value; <=0 disables (default: 0.03)",
     )
     parser.add_argument(
         "--entropy-ema-beta",
@@ -116,13 +152,18 @@ def main():
     parser.add_argument(
         "--action-type-entropy-scale",
         type=float,
-        default=0.5,
-        help="Extra PPO bonus scale for normalized entropy over action types (default: 0.5)",
+        default=0.0,
+        help="Extra PPO bonus scale for normalized entropy over action types (default: 0.0)",
+    )
+    parser.add_argument(
+        "--adaptive-entropy",
+        action="store_true",
+        help="Enable adaptive entropy tuning. Disabled by default to preserve pretrained policies.",
     )
     parser.add_argument(
         "--no-adaptive-entropy",
         action="store_true",
-        help="Disable adaptive entropy tuning and keep entropy coefficient fixed",
+        help="Deprecated compatibility flag; adaptive entropy is disabled unless --adaptive-entropy is passed.",
     )
     parser.add_argument(
         "--gamma",
@@ -146,6 +187,31 @@ def main():
         type=float,
         default=0.03,
         help="Floor for the distillation coefficient after linear decay (default: 0.03).",
+    )
+    parser.add_argument(
+        "--teacher-rollout-prob",
+        type=float,
+        default=0.0,
+        help=(
+            "Probability of executing the heuristic action during PPO rollout collection "
+            "when available. Useful for curriculum/DAgger-style smoke runs; default keeps "
+            "strict sampled-policy rollouts."
+        ),
+    )
+    parser.add_argument(
+        "--dagger-bc-epochs",
+        type=int,
+        default=0,
+        help=(
+            "Online DAgger behavior-cloning epochs over each PPO rollout before the PPO update. "
+            "Teacher-forced samples are imitation-only for policy learning. Default: 0."
+        ),
+    )
+    parser.add_argument(
+        "--dagger-bc-coeff",
+        type=float,
+        default=1.0,
+        help="Multiplier for the online DAgger BC loss, applied on top of current distill coeff (default: 1.0).",
     )
     parser.add_argument(
         "--inference-checkpoint",
@@ -197,7 +263,7 @@ def main():
     logging.info(f"Using device: {device}")
 
     from pylatro_agent.agent import AgentConfig
-    agent_config = AgentConfig(d_model=args.d_model, n_layers=args.n_layers)
+    agent_config = AgentConfig(d_model=args.d_model, n_layers=args.n_layers, n_heads=args.n_heads, d_ff=args.d_ff)
 
     checkpoint_dir = args.checkpoint_dir
     log_dir = args.log_dir
@@ -238,7 +304,8 @@ def main():
                 eval_interval=args.eval_interval,
                 max_no_progress_steps=args.max_idle_steps,
                 entropy_coeff=args.entropy_coeff,
-                adaptive_entropy=not args.no_adaptive_entropy,
+                target_kl=None if args.target_kl <= 0.0 else args.target_kl,
+                adaptive_entropy=args.adaptive_entropy and not args.no_adaptive_entropy,
                 target_entropy=args.target_entropy,
                 entropy_ema_beta=args.entropy_ema_beta,
                 alpha_lr=args.alpha_lr,
@@ -247,6 +314,12 @@ def main():
                 async_envs=not args.sync_envs,
                 heuristic_distill_coeff=args.heuristic_distill_coeff,
                 heuristic_distill_min=args.heuristic_distill_min,
+                teacher_rollout_prob=args.teacher_rollout_prob,
+                dagger_bc_epochs=args.dagger_bc_epochs,
+                dagger_bc_coeff=args.dagger_bc_coeff,
+                rollout_temperature=args.rollout_temperature,
+                win_ante=args.win_ante,
+                eval_games=args.eval_games,
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

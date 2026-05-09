@@ -57,7 +57,7 @@ class MetaEmbedding(nn.Module):
         self.ante_emb = nn.Embedding(12, d_model)
         self.blind_type_emb = nn.Embedding(4, d_model)
         self.boss_emb = nn.Embedding(35, d_model)
-        self.target_proj = nn.Linear(1, d_model)
+        self.target_proj = nn.Linear(4, d_model)
         self.hands_proj = nn.Linear(1, d_model)
         self.discards_proj = nn.Linear(1, d_model)
         self.handsize_proj = nn.Linear(1, d_model)
@@ -76,7 +76,16 @@ class MetaEmbedding(nn.Module):
         bt = tokens[:, 3, 0] // 100
         boss = tokens[:, 3, 0] % 100
         out[:, 3] = self.blind_type_emb(bt.clamp(0, 3)) + self.boss_emb(boss.clamp(0, 34))
-        out[:, 4] = self.target_proj(scalars[:, 3:4])
+        target_context = torch.cat(
+            [
+                scalars[:, 3:4],   # blind target
+                scalars[:, 8:9],   # current round score
+                scalars[:, 9:10],  # remaining score needed
+                scalars[:, 10:11], # blind progress ratio
+            ],
+            dim=-1,
+        )
+        out[:, 4] = self.target_proj(target_context)
         out[:, 5] = self.hands_proj(scalars[:, 4:5])
         out[:, 6] = self.discards_proj(scalars[:, 5:6])
         out[:, 7] = self.handsize_proj(scalars[:, 6:7])

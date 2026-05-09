@@ -9,12 +9,12 @@ from enum import IntEnum, StrEnum
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-TOKENIZER_VERSION = 1
+TOKENIZER_VERSION = 2
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = 13
-SCALAR_DIM = 8  # reserved for future continuous scalar features
+SCALAR_DIM = 11  # continuous scalar features
 
 MAX_HAND_SIZE = 16
 MAX_JOKER_SLOTS = 8

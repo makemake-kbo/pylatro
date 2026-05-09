@@ -155,6 +155,11 @@ def test_distill_weights_default_to_one() -> None:
     assert (buffer.distill_weights == 1.0).all()
 
 
+def test_teacher_forced_default_false() -> None:
+    buffer = RolloutBuffer(num_envs=2, rollout_length=2)
+    assert not buffer.teacher_forced.any()
+
+
 def test_distill_weights_round_trip_through_add_batch() -> None:
     import torch
 
@@ -181,3 +186,30 @@ def test_distill_weights_round_trip_through_add_batch() -> None:
     weight_tensor = batches[0]["distill_weights"]
     assert weight_tensor.dtype == torch.float32
     assert sorted(weight_tensor.tolist()) == [1.0, 3.0]
+
+
+def test_teacher_forced_round_trip_through_add_batch() -> None:
+    import torch
+
+    buffer = RolloutBuffer(num_envs=2, rollout_length=1, gamma=0.99, gae_lambda=0.95)
+    teacher_forced = np.array([True, False], dtype=np.bool_)
+    buffer.add_batch(
+        step=0,
+        obs=_dummy_obs(num_envs=2),
+        actions=np.array([0, 0], dtype=np.int64),
+        rewards=np.array([0.0, 0.0], dtype=np.float32),
+        values=np.array([0.0, 0.0], dtype=np.float32),
+        log_probs=np.array([0.0, 0.0], dtype=np.float32),
+        terminated=np.array([False, False]),
+        truncated=np.array([False, False]),
+        teacher_forced=teacher_forced,
+    )
+
+    assert buffer.teacher_forced[0]
+    assert not buffer.teacher_forced[1]
+
+    buffer.compute_returns_and_advantages(last_values=np.array([0.0, 0.0], dtype=np.float32))
+    batches = buffer.get_batches(batch_size=4, device=torch.device("cpu"))
+    forced_tensor = batches[0]["teacher_forced"]
+    assert forced_tensor.dtype == torch.bool
+    assert sorted(forced_tensor.tolist()) == [False, True]

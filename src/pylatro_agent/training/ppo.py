@@ -19,6 +19,7 @@ from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..env import BalatroEnv
+from ..reward import REWARD_INFO_KEYS
 from ..survival import compute_ante_survival_targets
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
@@ -67,7 +68,7 @@ _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
 
 
 def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
-    """Load checkpoint, handling DataParallel prefix mismatch and head shape drift."""
+    """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift."""
     from ..checkpoint import load_checkpoint_payload
     state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
 
@@ -87,6 +88,17 @@ def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: 
     }
     missing = sorted(set(model_state) - set(compatible))
     skipped = sorted(set(state_dict) - set(compatible))
+    compatible_params = sum(value.numel() for value in compatible.values())
+    model_params = sum(value.numel() for value in model_state.values())
+    compatible_fraction = compatible_params / max(model_params, 1)
+    if compatible_fraction < 0.8:
+        examples = ", ".join(skipped[:5])
+        raise RuntimeError(
+            f"Checkpoint {checkpoint_path} is architecture-incompatible with the current PPO model: "
+            f"only {compatible_fraction:.1%} of model parameters have matching tensor shapes. "
+            "Pass the matching --d-model/--n-layers/--n-heads/--d-ff values for this checkpoint or retrain with the "
+            f"current architecture. Example skipped tensors: {examples}"
+        )
     model.load_state_dict(compatible, strict=False)
     if missing:
         logger.warning("Checkpoint missing %d params after compatibility filter", len(missing))
@@ -100,6 +112,7 @@ def _make_env(
     data: GameData,
     vocab: Vocab,
     max_no_progress_steps: int,
+    win_ante: int | None,
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
     def _thunk():
@@ -109,6 +122,7 @@ def _make_env(
             data=data,
             vocab=vocab,
             max_steps=max_no_progress_steps,
+            win_ante=win_ante,
         )
     return _thunk
 
@@ -120,11 +134,12 @@ def _make_vectorized_envs(
     stake: int = 1,
     max_no_progress_steps: int = 256,
     use_async: bool = True,
+    win_ante: int | None = None,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
 
-    env_fns = [_make_env(i, stake, data, vocab, max_no_progress_steps) for i in range(num_envs)]
+    env_fns = [_make_env(i, stake, data, vocab, max_no_progress_steps, win_ante) for i in range(num_envs)]
 
     if use_async and num_envs > 1:
         return gymnasium.vector.AsyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
@@ -142,27 +157,38 @@ class PPOConfig:
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1
-    entropy_coeff: float = 0.01
-    adaptive_entropy: bool = True
-    target_entropy: float = 0.5  # Keep broader search in high-branching phases.
+    target_kl: float | None = 0.03
+    entropy_coeff: float = 0.001
+    adaptive_entropy: bool = False
+    target_entropy: float = 0.15
     alpha_lr: float = 1e-2
     alpha_min: float = 0.001
-    alpha_max: float = 0.2
+    alpha_max: float = 0.05
     entropy_ema_beta: float = 0.6
-    action_type_entropy_scale: float = 0.5
+    action_type_entropy_scale: float = 0.0
     value_loss_coeff: float = 0.25
     max_grad_norm: float = 0.5
     lr: float = 1e-4
     device: str = "cpu"
     save_dir: str = "checkpoints/ppo"
     log_dir: str = "runs/ppo"
-    eval_interval: int = 50
+    eval_interval: int = 5
     log_interval: int = 10
     checkpoint_interval: int = 50
-    eval_games: int = 10
+    # Wins are rare even for the heuristic (~1% at ante 8, ~12% at ante 5,
+    # ~39% at ante 4). 10 eval games can't measure rare-event winrate; bump
+    # the default so eval/win_rate has signal to compare against.
+    eval_games: int = 50
+    # Curriculum: cap the run's victory threshold below the engine default
+    # (8). Heuristic-teacher win rates by ante are ~39% at 4, ~12% at 5,
+    # ~2% at 6. Set to None for the standard ante-8 victory condition.
+    win_ante: int | None = None
     max_no_progress_steps: int = 256
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
-    normalize_returns: bool = True  # Running mean/std normalization for value targets
+    normalize_returns: bool = False  # BC pretraining supervises expected_score on raw ±10-ish
+    # returns; turning on running-mean/std normalization here causes a one-rollout GAE
+    # corruption window the first time rms.std deviates from 1, which is enough to wreck a
+    # pretrained policy. Keep the value head in raw reward space.
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
     # Continuous distillation from the heuristic teacher. At each step the
     # env emits HeuristicAgent.select_action(...) into info["teacher_action"];
@@ -172,10 +198,31 @@ class PPOConfig:
     # forward pass through a second model.
     heuristic_distill_coeff: float = 0.3
     heuristic_distill_min: float = 0.03
+    # During curriculum smoke/training, execute the heuristic action with this
+    # probability when the env exposes one. The transition still stores the
+    # policy log-prob of that action, so PPO and distillation both train on the
+    # successful trajectory instead of waiting for a sampled policy to stumble
+    # into sparse wins. Keep at 0.0 for strictly on-policy PPO.
+    teacher_rollout_prob: float = 0.0
+    # Sharpens the on-policy distribution for both rollout sampling and PPO loss
+    # computation. The BC-pretrained policy at temperature=1 has chosen_action_prob ≈ 0.5
+    # over ~250 valid actions per state, which means a 30-step sampled episode has ~0.5^30
+    # probability of even matching its own greedy trajectory — sampled rollouts essentially
+    # never win and PPO sees no positive advantage to lock onto. Sharpening the distribution
+    # by a fixed factor at all sites (rollout, train forward, truncation bootstrap) keeps
+    # PPO consistent — old_log_probs and new_log_probs are computed under the same
+    # distribution — while letting the agent take competent actions in rollouts. Set to 1.0
+    # to disable; lower for more deterministic behavior.
+    rollout_temperature: float = 0.7
     # Weight on the ante_survival auxiliary BCE loss. Small by default —
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
     survival_loss_coeff: float = 0.05
+    # Optional DAgger-style behavior cloning pass over the freshly collected
+    # online states before each PPO update. This uses teacher labels only and
+    # does not treat teacher-forced actions as on-policy PPO samples.
+    dagger_bc_epochs: int = 0
+    dagger_bc_coeff: float = 1.0
 
 
 @dataclass
@@ -193,6 +240,9 @@ class _UpdateStats:
     distill_losses: list[float]
     teacher_match_fractions: list[float]
     distill_weight_means: list[float]
+    on_policy_fractions: list[float]
+    dagger_losses: list[float] = field(default_factory=list)
+    dagger_teacher_match_fractions: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -209,6 +259,7 @@ class _RolloutMetrics:
     steps_since_progress: list[float] = field(default_factory=list)
     chosen_action_probs: list[float] = field(default_factory=list)
     max_action_probs: list[float] = field(default_factory=list)
+    teacher_rollout_used: list[float] = field(default_factory=list)
     done_flags: list[float] = field(default_factory=list)
     terminated_flags: list[float] = field(default_factory=list)
     truncated_flags: list[float] = field(default_factory=list)
@@ -248,6 +299,14 @@ def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor], temp
     )
 
 
+def _value_head_parameters(model: nn.Module) -> list[nn.Parameter]:
+    """Return PPO critic parameters whose losses should not update the shared trunk."""
+    value_head = getattr(_unwrap_model(model), "value_head", None)
+    if value_head is None:
+        return []
+    return [param for param in value_head.parameters() if param.requires_grad]
+
+
 def _validate_ppo_config(config: PPOConfig) -> None:
     """Raise ValueError for invalid combinations; warn on risky ones."""
     if config.log_interval <= 0:
@@ -264,10 +323,20 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("max_no_progress_steps must be positive")
     if config.lr <= 0.0:
         raise ValueError("lr must be positive")
+    if config.rollout_temperature <= 0.0:
+        raise ValueError("rollout_temperature must be positive")
     if config.entropy_coeff < 0.0:
         raise ValueError("entropy_coeff must be non-negative")
+    if config.target_kl is not None and config.target_kl <= 0.0:
+        raise ValueError("target_kl must be positive when set")
+    if not 0.0 <= config.teacher_rollout_prob <= 1.0:
+        raise ValueError("teacher_rollout_prob must be between 0 and 1")
     if config.action_type_entropy_scale < 0.0:
         raise ValueError("action_type_entropy_scale must be non-negative")
+    if config.dagger_bc_epochs < 0:
+        raise ValueError("dagger_bc_epochs must be non-negative")
+    if config.dagger_bc_coeff < 0.0:
+        raise ValueError("dagger_bc_coeff must be non-negative")
     if config.adaptive_entropy:
         if config.entropy_coeff <= 0.0:
             raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
@@ -315,13 +384,19 @@ def _run_ppo_update(
         clip_fracs=[], approx_kls=[],
         valid_action_counts=[], valid_action_type_counts=[],
         distill_losses=[], teacher_match_fractions=[], distill_weight_means=[],
+        on_policy_fractions=[],
     )
 
+    stop_update = False
     for _ppo_epoch in range(config.ppo_epochs):
+        if stop_update:
+            break
         batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
         optimizer.zero_grad()
         for i, batch in enumerate(batches):
-            dist, value_dict = _grammar_distribution(model, batch)
+            dist, value_dict = _grammar_distribution(
+                model, batch, temperature=config.rollout_temperature
+            )
 
             new_log_probs = dist.log_prob(batch["actions"])
             entropy_per_state = dist.entropy()
@@ -336,11 +411,18 @@ def _run_ppo_update(
             # once over the full rollout in buffer.normalize_advantages();
             # per-mini-batch normalization would let rare terminals
             # dominate their batch and crush others to noise.
-            ratio = torch.exp(new_log_probs - batch["old_log_probs"])
+            on_policy = ~batch["teacher_forced"].bool()
+            on_policy_count = on_policy.float().sum()
+            log_ratio = new_log_probs - batch["old_log_probs"]
+            ratio = torch.exp(log_ratio)
             advantages = batch["advantages"]
             surr1 = ratio * advantages
             surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
-            policy_loss = -torch.min(surr1, surr2).mean()
+            ppo_loss_per_state = -torch.min(surr1, surr2)
+            if on_policy_count.item() > 0:
+                policy_loss = (ppo_loss_per_state * on_policy.float()).sum() / on_policy_count
+            else:
+                policy_loss = new_log_probs.sum() * 0.0
 
             # Value loss (normalize targets so critic trains in unit-variance space)
             returns_target = batch["returns"]
@@ -373,21 +455,35 @@ def _run_ppo_update(
             # diverged from the heuristic on a high-stakes decision.
             distill_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
             with torch.no_grad():
-                sampled = batch["actions"]
-                teacher_match = (((sampled == teacher_safe).float() * valid).sum() / valid_count).item()
+                policy_choice = dist.mode() if hasattr(dist, "mode") else batch["actions"]
+                teacher_match = (((policy_choice == teacher_safe).float() * valid).sum() / valid_count).item()
                 distill_weight_mean = (
                     (distill_weights * valid).sum() / valid_count
                 ).item()
 
-            loss = (
+            policy_objective_loss = (
                 policy_loss
-                + config.value_loss_coeff * value_loss
-                + config.survival_loss_coeff * survival_loss
                 - entropy_coeff
                 * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
                 + distill_coeff * distill_loss
             )
-            (loss / accum_steps).backward()
+            critic_loss = config.value_loss_coeff * value_loss + config.survival_loss_coeff * survival_loss
+
+            value_params = _value_head_parameters(model)
+            policy_objective_loss.div(accum_steps).backward(retain_graph=bool(value_params))
+            if value_params:
+                critic_grads = torch.autograd.grad(
+                    critic_loss.div(accum_steps),
+                    value_params,
+                    allow_unused=True,
+                )
+                for param, grad in zip(value_params, critic_grads, strict=True):
+                    if grad is None:
+                        continue
+                    if param.grad is None:
+                        param.grad = grad.detach()
+                    else:
+                        param.grad.add_(grad.detach())
 
             # Step every accum_steps micro-batches (or on last batch)
             if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
@@ -396,8 +492,17 @@ def _run_ppo_update(
                 optimizer.zero_grad()
 
             with torch.no_grad():
-                clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
-                approx_kl = (batch["old_log_probs"] - new_log_probs).mean().item()
+                on_policy_fraction = (on_policy_count / max(1, int(on_policy.numel()))).item()
+                if on_policy_count.item() > 0:
+                    on_policy_float = on_policy.float()
+                    clip_frac = (
+                        (((ratio - 1.0).abs() > config.clip_epsilon).float() * on_policy_float).sum()
+                        / on_policy_count
+                    ).item()
+                    approx_kl = ((((ratio - 1.0) - log_ratio) * on_policy_float).sum() / on_policy_count).item()
+                else:
+                    clip_frac = 0.0
+                    approx_kl = 0.0
                 valid_action_count_mean = valid_action_counts.float().mean().item()
             stats.policy_losses.append(policy_loss.item())
             stats.value_losses.append(value_loss.item())
@@ -412,14 +517,82 @@ def _run_ppo_update(
             stats.distill_losses.append(distill_loss.item())
             stats.teacher_match_fractions.append(teacher_match)
             stats.distill_weight_means.append(distill_weight_mean)
+            stats.on_policy_fractions.append(on_policy_fraction)
+
+            if config.target_kl is not None and approx_kl > config.target_kl:
+                logger.debug(
+                    "Stopping PPO update early: approx_kl=%.5f exceeded target_kl=%.5f",
+                    approx_kl,
+                    config.target_kl,
+                )
+                stop_update = True
+                break
 
     return stats
+
+
+def _run_dagger_bc_update(
+    model: nn.Module,
+    optimizer: Adam,
+    buffer: RolloutBuffer,
+    coeff: float,
+    config: PPOConfig,
+    accum_steps: int,
+    effective_batch_size: int,
+    device: torch.device,
+    use_pin_memory: bool,
+) -> tuple[list[float], list[float]]:
+    """Run online behavior cloning over the rollout states using teacher labels."""
+    if config.dagger_bc_epochs <= 0 or coeff <= 0.0:
+        return [], []
+
+    model.eval()
+    losses: list[float] = []
+    teacher_matches: list[float] = []
+
+    for _epoch in range(config.dagger_bc_epochs):
+        batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
+        optimizer.zero_grad()
+        for i, batch in enumerate(batches):
+            teacher = batch["teacher_actions"]
+            valid = (teacher >= 0).float()
+            valid_count = valid.sum().clamp(min=1.0)
+            if valid.sum().item() <= 0:
+                continue
+
+            dist, _value_dict = _grammar_distribution(
+                model,
+                batch,
+                temperature=config.rollout_temperature,
+            )
+            teacher_safe = teacher.clamp(min=0)
+            teacher_lp = dist.log_prob(teacher_safe)
+            distill_weights = batch["distill_weights"]
+            bc_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
+            (coeff * bc_loss).div(accum_steps).backward()
+
+            if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
+                nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+                optimizer.step()
+                optimizer.zero_grad()
+
+            with torch.no_grad():
+                if hasattr(dist, "mode"):
+                    mode = dist.mode()
+                    teacher_match = (((mode == teacher_safe).float() * valid).sum() / valid_count).item()
+                else:
+                    teacher_match = float("nan")
+            losses.append(bc_loss.item())
+            teacher_matches.append(teacher_match)
+
+    return losses, teacher_matches
 
 
 def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> None:
     """Write the rollout-collected metrics for one update to TensorBoard."""
     writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rm.chosen_action_probs), update_count)
     writer.add_scalar("debug/max_action_prob_mean", _safe_mean(rm.max_action_probs), update_count)
+    writer.add_scalar("debug/teacher_rollout_used_fraction", _safe_mean(rm.teacher_rollout_used), update_count)
     writer.add_scalar("debug/step_reward_mean", _safe_mean(rm.step_rewards), update_count)
     writer.add_scalar("rollout/progress_rate", _safe_mean(rm.progress_flags), update_count)
     writer.add_scalar("rollout/steps_since_progress_mean", _safe_mean(rm.steps_since_progress), update_count)
@@ -832,6 +1005,16 @@ def train_ppo(
             config.heuristic_distill_coeff,
             config.heuristic_distill_min,
         )
+    logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
+                config.rollout_temperature)
+    if config.teacher_rollout_prob > 0.0:
+        logger.info("Teacher-guided rollout probability: %.3f", config.teacher_rollout_prob)
+    if config.dagger_bc_epochs > 0 and config.dagger_bc_coeff > 0.0:
+        logger.info(
+            "Online DAgger BC active (epochs=%d, coeff=%.4f)",
+            config.dagger_bc_epochs,
+            config.dagger_bc_coeff,
+        )
 
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
     if use_multi_gpu:
@@ -850,12 +1033,20 @@ def train_ppo(
         config.num_envs, data, vocab,
         max_no_progress_steps=config.max_no_progress_steps,
         use_async=config.async_envs,
+        win_ante=config.win_ante,
     )
-    obs_dict, _ = vec_env.reset()
+    obs_dict, reset_info = vec_env.reset()
 
     # Pre-allocate obs tensors for batched inference
     obs_buf = _ObsBuffer(config.num_envs, device)
     obs_buf.update(obs_dict)
+    teacher_action_buf = np.asarray(
+        [
+            int(_extract_vector_info_value(reset_info, "teacher_action", idx, -1))
+            for idx in range(config.num_envs)
+        ],
+        dtype=np.int64,
+    )
 
     from torch.utils.tensorboard import SummaryWriter
 
@@ -885,7 +1076,7 @@ def train_ppo(
         "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "
         "ppo_epochs=%d, lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
         "target_entropy=%.3f, alpha_lr=%.2e, action_type_entropy_scale=%.2f, "
-        "max_no_progress_steps=%d, log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
+        "target_kl=%s, max_no_progress_steps=%d, log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
         config.total_timesteps,
         steps_per_update,
         planned_updates,
@@ -896,6 +1087,7 @@ def train_ppo(
         config.target_entropy,
         config.alpha_lr,
         config.action_type_entropy_scale,
+        "None" if config.target_kl is None else f"{config.target_kl:.5f}",
         config.max_no_progress_steps,
         config.log_interval,
         config.checkpoint_interval,
@@ -952,8 +1144,24 @@ def train_ppo(
                     obs_buf.scalars,
                     obs_buf.attention_mask,
                     obs_buf.action_mask,
+                    temperature=config.rollout_temperature,
                 )
                 actions = dist.sample()
+                use_teacher = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
+                if config.teacher_rollout_prob > 0.0:
+                    teacher_actions_t = torch.as_tensor(teacher_action_buf, dtype=torch.long, device=device)
+                    teacher_valid = (
+                        (teacher_actions_t >= 0)
+                        & (teacher_actions_t < NUM_ACTIONS)
+                        & obs_buf.action_mask.gather(
+                            1,
+                            teacher_actions_t.clamp(0, NUM_ACTIONS - 1).unsqueeze(-1),
+                        ).squeeze(-1).bool()
+                    )
+                    use_teacher = (
+                        torch.rand(config.num_envs, device=device) < config.teacher_rollout_prob
+                    ) & teacher_valid
+                    actions = torch.where(use_teacher, teacher_actions_t, actions)
                 log_probs = dist.log_prob(actions)
                 values = value_dict["expected_score"]
                 chosen_action_probs = dist.selected_prob(actions)
@@ -966,6 +1174,7 @@ def train_ppo(
                 values_np = return_rms.denormalize(values_np)
             chosen_action_probs_np = chosen_action_probs.cpu().numpy()
             max_action_probs_np = max_action_probs.cpu().numpy()
+            use_teacher_np = use_teacher.cpu().numpy()
 
             # Step all envs at once
             next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
@@ -996,7 +1205,9 @@ def train_ppo(
                 if truncated_indices:
                     final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
                     with torch.no_grad():
-                        _, truncated_value_dict = _grammar_distribution(model, final_obs_batch)
+                        _, truncated_value_dict = _grammar_distribution(
+                            model, final_obs_batch, temperature=config.rollout_temperature
+                        )
                     truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
                     if return_rms is not None:
                         truncated_vals = return_rms.denormalize(truncated_vals)
@@ -1015,6 +1226,7 @@ def train_ppo(
                 bootstrap_values=bootstrap_values_np,
                 teacher_actions=teacher_actions_np,
                 distill_weights=distill_weights_np,
+                teacher_forced=use_teacher_np,
             )
 
             # Track per-env episode stats
@@ -1023,6 +1235,7 @@ def train_ppo(
             rm.step_rewards.extend(rewards.astype(np.float64).tolist())
             rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
             rm.max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
+            rm.teacher_rollout_used.extend(use_teacher_np.astype(np.float64).tolist())
             rm.done_flags.extend(dones.astype(np.float64).tolist())
             rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
             rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
@@ -1062,26 +1275,7 @@ def train_ppo(
                 rm.steps_since_progress.append(
                     float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
                 )
-                for component_name in (
-                    "reward_total",
-                    "reward_terminal",
-                    "reward_score_progress",
-                    "reward_pressure_progress",
-                    "reward_blind_clear",
-                    "reward_hands_bonus",
-                    "reward_ante_bonus",
-                    "reward_interest_bonus",
-                    "reward_idle_penalty",
-                    "reward_consumable_targeted_use",
-                    "reward_shop_sell_penalty",
-                    "reward_shop_reroll_reward",
-                    "reward_tarot_skip_penalty",
-                    "reward_planet_skip_penalty",
-                    "reward_planet_fool_overwrite_penalty",
-                    "reward_standard_overfull_penalty",
-                    "reward_hand_subset_bonus",
-                    "reward_planet_match_bonus",
-                ):
+                for component_name in REWARD_INFO_KEYS:
                     component_value = _extract_step_info_value(
                         infos,
                         component_name,
@@ -1121,6 +1315,30 @@ def train_ppo(
 
             # Update obs buffer with new observations
             obs_buf.update(next_obs_dict)
+            next_teacher_actions = np.asarray(
+                [
+                    int(_extract_step_info_value(
+                        infos,
+                        "next_teacher_action",
+                        env_idx,
+                        done=bool(dones[env_idx]),
+                        default=-1,
+                    ))
+                    for env_idx in range(config.num_envs)
+                ],
+                dtype=np.int64,
+            )
+            if np.any(dones):
+                for done_idx in np.where(dones)[0]:
+                    reset_teacher = _extract_vector_info_value(
+                        infos,
+                        "teacher_action",
+                        int(done_idx),
+                        _MISSING,
+                    )
+                    if reset_teacher is not _MISSING:
+                        next_teacher_actions[int(done_idx)] = int(reset_teacher)
+            teacher_action_buf = next_teacher_actions
             total_steps += config.num_envs
 
         # Bootstrap values for GAE
@@ -1131,6 +1349,7 @@ def train_ppo(
                 obs_buf.scalars,
                 obs_buf.attention_mask,
                 obs_buf.action_mask,
+                temperature=config.rollout_temperature,
             )
             last_values = value_dict["expected_score"].cpu().numpy()
             if return_rms is not None:
@@ -1149,6 +1368,18 @@ def train_ppo(
             config.heuristic_distill_min,
             config.heuristic_distill_coeff
             - (config.heuristic_distill_coeff - config.heuristic_distill_min) * distill_progress,
+        )
+
+        dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
+            model=model,
+            optimizer=optimizer,
+            buffer=buffer,
+            coeff=config.dagger_bc_coeff * distill_coeff_now,
+            config=config,
+            accum_steps=accum_steps,
+            effective_batch_size=effective_batch_size,
+            device=device,
+            use_pin_memory=use_pin_memory,
         )
 
         update_stats = _run_ppo_update(
@@ -1177,6 +1408,7 @@ def train_ppo(
         update_distill_losses = update_stats.distill_losses
         update_teacher_match_fractions = update_stats.teacher_match_fractions
         update_distill_weight_means = update_stats.distill_weight_means
+        update_on_policy_fractions = update_stats.on_policy_fractions
 
         # Track the normalized entropy signal every update, even with fixed entropy.
         mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -1209,6 +1441,17 @@ def train_ppo(
         writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
         writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
         writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
+        writer.add_scalar("ppo/on_policy_fraction", float(np.mean(update_on_policy_fractions)), update_count)
+        writer.add_scalar(
+            "dagger/bc_loss",
+            float(np.mean(dagger_losses)) if dagger_losses else float("nan"),
+            update_count,
+        )
+        writer.add_scalar(
+            "dagger/teacher_match_fraction",
+            float(np.nanmean(dagger_teacher_match_fractions)) if dagger_teacher_match_fractions else float("nan"),
+            update_count,
+        )
         writer.add_scalar(
             "ppo/teacher_match_fraction",
             float(np.mean(update_teacher_match_fractions)),
@@ -1286,6 +1529,7 @@ def train_ppo(
                 config.eval_games,
                 device,
                 max_no_progress_steps=config.max_no_progress_steps,
+                win_ante=config.win_ante,
             )
             writer.add_scalar("eval/win_rate", win_rate, update_count)
             eval_win_rate = win_rate
@@ -1375,6 +1619,7 @@ def evaluate_model(
     num_games: int,
     device: torch.device,
     max_no_progress_steps: int = 256,
+    win_ante: int | None = None,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games."""
     model.eval()
@@ -1386,6 +1631,7 @@ def evaluate_model(
             data=data,
             vocab=vocab,
             max_steps=max_no_progress_steps,
+            win_ante=win_ante,
         )
         obs, _ = env.reset()
         done = False

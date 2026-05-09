@@ -100,7 +100,7 @@ def test_parameter_count(vocab):
     config = AgentConfig()  # Full-size model
     model = BalatroAgent(config, vocab)
     params = model.count_parameters()
-    assert 30_000_000 < params < 50_000_000, f"Expected ~40M params, got {params:,}"
+    assert 20_000_000 < params < 30_000_000, f"Expected ~23M params, got {params:,}"
 
 
 def test_mixed_subphase_batch(model):

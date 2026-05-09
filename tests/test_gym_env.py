@@ -85,6 +85,48 @@ def test_env_step_returns_teacher_action_in_info(game_data, vocab):
         assert pre_mask[teacher] == 1
 
 
+def test_env_step_marks_exact_teacher_action_match(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100)
+    _obs, info = env.reset()
+    teacher = info["teacher_action"]
+    if teacher < 0:
+        pytest.skip("heuristic did not expose a valid action for this seed")
+
+    _next_obs, _reward, _terminated, _truncated, step_info = env.step(teacher)
+
+    assert step_info["teacher_action"] == teacher
+    assert step_info["teacher_action_match"] is True
+
+
+def test_env_reset_returns_current_teacher_action_in_info(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100)
+    obs, info = env.reset()
+
+    assert "teacher_action" in info
+    teacher = info["teacher_action"]
+    assert isinstance(teacher, int)
+    if teacher >= 0:
+        assert teacher < NUM_ACTIONS
+        assert obs["action_mask"][teacher] == 1
+
+
+def test_env_step_returns_next_teacher_action_for_nonterminal_step(game_data, vocab):
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100)
+    obs, _ = env.reset()
+    action = int(np.where(obs["action_mask"] == 1)[0][0])
+
+    next_obs, _r, terminated, truncated, info = env.step(action)
+
+    assert not terminated
+    assert not truncated
+    assert "next_teacher_action" in info
+    teacher = info["next_teacher_action"]
+    assert isinstance(teacher, int)
+    if teacher >= 0:
+        assert teacher < NUM_ACTIONS
+        assert next_obs["action_mask"][teacher] == 1
+
+
 def test_env_multiple_resets(game_data, vocab):
     """Ensure environment can be reset multiple times."""
     env = BalatroEnv(seed=1, data=game_data, vocab=vocab, max_steps=100)
@@ -115,6 +157,16 @@ def test_env_constructor_seed_is_only_used_for_first_reset(game_data, vocab):
 
     assert first_seed == "7"
     assert second_seed != first_seed
+
+
+def test_env_win_ante_override_is_applied_on_every_reset(game_data, vocab):
+    env = BalatroEnv(seed=7, data=game_data, vocab=vocab, max_steps=100, win_ante=3)
+
+    env.reset()
+    assert env.state.win_ante == 3
+
+    env.reset()
+    assert env.state.win_ante == 3
 
 
 def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
@@ -250,6 +302,16 @@ def test_vector_env_uses_same_step_autoreset(game_data, vocab):
 
     try:
         assert vec_env.metadata["autoreset_mode"] == AutoresetMode.SAME_STEP
+    finally:
+        vec_env.close()
+
+
+def test_vector_env_passes_win_ante_override(game_data, vocab):
+    vec_env = _make_vectorized_envs(1, game_data, vocab, use_async=False, win_ante=2)
+
+    try:
+        vec_env.reset()
+        assert vec_env.envs[0].state.win_ante == 2
     finally:
         vec_env.close()
 

@@ -9,7 +9,6 @@ from pylatro_agent.action_grammar import (
     ActionGrammarDistribution,
     ActionGrammarOutput,
 )
-from pylatro_agent.action import ActionType
 from pylatro_agent.constants import (
     HAND_CANDIDATE_MAX,
     HAND_CANDIDATE_START,
@@ -139,6 +138,60 @@ def test_candidate_scoring_falls_back_when_no_candidates():
 
     assert action_mask[0, sampled.item()] == 1
     assert action_mask[0, greedy.item()] == 1
+
+
+def test_candidate_scoring_maps_play_candidate_to_correct_action():
+    play_indices = [0, 2, 4]
+    play_action = encode_action(ActionType.PLAY_SUBSET, subset_index(play_indices))
+    distractor_action = encode_action(ActionType.PLAY_SUBSET, subset_index([1, 3]))
+
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, play_action] = 1
+    action_mask[0, distractor_action] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+
+    tokens = torch.zeros(1, 160, 13, dtype=torch.long)
+    cand_slot = 0
+    cand_pos = HAND_CANDIDATE_START + cand_slot
+    tokens[0, cand_pos, 0] = 1
+    tokens[0, cand_pos, 2] = len(play_indices)
+    for j, idx in enumerate(play_indices):
+        tokens[0, cand_pos, 5 + j] = idx + 1
+    output.candidate_play_logits[0, cand_slot] = 5.0
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens)
+    greedy = dist.mode()
+    assert greedy.item() == play_action, f"Expected {play_action}, got {greedy.item()}"
+
+
+def test_candidate_scoring_maps_discard_candidate_to_correct_action():
+    discard_indices = [1, 3]
+    discard_action = encode_action(ActionType.DISCARD_SUBSET, subset_index(discard_indices))
+    distractor_action = encode_action(ActionType.DISCARD_SUBSET, subset_index([0, 2]))
+
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, discard_action] = 1
+    action_mask[0, distractor_action] = 1
+
+    output = _blank_output(batch_size=1)
+    discard_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.DISCARD_SUBSET]
+    output.macro_logits[0, discard_idx] = 10.0
+
+    tokens = torch.zeros(1, 160, 13, dtype=torch.long)
+    cand_slot = MAX_PLAY_CANDIDATES
+    cand_pos = HAND_CANDIDATE_START + cand_slot
+    tokens[0, cand_pos, 0] = 2
+    tokens[0, cand_pos, 2] = len(discard_indices)
+    for j, idx in enumerate(discard_indices):
+        tokens[0, cand_pos, 5 + j] = idx + 1
+    output.candidate_discard_logits[0, cand_slot] = 5.0
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens)
+    greedy = dist.mode()
+    assert greedy.item() == discard_action, f"Expected {discard_action}, got {greedy.item()}"
 
 
 def test_head_produces_candidate_logits():

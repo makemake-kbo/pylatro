@@ -710,8 +710,7 @@ class ActionGrammarDistribution:
             return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
 
         cand_idx = cand_idx.clamp(0, HAND_CANDIDATE_MAX - 1)
-        base_offset = 0 if is_play else MAX_PLAY_CANDIDATES
-        token_pos = HAND_CANDIDATE_START + base_offset + cand_idx.long()
+        token_pos = HAND_CANDIDATE_START + cand_idx.long()
 
         batch_arange = torch.arange(self.batch_size, device=self.device)
 

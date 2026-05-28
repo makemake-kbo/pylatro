@@ -16,7 +16,13 @@ from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKE
 from .hand_candidates import generate_hand_candidates
 from .heuristic import HeuristicAgent
 from .masks import compute_action_mask
-from .reward import RewardFn, default_reward, default_reward_components
+from .reward import (
+    DEFAULT_REWARD_CONFIG,
+    RewardConfig,
+    RewardFn,
+    default_reward,
+    default_reward_components,
+)
 from .subset_actions import consumable_subset_indices, subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
@@ -39,6 +45,7 @@ class BalatroEnv(gymnasium.Env):
         objective: str = "win",
         max_steps: int = 2000,
         reward_fn: RewardFn | None = None,
+        reward_config: RewardConfig | None = None,
         data: GameData | None = None,
         vocab: Vocab | None = None,
         win_ante: int | None = None,
@@ -57,6 +64,7 @@ class BalatroEnv(gymnasium.Env):
         # heuristic teacher only wins ~1% at ante 8 but ~39% at ante 4.
         self._win_ante_override = win_ante
         self._reward_fn = reward_fn or default_reward
+        self._reward_config = reward_config or DEFAULT_REWARD_CONFIG
         self._seed = seed
         self._initial_seed_pending = seed is not None
 
@@ -212,7 +220,9 @@ class BalatroEnv(gymnasium.Env):
 
         reward_components: dict[str, float] = {}
         if self._reward_fn is default_reward:
-            reward_components = default_reward_components(state, self._prev_info, curr_info, terminated, won)
+            reward_components = default_reward_components(
+                state, self._prev_info, curr_info, terminated, won, self._reward_config
+            )
             reward = reward_components["total"]
         else:
             reward = self._reward_fn(state, self._prev_info, curr_info, terminated, won)

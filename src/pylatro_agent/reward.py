@@ -345,6 +345,7 @@ def default_reward(
     curr_info: dict,
     terminated: bool,
     won: bool,
+    config: RewardConfig | None = None,
 ) -> float:
     """Default reward shaping function.
 
@@ -356,7 +357,7 @@ def default_reward(
         steps_since_progress: int — idle streak length after the action
         action_type: ActionType — action type taken this step
     """
-    return default_reward_components(state, prev_info, curr_info, terminated, won)["total"]
+    return default_reward_components(state, prev_info, curr_info, terminated, won, config)["total"]
 
 
 def _should_penalize_tarot_skip(state: RunState, prev_info: dict, curr_info: dict) -> bool:

@@ -19,7 +19,7 @@ from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..env import BalatroEnv
-from ..reward import REWARD_INFO_KEYS
+from ..reward import REWARD_INFO_KEYS, RewardConfig
 from ..survival import compute_ante_survival_targets
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
@@ -113,6 +113,7 @@ def _make_env(
     vocab: Vocab,
     max_no_progress_steps: int,
     win_ante: int | None,
+    reward_config: RewardConfig | None = None,
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
     def _thunk():
@@ -123,6 +124,7 @@ def _make_env(
             vocab=vocab,
             max_steps=max_no_progress_steps,
             win_ante=win_ante,
+            reward_config=reward_config,
         )
     return _thunk
 
@@ -135,11 +137,15 @@ def _make_vectorized_envs(
     max_no_progress_steps: int = 256,
     use_async: bool = True,
     win_ante: int | None = None,
+    reward_config: RewardConfig | None = None,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
 
-    env_fns = [_make_env(i, stake, data, vocab, max_no_progress_steps, win_ante) for i in range(num_envs)]
+    env_fns = [
+        _make_env(i, stake, data, vocab, max_no_progress_steps, win_ante, reward_config)
+        for i in range(num_envs)
+    ]
 
     if use_async and num_envs > 1:
         return gymnasium.vector.AsyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
@@ -239,7 +245,15 @@ class PPOConfig:
     # to heuristic_distill_min over this fraction of total training.
     # After the decay completes, distillation is permanently at min.
     # Set to None to disable decay (keep constant distill weight).
+    # To run a true no-teacher fine-tune phase, also set
+    # heuristic_distill_min=0.0.
     distill_decay_fraction: float | None = None
+    # Optional reward shaping override. Threaded through BalatroEnv to
+    # default_reward_components. Use PPO_SPARSE_CONFIG to ablate away
+    # heuristic-derived dense components (hand-candidate top1/top3,
+    # planet match, shop reroll, etc.) while keeping terminal and
+    # progress signals. Defaults to None (DEFAULT_REWARD_CONFIG).
+    reward_config: "RewardConfig | None" = None
 
 
 @dataclass
@@ -1125,6 +1139,7 @@ def train_ppo(
         max_no_progress_steps=config.max_no_progress_steps,
         use_async=config.async_envs,
         win_ante=config.win_ante,
+        reward_config=config.reward_config,
     )
     obs_dict, reset_info = vec_env.reset()
 

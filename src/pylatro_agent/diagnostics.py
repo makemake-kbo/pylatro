@@ -1,0 +1,128 @@
+"""Action-quality diagnostics shared by BalatroEnv and fast_generate.
+
+These functions compute per-step diagnostics (hand_play_*, planet_*,
+pack_skip_*) that default_reward_components reads as shaping inputs.
+Kept here — rather than on BalatroEnv — so fast_generate can produce
+the same diagnostic fields without depending on gymnasium.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .action import ActionType
+from .hand_candidates import generate_hand_candidates
+from .subset_actions import subset_indices
+
+
+def _center_key(card) -> str:
+    return str(getattr(card, "center_key", "") or "")
+
+
+def _center_set(state, center_key: str) -> str:
+    center = state.data.centers.get(center_key, {})
+    return str(center.get("set", "") or "")
+
+
+def _planet_hand_type(state, center_key: str) -> str:
+    center = state.data.centers.get(center_key, {})
+    config = center.get("config", {}) or {}
+    return str(config.get("hand_type", "") or "")
+
+
+def _main_hand_proxy(state) -> str:
+    rows: list[tuple[int, int, float, str]] = []
+    for name, hand in state.hands.items():
+        rows.append((
+            int(hand.get("played", 0) or 0),
+            int(hand.get("level", 1) or 1),
+            float(hand.get("chips", 0) or 0) * float(hand.get("mult", 1) or 1),
+            str(name),
+        ))
+    rows.sort(reverse=True)
+    if not rows or rows[0][0] <= 0:
+        return ""
+    return rows[0][3]
+
+
+def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any]:
+    hand_type = _planet_hand_type(state, center_key)
+    main_hand = _main_hand_proxy(state)
+    hand_info = state.hands.get(hand_type, {}) if hand_type else {}
+    return {
+        f"{prefix}_observed": True,
+        f"{prefix}_key": center_key,
+        f"{prefix}_hand_type": hand_type,
+        f"{prefix}_played_hand": bool(hand_info.get("played", 0) if hand_info else False),
+        f"{prefix}_main_hand": main_hand,
+        f"{prefix}_main_hand_match": bool(hand_type and hand_type == main_hand),
+    }
+
+
+def action_diagnostics(state, decoded) -> dict[str, Any]:
+    """Return policy-quality diagnostics for the pre-action state.
+
+    Mirrors the env's _action_diagnostics — when this returns fields,
+    default_reward_components reads them to award candidate / planet /
+    pack-skip shaping bonuses. fast_generate calls this so its value-
+    head BC targets see the same reward signal as PPO.
+    """
+    if state is None:
+        return {}
+
+    if decoded.action_type == ActionType.PLAY_SUBSET:
+        diagnostics: dict[str, Any] = {"hand_play_observed": True}
+        indices = tuple(subset_indices(decoded.index))
+        if any(index >= len(state.hand_cards) for index in indices):
+            diagnostics["hand_play_not_in_candidates"] = True
+            return diagnostics
+        play_candidates, _discard_candidates = generate_hand_candidates(state)
+        if not play_candidates:
+            diagnostics["hand_play_not_in_candidates"] = True
+            return diagnostics
+
+        chosen = next(
+            (candidate for candidate in play_candidates if candidate.indices == indices),
+            None,
+        )
+        if chosen is None:
+            diagnostics["hand_play_not_in_candidates"] = True
+            diagnostics["hand_play_best_hand"] = play_candidates[0].hand_name
+            return diagnostics
+
+        best = play_candidates[0]
+        diagnostics.update({
+            "hand_play_in_candidates": True,
+            "hand_play_top1": chosen.indices == best.indices,
+            "hand_play_top3": any(c.indices == chosen.indices for c in play_candidates[:3]),
+            "hand_play_candidate_value_ratio": float(
+                chosen.estimated_score / max(best.estimated_score, 1e-9)
+            ),
+            "hand_play_chosen_hand": chosen.hand_name,
+            "hand_play_best_hand": best.hand_name,
+        })
+        return diagnostics
+
+    if decoded.action_type == ActionType.USE_CONSUMABLE_NO_TARGET:
+        if decoded.index >= len(state.consumables):
+            return {}
+        center_key = _center_key(state.consumables[decoded.index])
+        if _center_set(state, center_key) != "Planet":
+            return {}
+        return _planet_diagnostics(state, center_key, prefix="planet_use")
+
+    if decoded.action_type == ActionType.PACK_CLAIM:
+        if state.pack is None or decoded.index >= len(state.pack.cards):
+            return {}
+        center_key = _center_key(state.pack.cards[decoded.index])
+        if _center_set(state, center_key) != "Planet":
+            return {}
+        return _planet_diagnostics(state, center_key, prefix="planet_claim")
+
+    if decoded.action_type == ActionType.PACK_SKIP and state.pack is not None:
+        return {
+            "pack_skip_state_name": state.pack.state_name,
+            "planet_pack_skip": state.pack.state_name == "PLANET_PACK",
+        }
+
+    return {}

@@ -23,7 +23,6 @@ from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GamePhase
 
 from ..action import decode_action
-from ..hand_candidates import generate_hand_candidates
 from ..heuristic import HeuristicAgent
 from ..reward import default_reward
 from ..survival import compute_ante_survival_targets
@@ -176,38 +175,17 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
 
 
 def _fast_action_diagnostics(state, decoded) -> dict[str, Any]:
-    from ..action import ActionType
-    from ..subset_actions import subset_indices
+    """Compute per-step diagnostics for default_reward shaping.
 
-    if decoded.action_type == ActionType.PLAY_SUBSET:
-        diagnostics: dict[str, Any] = {"hand_play_observed": True}
-        indices = tuple(subset_indices(decoded.index))
-        if any(index >= len(state.hand_cards) for index in indices):
-            diagnostics["hand_play_not_in_candidates"] = True
-            return diagnostics
-        play_candidates, _discard_candidates = generate_hand_candidates(state)
-        if not play_candidates:
-            diagnostics["hand_play_not_in_candidates"] = True
-            return diagnostics
+    Delegates to the shared diagnostics module so PPO (BalatroEnv) and
+    BC pretraining (fast_generate) emit the same hand-play, planet,
+    and pack-skip fields. Without this alignment the value head was
+    pretrained on a different reward function than PPO sees, weakening
+    GAE and value bootstrapping.
+    """
+    from ..diagnostics import action_diagnostics
 
-        chosen = next((c for c in play_candidates if c.indices == indices), None)
-        if chosen is None:
-            diagnostics["hand_play_not_in_candidates"] = True
-            diagnostics["hand_play_best_hand"] = play_candidates[0].hand_name
-            return diagnostics
-
-        best = play_candidates[0]
-        diagnostics.update({
-            "hand_play_in_candidates": True,
-            "hand_play_top1": chosen.indices == best.indices,
-            "hand_play_top3": any(c.indices == chosen.indices for c in play_candidates[:3]),
-            "hand_play_candidate_value_ratio": float(chosen.estimated_score / max(best.estimated_score, 1e-9)),
-            "hand_play_chosen_hand": chosen.hand_name,
-            "hand_play_best_hand": best.hand_name,
-        })
-        return diagnostics
-
-    return {}
+    return action_diagnostics(state, decoded)
 
 
 def _run_game_single_pass(

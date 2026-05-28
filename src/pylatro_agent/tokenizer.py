@@ -361,6 +361,7 @@ class Tokenizer:
         item_id=cython.int,
         item_type=cython.int,
         edition_id=cython.int,
+        seal_id=cython.int,
     )
     def _encode_shop_item(self, tokens: np.ndarray, pos: int, item: ShopCard, slot: int) -> None:
         item_id = 0
@@ -388,6 +389,11 @@ class Tokenizer:
                     break
         tokens[pos, 3] = edition_id
         tokens[pos, 4] = slot
+        seal_id = SEAL_TO_ID.get(item.seal or "", 0)
+        tokens[pos, 5] = seal_id
+        tokens[pos, 6] = int(item.eternal)
+        tokens[pos, 7] = int(item.perishable)
+        tokens[pos, 8] = int(item.rental)
 
     @cython.locals(
         tokens=cython.short[:, :],

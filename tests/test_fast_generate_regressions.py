@@ -38,6 +38,42 @@ def test_run_game_single_pass_marks_progress() -> None:
     assert any(progress_flags)
 
 
+def test_fast_action_diagnostics_match_env_diagnostics() -> None:
+    """fast_generate and BalatroEnv must emit the same diagnostic fields so
+    the value head sees the same shaped reward during BC and PPO."""
+    import numpy as np
+
+    from pylatro_agent.action import ActionType, decode_action
+    from pylatro_agent.diagnostics import action_diagnostics
+    from pylatro_agent.env import BalatroEnv
+
+    data = load_game_data()
+    vocab = build_vocab(data)
+    env = BalatroEnv(seed=42, data=data, vocab=vocab, max_steps=200)
+    env.reset()
+
+    # Step through BLIND_SELECT into CHOOSE_ACTION so a PLAY_SUBSET is legal.
+    for _ in range(20):
+        mask = env.action_masks()
+        valid = np.flatnonzero(mask)
+        play_idx = next(
+            (a for a in valid if decode_action(int(a)).action_type == ActionType.PLAY_SUBSET),
+            None,
+        )
+        if play_idx is not None:
+            break
+        env.step(int(valid[0]))
+
+    assert play_idx is not None, "env should reach CHOOSE_ACTION within 20 steps"
+
+    decoded = decode_action(int(play_idx))
+    env_diag = env._action_diagnostics(decoded)
+    shared_diag = action_diagnostics(env._controller.state, decoded)
+    assert env_diag == shared_diag
+    # Sanity check: the diagnostic actually contains hand_play_* fields.
+    assert "hand_play_observed" in env_diag
+
+
 def test_cached_best_hand_updates_after_in_place_mutation() -> None:
     data = load_game_data()
     state = create_run_state("test_seed", 1, "b_red", data=data)

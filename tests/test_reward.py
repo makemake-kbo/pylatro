@@ -19,7 +19,9 @@ from pylatro_agent.reward import (
     PRESSURE_PROGRESS_SCALE,
     PRETRAIN_STALL_EXTRA_PENALTY,
     PRETRAIN_WIN_VALUE,
+    PPO_SPARSE_CONFIG,
     REWARD_SCALE,
+    RewardConfig,
     SCORE_PROGRESS_SCALE,
     SHOP_REROLL_REWARD,
     SHOP_SELL_PENALTY,
@@ -832,3 +834,100 @@ def test_pretraining_outcome_value_matches_supervised_fallback_scale() -> None:
     assert pretraining_outcome_value(won=False, ante=5, stalled=True) == pytest.approx(
         -5.0 - PRETRAIN_STALL_EXTRA_PENALTY
     )
+
+
+def test_sparse_config_disables_hand_candidate_rewards() -> None:
+    state = _dummy_state()
+    prev = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr = {
+        "round_score": 100,
+        "blind_target": 800,
+        "action_type": "play_subset",
+        "progress_made": True,
+        "hand_play_top1": True,
+        "hand_play_candidate_value_ratio": 1.0,
+        "hand_play_not_in_candidates": False,
+    }
+    default = default_reward_components(state, prev, curr, terminated=False, won=False)
+    sparse = default_reward_components(
+        state, prev, curr, terminated=False, won=False, config=PPO_SPARSE_CONFIG
+    )
+
+    assert default["hand_top1_bonus"] > 0
+    assert default["hand_subset_bonus"] > 0
+    assert sparse["hand_top1_bonus"] == 0.0
+    assert sparse["hand_subset_bonus"] == 0.0
+
+
+def test_sparse_config_disables_planet_match_rewards() -> None:
+    state = _dummy_state()
+    prev = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr = {
+        "round_score": 100,
+        "blind_target": 800,
+        "action_type": "use_consumable_no_target",
+        "progress_made": True,
+        "planet_use_observed": True,
+        "planet_use_main_hand_match": True,
+        "planet_use_played_hand": True,
+    }
+    default = default_reward_components(state, prev, curr, terminated=False, won=False)
+    sparse = default_reward_components(
+        state, prev, curr, terminated=False, won=False, config=PPO_SPARSE_CONFIG
+    )
+
+    assert default["planet_match_bonus"] > 0
+    assert sparse["planet_match_bonus"] == 0.0
+
+
+def test_sparse_config_disables_shop_reroll_reward() -> None:
+    state = _dummy_state()
+    prev = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr = {
+        "round_score": 0,
+        "blind_target": 800,
+        "action_type": "shop_reroll",
+        "progress_made": True,
+    }
+    default = default_reward_components(state, prev, curr, terminated=False, won=False)
+    sparse = default_reward_components(
+        state, prev, curr, terminated=False, won=False, config=PPO_SPARSE_CONFIG
+    )
+
+    assert default["shop_reroll_reward"] > 0
+    assert sparse["shop_reroll_reward"] == 0.0
+
+
+def test_sparse_config_keeps_terminal_reward() -> None:
+    state = _dummy_state()
+    prev = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr = {"round_score": 0, "blind_target": 800, "ante": 3, "stalled": False}
+    sparse = default_reward_components(
+        state, prev, curr, terminated=True, won=False, config=PPO_SPARSE_CONFIG
+    )
+
+    assert sparse["terminal"] < 0
+    expected_terminal = pretraining_outcome_value(won=False, ante=3) / REWARD_SCALE * REWARD_SCALE
+    assert sparse["terminal"] == pytest.approx(expected_terminal)
+
+
+def test_config_flags_independent() -> None:
+    state = _dummy_state()
+    prev = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr = {
+        "round_score": 800,
+        "blind_target": 800,
+        "action_type": "play_subset",
+        "progress_made": True,
+        "hand_play_top1": True,
+        "hand_play_candidate_value_ratio": 1.0,
+        "hand_play_not_in_candidates": False,
+        "blind_just_beaten": True,
+        "hands_left": 3,
+    }
+
+    cfg = RewardConfig(enable_hand_candidate_rewards=False, enable_blind_clear_reward=True)
+    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+
+    assert result["hand_top1_bonus"] == 0.0
+    assert result["blind_clear"] > 0

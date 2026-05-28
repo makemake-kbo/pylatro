@@ -4,10 +4,36 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from pylatro.models import RunState
+
+
+@dataclass
+class RewardConfig:
+    enable_hand_candidate_rewards: bool = True
+    enable_planet_match_rewards: bool = True
+    enable_shop_reroll_reward: bool = True
+    enable_consumable_targeted_reward: bool = True
+    enable_blind_clear_reward: bool = True
+    enable_ante_advance_reward: bool = True
+    enable_score_progress: bool = True
+    enable_pressure_progress: bool = True
+
+
+DEFAULT_REWARD_CONFIG = RewardConfig()
+PPO_SPARSE_CONFIG = RewardConfig(
+    enable_hand_candidate_rewards=False,
+    enable_planet_match_rewards=False,
+    enable_shop_reroll_reward=False,
+    enable_consumable_targeted_reward=False,
+    enable_blind_clear_reward=True,
+    enable_ante_advance_reward=True,
+    enable_score_progress=True,
+    enable_pressure_progress=True,
+)
 
 
 # All dense reward components are multiplied by REWARD_SCALE at the exit of
@@ -191,8 +217,11 @@ def default_reward_components(
     curr_info: dict,
     terminated: bool,
     won: bool,
+    config: RewardConfig | None = None,
 ) -> dict[str, float]:
     """Return the default reward broken down into named components."""
+    if config is None:
+        config = DEFAULT_REWARD_CONFIG
     components = {name: 0.0 for name in REWARD_COMPONENT_NAMES}
 
     if terminated or curr_info.get("stalled", False):
@@ -219,7 +248,7 @@ def default_reward_components(
     blind_target = max(float(prev_info.get("blind_target", curr_info.get("blind_target", 0))), 1.0)
     prev_progress = min(prev_score / blind_target, 1.0)
     curr_progress = min(curr_score / blind_target, 1.0)
-    if curr_progress > prev_progress:
+    if config.enable_score_progress and curr_progress > prev_progress:
         components["score_progress"] += SCORE_PROGRESS_SCALE * (curr_progress - prev_progress)
 
     prev_pressure = _blind_pressure(prev_info)
@@ -227,54 +256,59 @@ def default_reward_components(
         curr_info,
         cleared_blind=bool(curr_info.get("blind_just_beaten", False)),
     )
-    if prev_pressure is not None and curr_pressure is not None:
+    if config.enable_pressure_progress and prev_pressure is not None and curr_pressure is not None:
         components["pressure_progress"] += PRESSURE_PROGRESS_SCALE * (prev_pressure - curr_pressure)
 
-    if curr_info.get("blind_just_beaten", False):
+    if config.enable_blind_clear_reward and curr_info.get("blind_just_beaten", False):
         components["blind_clear"] += BLIND_CLEAR_REWARD
         hands_left = curr_info.get("hands_left", 0)
         components["hands_bonus"] += HANDS_LEFT_BONUS_SCALE * hands_left
 
-    if curr_ante > prev_ante:
+    if config.enable_ante_advance_reward and curr_ante > prev_ante:
         components["ante_bonus"] += ANTE_ADVANCE_REWARD * (curr_ante ** ANTE_ADVANCE_EXPONENT)
         interest_tier = min(prev_info.get("dollars", 0) // 5, state.interest_cap // 5)
         components["interest_bonus"] += INTEREST_BONUS_SCALE * min(interest_tier, 5)
 
     action_type = curr_info.get("action_type", "")
 
-    if action_type in ("use_consumable_hand_subset", "use_consumable_joker"):
+    if config.enable_consumable_targeted_reward and action_type in (
+        "use_consumable_hand_subset",
+        "use_consumable_joker",
+    ):
         components["consumable_targeted_use"] += CONSUMABLE_TARGETED_USE_REWARD
 
     # Hand-subset bonus: reward in-candidates plays scaled by their value
     # ratio. Out-of-candidates plays get nothing (no penalty), so the
     # agent's only path to accumulating reward is to play well rather
     # than terminating early.
-    if action_type == "play_subset" and not curr_info.get(
-        "hand_play_not_in_candidates", False
-    ):
-        ratio = curr_info.get("hand_play_candidate_value_ratio")
-        if ratio is not None:
-            components["hand_subset_bonus"] += HAND_SUBSET_BONUS_SCALE * float(ratio)
-        if curr_info.get("hand_play_top1", False):
-            components["hand_top1_bonus"] += HAND_TOP1_BONUS
-        elif curr_info.get("hand_play_top3", False):
-            components["hand_top3_bonus"] += HAND_TOP3_BONUS
+    if config.enable_hand_candidate_rewards:
+        if action_type == "play_subset" and not curr_info.get(
+            "hand_play_not_in_candidates", False
+        ):
+            ratio = curr_info.get("hand_play_candidate_value_ratio")
+            if ratio is not None:
+                components["hand_subset_bonus"] += HAND_SUBSET_BONUS_SCALE * float(ratio)
+            if curr_info.get("hand_play_top1", False):
+                components["hand_top1_bonus"] += HAND_TOP1_BONUS
+            elif curr_info.get("hand_play_top3", False):
+                components["hand_top3_bonus"] += HAND_TOP3_BONUS
 
     # Planet alignment bonus: rewards using or claiming planets that match
     # already-played hand types, with extra weight for the main hand. This is
     # deliberately state-conditional so random planet use does not get paid.
-    for prefix in ("planet_use", "planet_claim"):
-        if not curr_info.get(f"{prefix}_observed", False):
-            continue
-        if curr_info.get(f"{prefix}_played_hand", False):
-            components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
-        if curr_info.get(f"{prefix}_main_hand_match", False):
-            components["planet_match_bonus"] += PLANET_MATCH_BONUS
+    if config.enable_planet_match_rewards:
+        for prefix in ("planet_use", "planet_claim"):
+            if not curr_info.get(f"{prefix}_observed", False):
+                continue
+            if curr_info.get(f"{prefix}_played_hand", False):
+                components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
+            if curr_info.get(f"{prefix}_main_hand_match", False):
+                components["planet_match_bonus"] += PLANET_MATCH_BONUS
 
     if action_type in ("shop_sell_joker", "shop_sell_consumable"):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY
 
-    if action_type == "shop_reroll":
+    if config.enable_shop_reroll_reward and action_type == "shop_reroll":
         components["shop_reroll_reward"] += SHOP_REROLL_REWARD
 
     if action_type == "pack_skip":

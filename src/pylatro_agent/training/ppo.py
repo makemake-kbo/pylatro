@@ -234,6 +234,12 @@ class PPOConfig:
     # value gradients flow through the shared trunk. The default (False)
     # isolates critic gradients to the value head only via autograd.grad.
     critic_updates_trunk: bool = False
+    # Linear decay schedule for heuristic distillation. When set, the
+    # distill coefficient linearly decays from heuristic_distill_coeff
+    # to heuristic_distill_min over this fraction of total training.
+    # After the decay completes, distillation is permanently at min.
+    # Set to None to disable decay (keep constant distill weight).
+    distill_decay_fraction: float | None = None
 
 
 @dataclass
@@ -1448,9 +1454,14 @@ def train_ppo(
             return_rms.update(buffer._flat_returns)
 
         # Linearly decay the distillation coefficient from
-        # heuristic_distill_coeff -> heuristic_distill_min over total_timesteps.
-        # Early on, hold the policy near the heuristic; late, let PPO push past.
-        distill_progress = min(1.0, total_steps / max(1, config.total_timesteps))
+        # heuristic_distill_coeff -> heuristic_distill_min.
+        # distill_decay_fraction controls what fraction of total_timesteps
+        # the decay spans. Defaults to 1.0 (full training), but setting to
+        # e.g. 0.5 completes the decay at the halfway mark, leaving the
+        # second half as a pure no-teacher fine-tune phase.
+        decay_fraction = config.distill_decay_fraction if config.distill_decay_fraction is not None else 1.0
+        decay_steps = max(1, int(config.total_timesteps * decay_fraction))
+        distill_progress = min(1.0, total_steps / decay_steps)
         distill_coeff_now = max(
             config.heuristic_distill_min,
             config.heuristic_distill_coeff

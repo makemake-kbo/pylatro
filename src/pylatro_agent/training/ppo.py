@@ -230,6 +230,10 @@ class PPOConfig:
     dagger_bc_epochs: int = 0
     dagger_bc_coeff: float = 1.0
     dagger_bc_lr_mult: float = 1.0
+    # When True, the critic loss is included in the main backward pass so
+    # value gradients flow through the shared trunk. The default (False)
+    # isolates critic gradients to the value head only via autograd.grad.
+    critic_updates_trunk: bool = False
 
 
 @dataclass
@@ -490,21 +494,27 @@ def _run_ppo_update(
             )
             critic_loss = config.value_loss_coeff * value_loss + config.survival_loss_coeff * survival_loss
 
-            value_params = _value_head_parameters(model)
-            policy_objective_loss.div(accum_steps).backward(retain_graph=bool(value_params))
-            if value_params:
-                critic_grads = torch.autograd.grad(
-                    critic_loss.div(accum_steps),
-                    value_params,
-                    allow_unused=True,
-                )
-                for param, grad in zip(value_params, critic_grads, strict=True):
-                    if grad is None:
-                        continue
-                    if param.grad is None:
-                        param.grad = grad.detach()
-                    else:
-                        param.grad.add_(grad.detach())
+            if config.critic_updates_trunk:
+                total_loss = (
+                    policy_objective_loss + critic_loss
+                ).div(accum_steps)
+                total_loss.backward()
+            else:
+                value_params = _value_head_parameters(model)
+                policy_objective_loss.div(accum_steps).backward(retain_graph=bool(value_params))
+                if value_params:
+                    critic_grads = torch.autograd.grad(
+                        critic_loss.div(accum_steps),
+                        value_params,
+                        allow_unused=True,
+                    )
+                    for param, grad in zip(value_params, critic_grads, strict=True):
+                        if grad is None:
+                            continue
+                        if param.grad is None:
+                            param.grad = grad.detach()
+                        else:
+                            param.grad.add_(grad.detach())
 
             # Step every accum_steps micro-batches (or on last batch)
             if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):

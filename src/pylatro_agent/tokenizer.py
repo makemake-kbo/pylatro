@@ -23,11 +23,15 @@ from .constants import (
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
+    HAND_CANDIDATE_MAX,
+    HAND_CANDIDATE_START,
     HAND_LEVEL_MAX,
     HAND_LEVEL_START,
     JOKER_MAX,
     JOKER_START,
+    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
+    MAX_PLAY_CANDIDATES,
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
@@ -41,7 +45,7 @@ from .constants import (
     SubPhase,
     TokenType,
 )
-from .hand_candidates import HAND_NAME_TO_ID, HandCandidate
+from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
 
@@ -217,6 +221,17 @@ class Tokenizer:
             self._encode_hand_level(tokens, pos + i, hand_name, state.hands[hand_name])
             token_types[pos + i] = TokenType.HAND_LEVEL
             attn_mask[pos + i] = 1
+
+        if sub_phase == SubPhase.CHOOSE_ACTION:
+            play_candidates, discard_candidates = generate_hand_candidates(state)
+            all_candidates = list(play_candidates[:MAX_PLAY_CANDIDATES]) + list(
+                discard_candidates[:MAX_DISCARD_CANDIDATES]
+            )
+            for rank_slot, candidate in enumerate(all_candidates[:HAND_CANDIDATE_MAX]):
+                pos = HAND_CANDIDATE_START + rank_slot
+                self._encode_hand_candidate(tokens, pos, candidate, rank_slot, state)
+                token_types[pos] = TokenType.HAND_CANDIDATE
+                attn_mask[pos] = 1
 
         for idx in selected_cards:
             if idx < MAX_HAND_SIZE:

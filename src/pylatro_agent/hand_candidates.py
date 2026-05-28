@@ -30,57 +30,6 @@ class HandCandidate:
     blind_ratio: float = 0.0
 
 
-def candidate_signature(state: RunState) -> tuple:
-    """Stable-enough cache key for the current hand-play choice set."""
-    hand_sig = tuple(
-        (
-            id(card),
-            card.rank,
-            card.suit,
-            card.center_key,
-            card.edition_key or "",
-            card.seal or "",
-            int(card.perma_bonus),
-            int(card.debuff),
-            int(card.face_down),
-            int(card.forced_selection),
-        )
-        for card in state.hand_cards
-    )
-    joker_sig = tuple(
-        (
-            joker.center_key,
-            int(joker.mult),
-            int(joker.t_mult),
-            int(joker.t_chips),
-            int(joker.x_mult * 10),
-            int(joker.debuff),
-        )
-        for joker in state.jokers
-    )
-    hand_level_sig = tuple(
-        (
-            name,
-            int(state.hands[name]["level"]),
-            int(state.hands[name]["chips"]),
-            int(state.hands[name]["mult"]),
-            int(state.hands[name].get("played", 0)),
-        )
-        for name in POKER_HAND_NAMES
-    )
-    blind = state.round_resets.blind or {}
-    return (
-        hand_sig,
-        joker_sig,
-        hand_level_sig,
-        int(state.current_round.hands_left),
-        int(state.current_round.discards_left),
-        int(state.current_round.hand_size),
-        state.blind_on_deck or "",
-        int(blind.get("mult", 1)),
-    )
-
-
 def generate_hand_candidates(
     state: RunState,
 ) -> tuple[tuple[HandCandidate, ...], tuple[HandCandidate, ...]]:

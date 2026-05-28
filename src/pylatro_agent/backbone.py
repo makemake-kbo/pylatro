@@ -1,4 +1,4 @@
-"""Transformer backbone — 8-layer pre-LN encoder."""
+"""Transformer backbone — pre-LN transformer encoder stack."""
 
 from __future__ import annotations
 

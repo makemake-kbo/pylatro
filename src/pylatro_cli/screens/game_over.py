@@ -66,7 +66,6 @@ class GameOverScreen(Screen):
                 yield Button("Return to Menu", id="menu-btn", variant="primary")
 
     def on_mount(self) -> None:
-        result_style = "bold #27ae60" if self.won else "bold #e74c3c"
         self.query_one("#result-text", Static).styles.color = "#27ae60" if self.won else "#e74c3c"
 
     def action_return_to_menu(self) -> None:

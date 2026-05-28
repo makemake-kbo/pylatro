@@ -12,6 +12,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _edition_cost(edition: dict[str, bool] | None) -> int:
+    """Extra shop dollars an edition adds on top of a card's base cost."""
     if not edition:
         return 0
     return (

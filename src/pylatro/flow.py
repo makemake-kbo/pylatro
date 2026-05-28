@@ -13,6 +13,7 @@ from .scoring import (
     RANK_TO_NOMINAL,
     SUIT_TO_NOMINAL,
     ScoreResult,
+    _level_up_hand,
     get_poker_hand_info,
     resolve_after_hand,
     score_hand,
@@ -240,6 +241,46 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
         if blind_name != "Amber Acorn":
             joker.debuff = False
 
+    _reset_round_cards(state)
+
+
+def _reset_round_cards(state: RunState) -> None:
+    """Re-roll the per-round target cards for jokers whose target changes each round.
+
+    Four jokers lock onto a randomly chosen rank/suit at the start of every round:
+      - The Idol: X Mult when its exact rank+suit card is played.
+      - Mail-In Rebate: dollars per discarded card of its rank.
+      - Ancient Joker: X Mult per played card of its suit.
+      - Castle: gains chips per discarded card of its suit.
+    Each draws an independent random card from the current deck. The Idol stores the
+    rank id (scoring matches by id) plus the rank/suit strings (the heuristic matches
+    on those); the others store just what their effect needs.
+    """
+    deck = state.deck_cards
+    if not deck:
+        return
+    ante = state.round_resets.ante
+    pick = state.pseudorandom.pseudorandom_element
+    seed = state.pseudorandom.pseudoseed
+
+    # Rank-targeting (Mail-In Rebate) may land on any card, including Stone.
+    mail, _ = pick(deck, seed(f"mail{ante}"))
+    state.current_round.mail_card = {"rank": mail.rank, "id": RANK_TO_ID[mail.rank]}
+
+    # Suit-targeting cards skip Stone cards, which have no suit.
+    suited = [
+        card for card in deck
+        if state.data.centers[card.center_key].get("effect") != "Stone Card"
+    ]
+    if not suited:
+        return
+    idol, _ = pick(suited, seed(f"idol{ante}"))
+    state.current_round.idol_card = {"rank": idol.rank, "suit": idol.suit, "id": RANK_TO_ID[idol.rank]}
+    ancient, _ = pick(suited, seed(f"ancient{ante}"))
+    state.current_round.ancient_card = {"suit": ancient.suit}
+    castle, _ = pick(suited, seed(f"castle{ante}"))
+    state.current_round.castle_card = {"suit": castle.suit}
+
 
 def _fold_areas_back_into_deck(state: RunState) -> None:
     if state.hand_cards:
@@ -434,7 +475,7 @@ def _remove_exact(cards: list[PlayingCard], card: PlayingCard) -> bool:
 
 
 def _debuff_card(state: RunState, card: PlayingCard) -> None:
-    """Apply blind-based debuffs to a playing card, matching Lua Blind:debuff_card."""
+    """Apply blind-based debuffs to a playing card, matching Balatro's boss-blind rules."""
     blind = state.round_resets.blind or {}
     blind_name = str(blind.get("name", ""))
     debuff = blind.get("debuff") or {}
@@ -568,10 +609,3 @@ def _card_nominal(state: RunState, card: PlayingCard) -> float:
     suit_nominal = SUIT_TO_NOMINAL[card.suit]
     suit_mult = -1000 if state.data.centers[card.center_key].get("effect") == "Stone Card" else 1
     return base + suit_nominal * suit_mult + suit_nominal * 0.0001 * suit_mult + face_nominal + (id(card) % 1_000_000) * 1e-12
-
-
-def _level_up_hand(state: RunState, hand_name: str, amount: int = 1) -> None:
-    hand = state.hands[hand_name]
-    hand["level"] = max(0, int(hand["level"]) + amount)
-    hand["mult"] = max(int(hand["s_mult"]) + int(hand["l_mult"]) * (int(hand["level"]) - 1), 1)
-    hand["chips"] = max(int(hand["s_chips"]) + int(hand["l_chips"]) * (int(hand["level"]) - 1), 0)

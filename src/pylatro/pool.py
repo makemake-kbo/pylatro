@@ -19,6 +19,8 @@ def get_current_pool(
             if rarity is not None
             else float(state.pseudorandom.pseudorandom(f"rarity{state.round_resets.ante}{append or ''}"))
         )
+        # Joker rarity from the roll: >0.95 Rare (3), >0.7 Uncommon (2), else
+        # Common (1); Legendary (4) only via explicit flag (Soul card, etc.).
         rarity_index = 4 if legendary else 3 if rarity_roll > 0.95 else 2 if rarity_roll > 0.7 else 1
         starting_pool = state.data.joker_rarity_pools[rarity_index]
         pool_key = f"Joker{rarity_index}{'' if legendary else append or ''}"
@@ -57,6 +59,8 @@ def get_current_pool(
                 add = any(card.center_key == proto["enhancement_gate"] for card in state.deck_cards)
             else:
                 add = True
+            # Black Hole / The Soul never appear in normal pools; they only
+            # spawn via the rare "soulable" roll in pack/shop generation.
             if proto["name"] in {"Black Hole", "The Soul"}:
                 add = False
 
@@ -126,6 +130,9 @@ def get_new_boss(state: RunState) -> str:
         if state.banned_keys.get(key):
             del eligible[key]
 
+    # Prefer the least-used eligible bosses so the rotation doesn't repeat one
+    # until the others have been seen. 100 is just a sentinel above any real
+    # use count (bosses start at 0 uses).
     min_use = 100
     for key, uses in state.bosses_used.items():
         if key in eligible:
@@ -177,6 +184,10 @@ def poll_edition(
     no_negative: bool = False,
     guaranteed: bool = False,
 ) -> dict[str, bool] | None:
+    # Base spawn rates: negative 0.3%, polychrome 0.6%, holo 2%, foil 4%,
+    # checked from rarest to most common. `state.edition_rate` (vouchers) and
+    # `mod` scale the non-negative odds. `guaranteed` packs (e.g. a Foil pack)
+    # multiply the base rates by 25 so an edition almost always lands.
     edition_poll = float(state.pseudorandom.pseudorandom(state.pseudorandom.pseudoseed(key)))
     if guaranteed:
         if edition_poll > 1 - 0.003 * 25 and not no_negative:
@@ -243,6 +254,8 @@ def create_card_spec(
     soulable: bool = False,
 ) -> ShopCard:
     requested_type = card_type
+    # "Soulable" packs have a ~0.3% chance (poll > 0.997) per card to instead
+    # spawn the hidden Soul (legendary joker) or Black Hole (level-up-all) card.
     if not forced_key and soulable and not state.banned_keys.get("c_soul"):
         if (
             card_type in {"Tarot", "Spectral", "Tarot_Planet"}

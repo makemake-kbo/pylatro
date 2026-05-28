@@ -107,7 +107,7 @@ class HandPlayHead(nn.Module):
         self.play_remaining_ctx_proj = nn.Linear(ctx_dim, hidden_dim)
         self.play_selected_raw_proj = nn.Linear(raw_dim, hidden_dim)
         self.play_remaining_raw_proj = nn.Linear(raw_dim, hidden_dim)
-        self.play_numeric_proj = nn.Linear(17, hidden_dim)
+        self.play_numeric_proj = nn.Linear(17, hidden_dim)  # 17 = number of scalar features stacked in _build_numeric_features
         self.play_out = nn.Sequential(
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -120,7 +120,7 @@ class HandPlayHead(nn.Module):
         self.discard_remaining_ctx_proj = nn.Linear(ctx_dim, hidden_dim)
         self.discard_selected_raw_proj = nn.Linear(raw_dim, hidden_dim)
         self.discard_remaining_raw_proj = nn.Linear(raw_dim, hidden_dim)
-        self.discard_numeric_proj = nn.Linear(17, hidden_dim)
+        self.discard_numeric_proj = nn.Linear(17, hidden_dim)  # 17 = number of scalar features stacked in _build_numeric_features
         self.discard_out = nn.Sequential(
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -344,7 +344,7 @@ class ShopHead(nn.Module):
         logits[:, ActionRange.SHOP_REROLL] = global_logits[:, 0]
         for i in range(MAX_JOKER_SLOTS):
             logits[:, ActionRange.SHOP_SELL_JOKER_START + i] = global_logits[:, 1 + i]
-        # Only use first 5 of the joker slots for sell
+        # Consumable sell slots follow the joker sell slots in global_logits.
         for i in range(MAX_CONSUMABLE_SLOTS):
             logits[:, ActionRange.SHOP_SELL_CONSUMABLE_START + i] = global_logits[:, 1 + MAX_JOKER_SLOTS + i]
         logits[:, ActionRange.SHOP_LEAVE] = global_logits[:, -1]

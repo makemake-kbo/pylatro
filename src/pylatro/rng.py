@@ -1,3 +1,12 @@
+"""Bit-exact reimplementation of Balatro's pseudo-random generator.
+
+Every constant here reproduces Balatro's own ``pseudohash`` / ``pseudoseed``
+recurrences. They look arbitrary because they are — the only requirement is that
+they reproduce Balatro's generator exactly, otherwise a given run seed produces a
+different card/shop/boss sequence than the real game. Do not "clean up" or round
+these numbers.
+"""
+
 from __future__ import annotations
 
 import random as _random_mod
@@ -32,6 +41,16 @@ def _seeded_random_after(seed: float, draws_before: int, minimum: int | None = N
 
 
 def _seeded_random_string(length: int, seed: float) -> tuple[str, int]:
+    """Generate a Balatro-style random seed string (e.g. shown on the run screen).
+
+    Reproduces Balatro's ``random_string``: for each character, one roll picks the
+    character class (digit / first-half letters / second-half letters) and a
+    second roll picks the character within that class. The ``0.7``/``0.45``
+    cutoffs and the ASCII ranges (``1``-``9``, ``A``-``N``, ``P``-``Z``; ``O``
+    is excluded to avoid confusion with ``0``) match the game exactly.
+    Returns the string plus the number of RNG draws consumed so the caller can
+    advance its seed-continuation counter.
+    """
     _rng.seed(seed)
     count = 0
 
@@ -63,6 +82,13 @@ def _seeded_shuffle_indices(length: int, seed: float) -> list[int]:
 
 
 def pseudohash(text: str) -> float:
+    """Hash a string to a float in [0, 1), reproducing Balatro's ``pseudohash``.
+
+    Folds the characters back-to-front through a fixed recurrence; the magic
+    multiplier (``1.1239285023``) and the ``* pi`` terms reproduce the game's
+    hash and must not change. This is the entry point that turns a textual
+    seed/key into the numeric ``hashed_seed`` driving every later draw.
+    """
     num = 1.0
     for index in range(len(text), 0, -1):
         num = ((1.1239285023 / num) * ord(text[index - 1]) * pi + pi * index) % 1
@@ -81,6 +107,15 @@ class PseudorandomState:
         self.hashed_seed = pseudohash(self.seed)
 
     def pseudoseed(self, key: str, predict_seed: str | None = None) -> float:
+        """Return the next seed value for a named RNG channel (``key``).
+
+        Each channel advances its own state: the stored value is run through the
+        same fixed recurrence (constants ``2.134453429141`` / ``1.72431234`` and
+        the 13-decimal rounding all reproduce Balatro's ``pseudoseed`` exactly)
+        and then averaged with the run's ``hashed_seed``. ``predict_seed`` evaluates the
+        channel against a hypothetical run seed without mutating state — used for
+        previewing future draws (e.g. Telescope/voucher prediction).
+        """
         if key == "seed":
             raise NotImplementedError("Balatro's raw seed channel is not used in the headless core yet")
 
@@ -149,6 +184,9 @@ def _sorted_items(values: Sequence[Any] | dict[Any, Any]) -> list[tuple[Any, Any
     return items
 
 
+# Stateless module-level variants of the PseudorandomState methods above. These
+# take a pre-computed numeric seed and do NOT record seed continuation, so use
+# them only for one-off draws that don't feed a later random_without_seed() call.
 def pseudorandom_element(values: Sequence[Any] | dict[Any, Any], seed: float) -> tuple[Any, Any]:
     items = _sorted_items(values)
     if not items:

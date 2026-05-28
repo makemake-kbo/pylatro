@@ -11,7 +11,14 @@ if TYPE_CHECKING:
 
 
 def get_blind_amount(ante: int, scaling: int | None = None) -> int | float:
-    k = 0.75
+    """Base chip requirement for the Small Blind of a given ante.
+
+    Reproduces Balatro's ante scaling. Antes 1-8 use a hand-tuned lookup table
+    (one row per stake-difficulty ``scaling`` tier). Beyond ante 8 the value is
+    extrapolated with the game's super-exponential growth formula and rounded to
+    two significant figures, so endless-mode requirements eventually overflow
+    into floats.
+    """
     scaling = scaling or 1
     if scaling == 1:
         amounts = [300, 800, 2000, 5000, 11000, 20000, 35000, 50000]
@@ -27,8 +34,14 @@ def get_blind_amount(ante: int, scaling: int | None = None) -> int | float:
     if ante <= 8:
         return amounts[ante - 1]
 
-    a, b, c, d = amounts[7], 1.6, ante - 8, 1 + 0.2 * (ante - 8)
-    raw_amount = a * (b + (k * c) ** d) ** c
+    # Endless mode (ante > 8): grow super-exponentially from the ante-8 value.
+    # The growth factor 0.75 and base 1.6 are the game's tuning constants; the
+    # exponent ramps with each ante past 8. The result can overflow to inf/nan,
+    # which we surface rather than clamp.
+    ante8_requirement = amounts[7]
+    antes_past_8 = ante - 8
+    growth_exponent = 1 + 0.2 * antes_past_8
+    raw_amount = ante8_requirement * (1.6 + (0.75 * antes_past_8) ** growth_exponent) ** antes_past_8
     if isinf(raw_amount) or isnan(raw_amount):
         return float("nan")
 
@@ -36,10 +49,13 @@ def get_blind_amount(ante: int, scaling: int | None = None) -> int | float:
     if isinf(amount) or isnan(amount):
         return float("nan")
 
+    # Round down to 2 significant figures (the game's display rounding).
     magnitude = 10 ** floor(log10(amount) - 1)
     amount -= fmod(amount, magnitude)
     if isnan(amount):
         return float("nan")
+    # 2^53 is the largest integer a float represents exactly; past it, keep the
+    # float rather than lie about an exact int value.
     if amount.is_integer() and amount <= 9_007_199_254_740_992:
         return int(amount)
     return amount
@@ -82,7 +98,7 @@ def skip_blind(state: RunState) -> str:
 def reroll_boss(state: RunState, from_tag: bool = False) -> str:
     state.round_resets.boss_rerolled = True
     if not from_tag:
-        state.dollars -= 10
+        state.dollars -= 10  # boss reroll costs $10 (free when granted by a tag)
     state.round_resets.blind_choices["Boss"] = get_new_boss(state)
     return state.round_resets.blind_choices["Boss"]
 

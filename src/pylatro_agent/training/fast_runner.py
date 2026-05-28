@@ -144,8 +144,6 @@ class FastRunner:
             _mask_blind(m, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
             _mask_action(m, state, AR)
-        elif sp == SubPhase.SELECT_CARDS:
-            _mask_cards(m, state, AR, self._selected_cards, self._pending_action)
         elif sp == SubPhase.SHOP:
             _mask_shop(m, state, AR)
         elif sp == SubPhase.BOOSTER_PACK:
@@ -364,19 +362,6 @@ def _mask_action(m, state, AR):
 @cython.cfunc
 @cython.locals(
     m=cython.char[:],
-    hand_size=cython.int,
-    num_sel=cython.int,
-    is_play=cython.bint,
-    max_sel=cython.int,
-    i=cython.int,
-)
-def _mask_cards(m, state, AR, selected, pending):
-    _ = (m, state, AR, selected, pending)
-
-
-@cython.cfunc
-@cython.locals(
-    m=cython.char[:],
     i=cython.int,
     _buy_start=cython.int,
     _reroll=cython.int,
@@ -504,10 +489,6 @@ def _mask_consumable_flat(m, state, AR):
             for j in range(num_jokers):
                 if can_use_consumable(state, cons, hand_targets=(), joker_targets=(j,)):
                     m[start + j] = 1
-
-
-# ── progress signature (mirrors BalatroEnv._progress_signature) ──
-
 
 
 @cython.locals(ante=cython.int, scaling=cython.int, base=cython.int)

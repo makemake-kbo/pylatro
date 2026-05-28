@@ -1,8 +1,6 @@
 from pylatro import load_game_data
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.training.fast_runner import FastRunner
-from pylatro_agent.subset_actions import subset_index
-from pylatro_agent.constants import ActionRange
 
 data = load_game_data()
 agent = HeuristicAgent()
@@ -15,11 +13,9 @@ def estimate_best_hand_score(state):
     if not hand:
         return 0, "No hand", 0
     
-    from pylatro.scoring import RANK_TO_NOMINAL
     best_score = 0
     best_type = "High Card"
-    best_chips = 0
-    
+
     from itertools import combinations
     max_cards = min(5, len(hand))
     for size in range(max_cards, 0, -1):

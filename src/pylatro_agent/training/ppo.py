@@ -162,7 +162,7 @@ class PPOConfig:
     mini_batch_size: int = 64
     gamma: float = 0.99
     gae_lambda: float = 0.95
-    clip_epsilon: float = 0.1
+    clip_epsilon: float = 0.1  # PPO clip range; tighter than the usual 0.2
     target_kl: float | None = 0.03
     entropy_coeff: float = 0.001
     adaptive_entropy: bool = False
@@ -467,6 +467,7 @@ def _run_ppo_update(
             if on_policy_count.item() > 0:
                 policy_loss = (ppo_loss_per_state * on_policy.float()).sum() / on_policy_count
             else:
+                # differentiable zero: keeps params in the graph when a minibatch has no on-policy rows
                 policy_loss = new_log_probs.sum() * 0.0
 
             # Value loss (normalize targets so critic trains in unit-variance space)
@@ -807,11 +808,13 @@ def _per_state_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: 
     )
 
 
+# Retained for unit tests; production uses _per_state_normalized_entropy(...).mean() (~450-451).
 def _mean_normalized_entropy(entropy_per_state: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
     """Return the batch mean of per-state normalized entropy."""
     return _per_state_normalized_entropy(entropy_per_state, action_mask).mean()
 
 
+# Retained for unit tests; production uses the approx-KL estimator ((ratio-1)-log_ratio) (~554).
 def _masked_kl_divergence(
     policy_logits: torch.Tensor,
     reference_logits: torch.Tensor,
@@ -834,6 +837,7 @@ def _masked_kl_divergence(
     return kl_per_state.mean()
 
 
+# Retained for unit tests; production uses dist.normalized_action_type_entropy() (~452).
 def _mean_normalized_action_type_entropy(action_probs: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
     """Return mean entropy over action types, normalized by valid type count.
 

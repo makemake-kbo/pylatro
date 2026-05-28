@@ -56,7 +56,7 @@ class MetaEmbedding(nn.Module):
         self.interest_proj = nn.Linear(1, d_model)
         self.ante_emb = nn.Embedding(12, d_model)
         self.blind_type_emb = nn.Embedding(4, d_model)
-        self.boss_emb = nn.Embedding(35, d_model)
+        self.boss_emb = nn.Embedding(35, d_model)  # 35 = fixed cap on boss vocab
         self.target_proj = nn.Linear(4, d_model)
         self.hands_proj = nn.Linear(1, d_model)
         self.discards_proj = nn.Linear(1, d_model)
@@ -73,6 +73,7 @@ class MetaEmbedding(nn.Module):
         out[:, 1] = self.interest_proj(scalars[:, 1:2])
         out[:, 2] = self.ante_emb(scalars[:, 2].long().clamp(0, 11))
         # Blind type + boss from token
+        # meta token packs blind_type*100 + boss_id (see tokenizer._encode_meta)
         bt = tokens[:, 3, 0] // 100
         boss = tokens[:, 3, 0] % 100
         out[:, 3] = self.blind_type_emb(bt.clamp(0, 3)) + self.boss_emb(boss.clamp(0, 34))

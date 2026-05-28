@@ -87,6 +87,9 @@ def _edition_dict_from_key(edition_key: str | None) -> dict[str, bool] | None:
     return {edition_key: True} if edition_key else None
 
 
+# Editions contribute fixed scoring bonuses: foil = +50 chips, holo = +10 mult,
+# polychrome = x1.5 mult. Each only fires for its own edition, returning the
+# additive/multiplicative identity otherwise.
 def _edition_chip_mod(edition: dict[str, bool] | None) -> float:
     if not edition:
         return 0
@@ -112,6 +115,8 @@ def _mod_chips(state: RunState, chips: float) -> float:
 
 
 def _mod_mult(mult: float) -> float:
+    # Symmetry counterpart to _mod_chips; mult is never capped, so this is the
+    # identity. Kept as a hook so all mult writes route through one place.
     return mult
 
 
@@ -119,6 +124,9 @@ def _card_name(state: RunState, card: PlayingCard) -> str:
     return str(_card_center(state, card)["name"])
 
 
+# A center key's "effect" string is static within loaded game data, so cache it
+# globally. NOTE: this assumes a single GameData per process — it is not keyed by
+# state/data instance and is never cleared.
 _card_effect_cache: dict[str, str] = {}
 
 
@@ -133,12 +141,18 @@ def _card_effect(state: RunState, card: PlayingCard) -> str:
 
 
 def _card_id(state: RunState, card: PlayingCard) -> int:
+    # Stone Cards have no rank, so give each a unique negative id (from object
+    # identity) — that way they never group into pairs/straights with each other.
     if _card_effect(state, card) == "Stone Card":
         return -id(card)
     return RANK_TO_ID[card.rank]
 
 
 def _card_nominal(state: RunState, card: PlayingCard) -> float:
+    # A sortable scalar that ranks cards rank-first, then suit, used to pick which
+    # cards "score" within a hand. The tiny suit (1e-4) and per-object (1e-12)
+    # terms only break ties deterministically; Stone Cards get suit_mult=-1000 so
+    # they always sort last (they shouldn't contribute to rank/suit hands).
     base = RANK_TO_NOMINAL[card.rank]
     face_nominal = 0.1 if card.rank == "J" else 0.2 if card.rank == "Q" else 0.3 if card.rank == "K" else 0.4 if card.rank == "A" else 0
     suit_nominal = SUIT_TO_NOMINAL[card.suit]
@@ -270,6 +284,9 @@ def _get_straight(state: RunState, hand: list[PlayingCard]) -> list[list[Playing
         if 1 < card_id < 15:
             ids.setdefault(card_id, []).append(card)
 
+    # Scan ranks 1..14 for a consecutive run. j==1 maps to rank 14 first so the
+    # Ace can play low (A-2-3-4-5); it's also rank 14 at the top end (10-J-Q-K-A).
+    # Shortcut lets the run skip a single missing rank (can_skip / skipped_rank).
     straight_cards: list[PlayingCard] = []
     straight_length = 0
     straight = False
@@ -553,6 +570,8 @@ def _evaluate_joker(
         if name == "Lucky Cat" and lucky_triggered and isinstance(joker.extra, (int, float)):
             joker.x_mult += float(joker.extra)
         if name == "The Idol":
+            # idol_card (rank id + suit) is re-rolled each round by
+            # flow._reset_round_cards; playing that exact card grants the X mult.
             idol = state.current_round.idol_card
             if _card_id(state, other_card) == idol.get("id") and _is_suit(state, other_card, idol.get("suit", "")):
                 return {"x_mult": float(joker.extra if isinstance(joker.extra, (int, float)) else 1)}

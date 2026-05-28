@@ -27,6 +27,10 @@ from .subset_actions import consumable_subset_index, subset_index, subset_indice
 if TYPE_CHECKING:
     from pylatro.models import JokerInstance, PlayingCard, RunState
 
+# Heuristic buy-priority weights/sets in arbitrary units (higher = more desirable),
+# consumed by _score_joker_value. Values are hand-tuned, not derived from game math.
+
+# Jokers treated as low priority to buy.
 _LOW_VALUE_JOKERS = frozenset(
     {
         "j_oops",
@@ -60,6 +64,7 @@ _LOW_VALUE_JOKERS = frozenset(
     }
 )
 
+# Jokers that generate money.
 _ECONOMY_JOKERS = frozenset(
     {
         "j_egg",
@@ -75,6 +80,7 @@ _ECONOMY_JOKERS = frozenset(
     }
 )
 
+# Per-joker buy weight for economy jokers.
 _ECONOMY_SCORES = {
     "j_egg": 6.0,
     "j_mail": 10.0,
@@ -88,6 +94,7 @@ _ECONOMY_SCORES = {
     "j_rough_gem": 8.0,
 }
 
+# Vouchers worth buying on sight.
 _PRIORITY_VOUCHERS = frozenset(
     {
         "v_overstock_norm",
@@ -106,6 +113,7 @@ _PRIORITY_VOUCHERS = frozenset(
     }
 )
 
+# Jokers whose xmult scales over the run.
 _SCALING_XMULT_JOKER_KEYS = frozenset(
     {
         "j_ancient",
@@ -122,6 +130,7 @@ _SCALING_XMULT_JOKER_KEYS = frozenset(
     }
 )
 
+# Per-joker buy weight for scaling jokers.
 _SCALING_JOKER_SCORES = {
     "j_runner": 14.0,
     "j_green_joker": 16.0,
@@ -287,6 +296,9 @@ class HeuristicAgent:
         return result
 
     def _estimate_hand_score_compute(self, state: RunState, hand_indices: tuple[int, ...]) -> int:
+        # Approximates the full scoring pipeline for the given played cards:
+        # base chips/mult -> per-card chips -> retriggers -> per-joker effects -> xmult.
+        # Probabilistic jokers are valued by their expected (rather than rolled) contribution.
         hand = state.hand_cards
         cards = [hand[i] for i in hand_indices]
         hand_type = self._quick_hand_quality(state, cards)
@@ -294,6 +306,7 @@ class HeuristicAgent:
         base_chips = hand_info.get("chips", 0)
         base_mult = hand_info.get("mult", 0)
 
+        # number of played cards that contribute chips for each poker hand type
         _SCORING_COUNT = {
             "High Card": 1, "Pair": 2, "Two Pair": 4, "Three of a Kind": 3,
             "Straight": 5, "Flush": 5, "Full House": 5, "Four of a Kind": 4,
@@ -517,8 +530,6 @@ class HeuristicAgent:
                 x_mult_acc *= 1 + ante * 0.15
             elif jname == "Bull":
                 total_chips += dollars * 2 * n_scoring
-            elif jname == "Bootstraps":
-                total_mult += (dollars // 5) * 2
             elif jname == "Triboulet":
                 xm = float(j.extra) if isinstance(j.extra, (int, float)) else 2.0
                 for r in scoring_ranks:
@@ -602,11 +613,7 @@ class HeuristicAgent:
                     lo = float(j.extra.get("min", 0))
                     hi = float(j.extra.get("max", 23))
                     total_mult += (lo + hi) / 2.0
-            elif jname == "Yorick":
-                xm = j.x_mult if j.x_mult and j.x_mult > 1 else 1.0
-                if xm > 1.0:
-                    x_mult_acc *= xm
-            elif jname == "Ramen":
+            elif jname in ("Yorick", "Ramen"):
                 xm = j.x_mult if j.x_mult and j.x_mult > 1 else 1.0
                 if xm > 1.0:
                     x_mult_acc *= xm
@@ -828,6 +835,14 @@ class HeuristicAgent:
         return self._random_valid(mask)
 
     def _choose_action(self, state: RunState, mask: np.ndarray) -> int:
+        # Decision order (first applicable wins):
+        #   1. use money tarots (Hermit/Temperance)
+        #   2. pick best hand, optionally pad short hands up to 5 cards
+        #   3. if it can't win now, search for a better alt-type hand
+        #   4. use the best-scoring planet card
+        #   5. use buff/destroy/utility tarots
+        #   6. play if it wins now or wins across remaining hands
+        #   7. otherwise discard to draw / discard worst cards, else play/discard fallback
         hand = state.hand_cards
         if not hand:
             return self._random_valid(mask)
@@ -1498,9 +1513,6 @@ class HeuristicAgent:
             return False
         return state.round_resets.ante >= _MID_GAME_ANTE or self._owned_scaling_progress(state, joker) > 0
 
-    def _is_economy_joker(self, center_key: str) -> bool:
-        return center_key in _ECONOMY_JOKERS
-
     def _hand_type_synergy(self, state: RunState, hand_type: str) -> float:
         if not hand_type:
             return 0.0
@@ -1531,10 +1543,6 @@ class HeuristicAgent:
                         synergy += (exm - 1) * 10
         self._synergy_cache[cache_key] = synergy
         return synergy
-
-    def _select_cards(self, state: RunState, mask: np.ndarray, selected: set[int], pending: str | None) -> int:
-        _ = (state, selected, pending)
-        return self._random_valid(mask)
 
     def _find_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
         if not hand:
@@ -1595,6 +1603,8 @@ class HeuristicAgent:
         flush_req = 4 if has_four_fingers else 5
         straight_req = 4 if has_four_fingers else 5
 
+        # Stone/Shortcut/Pareidolia break the greedy rank/suit grouping assumptions,
+        # so fall back to exhaustive subset search.
         if has_stone or has_shortcut or has_pareidolia:
             return self._find_best_hand_brute(state, hand, max_cards)
 
@@ -2064,6 +2074,8 @@ class HeuristicAgent:
         return score
 
     def _shop(self, state: RunState, mask: np.ndarray) -> int:
+        # Numbered PRIORITY blocks below are evaluated top-to-bottom; the first
+        # satisfied priority returns and wins.
         all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
         joker_slots_left = joker_limit(state) - len(state.jokers)
         cons_slots_left = consumable_limit(state) - len(state.consumables)
@@ -2072,6 +2084,7 @@ class HeuristicAgent:
         ante = state.round_resets.ante
         main_type = self._get_main_hand_type(state)
 
+        # Balatro pays $1 interest per $5 held, capped at $5/round
         interest_cap = 5
         interest_threshold = interest_cap * 5
 
@@ -2210,7 +2223,7 @@ class HeuristicAgent:
             max_sell = max((cons.sell_cost for cons in state.consumables[:MAX_CONSUMABLE_SLOTS]), default=0)
             return dollars + max_sell >= all_items[item_idx].cost
 
-        # ═══ PRIORITY 0: Overstock voucher — best economy investment ═══
+        # ═══ PRIORITY 1: Overstock voucher — best economy investment ═══
         if overstock_action >= 0:
             item_idx = overstock_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
@@ -2219,7 +2232,7 @@ class HeuristicAgent:
                 if post_buy >= 5:
                     return overstock_action
 
-        # ═══ PRIORITY 0.5: Priority vouchers (hand size, discard, hands, reroll, etc.) ═══
+        # ═══ PRIORITY 2: Priority vouchers (hand size, discard, hands, reroll, etc.) ═══
         if priority_voucher_action >= 0:
             item_idx = priority_voucher_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
@@ -2228,7 +2241,7 @@ class HeuristicAgent:
                 if post_buy >= interest_threshold:
                     return priority_voucher_action
 
-        # ═══ PRIORITY 1: X-mult joker — buy immediately if affordable ═══
+        # ═══ PRIORITY 3: X-mult joker — buy immediately if affordable ═══
         if n_jokers > 0 and joker_slots_left == 0 and best_xmult_action >= 0:
             sell_act, _, sell_val = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
             if sell_act >= 0 and mask[sell_act]:
@@ -2243,7 +2256,7 @@ class HeuristicAgent:
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_xmult_action
 
-        # ═══ PRIORITY 2: Celestial pack — only after scoring joker or from ante 2 ═══
+        # ═══ PRIORITY 4: Celestial pack — only after scoring joker or from ante 2 ═══
         has_scoring_joker = any(
             j.mult or j.t_mult for j in state.jokers if not j.debuff
         )
@@ -2258,7 +2271,7 @@ class HeuristicAgent:
                     if "Celestial" in name and item.cost <= 4 and dollars >= item.cost + 1:
                         return action
 
-        # ═══ PRIORITY 2.5: Main-type planet BUY ═══
+        # ═══ PRIORITY 5: Main-type planet BUY ═══
         if cons_slots_left > 0 and main_planet_action >= 0:
             item_idx = main_planet_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
@@ -2266,13 +2279,13 @@ class HeuristicAgent:
                 if dollars >= planet_cost:
                     return main_planet_action
 
-        # ═══ PRIORITY 2.6: Sell consumable for main-type planet ═══
+        # ═══ PRIORITY 6: Sell consumable for main-type planet ═══
         if cons_slots_left == 0 and main_planet_action >= 0:
             sell_act = _worst_consumable_sell(80)
             if sell_act >= 0 and _can_afford_after_consumable_sell(main_planet_action):
                 return sell_act
 
-        # ═══ PRIORITY 2.7: Mid-game played/synergy planet BUY ═══
+        # ═══ PRIORITY 7: Mid-game played/synergy planet BUY ═══
         if (
             ante >= _MID_GAME_ANTE
             and cons_slots_left > 0
@@ -2282,13 +2295,13 @@ class HeuristicAgent:
         ):
             return best_planet_action
 
-        # ═══ PRIORITY 2.8: Sell weak consumable for mid-game planet scaling ═══
+        # ═══ PRIORITY 8: Sell weak consumable for mid-game planet scaling ═══
         if ante >= _MID_GAME_ANTE and cons_slots_left == 0 and best_planet_action >= 0 and best_planet_score >= 35:
             sell_act = _worst_consumable_sell(80)
             if sell_act >= 0 and _can_afford_after_consumable_sell(best_planet_action):
                 return sell_act
 
-        # ═══ PRIORITY 3: Strong scoring joker (x_mult, high mult, type synergy) ═══
+        # ═══ PRIORITY 9: Strong scoring joker (x_mult, high mult, type synergy) ═══
         save_xmult_slot = (no_xmult and joker_slots_left <= 2 and n_jokers >= 3
                            and 3 <= ante <= 8)
         joker_threshold = -10 if ante <= 1 else (-5 if ante <= 2 else (0 if ante <= 4 else 5))
@@ -2311,7 +2324,7 @@ class HeuristicAgent:
                 if center.get("set") == "Booster" and "Buffoon" in center.get("name", "") and item.cost <= 4:
                     return action
 
-        # ═══ PRIORITY 2.5: Economy joker if cheap and we have room (NOT before ante 3) ═══
+        # ═══ PRIORITY 10: Economy joker if cheap and we have room (NOT before ante 3) ═══
         if (best_economy_action >= 0 and joker_slots_left > 0
                 and ante >= 3 and ante <= 5 and best_economy_score > 5):
             item_idx = best_economy_action - ActionRange.SHOP_BUY_START
@@ -2321,14 +2334,14 @@ class HeuristicAgent:
                 if item_cost <= 5 and post_buy >= 2:
                     return best_economy_action
 
-        # ═══ PRIORITY 3: Sell economy joker for strong scoring joker ═══
+        # ═══ PRIORITY 11: Sell economy joker for strong scoring joker ═══
         if n_jokers > 0 and joker_slots_left == 0 and best_joker_action >= 0 and best_joker_score > 10:
             sell_act, sell_sc, _ = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
             if sell_act >= 0 and mask[sell_act]:
                 if best_joker_score - sell_sc > 8:
                     return sell_act
 
-        # ═══ PRIORITY 5: Buffoon pack ═══
+        # ═══ PRIORITY 12: Buffoon pack ═══
         if joker_slots_left > 0 and ante >= 2:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -2340,7 +2353,7 @@ class HeuristicAgent:
                     if "Buffoon" in name and item.cost <= 4 and dollars >= item.cost:
                         return action
 
-        # ═══ PRIORITY 5.5: ANY played-type planet BUY ═══
+        # ═══ PRIORITY 13: ANY played-type planet BUY ═══
         if cons_slots_left > 0:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -2353,7 +2366,7 @@ class HeuristicAgent:
                     if played > 0 and item.cost <= 4 and dollars >= item.cost:
                         return action
 
-        # ═══ PRIORITY 8.5: Sell consumable to make room for packs ═══
+        # ═══ PRIORITY 14: Sell consumable to make room for packs ═══
         if cons_slots_left == 0:
             has_target = main_planet_action >= 0
             if not has_target:
@@ -2369,7 +2382,7 @@ class HeuristicAgent:
                 if sell_act >= 0:
                     return sell_act
 
-        # ═══ PRIORITY 9: Judgement tarot ═══
+        # ═══ PRIORITY 15: Judgement tarot ═══
         if judgement_action >= 0 and joker_slots_left > 0:
             if cons_slots_left == 0:
                 sell_act = _worst_consumable_sell(50)
@@ -2380,7 +2393,7 @@ class HeuristicAgent:
                 if item_idx < len(all_items) and _can_afford_after_interest(all_items[item_idx].cost):
                     return judgement_action
 
-        # ═══ PRIORITY 10: Money tarots (Hermit, Temperance) ═══
+        # ═══ PRIORITY 16: Money tarots (Hermit, Temperance) ═══
         _SHOP_MONEY_TAROTS = frozenset({"The Hermit", "Temperance"})
         if cons_slots_left > 0 and dollars > 7:
             for i, item in enumerate(all_items):
@@ -2392,7 +2405,7 @@ class HeuristicAgent:
                 if name in _SHOP_MONEY_TAROTS and item.cost <= 4:
                     return action
 
-        # ═══ PRIORITY 11: Arcana pack ═══
+        # ═══ PRIORITY 17: Arcana pack ═══
         if cons_slots_left > 0 and dollars > interest_threshold + 3:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -2404,7 +2417,7 @@ class HeuristicAgent:
                     if "Arcana" in name and item.cost <= 4:
                         return action
 
-        # ═══ PRIORITY 12: Utility tarots ═══
+        # ═══ PRIORITY 18: Utility tarots ═══
         _UTILITY_TAROTS = frozenset({"The High Priestess", "The Emperor"})
         if cons_slots_left > 0 and dollars > interest_threshold + 3:
             for i, item in enumerate(all_items):
@@ -2415,7 +2428,7 @@ class HeuristicAgent:
                 if center.get("name") in _UTILITY_TAROTS and item.cost <= 4:
                     return action
 
-        # ═══ PRIORITY 13: Synergy planets ═══
+        # ═══ PRIORITY 19: Synergy planets ═══
         if cons_slots_left > 0:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -2427,7 +2440,7 @@ class HeuristicAgent:
                     if self._hand_type_synergy(state, planet_type) > 0 and _can_afford_after_interest(item.cost):
                         return action
 
-        # ═══ PRIORITY 14: Other boosters ═══
+        # ═══ PRIORITY 20: Other boosters ═══
         for i, item in enumerate(all_items):
             action = ActionRange.SHOP_BUY_START + i
             if not mask[action]:
@@ -2436,7 +2449,7 @@ class HeuristicAgent:
             if center.get("set") == "Booster" and item.cost <= 4 and dollars > interest_threshold + 3:
                 return action
 
-        # ═══ PRIORITY 15: Other vouchers (non-priority) ═══
+        # ═══ PRIORITY 21: Other vouchers (non-priority) ═══
         for i, item in enumerate(all_items):
             action = ActionRange.SHOP_BUY_START + i
             if not mask[action]:
@@ -2447,14 +2460,14 @@ class HeuristicAgent:
                 if post_buy >= interest_threshold:
                     return action
 
-        # ═══ PRIORITY 16: Buy any decent joker as last resort ═══
+        # ═══ PRIORITY 22: Buy any decent joker as last resort ═══
         if (best_joker_action >= 0 and joker_slots_left > 0
                 and best_joker_score > 0):
             item_idx = best_joker_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_joker_action
 
-        # ═══ PRIORITY 14: Reroll — spend down to interest cap if no good buy ═══
+        # ═══ PRIORITY 23: Reroll — spend down to interest cap if no good buy ═══
         # Engine strength gates how aggressive we are: a strong engine
         # (xmult joker + ≥4 jokers) clears blinds easily, so don't burn cash.
         # Otherwise, max-reroll while we stay above the interest cap.

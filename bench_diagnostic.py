@@ -1,4 +1,3 @@
-import time
 from pylatro import load_game_data
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.training.fast_runner import FastRunner
@@ -12,24 +11,6 @@ xmult_ante_acquired = {}
 joker_counts_at_death = {}
 planet_usage = {}
 runs_with_xmult = {"ante6_plus": 0, "ante4_5": 0, "ante3_minus": 0}
-
-def has_xmult(state):
-    for j in state.jokers:
-        if j.debuff:
-            continue
-        jc = state.data.centers.get(j.center_key, {})
-        jcfg = jc.get("config", {})
-        if not isinstance(jcfg, dict):
-            continue
-        xm = jcfg.get("Xmult", 0)
-        if xm and xm > 1:
-            return True
-        extra = jcfg.get("extra")
-        if isinstance(extra, dict):
-            exm = extra.get("Xmult", 0)
-            if isinstance(exm, (int, float)) and exm > 1:
-                return True
-    return False
 
 def get_xmult_names(state):
     names = []

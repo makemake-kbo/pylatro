@@ -1,7 +1,6 @@
 from pylatro import load_game_data
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.training.fast_runner import FastRunner
-from pylatro_agent.constants import ActionRange, MAX_JOKER_SLOTS
 from pylatro.runtime import joker_limit
 
 data = load_game_data()

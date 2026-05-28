@@ -71,7 +71,7 @@ class PlayingCardWidget(Widget):
         if card.edition_key and card.edition_key in EDITION_COLORS:
             border_color = EDITION_COLORS[card.edition_key]
 
-        style = f"dim" if card.debuff else ""
+        style = "dim" if card.debuff else ""
         inner_w = CARD_WIDTH - 2
 
         # Build rank display (left-align, max 2 chars)
@@ -82,7 +82,6 @@ class PlayingCardWidget(Widget):
         lines.append(Text(f"{tl}{h * inner_w}{tr}", style=border_color))
 
         # Row 1: rank + suit top-left
-        row1 = f"{rank_display:<2}{' ' * (inner_w - 3)}{suit_sym}"
         line1 = Text(f"{v}", style=border_color)
         line1.append(rank_display, style=f"{suit_color} {style}".strip())
         line1.append(" " * (inner_w - len(rank_display) - 1))

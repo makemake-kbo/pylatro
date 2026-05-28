@@ -26,7 +26,7 @@ print(f"=== ALL TAGS IN {run_path.split('/')[-1]} ({len(all_tags)} total) ===")
 for i, tag in enumerate(all_tags[:80]):
     print(f"{i+1:3d}. {tag}")
 
-print(f"\n=== DATA FOR TARGET TAGS ===")
+print("\n=== DATA FOR TARGET TAGS ===")
 for tag in SCALAR_TAGS:
     if tag in all_tags:
         events = ea.Scalars(tag)

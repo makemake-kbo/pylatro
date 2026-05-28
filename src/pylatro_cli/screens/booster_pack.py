@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import Button, Static
@@ -67,8 +67,6 @@ class BoosterPackScreen(Screen):
         with Vertical(id="pack-container"):
             yield Static("", id="pack-header")
             yield Static("", id="pack-cards-display")
-            from textual.containers import Horizontal
-
             with Horizontal(id="pack-buttons"):
                 yield Button("Claim", id="claim-btn", variant="primary")
                 yield Button("Skip Pack", id="skip-btn", variant="default")

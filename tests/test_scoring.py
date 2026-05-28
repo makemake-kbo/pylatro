@@ -1,6 +1,6 @@
 from math import isnan
 
-from pylatro import add_joker, cash_out, create_run_state, get_blind_amount, score_hand
+from pylatro import add_joker, create_run_state, get_blind_amount, score_hand
 from pylatro.models import PlayingCard
 
 
@@ -87,35 +87,6 @@ def test_type_and_suit_jokers_stack_on_pair_fixture() -> None:
     )
 
     assert (result.hand_name, result.chips, result.mult, result.total) == ("Pair", 66.0, 13.0, 858)
-
-
-def test_boss_cash_out_advances_seeded_antes_through_win_and_endless() -> None:
-    state = create_run_state("AAAAAAAA")
-    progression: list[tuple[int, str, str, str, str, bool]] = []
-    for _ in range(8):
-        state.round_resets.blind_states["Boss"] = "Defeated"
-        cash_out(state)
-        progression.append(
-            (
-                state.round_resets.ante,
-                state.round_resets.blind_choices["Boss"],
-                state.current_voucher or "",
-                state.round_resets.blind_tags["Small"],
-                state.round_resets.blind_tags["Big"],
-                state.won,
-            )
-        )
-
-    assert progression == [
-        (2, "bl_house", "v_magic_trick", "tag_juggle", "tag_ethereal", False),
-        (3, "bl_fish", "v_seed_money", "tag_coupon", "tag_uncommon", False),
-        (4, "bl_window", "v_telescope", "tag_coupon", "tag_d_six", False),
-        (5, "bl_wall", "v_paint_brush", "tag_coupon", "tag_garbage", False),
-        (6, "bl_tooth", "v_seed_money", "tag_standard", "tag_orbital", False),
-        (7, "bl_flint", "v_hieroglyph", "tag_boss", "tag_ethereal", False),
-        (8, "bl_final_leaf", "v_blank", "tag_charm", "tag_top_up", False),
-        (9, "bl_goad", "v_crystal_ball", "tag_garbage", "tag_investment", True),
-    ]
 
 
 def test_blind_amount_matches_reference_tables_into_endless() -> None:

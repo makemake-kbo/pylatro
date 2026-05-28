@@ -36,7 +36,6 @@ from .constants import (
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
-    OBJ_START,
     POKER_HAND_NAMES,
     SHOP_MAX,
     SHOP_START,
@@ -164,6 +163,7 @@ class Tokenizer:
                 tokens[p, 2] = _enh_to_id.get(card.center_key, 0)
                 tokens[p, 3] = _edition_to_id.get(card.edition_key or "", 0)
                 tokens[p, 4] = _seal_to_id.get(card.seal or "", 0)
+                # deck token cols: 5=location, 9=selected, 11=hand_slot
                 tokens[p, 5] = loc
                 tokens[p, 6] = card.debuff
                 tokens[p, 7] = card.face_down
@@ -259,7 +259,6 @@ class Tokenizer:
 
     @cython.locals(blind_type_id=cython.int, boss_id=cython.int)
     def _encode_meta(self, state: RunState, sub_phase: SubPhase) -> list[int]:
-        blind = state.round_resets.blind or {}
         blind_type_id = {"Small": 0, "Big": 1}.get(state.blind_on_deck or "Small", 2)
         boss_key = state.round_resets.blind_choices.get("Boss", "")
         boss_id = self.vocab.boss_to_id.get(boss_key, 0)

@@ -50,11 +50,6 @@ PRETRAIN_LOSS_BASE = -10.0
 PRETRAIN_ANTE_PROGRESS_VALUE = 1.0
 PRETRAIN_STALL_EXTRA_PENALTY = 2.0
 
-WIN_REWARD = PRETRAIN_WIN_VALUE / REWARD_SCALE
-LOSS_PENALTY_BASE = PRETRAIN_LOSS_BASE / REWARD_SCALE
-STALL_EXTRA_PENALTY = PRETRAIN_STALL_EXTRA_PENALTY / REWARD_SCALE
-LOSS_PER_UNFINISHED_ANTE = 0.0
-
 SCORE_PROGRESS_SCALE = 0.5
 PRESSURE_PROGRESS_SCALE = 1.0
 DISCARD_RESOURCE_WEIGHT = 0.5
@@ -535,16 +530,3 @@ def _standard_overfull_penalty(state: RunState) -> float:
         return 0.0
     penalty = STANDARD_OVERFULL_CARD_BASE_PENALTY * math.expm1(STANDARD_OVERFULL_CARD_EXPONENT * overfull)
     return min(penalty, STANDARD_OVERFULL_CARD_PENALTY_CAP)
-
-
-def sparse_reward(
-    state: RunState,
-    prev_info: dict,
-    curr_info: dict,
-    terminated: bool,
-    won: bool,
-) -> float:
-    """Sparse reward: only win/loss."""
-    if terminated:
-        return 10.0 if won else -10.0
-    return 0.0

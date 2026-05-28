@@ -15,6 +15,7 @@ import pytest
 from pylatro import add_joker, create_run_state, score_hand, start_blind, play_cards
 from pylatro.models import PlayingCard
 from pylatro.runtime import apply_end_shop
+from pylatro.scoring import RANK_TO_ID
 
 
 # ---------------------------------------------------------------------------
@@ -588,3 +589,61 @@ def test_type_chips_and_type_mult_stack() -> None:
     assert result.chips == 10 + 4 + 4 + 50  # 68
     assert result.mult == 2 + 8  # 10
     assert result.total == 680
+
+
+# ---------------------------------------------------------------------------
+# The Idol — X mult when the round's chosen card (rank id + suit) is played
+# ---------------------------------------------------------------------------
+
+def test_the_idol_x_mult_only_on_matching_card() -> None:
+    """The Idol applies its X mult exactly once, for the card matching idol_card."""
+    state = create_run_state("AAAAAAAA")
+    add_joker(state, "j_idol")  # extra = 2 → x2 mult
+
+    hand = [_card("Hearts", "K"), _card("Spades", "K")]  # Pair of Kings; both score
+
+    # Idol = King of Hearts → only the Hearts King matches (same id, right suit).
+    state.current_round.idol_card = {"rank": "K", "suit": "Hearts", "id": RANK_TO_ID["K"]}
+    matched = score_hand(state, hand)
+
+    # Idol = Two of Clubs → neither played card matches.
+    state.current_round.idol_card = {"rank": "2", "suit": "Clubs", "id": RANK_TO_ID["2"]}
+    unmatched = score_hand(state, hand)
+
+    assert matched.hand_name == unmatched.hand_name == "Pair"
+    # The single matching card multiplies mult by 2; nothing else differs.
+    assert matched.mult == unmatched.mult * 2
+
+
+def test_ancient_joker_x_mult_on_matching_suit() -> None:
+    """Ancient Joker applies its X mult once per played card of the round's suit."""
+    state = create_run_state("AAAAAAAA")
+    add_joker(state, "j_ancient")
+    x_mult = float(state.jokers[0].extra)
+
+    hand = [_card("Hearts", "K"), _card("Spades", "K")]  # only one Hearts card
+
+    state.current_round.ancient_card = {"suit": "Hearts"}
+    matched = score_hand(state, hand)
+
+    state.current_round.ancient_card = {"suit": "Clubs"}  # neither card matches
+    unmatched = score_hand(state, hand)
+
+    assert matched.mult == unmatched.mult * x_mult
+
+
+def test_round_cards_populate_for_all_four_jokers_each_round() -> None:
+    """Starting a blind re-rolls real deck cards for Idol/Mail/Ancient/Castle."""
+    state = create_run_state("AAAAAAAA")
+    start_blind(state)
+    cr = state.current_round
+    suits = {c.suit for c in state.deck_cards}
+
+    # The Idol: rank id stays consistent with its rank, and the card exists.
+    assert cr.idol_card["id"] == RANK_TO_ID[cr.idol_card["rank"]]
+    assert any(c.rank == cr.idol_card["rank"] and c.suit == cr.idol_card["suit"] for c in state.deck_cards)
+    # Mail-In Rebate: a real rank with a matching id.
+    assert cr.mail_card["id"] == RANK_TO_ID[cr.mail_card["rank"]]
+    # Ancient Joker / Castle: a real suit from the deck.
+    assert cr.ancient_card["suit"] in suits
+    assert cr.castle_card["suit"] in suits

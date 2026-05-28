@@ -20,7 +20,7 @@ from .runtime import (
     create_playing_card,
     joker_limit,
 )
-from .scoring import RANK_TO_ID, get_poker_hand_info
+from .scoring import RANK_TO_ID, _level_up_hand, get_poker_hand_info
 
 
 @dataclass(slots=True)
@@ -300,13 +300,6 @@ def _register_consumable_use(state, center_key: str) -> None:
     elif center["set"] == "Spectral":
         state.consumeable_usage_total["spectral"] += 1
     state.consumeable_usage_total["all"] += 1
-
-
-def _level_up_hand(state, hand_name: str, amount: int = 1) -> None:
-    hand = state.hands[hand_name]
-    hand["level"] = max(0, int(hand["level"]) + amount)
-    hand["mult"] = max(int(hand["s_mult"]) + int(hand["l_mult"]) * (int(hand["level"]) - 1), 1)
-    hand["chips"] = max(int(hand["s_chips"]) + int(hand["l_chips"]) * (int(hand["level"]) - 1), 0)
 
 
 def _eligible_editionless_jokers(state) -> list:

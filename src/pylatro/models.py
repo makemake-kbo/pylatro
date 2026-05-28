@@ -89,8 +89,12 @@ class CurrentRound:
     free_rerolls: int = 0
     dollars: int = 0
     jokers_purchased: int = 0
-    idol_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades", "rank": "Ace"})
-    mail_card: dict[str, Any] = field(default_factory=lambda: {"rank": "Ace"})
+    # Per-round target cards for The Idol / Mail-In Rebate / Ancient Joker /
+    # Castle, re-rolled each round by flow._reset_round_cards. "id" is the rank id
+    # used by scoring; "rank"/"suit" strings are what the heuristic matches on.
+    # These defaults are placeholders, overwritten before the first hand is scored.
+    idol_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades", "rank": "A", "id": 14})
+    mail_card: dict[str, Any] = field(default_factory=lambda: {"rank": "A", "id": 14})
     ancient_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades"})
     castle_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades"})
     used_packs: list[str] = field(default_factory=list)

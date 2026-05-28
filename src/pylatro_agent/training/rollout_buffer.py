@@ -71,40 +71,6 @@ class RolloutBuffer:
         # Write pointer per env
         self._step_counts = np.zeros(num_envs, dtype=np.int64)
 
-    def _index(self, env_idx: int, step: int) -> int:
-        return env_idx * self.rollout_length + step
-
-    def add(
-        self,
-        env_idx: int,
-        obs: dict,
-        action: int,
-        reward: float,
-        value: float,
-        log_prob: float,
-        terminated: bool,
-        truncated: bool,
-        bootstrap_value: float = 0.0,
-    ) -> None:
-        """Store one transition for one environment."""
-        step = self._step_counts[env_idx]
-        idx = self._index(env_idx, step)
-
-        self.tokens[idx] = obs["tokens"]
-        self.token_types[idx] = obs["token_types"]
-        self.scalars[idx] = obs["scalars"]
-        self.attention_masks[idx] = obs["attention_mask"]
-        self.action_masks[idx] = obs["action_mask"]
-        self.actions[idx] = action
-        self.rewards[idx] = reward
-        self.values[idx] = value
-        self.log_probs[idx] = log_prob
-        self.terminated[idx] = terminated
-        self.truncated[idx] = truncated
-        self.bootstrap_values[idx] = bootstrap_value
-
-        self._step_counts[env_idx] = step + 1
-
     def add_batch(
         self,
         step: int,
@@ -286,9 +252,6 @@ class RolloutBuffer:
 
             batches.append(batch)
         return batches
-
-    def total_transitions(self) -> int:
-        return int(self._step_counts.sum())
 
     @property
     def _flat_returns(self) -> np.ndarray:

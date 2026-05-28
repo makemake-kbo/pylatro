@@ -275,6 +275,8 @@ def apply_setting_blind(state: RunState) -> dict[str, list[str]]:
             if isinstance(front, dict) and isinstance(front_key, str):
                 add_playing_cards(state, [create_playing_card(state, front_key=front_key, center_key="m_stone")], area="draw")
         elif name == "Luchador" and is_boss:
+            # No-op on blind set: Luchador disables the boss blind when *sold*,
+            # not when the blind is selected (handled in sell_joker).
             pass
     sync_all_jokers(state)
     return {"jokers": created_jokers, "consumables": created_consumables}

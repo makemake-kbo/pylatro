@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import time
-import multiprocessing
 from pylatro import load_game_data
 from pylatro_agent.vocab import build_vocab
 from pylatro_agent.heuristic import HeuristicAgent

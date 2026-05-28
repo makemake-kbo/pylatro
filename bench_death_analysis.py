@@ -1,4 +1,3 @@
-import time
 from pylatro import load_game_data
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.training.fast_runner import FastRunner

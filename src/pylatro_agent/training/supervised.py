@@ -67,6 +67,7 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
     return returns
 
 
+# Retained for unit tests; production inlines the equivalent at the BC-loss site (~219).
 def _masked_action_loss(logits: torch.Tensor, action_mask: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
     """Return behavior-cloning NLL over the legal action support only."""
     dist = MaskedCategorical(logits, action_mask)

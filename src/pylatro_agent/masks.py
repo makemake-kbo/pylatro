@@ -16,6 +16,7 @@ from .constants import (
     JOKER_TARGET_CONSUMABLE_NAMES,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
+    MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_SHOP_ITEMS,
@@ -95,7 +96,7 @@ def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
     """
     base = int(ActionRange.CONSUMABLE_FLAT_START)
     num_jokers = min(len(state.jokers), MAX_JOKER_SLOTS)
-    hand_size = min(len(state.hand_cards), 16)
+    hand_size = min(len(state.hand_cards), MAX_HAND_SIZE)
 
     for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
         cons = state.consumables[slot]

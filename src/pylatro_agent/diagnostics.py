@@ -31,6 +31,7 @@ def _planet_hand_type(state, center_key: str) -> str:
 
 
 def _main_hand_proxy(state) -> str:
+    # rank by (times played, hand level, chips*mult) descending; name breaks final ties
     rows: list[tuple[int, int, float, str]] = []
     for name, hand in state.hands.items():
         rows.append((

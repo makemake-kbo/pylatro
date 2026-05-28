@@ -322,6 +322,9 @@ class Tokenizer:
         tokens[pos, 5] = slot
         tokens[pos, 6] = int(joker.eternal)
         tokens[pos, 7] = int(joker.perishable)
+        tokens[pos, 8] = int(joker.rental)
+        tokens[pos, 9] = int(joker.debuff)
+        tokens[pos, 10] = min(joker.perish_tally or 0, 31)
 
     @cython.locals(
         tokens=cython.short[:, :],
@@ -330,7 +333,7 @@ class Tokenizer:
         edition_id=cython.int,
     )
     def _encode_consumable(self, tokens: np.ndarray, pos: int, cons: ConsumableInstance, slot: int) -> None:
-        tokens[pos, 0] = 0
+        tokens[pos, 0] = self._consumable_set_id(cons.center_key)
         tokens[pos, 1] = self.vocab.consumable_to_id.get(cons.center_key, 0)
         edition_id = 0
         if cons.edition:
@@ -340,6 +343,9 @@ class Tokenizer:
                     break
         tokens[pos, 2] = edition_id
         tokens[pos, 3] = slot
+
+    def _consumable_set_id(self, center_key: str) -> int:
+        return self.vocab.consumable_set_to_id.get(center_key, 0)
 
     def _gather_shop_items(self, state: RunState) -> list[ShopCard]:
         items: list[ShopCard] = []

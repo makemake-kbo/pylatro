@@ -142,6 +142,15 @@ class JokerEmbedding(nn.Module):
         self.sell_proj = nn.Linear(1, d_model)
         self.counter_proj = nn.Linear(1, d_model)
         self.slot_emb = nn.Embedding(8, d_model)
+        self.eternal_emb = nn.Embedding(2, d_model)
+        self.perishable_emb = nn.Embedding(2, d_model)
+        self.rental_emb = nn.Embedding(2, d_model)
+        self.debuff_emb = nn.Embedding(2, d_model)
+        self.perish_tally_proj = nn.Linear(1, d_model)
+        nn.init.zeros_(self.rental_emb.weight)
+        nn.init.zeros_(self.debuff_emb.weight)
+        nn.init.zeros_(self.perish_tally_proj.weight)
+        nn.init.zeros_(self.perish_tally_proj.bias)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         jid = tokens[:, :, 0].clamp(0, self.id_emb.num_embeddings - 1)
@@ -150,10 +159,18 @@ class JokerEmbedding(nn.Module):
         sell = tokens[:, :, 3].float().unsqueeze(-1)
         counter = tokens[:, :, 4].float().unsqueeze(-1)
         slot = tokens[:, :, 5].clamp(0, 7)
+        eternal = tokens[:, :, 6].clamp(0, 1)
+        perishable = tokens[:, :, 7].clamp(0, 1)
+        rental = tokens[:, :, 8].clamp(0, 1)
+        debuff = tokens[:, :, 9].clamp(0, 1)
+        perish_tally = tokens[:, :, 10].float().unsqueeze(-1)
 
         return (
             self.id_emb(jid) + self.rarity_emb(rar) + self.edition_emb(ed)
             + self.sell_proj(sell) + self.counter_proj(counter) + self.slot_emb(slot)
+            + self.eternal_emb(eternal) + self.perishable_emb(perishable)
+            + self.rental_emb(rental) + self.debuff_emb(debuff)
+            + self.perish_tally_proj(perish_tally)
         )
 
 

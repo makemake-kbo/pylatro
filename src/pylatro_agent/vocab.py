@@ -11,6 +11,7 @@ from pylatro import GameData
 class Vocab:
     joker_to_id: dict[str, int] = field(default_factory=dict)
     consumable_to_id: dict[str, int] = field(default_factory=dict)
+    consumable_set_to_id: dict[str, int] = field(default_factory=dict)
     voucher_to_id: dict[str, int] = field(default_factory=dict)
     boss_to_id: dict[str, int] = field(default_factory=dict)
     booster_to_id: dict[str, int] = field(default_factory=dict)
@@ -63,6 +64,8 @@ EDITION_TO_ID = {"foil": 1, "holo": 2, "polychrome": 3, "negative": 4}
 
 SEAL_TO_ID = {"Red": 1, "Blue": 2, "Gold": 3, "Purple": 4}
 
+CONSUMABLE_SET_TO_ID = {"Tarot": 1, "Planet": 2, "Spectral": 3}
+
 
 def build_vocab(data: GameData) -> Vocab:
     """Build vocabulary ID mappings from GameData."""
@@ -81,6 +84,13 @@ def build_vocab(data: GameData) -> Vocab:
         if center.get("consumeable"):
             vocab.consumable_to_id[key] = idx
             idx += 1
+
+    # Consumable set mapping (key -> set ID)
+    for key, center in data.centers.items():
+        if center.get("consumeable"):
+            vocab.consumable_set_to_id[key] = CONSUMABLE_SET_TO_ID.get(
+                str(center.get("set", "")), 0
+            )
 
     # Vouchers
     idx = 1

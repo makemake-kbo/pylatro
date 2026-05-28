@@ -395,7 +395,8 @@ def _mask_shop(m, state, AR):
         if item.cost > state.dollars:
             continue
         if item.card_type == "Joker":
-            if len(state.jokers) < joker_limit(state):
+            is_negative = bool(item.edition and item.edition.get("negative"))
+            if len(state.jokers) < joker_limit(state) or is_negative:
                 m[_buy_start + i] = 1
         elif item.card_type in ("Tarot", "Planet", "Spectral"):
             if len(state.consumables) < consumable_limit(state):
@@ -424,7 +425,23 @@ def _mask_booster(m, state, AR):
     pack = state.pack
     if pack and pack.choices_remaining > 0:
         for i in range(min(len(pack.cards), MAX_PACK_CARDS)):
-            m[_claim_start + i] = 1
+            card = pack.cards[i]
+            center = state.data.centers.get(card.center_key, {})
+            card_type = ""
+            if center.get("set") == "Joker":
+                card_type = "Joker"
+            elif center.get("consumeable"):
+                card_type = str(center.get("set", ""))
+
+            if card_type == "Joker":
+                is_negative = bool(card.edition and card.edition.get("negative"))
+                if len(state.jokers) < joker_limit(state) or is_negative:
+                    m[_claim_start + i] = 1
+            elif card_type in ("Tarot", "Planet", "Spectral"):
+                if len(state.consumables) < consumable_limit(state):
+                    m[_claim_start + i] = 1
+            else:
+                m[_claim_start + i] = 1
     m[_skip] = 1
 
 

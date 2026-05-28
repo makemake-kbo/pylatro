@@ -5,7 +5,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pylatro import add_consumable, create_run_state, load_game_data, select_blind, start_blind
+from pylatro import (
+    add_consumable,
+    add_joker,
+    cash_out,
+    create_run_state,
+    load_game_data,
+    open_booster_pack,
+    populate_shop,
+    select_blind,
+    start_blind,
+)
 from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.constants import ActionRange, SubPhase
 from pylatro_agent.heuristic import HeuristicAgent
@@ -106,3 +116,118 @@ def test_shop_mask_leave_always_valid(hand_play_state):
     # This is a simplified test — just check leave is always valid in shop mask
     mask = compute_action_mask(hand_play_state, SubPhase.SHOP)
     assert mask[ActionRange.SHOP_LEAVE] == 1
+
+
+def test_pack_mask_joker_capacity_check(game_data):
+    state = create_run_state("pack_mask_test", 1, "b_red", data=game_data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    state.current_round.hands_left = 0
+    cash_out(state)
+    populate_shop(state)
+
+    from pylatro.runtime import joker_limit
+    jlimit = joker_limit(state)
+
+    for _ in range(jlimit):
+        add_joker(state, "j_joker")
+
+    for i, booster in enumerate(state.shop.boosters):
+        if booster is not None:
+            open_booster_pack(state, i)
+            break
+    else:
+        pytest.skip("No booster pack in shop")
+
+    if state.pack is None:
+        pytest.skip("No pack opened")
+
+    mask = compute_action_mask(state, SubPhase.BOOSTER_PACK)
+
+    has_joker_in_pack = False
+    for i, card in enumerate(state.pack.cards):
+        center = state.data.centers.get(card.center_key, {})
+        if center.get("set") == "Joker":
+            has_joker_in_pack = True
+            is_negative = bool(card.edition and card.edition.get("negative"))
+            if not is_negative:
+                assert mask[ActionRange.PACK_CLAIM_START + i] == 0, (
+                    f"Non-negative joker at full slots should be masked out"
+                )
+            else:
+                assert mask[ActionRange.PACK_CLAIM_START + i] == 1, (
+                    f"Negative joker should be claimable even at full slots"
+                )
+
+    if not has_joker_in_pack:
+        pytest.skip("No joker in pack for this test")
+
+
+def test_pack_mask_consumable_capacity_check(game_data):
+    state = create_run_state("pack_cons_test", 1, "b_red", data=game_data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    state.current_round.hands_left = 0
+    cash_out(state)
+    populate_shop(state)
+
+    from pylatro.runtime import consumable_limit
+    climit = consumable_limit(state)
+
+    for _ in range(climit):
+        add_consumable(state, "c_fool")
+
+    for i, booster in enumerate(state.shop.boosters):
+        if booster is not None:
+            open_booster_pack(state, i)
+            break
+    else:
+        pytest.skip("No booster pack in shop")
+
+    if state.pack is None:
+        pytest.skip("No pack opened")
+
+    mask = compute_action_mask(state, SubPhase.BOOSTER_PACK)
+
+    has_consumable_in_pack = False
+    for i, card in enumerate(state.pack.cards):
+        center = state.data.centers.get(card.center_key, {})
+        if center.get("consumeable"):
+            has_consumable_in_pack = True
+            assert mask[ActionRange.PACK_CLAIM_START + i] == 0, (
+                f"Consumable at full slots should be masked out"
+            )
+
+    if not has_consumable_in_pack:
+        pytest.skip("No consumable in pack for this test")
+
+
+def test_shop_mask_negative_joker_buyable_at_full_slots(game_data):
+    state = create_run_state("neg_joker_test", 1, "b_red", data=game_data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    state.current_round.hands_left = 0
+    cash_out(state)
+    populate_shop(state)
+
+    from pylatro.runtime import joker_limit
+    jlimit = joker_limit(state)
+
+    for _ in range(jlimit):
+        add_joker(state, "j_joker")
+
+    mask = compute_action_mask(state, SubPhase.SHOP)
+
+    all_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+    for i, item in enumerate(all_items):
+        if item.card_type == "Joker":
+            is_negative = bool(item.edition and item.edition.get("negative"))
+            if item.cost <= state.dollars:
+                if is_negative:
+                    assert mask[ActionRange.SHOP_BUY_START + i] == 1, (
+                        "Negative joker should be buyable at full slots"
+                    )
+                else:
+                    assert mask[ActionRange.SHOP_BUY_START + i] == 0, (
+                        "Non-negative joker should be masked at full slots"
+                    )

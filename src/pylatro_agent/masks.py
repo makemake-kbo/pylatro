@@ -154,9 +154,9 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
 
     for i, item in enumerate(all_items[:MAX_SHOP_ITEMS]):
         if item.cost <= state.dollars:
-            # Check capacity
             if item.card_type == "Joker":
-                if len(state.jokers) < joker_limit(state):
+                is_negative = bool(item.edition and item.edition.get("negative"))
+                if len(state.jokers) < joker_limit(state) or is_negative:
                     mask[AR.SHOP_BUY_START + i] = 1
             elif item.card_type in ("Tarot", "Planet", "Spectral"):
                 if len(state.consumables) < consumable_limit(state):
@@ -187,8 +187,34 @@ def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:
     pack = state.pack
 
     if pack and pack.choices_remaining > 0:
+        from pylatro.runtime import consumable_limit, joker_limit
+
         for i in range(min(len(pack.cards), MAX_PACK_CARDS)):
-            mask[AR.PACK_CLAIM_START + i] = 1
+            card = pack.cards[i]
+            center = state.data.centers.get(card.center_key, {})
+            card_type = _pack_card_type(center)
+
+            if card_type == "Joker":
+                is_negative = bool(card.edition and card.edition.get("negative"))
+                if len(state.jokers) < joker_limit(state) or is_negative:
+                    mask[AR.PACK_CLAIM_START + i] = 1
+            elif card_type in ("Tarot", "Planet", "Spectral"):
+                if len(state.consumables) < consumable_limit(state):
+                    mask[AR.PACK_CLAIM_START + i] = 1
+            else:
+                mask[AR.PACK_CLAIM_START + i] = 1
 
     # Skip/close always valid
     mask[AR.PACK_SKIP] = 1
+
+
+def _pack_card_type(center: dict) -> str:
+    if not center:
+        return ""
+    if center.get("set") == "Joker":
+        return "Joker"
+    if center.get("consumeable"):
+        return str(center.get("set", ""))
+    if center.get("set") in ("Default", "Enhanced"):
+        return "Playing"
+    return ""

@@ -315,7 +315,7 @@ def _run_game_fast_no_obs(
 
 
 def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
-    seed_start, min_ante, gamma = args
+    seed_start, min_ante, gamma, keep_below_ratio = args
     data = load_game_data()
     vocab = build_vocab(data)
     tokenizer = Tokenizer(vocab=vocab)
@@ -336,10 +336,13 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
             seed += 1
             games_since_gc += 1
             if max_ante < min_ante and not won:
-                if games_since_gc >= 500:
-                    gc.collect()
-                    games_since_gc = 0
-                continue
+                if keep_below_ratio > 0 and (seed % 1000) < int(keep_below_ratio * 1000):
+                    pass
+                else:
+                    if games_since_gc >= 500:
+                        gc.collect()
+                        games_since_gc = 0
+                    continue
             with _shared_counter.get_lock():
                 if _shared_counter.value >= _shared_target:
                     break
@@ -474,6 +477,7 @@ def generate_training_data(
     min_ante: int = 5,
     gamma: float = 0.995,
     num_workers: int = 0,
+    keep_below_threshold_ratio: float = 0.0,
 ) -> list[dict[str, Any]]:
     num_workers = _get_num_workers(num_workers)
     logger.info(
@@ -484,7 +488,10 @@ def generate_training_data(
         gamma,
     )
 
-    worker_args = [(i * 1_000_000, min_ante, gamma) for i in range(num_workers)]
+    worker_args = [
+        (i * 1_000_000, min_ante, gamma, keep_below_threshold_ratio)
+        for i in range(num_workers)
+    ]
 
     stop_event = threading.Event()
 

@@ -31,6 +31,7 @@ from .constants import (
     JOKER_START,
     MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
+    MAX_PACK_CARDS,
     MAX_PLAY_CANDIDATES,
     MAX_SEQ_LEN,
     META_COUNT,
@@ -206,6 +207,13 @@ class Tokenizer:
                 token_types[pos + i] = TokenType.SHOP
                 attn_mask[pos + i] = 1
 
+        if sub_phase == SubPhase.BOOSTER_PACK and state.pack is not None:
+            pos = SHOP_START
+            for i, card in enumerate(state.pack.cards[:MAX_PACK_CARDS]):
+                self._encode_pack_card(tokens, pos + i, card, i, state)
+                token_types[pos + i] = TokenType.SHOP
+                attn_mask[pos + i] = 1
+
         if sub_phase == SubPhase.BLIND_SELECT:
             pos = BLIND_SELECT_START
             blind_infos = self._gather_blind_choices(state)
@@ -374,6 +382,65 @@ class Tokenizer:
                     break
         tokens[pos, 3] = edition_id
         tokens[pos, 4] = slot
+
+    @cython.locals(
+        tokens=cython.short[:, :],
+        pos=cython.int,
+        slot=cython.int,
+        item_id=cython.int,
+        item_type=cython.int,
+        edition_id=cython.int,
+        seal_id=cython.int,
+    )
+    def _encode_pack_card(
+        self,
+        tokens: np.ndarray,
+        pos: int,
+        card: ShopCard,
+        slot: int,
+        state: RunState,
+    ) -> None:
+        item_id = 0
+        item_type = 0
+        if card.center_key in self.vocab.joker_to_id:
+            item_id = self.vocab.joker_to_id[card.center_key]
+            item_type = 1
+        elif card.center_key in self.vocab.consumable_to_id:
+            item_id = self.vocab.consumable_to_id[card.center_key]
+            item_type = 2
+        elif card.center_key in self.vocab.voucher_to_id:
+            item_id = self.vocab.voucher_to_id[card.center_key]
+            item_type = 3
+        elif card.center_key in self.vocab.booster_to_id:
+            item_id = self.vocab.booster_to_id[card.center_key]
+            item_type = 4
+        else:
+            center = state.data.centers.get(card.center_key, {})
+            if center.get("set") in ("Default", "Enhanced"):
+                item_type = 5
+        tokens[pos, 0] = item_id
+        tokens[pos, 1] = item_type
+        tokens[pos, 2] = min(card.cost, 255)
+        edition_id = 0
+        if card.edition:
+            for key, val in card.edition.items():
+                if val:
+                    edition_id = EDITION_TO_ID.get(key, 0)
+                    break
+        tokens[pos, 3] = edition_id
+        tokens[pos, 4] = slot
+        seal_id = SEAL_TO_ID.get(card.seal or "", 0)
+        tokens[pos, 5] = seal_id
+        tokens[pos, 6] = int(card.eternal)
+        tokens[pos, 7] = int(card.perishable)
+        tokens[pos, 8] = int(card.rental)
+        if card.front_key and len(card.front_key) >= 3:
+            front = state.data.cards.get(card.front_key, {})
+            tokens[pos, 9] = RANK_TO_ID.get(card.front_key[2], 0)
+            tokens[pos, 10] = SUIT_TO_ID.get(str(front.get("suit", "")), 0)
+        else:
+            tokens[pos, 9] = 0
+            tokens[pos, 10] = 0
 
     def _gather_blind_choices(self, state: RunState) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []

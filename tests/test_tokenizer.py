@@ -5,13 +5,23 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pylatro import create_run_state, load_game_data, select_blind, start_blind
+from pylatro import (
+    cash_out,
+    create_run_state,
+    load_game_data,
+    open_booster_pack,
+    populate_shop,
+    select_blind,
+    start_blind,
+)
 from pylatro_agent.constants import (
     HAND_CANDIDATE_MAX,
     HAND_CANDIDATE_START,
     MAX_HAND_SIZE,
+    MAX_PACK_CARDS,
     MAX_SEQ_LEN,
     SCALAR_DIM,
+    SHOP_START,
     TOKEN_DIM,
     SubPhase,
     TokenType,
@@ -210,3 +220,94 @@ def test_hand_candidates_play_before_discard(run_state, vocab):
 
     first_kind = obs.tokens[HAND_CANDIDATE_START, 0]
     assert first_kind == 1, "First candidates should be play candidates (kind=1)"
+
+
+def _make_pack_state(game_data):
+    state = create_run_state("pack_test", 1, "b_red", data=game_data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    state.current_round.hands_left = 0
+    cash_out(state)
+    populate_shop(state)
+    for i, booster in enumerate(state.shop.boosters):
+        if booster is not None:
+            open_booster_pack(state, i)
+            return state
+    pytest.skip("No booster pack in shop")
+
+
+@pytest.fixture
+def pack_state(game_data):
+    return _make_pack_state(game_data)
+
+
+def test_booster_pack_cards_encoded(pack_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(pack_state, SubPhase.BOOSTER_PACK)
+
+    assert pack_state.pack is not None
+    n_pack_cards = len(pack_state.pack.cards)
+    assert n_pack_cards > 0, "Pack should have at least one card"
+
+    shop_tokens_mask = obs.token_types[SHOP_START:SHOP_START + MAX_PACK_CARDS] == TokenType.SHOP
+    n_encoded = shop_tokens_mask.sum()
+    assert n_encoded == n_pack_cards, f"Expected {n_pack_cards} pack tokens, got {n_encoded}"
+
+
+def test_booster_pack_cards_have_attention(pack_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(pack_state, SubPhase.BOOSTER_PACK)
+
+    n_pack_cards = len(pack_state.pack.cards)
+    for i in range(n_pack_cards):
+        assert obs.attention_mask[SHOP_START + i] == 1, f"Pack card {i} should have attention"
+
+
+def test_booster_pack_cards_have_item_type(pack_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(pack_state, SubPhase.BOOSTER_PACK)
+
+    n_pack_cards = len(pack_state.pack.cards)
+    for i in range(n_pack_cards):
+        item_type = obs.tokens[SHOP_START + i, 1]
+        assert item_type >= 1, f"Pack card {i} should have a non-zero item type"
+
+
+def test_booster_pack_not_emitted_in_shop_phase(pack_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(pack_state, SubPhase.SHOP)
+
+    for i in range(MAX_PACK_CARDS):
+        assert obs.attention_mask[SHOP_START + i] == 0 or obs.token_types[SHOP_START + i] == TokenType.SHOP
+
+
+def test_booster_pack_no_pack_does_not_crash(run_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(run_state, SubPhase.BOOSTER_PACK)
+    assert obs.tokens.shape == (MAX_SEQ_LEN, TOKEN_DIM)
+
+
+def test_booster_pack_slots_zeroed_for_empty(pack_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(pack_state, SubPhase.BOOSTER_PACK)
+
+    n_pack_cards = len(pack_state.pack.cards)
+    for i in range(n_pack_cards, MAX_PACK_CARDS):
+        assert obs.attention_mask[SHOP_START + i] == 0
+
+
+def test_shop_tokens_present_in_shop_phase(game_data, vocab):
+    state = create_run_state("shop_test", 1, "b_red", data=game_data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    state.current_round.hands_left = 0
+    cash_out(state)
+    populate_shop(state)
+
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(state, SubPhase.SHOP)
+
+    shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+    n_items = len(shop_items)
+    shop_types = obs.token_types[SHOP_START:SHOP_START + n_items]
+    assert (shop_types == TokenType.SHOP).sum() == n_items

@@ -55,6 +55,7 @@ def train_self_play(
         ppo_config = PPOConfig(
             total_timesteps=config.ppo_timesteps_per_stage,
             device=config.device,
+            stake=current_stake,
             save_dir=str(save_path / f"stake_{current_stake}"),
         )
 
@@ -66,8 +67,8 @@ def train_self_play(
             data=data,
         )
 
-        # Evaluate
-        win_rate = evaluate_model(model, data, vocab, config.eval_games, device)
+        # Evaluate at the same stake we just trained on
+        win_rate = evaluate_model(model, data, vocab, config.eval_games, device, stake=current_stake)
         logger.info(f"Stake {current_stake} win rate: {win_rate:.3f}")
 
         checkpoint_path = save_path / f"self_play_stake{current_stake}.pt"

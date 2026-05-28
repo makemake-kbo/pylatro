@@ -184,9 +184,7 @@ class FastRunner:
             self._steps_since_progress += 1
         self._prev_signature = sig
 
-        if not self._done and (
-            self._steps_since_progress >= self._max_steps or self._step_count >= self._max_steps
-        ):
+        if not self._done and (self._steps_since_progress >= self._max_steps or self._step_count >= self._max_steps):
             self._done = True
 
     # ── internal state machine ──
@@ -254,11 +252,7 @@ class FastRunner:
             within = rel - slot * CONSUMABLE_ACTIONS_PER_SLOT
             if within == CONSUMABLE_NO_TARGET_OFFSET:
                 ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=())
-            elif (
-                CONSUMABLE_HAND_SUBSET_OFFSET
-                <= within
-                < CONSUMABLE_HAND_SUBSET_OFFSET + NUM_CONSUMABLE_HAND_SUBSETS
-            ):
+            elif CONSUMABLE_HAND_SUBSET_OFFSET <= within < CONSUMABLE_HAND_SUBSET_OFFSET + NUM_CONSUMABLE_HAND_SUBSETS:
                 hand_targets = consumable_subset_indices(within - CONSUMABLE_HAND_SUBSET_OFFSET)
                 ctrl.use_consumable_on(slot, hand_targets=hand_targets, joker_targets=())
             else:
@@ -317,6 +311,7 @@ class FastRunner:
             state.dollars,
             self._sub_phase,
         )
+
 
 # ── mask helpers (module-level for speed) ──
 
@@ -444,6 +439,10 @@ def _mask_booster(m, state, AR):
     start=cython.int,
     end=cython.int,
     i=cython.int,
+    _no_target_off=cython.int,
+    _hand_sub_off=cython.int,
+    _joker_off=cython.int,
+    _per_slot=cython.int,
 )
 def _mask_consumable_flat(m, state, AR):
     base = int(AR.CONSUMABLE_FLAT_START)
@@ -451,6 +450,11 @@ def _mask_consumable_flat(m, state, AR):
     hand_size = len(state.hand_cards)
     if hand_size > 16:
         hand_size = 16
+
+    _no_target_off = int(CONSUMABLE_NO_TARGET_OFFSET)
+    _hand_sub_off = int(CONSUMABLE_HAND_SUBSET_OFFSET)
+    _joker_off = int(CONSUMABLE_JOKER_OFFSET)
+    _per_slot = int(CONSUMABLE_ACTIONS_PER_SLOT)
 
     for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
         cons = state.consumables[slot]
@@ -461,11 +465,11 @@ def _mask_consumable_flat(m, state, AR):
         needs_joker_target = name in JOKER_TARGET_CONSUMABLE_NAMES
         fallback_hand_limits = HAND_TARGET_CONSUMABLE_LIMITS.get(name)
 
-        slot_base = base + slot * CONSUMABLE_ACTIONS_PER_SLOT
+        slot_base = base + slot * _per_slot
 
         if max_highlighted is None and fallback_hand_limits is None and not needs_joker_target:
             if can_use_consumable(state, cons, hand_targets=(), joker_targets=()):
-                m[slot_base + CONSUMABLE_NO_TARGET_OFFSET] = 1
+                m[slot_base + _no_target_off] = 1
             continue
 
         if max_highlighted is not None or fallback_hand_limits is not None:
@@ -476,7 +480,7 @@ def _mask_consumable_flat(m, state, AR):
                 raw_max = int(max_highlighted)
             max_size = raw_max if raw_max < MAX_CONSUMABLE_HAND_TARGETS else MAX_CONSUMABLE_HAND_TARGETS
             subset_mask = legal_consumable_subset_mask(hand_size, min_size, max_size)
-            start = slot_base + CONSUMABLE_HAND_SUBSET_OFFSET
+            start = slot_base + _hand_sub_off
             for i in range(NUM_CONSUMABLE_HAND_SUBSETS):
                 if not subset_mask[i]:
                     continue
@@ -485,7 +489,7 @@ def _mask_consumable_flat(m, state, AR):
                     m[start + i] = 1
 
         if needs_joker_target:
-            start = slot_base + CONSUMABLE_JOKER_OFFSET
+            start = slot_base + _joker_off
             for j in range(num_jokers):
                 if can_use_consumable(state, cons, hand_targets=(), joker_targets=(j,)):
                     m[start + j] = 1

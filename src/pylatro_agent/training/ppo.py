@@ -189,6 +189,9 @@ class PPOConfig:
     # (8). Heuristic-teacher win rates by ante are ~39% at 4, ~12% at 5,
     # ~2% at 6. Set to None for the standard ante-8 victory condition.
     win_ante: int | None = None
+    # Stake (difficulty tier, 1-8) the training/eval envs run at. The self-play
+    # curriculum ramps this; on its own PPO trains at the base stake.
+    stake: int = 1
     max_no_progress_steps: int = 256
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     normalize_returns: bool = False  # BC pretraining supervises expected_score on raw ±10-ish
@@ -1140,6 +1143,7 @@ def train_ppo(
     # Create vectorized environments
     vec_env = _make_vectorized_envs(
         config.num_envs, data, vocab,
+        stake=config.stake,
         max_no_progress_steps=config.max_no_progress_steps,
         use_async=config.async_envs,
         win_ante=config.win_ante,
@@ -1765,6 +1769,7 @@ def evaluate_model(
     max_no_progress_steps: int = 256,
     win_ante: int | None = None,
     temperature: float = 1.0,
+    stake: int = 1,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games."""
     model.eval()
@@ -1775,6 +1780,7 @@ def evaluate_model(
             seed=10000 + game_idx,
             data=data,
             vocab=vocab,
+            stake=stake,
             max_steps=max_no_progress_steps,
             win_ante=win_ante,
         )

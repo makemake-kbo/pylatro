@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Compile hot pylatro modules with Cython for ~5-20x speedup.
+"""Compile hot pylatro modules with cython
 
 Usage:
     nix develop
     uv sync --group dev
     uv run python scripts/compile_cython.py
     uv run python scripts/compile_cython.py --clean
-
-Compiled .so files sit alongside the .py sources.  Python prefers the
-compiled extension on import, falling back to pure-Python when absent.
 """
 
 from __future__ import annotations
@@ -40,6 +37,27 @@ AGENT_MODULES: list[str] = [
     "hand_candidates",
     "training.fast_runner",
 ]
+
+# -ffp-contract=off is REQUIRED for correctness, not speed. pylatro is a bit-exact
+# port of Balatro's RNG (rng.pseudohash) and scoring. Once those hot loops carry C
+# `double` locals (via @cython.locals), the compiler may fuse `a*b + c*d` into a
+# single FMA instruction, skipping the intermediate rounding CPython's float
+# arithmetic performs. pseudohash is a chaotic recurrence (it divides by its own
+# running value each step), so one 1-ULP FMA difference snowballs into a totally
+# different hash(i.e. a different card/shop/boss sequence for a given seed). With
+# this repo's python build flags the fusion does happen and breaks
+# tests/test_rng.py; `off` forces strict round-after-each-op IEEE that matches
+# CPython.
+EXTRA_COMPILE_ARGS = (
+    "-ffp-contract=off",
+    "-march=native",
+    "-O3",
+    # the commands below are commented out because they break
+    # seed arithmetics, or very high score/naneinf assumptions
+    # but are useful when you want max performance for
+    # generating pretraining data and evaluating model play
+    # "-ffast-math",
+)
 
 DIRECTIVES = {
     "language_level": "3",
@@ -83,6 +101,7 @@ def compile_extensions() -> None:
         Extension(
             f"pylatro.{mod}",
             sources=[str(SRC / f"{mod}.py")],
+            extra_compile_args=list(EXTRA_COMPILE_ARGS),
         )
         for mod in MODULES
     ]
@@ -95,6 +114,7 @@ def compile_extensions() -> None:
                 f"pylatro_agent.{mod}",
                 sources=[str(SRC_AGENT / f"{mod.replace('.', '/')}.py")],
                 include_dirs=[np.get_include()],
+                extra_compile_args=list(EXTRA_COMPILE_ARGS),
             )
             for mod in AGENT_MODULES
         )

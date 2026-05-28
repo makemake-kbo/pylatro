@@ -14,11 +14,22 @@ from dataclasses import dataclass, field
 from math import floor, pi
 from typing import TYPE_CHECKING, Any, TypeVar
 
+try:
+    import cython
+except ImportError:  # pragma: no cover - dependency-free core install without Cython
+    from ._cyshadow import cython
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 KT = TypeVar("KT")
 VT = TypeVar("VT")
+
+# A C ``double`` copy of math.pi. Referencing ``pi`` directly inside a typed loop
+# leaves it an (untyped) module global, which forces the whole expression back
+# through boxed PyObject arithmetic; a typed constant keeps the recurrence in
+# native C doubles when compiled.
+_PI = cython.declare(cython.double, pi)
 
 # Module-level reusable RNG instance (re-seeded before every draw).
 _rng = _random_mod.Random()
@@ -72,6 +83,7 @@ def _seeded_random_string(length: int, seed: float) -> tuple[str, int]:
     return "".join(chars).upper(), count
 
 
+@cython.locals(length=cython.Py_ssize_t, i=cython.Py_ssize_t, j=cython.Py_ssize_t)
 def _seeded_shuffle_indices(length: int, seed: float) -> list[int]:
     _rng.seed(seed)
     out = list(range(1, length + 1))
@@ -81,6 +93,7 @@ def _seeded_shuffle_indices(length: int, seed: float) -> list[int]:
     return out
 
 
+@cython.locals(num=cython.double, index=cython.Py_ssize_t)
 def pseudohash(text: str) -> float:
     """Hash a string to a float in [0, 1), reproducing Balatro's ``pseudohash``.
 
@@ -91,7 +104,7 @@ def pseudohash(text: str) -> float:
     """
     num = 1.0
     for index in range(len(text), 0, -1):
-        num = ((1.1239285023 / num) * ord(text[index - 1]) * pi + pi * index) % 1
+        num = ((1.1239285023 / num) * ord(text[index - 1]) * _PI + _PI * index) % 1
     return num
 
 

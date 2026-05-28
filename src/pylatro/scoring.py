@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from math import floor
 from typing import Any
 
+try:
+    import cython
+except ImportError:  # pragma: no cover - dependency-free core install without Cython
+    from ._cyshadow import cython
+
 from ._helpers import _as_dict
 from .instances import remove_joker, sync_all_jokers
 from .models import ConsumableInstance, JokerInstance, PlayingCard, RunState
@@ -148,6 +153,7 @@ def _card_id(state: RunState, card: PlayingCard) -> int:
     return RANK_TO_ID[card.rank]
 
 
+@cython.locals(base=cython.double, face_nominal=cython.double, suit_nominal=cython.double, suit_mult=cython.int)
 def _card_nominal(state: RunState, card: PlayingCard) -> float:
     # A sortable scalar that ranks cards rank-first, then suit, used to pick which
     # cards "score" within a hand. The tiny suit (1e-4) and per-object (1e-12)
@@ -257,6 +263,7 @@ def _get_x_same(state: RunState, num: int, hand: list[PlayingCard]) -> list[list
     return [cards for cid in sorted(groups, reverse=True) if len(cards := groups[cid]) == num]
 
 
+@cython.locals(required=cython.int)
 def _get_flush(state: RunState, hand: list[PlayingCard]) -> list[list[PlayingCard]]:
     ret: list[list[PlayingCard]] = []
     four_fingers = state.has_joker("Four Fingers")
@@ -271,6 +278,13 @@ def _get_flush(state: RunState, hand: list[PlayingCard]) -> list[list[PlayingCar
     return []
 
 
+@cython.locals(
+    required=cython.int,
+    card_id=cython.Py_ssize_t,
+    j=cython.int,
+    actual=cython.int,
+    straight_length=cython.int,
+)
 def _get_straight(state: RunState, hand: list[PlayingCard]) -> list[list[PlayingCard]]:
     ret: list[list[PlayingCard]] = []
     four_fingers = state.has_joker("Four Fingers")
@@ -493,6 +507,10 @@ def _evaluate_joker(
 
     if joker.debuff:
         return None
+
+    # This is terrible, terrible. For performance and readability
+    # TODO: make this such that we load jokers and associate them with a hash so
+    # we can do dict lookups
 
     if phase == "before":
         if name == "Spare Trousers" and (poker_hands["Two Pair"] or poker_hands["Full House"]) and isinstance(joker.extra, int):
@@ -790,6 +808,7 @@ def _evaluate_joker(
     return None
 
 
+@cython.locals(index=cython.Py_ssize_t, repetitions=cython.long, card_mult=cython.double, x_mult=cython.double)
 def score_hand(
     state: RunState,
     full_hand: list[PlayingCard],

@@ -27,12 +27,16 @@ from .constants import (
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
+    HAND_CANDIDATE_MAX,
+    HAND_CANDIDATE_START,
     JOKER_START,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
+    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
+    MAX_PLAY_CANDIDATES,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
     NUM_CONSUMABLE_HAND_SUBSETS,
@@ -114,6 +118,8 @@ class ActionGrammarOutput:
     macro_logits: torch.Tensor
     hand_count_logits: torch.Tensor          # (B, 2, 5), order: play, discard
     hand_card_logits: torch.Tensor           # (B, 2, MAX_HAND_SIZE)
+    candidate_play_logits: torch.Tensor      # (B, MAX_PLAY_CANDIDATES)
+    candidate_discard_logits: torch.Tensor   # (B, MAX_DISCARD_CANDIDATES)
     consumable_slot_logits: torch.Tensor     # (B, 3, MAX_CONSUMABLE_SLOTS), no/hand/joker
     consumable_count_logits: torch.Tensor    # (B, MAX_CONSUMABLE_SLOTS, 3)
     consumable_card_logits: torch.Tensor     # (B, MAX_CONSUMABLE_SLOTS, MAX_HAND_SIZE)
@@ -168,6 +174,8 @@ class ActionGrammarHead(nn.Module):
             nn.Linear(hidden, MAX_JOKER_SLOTS + MAX_CONSUMABLE_SLOTS),
         )
         self.pack_claim_head = nn.Linear(d_model, 1)
+        self.candidate_play_head = nn.Linear(d_model, 1)
+        self.candidate_discard_head = nn.Linear(d_model, 1)
 
     def forward(
         self,
@@ -208,10 +216,22 @@ class ActionGrammarHead(nn.Module):
         shop_global = self.shop_global_head(state)
         pack_tokens = backbone_out[:, SHOP_START:SHOP_START + MAX_PACK_CARDS]
 
+        candidate_tokens = backbone_out[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
+        candidate_mask = attention_mask[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
+        candidate_kinds = tokens[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 0]
+        play_cand_mask = candidate_mask.bool() & candidate_kinds.eq(1)
+        discard_cand_mask = candidate_mask.bool() & candidate_kinds.eq(2)
+        candidate_scores = self.candidate_play_head(candidate_tokens).squeeze(-1)
+        candidate_play_logits = candidate_scores.masked_fill(~play_cand_mask, -1e8)
+        candidate_disc_logits = self.candidate_discard_head(candidate_tokens).squeeze(-1)
+        candidate_discard_logits = candidate_disc_logits.masked_fill(~discard_cand_mask, -1e8)
+
         return ActionGrammarOutput(
             macro_logits=self.macro_head(state),
             hand_count_logits=self.hand_count_head(state).view(batch, 2, 5),
             hand_card_logits=hand_card_logits,
+            candidate_play_logits=candidate_play_logits,
+            candidate_discard_logits=candidate_discard_logits,
             consumable_slot_logits=self.consumable_slot_head(slot_tokens).permute(0, 2, 1),
             consumable_count_logits=consumable_count_logits,
             consumable_card_logits=consumable_card_logits,
@@ -260,12 +280,14 @@ class ActionGrammarDistribution:
         output: ActionGrammarOutput,
         action_mask: torch.Tensor,
         temperature: float = 1.0,
+        tokens: torch.Tensor | None = None,
     ) -> None:
         self.output = output
         self.action_mask = action_mask > 0
         self.temperature = max(float(temperature), 1e-6)
         self.device = action_mask.device
         self.batch_size = action_mask.shape[0]
+        self.tokens = tokens
         self.macro_mask = _macro_valid_mask(self.action_mask)
         has_any = self.macro_mask.any(dim=-1, keepdim=True)
         fallback = torch.zeros_like(self.macro_mask)
@@ -651,30 +673,71 @@ class ActionGrammarDistribution:
         return count_entropy + expected_count * _masked_entropy(card_logits, card_mask)
 
     def _sample_hand_actions(self, *, is_play: bool) -> torch.Tensor:
-        family = 0 if is_play else 1
-        valid_subsets = self._hand_valid_subset_mask(is_play)
-        count_mask = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
-        count = _sample_masked(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
-        bits = _sample_ordered_cards(
-            self._t(self.output.hand_card_logits[:, family]),
-            valid_subsets,
-            count,
-            max_count=5,
-            subset_bits=_hand_subset_bits(self.device),
-            subset_sizes=_hand_subset_sizes(self.device),
-            bit_to_subset=_bit_to_hand_subset(self.device),
-            slot_bits=_slot_bits(self.device),
-            greedy=False,
-        )
-        subset_idx = _bit_to_hand_subset(self.device)[bits].clamp_min(0)
-        base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
-        return base + subset_idx
+        cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=False)
+        has_candidates = cand_actions >= 0
+        fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=False)
+        return torch.where(has_candidates, cand_actions, fallback)
 
     def _greedy_hand_actions(self, *, is_play: bool) -> torch.Tensor:
+        cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=True)
+        has_candidates = cand_actions >= 0
+        fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=True)
+        return torch.where(has_candidates, cand_actions, fallback)
+
+    def _sample_candidate_actions(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
+        if is_play:
+            cand_logits = self._t(self.output.candidate_play_logits)
+        else:
+            cand_logits = self._t(self.output.candidate_discard_logits)
+
+        has_candidates = (cand_logits > -1e7).any(dim=-1)
+        if not has_candidates.any():
+            return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
+
+        if greedy:
+            cand_idx = _masked_argmax(cand_logits, cand_logits > -1e7)
+        else:
+            cand_idx = _sample_masked(cand_logits, cand_logits > -1e7)
+
+        actions = self._candidate_index_to_action(cand_idx, is_play=is_play)
+        actions_clamped = actions.clamp(0, NUM_ACTIONS - 1)
+        valid = self.action_mask.gather(1, actions_clamped.unsqueeze(-1)).squeeze(-1).bool()
+        actions = torch.where(valid & has_candidates, actions, torch.full_like(actions, -1))
+        return actions
+
+    def _candidate_index_to_action(self, cand_idx: torch.Tensor, *, is_play: bool) -> torch.Tensor:
+        if self.tokens is None:
+            return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
+
+        cand_idx = cand_idx.clamp(0, HAND_CANDIDATE_MAX - 1)
+        base_offset = 0 if is_play else MAX_PLAY_CANDIDATES
+        token_pos = HAND_CANDIDATE_START + base_offset + cand_idx.long()
+
+        batch_arange = torch.arange(self.batch_size, device=self.device)
+
+        bits = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
+        slot_bits_tensor = _slot_bits(self.device)
+        for slot in range(5):
+            card_val = self.tokens[batch_arange, token_pos, 5 + slot].long()
+            card_idx = card_val - 1
+            active = card_val > 0
+            bit = slot_bits_tensor[card_idx.clamp(0, MAX_HAND_SIZE - 1)]
+            bits = torch.where(active, torch.bitwise_or(bits, bit), bits)
+
+        subset_idx = _bit_to_hand_subset(self.device)[bits.clamp(0, _BIT_TABLE_SIZE - 1)]
+        valid = subset_idx >= 0
+        base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
+        actions = base + subset_idx.clamp_min(0)
+        return torch.where(valid, actions, torch.full_like(actions, -1))
+
+    def _sample_hand_actions_autoregressive(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
         family = 0 if is_play else 1
         valid_subsets = self._hand_valid_subset_mask(is_play)
         count_mask = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
-        count = _masked_argmax(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
+        if greedy:
+            count = _masked_argmax(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
+        else:
+            count = _sample_masked(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
         bits = _sample_ordered_cards(
             self._t(self.output.hand_card_logits[:, family]),
             valid_subsets,
@@ -684,7 +747,7 @@ class ActionGrammarDistribution:
             subset_sizes=_hand_subset_sizes(self.device),
             bit_to_subset=_bit_to_hand_subset(self.device),
             slot_bits=_slot_bits(self.device),
-            greedy=True,
+            greedy=greedy,
         )
         subset_idx = _bit_to_hand_subset(self.device)[bits].clamp_min(0)
         base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)

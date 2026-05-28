@@ -9,12 +9,17 @@ from pylatro_agent.action_grammar import (
     ActionGrammarDistribution,
     ActionGrammarOutput,
 )
+from pylatro_agent.action import ActionType
 from pylatro_agent.constants import (
+    HAND_CANDIDATE_MAX,
+    HAND_CANDIDATE_START,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
+    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
+    MAX_PLAY_CANDIDATES,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
 )
@@ -26,6 +31,8 @@ def _blank_output(batch_size: int) -> ActionGrammarOutput:
         macro_logits=torch.zeros(batch_size, NUM_GRAMMAR_ACTIONS),
         hand_count_logits=torch.zeros(batch_size, 2, 5),
         hand_card_logits=torch.zeros(batch_size, 2, MAX_HAND_SIZE),
+        candidate_play_logits=torch.full((batch_size, HAND_CANDIDATE_MAX), -1e8),
+        candidate_discard_logits=torch.full((batch_size, HAND_CANDIDATE_MAX), -1e8),
         consumable_slot_logits=torch.zeros(batch_size, 3, MAX_CONSUMABLE_SLOTS),
         consumable_count_logits=torch.zeros(batch_size, MAX_CONSUMABLE_SLOTS, MAX_CONSUMABLE_HAND_TARGETS),
         consumable_card_logits=torch.zeros(batch_size, MAX_CONSUMABLE_SLOTS, MAX_HAND_SIZE),
@@ -102,3 +109,57 @@ def test_action_grammar_temperature_changes_log_prob_consistently() -> None:
 
     assert cool.log_prob(torch.tensor([leave])).item() > warm.log_prob(torch.tensor([leave])).item()
     assert cool.log_prob(torch.tensor([reroll])).item() < warm.log_prob(torch.tensor([reroll])).item()
+
+
+def test_candidate_logits_in_output_shape():
+    output = _blank_output(batch_size=2)
+    assert output.candidate_play_logits.shape == (2, HAND_CANDIDATE_MAX)
+    assert output.candidate_discard_logits.shape == (2, HAND_CANDIDATE_MAX)
+
+
+def test_candidate_logits_default_masked():
+    output = _blank_output(batch_size=1)
+    assert (output.candidate_play_logits == -1e8).all()
+    assert (output.candidate_discard_logits == -1e8).all()
+
+
+def test_candidate_scoring_falls_back_when_no_candidates():
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    play_subset = subset_index([0, 1])
+    action = encode_action(ActionType.PLAY_SUBSET, play_subset)
+    action_mask[0, action] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+
+    dist = ActionGrammarDistribution(output, action_mask)
+    sampled = dist.sample()
+    greedy = dist.mode()
+
+    assert action_mask[0, sampled.item()] == 1
+    assert action_mask[0, greedy.item()] == 1
+
+
+def test_head_produces_candidate_logits():
+    from pylatro import load_game_data
+    from pylatro_agent.agent import AgentConfig, BalatroAgent
+    from pylatro_agent.vocab import build_vocab
+
+    data = load_game_data()
+    v = build_vocab(data)
+    model = BalatroAgent(AgentConfig(d_model=64, n_layers=2), v)
+
+    batch = 2
+    tokens = torch.zeros(batch, 160, 13, dtype=torch.long)
+    token_types = torch.full((batch, 160), 10, dtype=torch.long)
+    attn = torch.ones(batch, 160, dtype=torch.long)
+    scalars = torch.zeros(batch, 11)
+
+    output = model.action_grammar_head(
+        model.backbone(model.embedding(tokens, token_types, scalars), padding_mask=(attn == 0)),
+        attn, tokens, token_types, scalars,
+    )
+
+    assert output.candidate_play_logits.shape == (batch, HAND_CANDIDATE_MAX)
+    assert output.candidate_discard_logits.shape == (batch, HAND_CANDIDATE_MAX)

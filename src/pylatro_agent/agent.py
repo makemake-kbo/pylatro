@@ -121,7 +121,7 @@ class BalatroAgent(nn.Module):
         x = self.backbone(x, padding_mask=padding_mask)
         grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
         value_dict = self.value_head(x, attention_mask)
-        return ActionGrammarDistribution(grammar_output, action_mask, temperature=temperature), value_dict
+        return ActionGrammarDistribution(grammar_output, action_mask, temperature=temperature, tokens=tokens), value_dict
 
     def _compute_logits(
         self,

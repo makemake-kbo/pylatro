@@ -11,10 +11,11 @@ if TYPE_CHECKING:
 
 
 # All dense reward components are multiplied by REWARD_SCALE at the exit of
-# default_reward_components. Terminal outcomes are converted to the same
-# ±10-ish scale used by supervised value pretraining, then represented in raw
-# component units so the final scaled component equals that target.
-REWARD_SCALE = 0.25
+# default_reward_components. Terminal outcomes are divided by REWARD_SCALE
+# before that common exit path, so changing this value changes only dense
+# shaping strength while preserving the supervised value-target scale for
+# wins/losses.
+REWARD_SCALE = 1.0
 
 # PPO terminal targets stay close to the supervised value-head scale for losses,
 # while wins get a larger positive value so rare successes survive rollout noise.
@@ -28,14 +29,14 @@ LOSS_PENALTY_BASE = PRETRAIN_LOSS_BASE / REWARD_SCALE
 STALL_EXTRA_PENALTY = PRETRAIN_STALL_EXTRA_PENALTY / REWARD_SCALE
 LOSS_PER_UNFINISHED_ANTE = 0.0
 
-SCORE_PROGRESS_SCALE = 0.15
-PRESSURE_PROGRESS_SCALE = 0.4
+SCORE_PROGRESS_SCALE = 0.5
+PRESSURE_PROGRESS_SCALE = 1.0
 DISCARD_RESOURCE_WEIGHT = 0.5
-BLIND_CLEAR_REWARD = 0.2
-HANDS_LEFT_BONUS_SCALE = 0.02
-ANTE_ADVANCE_REWARD = 0.15
+BLIND_CLEAR_REWARD = 0.8
+HANDS_LEFT_BONUS_SCALE = 0.08
+ANTE_ADVANCE_REWARD = 1.0
 ANTE_ADVANCE_EXPONENT = 1.0
-INTEREST_BONUS_SCALE = 0.02
+INTEREST_BONUS_SCALE = 0.08
 
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
@@ -47,26 +48,26 @@ IDLE_PENALTY_CAP = 0.02
 # every projection in ConsumableFlatHead receiving gradient every time
 # any consumable is used — so we keep a single small pull toward
 # engaging with targeting consumables at all while the BC prior warms up.
-CONSUMABLE_TARGETED_USE_REWARD = 0.05
+CONSUMABLE_TARGETED_USE_REWARD = 0.12
 # Flat penalty for selling jokers or consumables in the shop. The policy
 # found it could cash out inventory every shop for free dollars without
 # ever engaging with scaling mechanics; a small friction makes that
 # pattern unprofitable while still letting legitimate sells through if
 # follow-up shaping dominates.
-SHOP_SELL_PENALTY = 0.03
+SHOP_SELL_PENALTY = 0.08
 # Flat reward for rerolling the shop. Reroll is the main engine-building
 # lever (swap junk for jokers that actually scale) but costs $5+, so the
 # policy avoided it in favor of buying whatever was on the shelf. Action
 # is only valid when the agent can afford it, so this can't trigger when
 # cash-starved.
-SHOP_REROLL_REWARD = 0.04
+SHOP_REROLL_REWARD = 0.12
 # Penalty for skipping a Tarot pack when it contains at least one real
 # deck-fixing/economy target. Standard packs are handled separately below:
 # once the deck is already over 52 cards, adding random playing cards is a
 # liability unless the deck is already fixed.
-TAROT_SKIP_FIXING_PENALTY = 0.08
-PLANET_SKIP_PENALTY = 0.05
-PLANET_FOOL_OVERWRITE_PENALTY = 0.08
+TAROT_SKIP_FIXING_PENALTY = 0.2
+PLANET_SKIP_PENALTY = 0.15
+PLANET_FOOL_OVERWRITE_PENALTY = 0.2
 STANDARD_OVERFULL_CARD_BASE_PENALTY = 0.03
 STANDARD_OVERFULL_CARD_EXPONENT = 0.35
 STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
@@ -76,11 +77,11 @@ STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
 # terminating sooner — staying alive and playing well is the only path
 # to accumulating the bonus. Negative shaping created a die-fast
 # pathology in the v1 run; positive shaping flips the incentive.
-HAND_SUBSET_BONUS_SCALE = 0.1
-HAND_TOP1_BONUS = 0.12
-HAND_TOP3_BONUS = 0.05
-PLANET_MATCH_BONUS = 0.08
-PLANET_PLAYED_HAND_BONUS = 0.04
+HAND_SUBSET_BONUS_SCALE = 0.3
+HAND_TOP1_BONUS = 0.35
+HAND_TOP3_BONUS = 0.12
+PLANET_MATCH_BONUS = 0.25
+PLANET_PLAYED_HAND_BONUS = 0.12
 
 REWARD_COMPONENT_NAMES = (
     "terminal",

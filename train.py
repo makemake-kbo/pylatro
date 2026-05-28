@@ -199,6 +199,27 @@ def main():
         ),
     )
     parser.add_argument(
+        "--teacher-rollout-final-prob",
+        type=float,
+        default=None,
+        help=(
+            "Optional final teacher rollout probability. When set, teacher rollout probability "
+            "linearly anneals from --teacher-rollout-prob after warmup."
+        ),
+    )
+    parser.add_argument(
+        "--teacher-rollout-warmup-fraction",
+        type=float,
+        default=0.0,
+        help="Fraction of training to keep initial teacher rollout probability before annealing (default: 0.0).",
+    )
+    parser.add_argument(
+        "--teacher-rollout-decay-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of training used to anneal teacher rollout probability to final prob (default: 1.0).",
+    )
+    parser.add_argument(
         "--dagger-bc-epochs",
         type=int,
         default=0,
@@ -211,7 +232,16 @@ def main():
         "--dagger-bc-coeff",
         type=float,
         default=1.0,
-        help="Multiplier for the online DAgger BC loss, applied on top of current distill coeff (default: 1.0).",
+        help="Multiplier for the online DAgger BC loss (default: 1.0).",
+    )
+    parser.add_argument(
+        "--dagger-bc-lr-mult",
+        type=float,
+        default=1.0,
+        help=(
+            "Temporary learning-rate multiplier used only during online DAgger BC updates. "
+            "Useful for a strong imitation phase while keeping PPO LR conservative. Default: 1.0."
+        ),
     )
     parser.add_argument(
         "--inference-checkpoint",
@@ -315,8 +345,12 @@ def main():
                 heuristic_distill_coeff=args.heuristic_distill_coeff,
                 heuristic_distill_min=args.heuristic_distill_min,
                 teacher_rollout_prob=args.teacher_rollout_prob,
+                teacher_rollout_final_prob=args.teacher_rollout_final_prob,
+                teacher_rollout_warmup_fraction=args.teacher_rollout_warmup_fraction,
+                teacher_rollout_decay_fraction=args.teacher_rollout_decay_fraction,
                 dagger_bc_epochs=args.dagger_bc_epochs,
                 dagger_bc_coeff=args.dagger_bc_coeff,
+                dagger_bc_lr_mult=args.dagger_bc_lr_mult,
                 rollout_temperature=args.rollout_temperature,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,

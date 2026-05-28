@@ -204,6 +204,12 @@ class PPOConfig:
     # successful trajectory instead of waiting for a sampled policy to stumble
     # into sparse wins. Keep at 0.0 for strictly on-policy PPO.
     teacher_rollout_prob: float = 0.0
+    # Optional linear schedule for teacher_rollout_prob. When final_prob is
+    # set, keep teacher_rollout_prob fixed through warmup_fraction, then
+    # linearly anneal it to final_prob over decay_fraction of training.
+    teacher_rollout_final_prob: float | None = None
+    teacher_rollout_warmup_fraction: float = 0.0
+    teacher_rollout_decay_fraction: float = 1.0
     # Sharpens the on-policy distribution for both rollout sampling and PPO loss
     # computation. The BC-pretrained policy at temperature=1 has chosen_action_prob ≈ 0.5
     # over ~250 valid actions per state, which means a 30-step sampled episode has ~0.5^30
@@ -223,6 +229,7 @@ class PPOConfig:
     # does not treat teacher-forced actions as on-policy PPO samples.
     dagger_bc_epochs: int = 0
     dagger_bc_coeff: float = 1.0
+    dagger_bc_lr_mult: float = 1.0
 
 
 @dataclass
@@ -241,6 +248,11 @@ class _UpdateStats:
     teacher_match_fractions: list[float]
     distill_weight_means: list[float]
     on_policy_fractions: list[float]
+    on_policy_advantage_means: list[float] = field(default_factory=list)
+    on_policy_advantage_stds: list[float] = field(default_factory=list)
+    on_policy_positive_advantage_fractions: list[float] = field(default_factory=list)
+    on_policy_return_means: list[float] = field(default_factory=list)
+    ppo_minibatches_processed: list[int] = field(default_factory=list)
     dagger_losses: list[float] = field(default_factory=list)
     dagger_teacher_match_fractions: list[float] = field(default_factory=list)
 
@@ -331,12 +343,20 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("target_kl must be positive when set")
     if not 0.0 <= config.teacher_rollout_prob <= 1.0:
         raise ValueError("teacher_rollout_prob must be between 0 and 1")
+    if config.teacher_rollout_final_prob is not None and not 0.0 <= config.teacher_rollout_final_prob <= 1.0:
+        raise ValueError("teacher_rollout_final_prob must be between 0 and 1")
+    if not 0.0 <= config.teacher_rollout_warmup_fraction <= 1.0:
+        raise ValueError("teacher_rollout_warmup_fraction must be between 0 and 1")
+    if not 0.0 <= config.teacher_rollout_decay_fraction <= 1.0:
+        raise ValueError("teacher_rollout_decay_fraction must be between 0 and 1")
     if config.action_type_entropy_scale < 0.0:
         raise ValueError("action_type_entropy_scale must be non-negative")
     if config.dagger_bc_epochs < 0:
         raise ValueError("dagger_bc_epochs must be non-negative")
     if config.dagger_bc_coeff < 0.0:
         raise ValueError("dagger_bc_coeff must be non-negative")
+    if config.dagger_bc_lr_mult <= 0.0:
+        raise ValueError("dagger_bc_lr_mult must be positive")
     if config.adaptive_entropy:
         if config.entropy_coeff <= 0.0:
             raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
@@ -388,6 +408,7 @@ def _run_ppo_update(
     )
 
     stop_update = False
+    minibatches_processed = 0
     for _ppo_epoch in range(config.ppo_epochs):
         if stop_update:
             break
@@ -504,6 +525,20 @@ def _run_ppo_update(
                     clip_frac = 0.0
                     approx_kl = 0.0
                 valid_action_count_mean = valid_action_counts.float().mean().item()
+                if on_policy_count.item() > 0:
+                    on_policy_adv = advantages[on_policy]
+                    stats.on_policy_advantage_means.append(on_policy_adv.mean().item())
+                    stats.on_policy_advantage_stds.append(on_policy_adv.std().item())
+                    stats.on_policy_positive_advantage_fractions.append(
+                        (on_policy_adv > 0).float().mean().item()
+                    )
+                    on_policy_returns = batch["returns"][on_policy]
+                    stats.on_policy_return_means.append(on_policy_returns.mean().item())
+                else:
+                    stats.on_policy_advantage_means.append(0.0)
+                    stats.on_policy_advantage_stds.append(0.0)
+                    stats.on_policy_positive_advantage_fractions.append(0.0)
+                    stats.on_policy_return_means.append(0.0)
             stats.policy_losses.append(policy_loss.item())
             stats.value_losses.append(value_loss.item())
             stats.survival_losses.append(survival_loss.item())
@@ -518,6 +553,7 @@ def _run_ppo_update(
             stats.teacher_match_fractions.append(teacher_match)
             stats.distill_weight_means.append(distill_weight_mean)
             stats.on_policy_fractions.append(on_policy_fraction)
+            minibatches_processed += 1
 
             if config.target_kl is not None and approx_kl > config.target_kl:
                 logger.debug(
@@ -528,6 +564,7 @@ def _run_ppo_update(
                 stop_update = True
                 break
 
+    stats.ppo_minibatches_processed.append(minibatches_processed)
     return stats
 
 
@@ -549,43 +586,72 @@ def _run_dagger_bc_update(
     model.eval()
     losses: list[float] = []
     teacher_matches: list[float] = []
+    original_lrs = [float(group["lr"]) for group in optimizer.param_groups]
 
-    for _epoch in range(config.dagger_bc_epochs):
-        batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
-        optimizer.zero_grad()
-        for i, batch in enumerate(batches):
-            teacher = batch["teacher_actions"]
-            valid = (teacher >= 0).float()
-            valid_count = valid.sum().clamp(min=1.0)
-            if valid.sum().item() <= 0:
-                continue
+    try:
+        if config.dagger_bc_lr_mult != 1.0:
+            for group, lr in zip(optimizer.param_groups, original_lrs, strict=True):
+                group["lr"] = lr * config.dagger_bc_lr_mult
 
-            dist, _value_dict = _grammar_distribution(
-                model,
-                batch,
-                temperature=config.rollout_temperature,
-            )
-            teacher_safe = teacher.clamp(min=0)
-            teacher_lp = dist.log_prob(teacher_safe)
-            distill_weights = batch["distill_weights"]
-            bc_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
-            (coeff * bc_loss).div(accum_steps).backward()
+        for _epoch in range(config.dagger_bc_epochs):
+            batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
+            optimizer.zero_grad()
+            for i, batch in enumerate(batches):
+                teacher = batch["teacher_actions"]
+                valid = (teacher >= 0).float()
+                valid_count = valid.sum().clamp(min=1.0)
+                if valid.sum().item() <= 0:
+                    continue
 
-            if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
-                nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-                optimizer.step()
-                optimizer.zero_grad()
+                dist, _value_dict = _grammar_distribution(
+                    model,
+                    batch,
+                    temperature=config.rollout_temperature,
+                )
+                teacher_safe = teacher.clamp(min=0)
+                teacher_lp = dist.log_prob(teacher_safe)
+                distill_weights = batch["distill_weights"]
+                bc_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
+                (coeff * bc_loss).div(accum_steps).backward()
 
-            with torch.no_grad():
-                if hasattr(dist, "mode"):
-                    mode = dist.mode()
-                    teacher_match = (((mode == teacher_safe).float() * valid).sum() / valid_count).item()
-                else:
-                    teacher_match = float("nan")
-            losses.append(bc_loss.item())
-            teacher_matches.append(teacher_match)
+                if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
+                    nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                with torch.no_grad():
+                    if hasattr(dist, "mode"):
+                        mode = dist.mode()
+                        teacher_match = (((mode == teacher_safe).float() * valid).sum() / valid_count).item()
+                    else:
+                        teacher_match = float("nan")
+                losses.append(bc_loss.item())
+                teacher_matches.append(teacher_match)
+    finally:
+        for group, lr in zip(optimizer.param_groups, original_lrs, strict=True):
+            group["lr"] = lr
 
     return losses, teacher_matches
+
+
+def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float:
+    """Return the teacher-forcing probability for the current training progress."""
+    start = float(config.teacher_rollout_prob)
+    final = config.teacher_rollout_final_prob
+    if final is None:
+        return start
+
+    progress = min(max(float(progress), 0.0), 1.0)
+    warmup = float(config.teacher_rollout_warmup_fraction)
+    if progress <= warmup:
+        return start
+
+    decay = float(config.teacher_rollout_decay_fraction)
+    if decay <= 0.0:
+        return float(final)
+
+    anneal_progress = min(max((progress - warmup) / decay, 0.0), 1.0)
+    return start + (float(final) - start) * anneal_progress
 
 
 def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> None:
@@ -1009,11 +1075,20 @@ def train_ppo(
                 config.rollout_temperature)
     if config.teacher_rollout_prob > 0.0:
         logger.info("Teacher-guided rollout probability: %.3f", config.teacher_rollout_prob)
+    if config.teacher_rollout_final_prob is not None:
+        logger.info(
+            "Teacher-guided rollout schedule: %.3f -> %.3f after warmup %.2f over decay %.2f",
+            config.teacher_rollout_prob,
+            config.teacher_rollout_final_prob,
+            config.teacher_rollout_warmup_fraction,
+            config.teacher_rollout_decay_fraction,
+        )
     if config.dagger_bc_epochs > 0 and config.dagger_bc_coeff > 0.0:
         logger.info(
-            "Online DAgger BC active (epochs=%d, coeff=%.4f)",
+            "Online DAgger BC active (epochs=%d, coeff=%.4f, lr_mult=%.2f)",
             config.dagger_bc_epochs,
             config.dagger_bc_coeff,
+            config.dagger_bc_lr_mult,
         )
 
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
@@ -1133,6 +1208,8 @@ def train_ppo(
         )
         env_episode_start_step[:] = 0
         rm = _RolloutMetrics()
+        rollout_progress = total_steps / max(1, config.total_timesteps)
+        teacher_rollout_prob_now = _scheduled_teacher_rollout_prob(config, rollout_progress)
 
         # === Collect rollouts (vectorized) ===
         model.eval()
@@ -1148,7 +1225,7 @@ def train_ppo(
                 )
                 actions = dist.sample()
                 use_teacher = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
-                if config.teacher_rollout_prob > 0.0:
+                if teacher_rollout_prob_now > 0.0:
                     teacher_actions_t = torch.as_tensor(teacher_action_buf, dtype=torch.long, device=device)
                     teacher_valid = (
                         (teacher_actions_t >= 0)
@@ -1159,7 +1236,7 @@ def train_ppo(
                         ).squeeze(-1).bool()
                     )
                     use_teacher = (
-                        torch.rand(config.num_envs, device=device) < config.teacher_rollout_prob
+                        torch.rand(config.num_envs, device=device) < teacher_rollout_prob_now
                     ) & teacher_valid
                     actions = torch.where(use_teacher, teacher_actions_t, actions)
                 log_probs = dist.log_prob(actions)
@@ -1370,18 +1447,6 @@ def train_ppo(
             - (config.heuristic_distill_coeff - config.heuristic_distill_min) * distill_progress,
         )
 
-        dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
-            model=model,
-            optimizer=optimizer,
-            buffer=buffer,
-            coeff=config.dagger_bc_coeff * distill_coeff_now,
-            config=config,
-            accum_steps=accum_steps,
-            effective_batch_size=effective_batch_size,
-            device=device,
-            use_pin_memory=use_pin_memory,
-        )
-
         update_stats = _run_ppo_update(
             model=model,
             optimizer=optimizer,
@@ -1389,6 +1454,18 @@ def train_ppo(
             return_rms=return_rms,
             entropy_coeff=entropy_coeff,
             distill_coeff=distill_coeff_now,
+            config=config,
+            accum_steps=accum_steps,
+            effective_batch_size=effective_batch_size,
+            device=device,
+            use_pin_memory=use_pin_memory,
+        )
+
+        dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
+            model=model,
+            optimizer=optimizer,
+            buffer=buffer,
+            coeff=config.dagger_bc_coeff,
             config=config,
             accum_steps=accum_steps,
             effective_batch_size=effective_batch_size,
@@ -1442,6 +1519,32 @@ def train_ppo(
         writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
         writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
         writer.add_scalar("ppo/on_policy_fraction", float(np.mean(update_on_policy_fractions)), update_count)
+        writer.add_scalar(
+            "ppo/on_policy_advantage_mean",
+            float(np.mean(update_stats.on_policy_advantage_means)),
+            update_count,
+        )
+        writer.add_scalar(
+            "ppo/on_policy_advantage_std",
+            float(np.mean(update_stats.on_policy_advantage_stds)),
+            update_count,
+        )
+        writer.add_scalar(
+            "ppo/on_policy_positive_advantage_fraction",
+            float(np.mean(update_stats.on_policy_positive_advantage_fractions)),
+            update_count,
+        )
+        writer.add_scalar(
+            "ppo/on_policy_return_mean",
+            float(np.mean(update_stats.on_policy_return_means)),
+            update_count,
+        )
+        writer.add_scalar(
+            "ppo/minibatches_processed",
+            int(np.sum(update_stats.ppo_minibatches_processed)),
+            update_count,
+        )
+        writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
         writer.add_scalar(
             "dagger/bc_loss",
             float(np.mean(dagger_losses)) if dagger_losses else float("nan"),
@@ -1530,6 +1633,7 @@ def train_ppo(
                 device,
                 max_no_progress_steps=config.max_no_progress_steps,
                 win_ante=config.win_ante,
+                temperature=config.rollout_temperature,
             )
             writer.add_scalar("eval/win_rate", win_rate, update_count)
             eval_win_rate = win_rate
@@ -1620,6 +1724,7 @@ def evaluate_model(
     device: torch.device,
     max_no_progress_steps: int = 256,
     win_ante: int | None = None,
+    temperature: float = 1.0,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games."""
     model.eval()
@@ -1639,7 +1744,7 @@ def evaluate_model(
         while not done:
             with torch.no_grad():
                 batch = _single_obs_to_batch(obs, device)
-                dist, _ = _grammar_distribution(model, batch)
+                dist, _ = _grammar_distribution(model, batch, temperature=temperature)
                 action = dist.mode().item()
 
             obs, _reward, terminated, truncated, info = env.step(action)

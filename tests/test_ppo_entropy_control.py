@@ -21,6 +21,7 @@ from pylatro_agent.training.ppo import (
     _RolloutMetrics,
     _run_dagger_bc_update,
     _run_ppo_update,
+    _scheduled_teacher_rollout_prob,
     _smoothed_entropy_signal,
     _validate_ppo_config,
 )
@@ -368,6 +369,7 @@ def test_dagger_bc_update_increases_teacher_action_probability() -> None:
         rollout_temperature=1.0,
         dagger_bc_epochs=4,
         dagger_bc_coeff=1.0,
+        dagger_bc_lr_mult=3.0,
     )
 
     obs = _dummy_obs(num_envs=1)
@@ -392,6 +394,7 @@ def test_dagger_bc_update_increases_teacher_action_probability() -> None:
     assert probs[teacher_action].item() > before
     assert probs[teacher_action].item() > probs[sampled_action].item()
     assert losses[0] > losses[-1]
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(0.1)
 
 
 def test_ppo_value_loss_updates_value_head_not_shared_trunk() -> None:
@@ -466,6 +469,24 @@ def test_ppo_config_allows_disabled_target_kl() -> None:
 def test_ppo_config_rejects_teacher_rollout_prob_outside_unit_interval() -> None:
     with pytest.raises(ValueError, match="teacher_rollout_prob"):
         _validate_ppo_config(PPOConfig(teacher_rollout_prob=1.1))
+
+
+def test_teacher_rollout_schedule_warms_up_then_decays() -> None:
+    config = PPOConfig(
+        teacher_rollout_prob=1.0,
+        teacher_rollout_final_prob=0.25,
+        teacher_rollout_warmup_fraction=0.2,
+        teacher_rollout_decay_fraction=0.5,
+    )
+
+    assert _scheduled_teacher_rollout_prob(config, 0.1) == pytest.approx(1.0)
+    assert _scheduled_teacher_rollout_prob(config, 0.45) == pytest.approx(0.625)
+    assert _scheduled_teacher_rollout_prob(config, 0.9) == pytest.approx(0.25)
+
+
+def test_ppo_config_rejects_nonpositive_dagger_lr_multiplier() -> None:
+    with pytest.raises(ValueError, match="dagger_bc_lr_mult"):
+        _validate_ppo_config(PPOConfig(dagger_bc_lr_mult=0.0))
 
 
 def test_mean_normalized_entropy_is_one_for_uniform_binary_policy() -> None:
@@ -613,3 +634,128 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     assert rm.planet_use_played_hand == [1.0]
     assert rm.planet_use_main_hand_match == [0.0]
     assert rm.planet_use_key_counts["c_pluto"] == 1
+
+
+def test_dagger_before_ppo_inflates_kl_beyond_target() -> None:
+    """Regression test: DAgger BC updates the model before PPO runs,
+    making old_log_probs stale and inflating the KL ratio.
+
+    When DAgger runs first, the model changes and PPO's importance
+    ratio diverges from 1.0, causing approx_kl >> target_kl and
+    early stopping after 1 mini-batch. With the fix (PPO first),
+    KL stays near 0 because old_log_probs are fresh."""
+    teacher_action = int(ActionRange.SHOP_LEAVE)
+    sampled_action = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    buffer = _make_signal_buffer(
+        actions=[sampled_action, sampled_action],
+        advantages=[1.0, -1.0],
+        teacher_actions=[teacher_action, teacher_action],
+        teacher_forced=[False, False],
+    )
+    config = PPOConfig(
+        ppo_epochs=4,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=0.0,
+        heuristic_distill_coeff=0.0,
+        target_kl=0.03,
+        rollout_temperature=1.0,
+        dagger_bc_epochs=4,
+        dagger_bc_coeff=1.0,
+        dagger_bc_lr_mult=3.0,
+    )
+    device = torch.device("cpu")
+
+    ppo_stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=device,
+        use_pin_memory=False,
+    )
+
+    assert ppo_stats.approx_kls, "PPO should produce at least one KL measurement"
+    mean_kl = float(np.mean(ppo_stats.approx_kls))
+    assert mean_kl < 0.1, (
+        f"PPO KL after running BEFORE DAgger should be small, got {mean_kl:.4f}. "
+        "If DAgger ran first, old_log_probs would be stale and KL would be huge."
+    )
+    assert ppo_stats.ppo_minibatches_processed
+    total_minibatches = int(np.sum(ppo_stats.ppo_minibatches_processed))
+    assert total_minibatches >= 2, (
+        f"PPO should process multiple mini-batches when KL is controlled, "
+        f"got {total_minibatches}"
+    )
+
+    _run_dagger_bc_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        coeff=config.dagger_bc_coeff,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=device,
+        use_pin_memory=False,
+    )
+
+    obs = _dummy_obs(num_envs=1)
+    action_mask = torch.as_tensor(obs["action_mask"])
+    with torch.no_grad():
+        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
+    assert probs[teacher_action].item() > probs[sampled_action].item()
+
+
+def test_on_policy_advantage_diagnostics_populated() -> None:
+    good_action = int(ActionRange.SHOP_LEAVE)
+    bad_action = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
+    buffer = _make_signal_buffer(
+        actions=[good_action, bad_action],
+        advantages=[1.0, -1.0],
+        teacher_actions=[-1, -1],
+        teacher_forced=[False, False],
+    )
+    config = PPOConfig(
+        ppo_epochs=1,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=0.0,
+        heuristic_distill_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert stats.on_policy_advantage_means
+    assert stats.on_policy_advantage_stds
+    assert stats.on_policy_positive_advantage_fractions
+    assert stats.on_policy_return_means
+    assert stats.on_policy_fractions[0] == 1.0
+    assert stats.on_policy_positive_advantage_fractions[0] == pytest.approx(0.5)

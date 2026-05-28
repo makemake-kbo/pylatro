@@ -199,10 +199,18 @@ def test_default_reward_separates_good_hand_play_from_noisy_play() -> None:
 
     assert good_reward > 0.0
     assert noisy_reward < 0.0
-    assert good_reward - noisy_reward == pytest.approx(0.05)
+    expected_good = (
+        SCORE_PROGRESS_SCALE * (160 / 400)
+        + PRESSURE_PROGRESS_SCALE * ((1.0 / (4 + 0.5 * 2)) - ((1.0 - 160 / 400) / (3 + 0.5 * 2)))
+        + HAND_SUBSET_BONUS_SCALE
+    )
+    expected_noisy = PRESSURE_PROGRESS_SCALE * (
+        (1.0 / (4 + 0.5 * 2)) - (1.0 / (3 + 0.5 * 2))
+    )
+    assert good_reward - noisy_reward == pytest.approx(REWARD_SCALE * (expected_good - expected_noisy))
 
 
-def test_dense_reward_components_stay_small_relative_to_terminal_outcomes() -> None:
+def test_dense_reward_components_are_large_but_below_win_outcome() -> None:
     state = _dummy_state(ante=8)
     prev_info = {
         "ante": 7,
@@ -229,11 +237,11 @@ def test_dense_reward_components_stay_small_relative_to_terminal_outcomes() -> N
     early_loss = abs(default_reward(_dummy_state(ante=1), {"ante": 1}, {"ante": 1}, terminated=True, won=False))
     win_reward = default_reward(_dummy_state(ante=8), {"ante": 8}, {"ante": 8}, terminated=True, won=True)
 
-    assert 0.0 < dense_total < 1.0
+    assert dense_total > 0.0
     assert early_loss >= 9.0
     assert win_reward == pytest.approx(PRETRAIN_WIN_VALUE)
-    assert dense_total < 0.1 * early_loss
-    assert dense_total < 0.1 * win_reward
+    assert dense_total > early_loss
+    assert dense_total < win_reward
 
 
 def test_default_reward_treats_blind_clear_as_full_pressure_relief() -> None:

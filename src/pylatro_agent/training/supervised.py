@@ -45,6 +45,12 @@ class SupervisedConfig:
     action_entropy_coeff: float = 0.001
     num_workers: int = 0  # 0 = auto-detect (all available cores)
     min_ante: int = 5
+    # Fraction of below-threshold games to keep in the training set,
+    # used to break the survivorship bias of filtering exclusively for
+    # successful runs (which left the model unable to recognize the
+    # common bad early/mid states it has to recover from). 0.0 (default)
+    # preserves the original strict-filter behavior.
+    keep_below_threshold_ratio: float = 0.0
     save_dir: str = "checkpoints/supervised"
     log_dir: str = "runs/supervised"
     log_interval: int = 10
@@ -131,6 +137,7 @@ def train_supervised(
             min_ante=config.min_ante,
             gamma=config.gamma,
             num_workers=config.num_workers,
+            keep_below_threshold_ratio=config.keep_below_threshold_ratio,
         )
         t_gen_elapsed = time.monotonic() - t_gen_start
         logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)

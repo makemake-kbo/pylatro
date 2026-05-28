@@ -14,6 +14,7 @@ import logging
 import math
 import multiprocessing
 import os
+import random
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -336,7 +337,13 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
             seed += 1
             games_since_gc += 1
             if max_ante < min_ante and not won:
-                if keep_below_ratio > 0 and (seed % 1000) < int(keep_below_ratio * 1000):
+                # Seeded random keep so the kept-below sample is reproducible
+                # but unbiased across the seed range. The previous "seed %
+                # 1000 < N" predicate produced a deterministic first-N-of-
+                # every-1000 stripe — fine if you want a stable bucket, bad
+                # if you want a representative sample of below-threshold
+                # runs.
+                if keep_below_ratio > 0 and random.Random(seed).random() < keep_below_ratio:
                     pass
                 else:
                     if games_since_gc >= 500:

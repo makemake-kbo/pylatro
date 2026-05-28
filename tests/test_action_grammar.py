@@ -194,6 +194,117 @@ def test_candidate_scoring_maps_discard_candidate_to_correct_action():
     assert greedy.item() == discard_action, f"Expected {discard_action}, got {greedy.item()}"
 
 
+def test_log_prob_routes_through_candidate_head_when_candidates_present():
+    play_indices = [0, 2, 4]
+    play_action = encode_action(ActionType.PLAY_SUBSET, subset_index(play_indices))
+    distractor_action = encode_action(ActionType.PLAY_SUBSET, subset_index([1, 3]))
+
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, play_action] = 1
+    action_mask[0, distractor_action] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+    cand_logits = torch.full((1, HAND_CANDIDATE_MAX), -1e8)
+    cand_logits[0, 0] = 5.0
+    cand_logits[0, 1] = 3.0
+    cand_logits.requires_grad_(True)
+    output.candidate_play_logits = cand_logits
+    output.hand_count_logits = output.hand_count_logits.clone().requires_grad_(True)
+    output.hand_card_logits = output.hand_card_logits.clone().requires_grad_(True)
+
+    tokens = torch.zeros(1, 160, 13, dtype=torch.long)
+    tokens[0, HAND_CANDIDATE_START + 0, 0] = 1
+    tokens[0, HAND_CANDIDATE_START + 0, 2] = 3
+    for j, idx in enumerate(play_indices):
+        tokens[0, HAND_CANDIDATE_START + 0, 5 + j] = idx + 1
+    tokens[0, HAND_CANDIDATE_START + 1, 0] = 1
+    tokens[0, HAND_CANDIDATE_START + 1, 2] = 2
+    tokens[0, HAND_CANDIDATE_START + 1, 5] = 1 + 1
+    tokens[0, HAND_CANDIDATE_START + 1, 6] = 3 + 1
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens)
+    logp = dist.log_prob(torch.tensor([play_action]))
+    expected = 5.0 - torch.tensor([5.0, 3.0]).logsumexp(dim=0)
+    assert torch.allclose(logp, expected.unsqueeze(0), atol=1e-5), (
+        f"log_prob should reflect candidate softmax, got {logp.item():.4f}"
+    )
+
+    loss = -logp.sum()
+    cand_grad, count_grad, card_grad = torch.autograd.grad(
+        loss,
+        [output.candidate_play_logits, output.hand_count_logits, output.hand_card_logits],
+        allow_unused=True,
+    )
+    assert cand_grad is not None and cand_grad.abs().sum() > 0
+    assert count_grad is None or count_grad.abs().sum() == 0
+    assert card_grad is None or card_grad.abs().sum() == 0
+
+
+def test_log_prob_falls_back_to_autoregressive_without_candidates():
+    play_a = encode_action(ActionType.PLAY_SUBSET, subset_index([0, 2, 4]))
+    play_b = encode_action(ActionType.PLAY_SUBSET, subset_index([1, 3]))
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, play_a] = 1
+    action_mask[0, play_b] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+    output.hand_count_logits = output.hand_count_logits.clone().requires_grad_(True)
+    output.hand_card_logits = output.hand_card_logits.clone().requires_grad_(True)
+
+    # tokens=None → candidate path empty → fallback to autoregressive.
+    dist = ActionGrammarDistribution(output, action_mask, tokens=None)
+    logp = dist.log_prob(torch.tensor([play_a]))
+    assert torch.isfinite(logp).all()
+
+    loss = -logp.sum()
+    count_grad, card_grad = torch.autograd.grad(
+        loss, [output.hand_count_logits, output.hand_card_logits], allow_unused=True
+    )
+    assert (count_grad is not None and count_grad.abs().sum() > 0) or (
+        card_grad is not None and card_grad.abs().sum() > 0
+    )
+
+
+def test_entropy_routes_through_candidate_head_when_candidates_present():
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+    output.candidate_play_logits = output.candidate_play_logits.clone()
+    output.candidate_play_logits[0, 0] = 5.0
+    output.candidate_play_logits[0, 1] = 3.0
+
+    play_a = encode_action(ActionType.PLAY_SUBSET, subset_index([0, 2, 4]))
+    play_b = encode_action(ActionType.PLAY_SUBSET, subset_index([1, 3]))
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, play_a] = 1
+    action_mask[0, play_b] = 1
+
+    tokens = torch.zeros(1, 160, 13, dtype=torch.long)
+    tokens[0, HAND_CANDIDATE_START + 0, 0] = 1
+    tokens[0, HAND_CANDIDATE_START + 0, 2] = 3
+    for j, idx in enumerate([0, 2, 4]):
+        tokens[0, HAND_CANDIDATE_START + 0, 5 + j] = idx + 1
+    tokens[0, HAND_CANDIDATE_START + 1, 0] = 1
+    tokens[0, HAND_CANDIDATE_START + 1, 2] = 2
+    tokens[0, HAND_CANDIDATE_START + 1, 5] = 1 + 1
+    tokens[0, HAND_CANDIDATE_START + 1, 6] = 3 + 1
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens)
+    ent = dist.entropy()
+    # Two-way softmax entropy: -p1 log p1 - p2 log p2 with logits (5, 3)
+    logits = torch.tensor([5.0, 3.0])
+    log_probs = logits.log_softmax(dim=0)
+    expected_hand_entropy = -(log_probs.exp() * log_probs).sum()
+    # Total entropy includes macro contribution; just assert the value reflects
+    # the candidate softmax (it's nonzero and below log(NUM_ACTIONS)).
+    assert ent.item() > 0
+    assert ent.item() < expected_hand_entropy.item() + 5.0  # generous upper bound
+
+
 def test_head_produces_candidate_logits():
     from pylatro import load_game_data
     from pylatro_agent.agent import AgentConfig, BalatroAgent

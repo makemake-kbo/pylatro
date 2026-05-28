@@ -637,6 +637,30 @@ class ActionGrammarDistribution:
         *,
         is_play: bool,
     ) -> torch.Tensor:
+        cand_logits, cand_valid, cand_actions = self._candidate_distribution(is_play=is_play)
+        has_candidates = cand_valid.any(dim=-1)
+
+        matches = (cand_actions == actions.unsqueeze(-1)) & cand_valid
+        has_match = matches.any(dim=-1)
+        matched_slot = matches.long().argmax(dim=-1)
+        cand_log_probs = _masked_log_softmax(cand_logits, cand_valid)
+        cand_logp = cand_log_probs.gather(1, matched_slot.unsqueeze(-1)).squeeze(-1)
+        # If candidates exist but this action isn't reachable through them, the
+        # sampler can't produce it, so log_prob is -inf (use a finite floor so
+        # PPO ratios don't NaN; the policy gradient will still push away from
+        # this slot).
+        cand_logp = torch.where(has_match, cand_logp, torch.full_like(cand_logp, -1e8))
+
+        ar_logp = self._hand_log_prob_autoregressive(action_index, action_count, is_play=is_play)
+        return torch.where(has_candidates, cand_logp, ar_logp)
+
+    def _hand_log_prob_autoregressive(
+        self,
+        action_index: torch.Tensor,
+        action_count: torch.Tensor,
+        *,
+        is_play: bool,
+    ) -> torch.Tensor:
         family = 0 if is_play else 1
         valid_subsets = self._hand_valid_subset_mask(is_play)
         count_mask = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
@@ -660,6 +684,13 @@ class ActionGrammarDistribution:
         return count_logp + card_logp
 
     def _hand_entropy(self, *, is_play: bool) -> torch.Tensor:
+        cand_logits, cand_valid, _ = self._candidate_distribution(is_play=is_play)
+        has_candidates = cand_valid.any(dim=-1)
+        cand_entropy = _masked_entropy(cand_logits, cand_valid)
+        ar_entropy = self._hand_entropy_autoregressive(is_play=is_play)
+        return torch.where(has_candidates, cand_entropy, ar_entropy)
+
+    def _hand_entropy_autoregressive(self, *, is_play: bool) -> torch.Tensor:
         family = 0 if is_play else 1
         valid_subsets = self._hand_valid_subset_mask(is_play)
         count_mask = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
@@ -684,50 +715,66 @@ class ActionGrammarDistribution:
         fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=True)
         return torch.where(has_candidates, cand_actions, fallback)
 
-    def _sample_candidate_actions(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
-        if is_play:
-            cand_logits = self._t(self.output.candidate_play_logits)
-        else:
-            cand_logits = self._t(self.output.candidate_discard_logits)
+    def _candidate_distribution(
+        self, *, is_play: bool
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Candidate-head distribution as (logits, valid_mask, mapped_actions).
 
-        has_candidates = (cand_logits > -1e7).any(dim=-1)
-        if not has_candidates.any():
-            return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
+        `valid_mask` is True for slots that are kind-matched, attention-active,
+        and map to an action that is legal in the current action_mask. Sampler
+        and log_prob both consume this so they agree on the support.
+        """
+        cand_logits = self._t(
+            self.output.candidate_play_logits if is_play else self.output.candidate_discard_logits
+        )
+        active = cand_logits > -1e7
 
-        if greedy:
-            cand_idx = _masked_argmax(cand_logits, cand_logits > -1e7)
-        else:
-            cand_idx = _sample_masked(cand_logits, cand_logits > -1e7)
+        mapped_actions = self._candidate_slot_to_action(is_play=is_play)
+        mapped_clamped = mapped_actions.clamp(0, NUM_ACTIONS - 1)
+        in_mask = self.action_mask.gather(1, mapped_clamped).bool() & (mapped_actions >= 0)
+        valid = active & in_mask
+        return cand_logits, valid, mapped_actions
 
-        actions = self._candidate_index_to_action(cand_idx, is_play=is_play)
-        actions_clamped = actions.clamp(0, NUM_ACTIONS - 1)
-        valid = self.action_mask.gather(1, actions_clamped.unsqueeze(-1)).squeeze(-1).bool()
-        actions = torch.where(valid & has_candidates, actions, torch.full_like(actions, -1))
-        return actions
+    def _candidate_slot_to_action(self, *, is_play: bool) -> torch.Tensor:
+        """Map every candidate slot to its flat action ID (or -1 if unreachable).
 
-    def _candidate_index_to_action(self, cand_idx: torch.Tensor, *, is_play: bool) -> torch.Tensor:
+        Returns: (B, HAND_CANDIDATE_MAX) long.
+        """
         if self.tokens is None:
-            return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
+            return torch.full(
+                (self.batch_size, HAND_CANDIDATE_MAX), -1, dtype=torch.long, device=self.device
+            )
 
-        cand_idx = cand_idx.clamp(0, HAND_CANDIDATE_MAX - 1)
-        token_pos = HAND_CANDIDATE_START + cand_idx.long()
-
-        batch_arange = torch.arange(self.batch_size, device=self.device)
-
-        bits = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
+        card_vals = self.tokens[
+            :, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 5:10
+        ].long()
+        active = card_vals > 0
+        card_idx = (card_vals - 1).clamp(0, MAX_HAND_SIZE - 1)
         slot_bits_tensor = _slot_bits(self.device)
-        for slot in range(5):
-            card_val = self.tokens[batch_arange, token_pos, 5 + slot].long()
-            card_idx = card_val - 1
-            active = card_val > 0
-            bit = slot_bits_tensor[card_idx.clamp(0, MAX_HAND_SIZE - 1)]
-            bits = torch.where(active, torch.bitwise_or(bits, bit), bits)
+        bits_per_card = slot_bits_tensor[card_idx]
+        bits_per_card = torch.where(active, bits_per_card, torch.zeros_like(bits_per_card))
+        # Card slots within a candidate are distinct, so per-bit OR == sum here.
+        bits = bits_per_card.sum(dim=-1)
 
         subset_idx = _bit_to_hand_subset(self.device)[bits.clamp(0, _BIT_TABLE_SIZE - 1)]
         valid = subset_idx >= 0
         base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
         actions = base + subset_idx.clamp_min(0)
         return torch.where(valid, actions, torch.full_like(actions, -1))
+
+    def _sample_candidate_actions(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
+        cand_logits, cand_valid, mapped_actions = self._candidate_distribution(is_play=is_play)
+        has_candidates = cand_valid.any(dim=-1)
+        if not has_candidates.any():
+            return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
+
+        if greedy:
+            cand_idx = _masked_argmax(cand_logits, cand_valid)
+        else:
+            cand_idx = _sample_masked(cand_logits, cand_valid)
+
+        actions = mapped_actions.gather(1, cand_idx.unsqueeze(-1)).squeeze(-1)
+        return torch.where(has_candidates, actions, torch.full_like(actions, -1))
 
     def _sample_hand_actions_autoregressive(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
         family = 0 if is_play else 1

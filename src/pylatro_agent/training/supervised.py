@@ -51,6 +51,7 @@ class SupervisedConfig:
     # common bad early/mid states it has to recover from). 0.0 (default)
     # preserves the original strict-filter behavior.
     keep_below_threshold_ratio: float = 0.0
+    chunk_size: int = 10_000
     save_dir: str = "checkpoints/supervised"
     log_dir: str = "runs/supervised"
     log_interval: int = 10
@@ -139,6 +140,7 @@ def train_supervised(
             gamma=config.gamma,
             num_workers=config.num_workers,
             keep_below_threshold_ratio=config.keep_below_threshold_ratio,
+            chunk_size=config.chunk_size,
         )
         t_gen_elapsed = time.monotonic() - t_gen_start
         logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)

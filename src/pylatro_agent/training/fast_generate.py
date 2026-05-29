@@ -14,7 +14,9 @@ import logging
 import math
 import multiprocessing
 import os
+import pickle
 import random
+import tempfile
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -455,24 +457,13 @@ def _progress_reporter(
         prev_time = now
 
 
-def generate_training_data(
+def _generate_batch(
     num_games: int,
-    data: GameData | None = None,
-    vocab: Vocab | None = None,
-    min_ante: int = 5,
-    gamma: float = 0.995,
-    num_workers: int = 0,
-    keep_below_threshold_ratio: float = 0.0,
+    num_workers: int,
+    min_ante: int,
+    gamma: float,
+    keep_below_threshold_ratio: float,
 ) -> list[dict[str, Any]]:
-    num_workers = _get_num_workers(num_workers)
-    logger.info(
-        "Fast-generating %d games across %d workers (min_ante=%d, gamma=%.3f)",
-        num_games,
-        num_workers,
-        min_ante,
-        gamma,
-    )
-
     worker_args = [
         (i * 1_000_000, min_ante, gamma, keep_below_threshold_ratio)
         for i in range(num_workers)
@@ -518,9 +509,86 @@ def generate_training_data(
 
     stop_event.set()
     progress_thread.join(timeout=5)
-    logger.info(
-        "Fast-generated %d training records from %d requested games",
-        len(records),
-        num_games,
-    )
     return records
+
+
+def generate_training_data(
+    num_games: int,
+    data: GameData | None = None,
+    vocab: Vocab | None = None,
+    min_ante: int = 5,
+    gamma: float = 0.995,
+    num_workers: int = 0,
+    keep_below_threshold_ratio: float = 0.0,
+    chunk_size: int = 10_000,
+) -> list[dict[str, Any]]:
+    num_workers = _get_num_workers(num_workers)
+    logger.info(
+        "Fast-generating %d games across %d workers (min_ante=%d, gamma=%.3f, chunk_size=%d)",
+        num_games,
+        num_workers,
+        min_ante,
+        gamma,
+        chunk_size,
+    )
+
+    if chunk_size <= 0 or chunk_size >= num_games:
+        records = _generate_batch(
+            num_games, num_workers, min_ante, gamma, keep_below_threshold_ratio,
+        )
+        logger.info(
+            "Fast-generated %d training records from %d requested games",
+            len(records),
+            num_games,
+        )
+        return records
+
+    num_chunks = math.ceil(num_games / chunk_size)
+    chunk_files: list[str] = []
+    total_records = 0
+
+    for chunk_idx in range(num_chunks):
+        this_chunk = min(chunk_size, num_games - chunk_idx * chunk_size)
+        logger.info(
+            "Chunk %d/%d: generating %d games (%d/%d total done)",
+            chunk_idx + 1,
+            num_chunks,
+            this_chunk,
+            chunk_idx * chunk_size,
+            num_games,
+        )
+        records = _generate_batch(
+            this_chunk, num_workers, min_ante, gamma, keep_below_threshold_ratio,
+        )
+        total_records += len(records)
+
+        chunk_fd, chunk_path = tempfile.mkstemp(
+            suffix=".pkl", prefix=f"pylatro_chunk_{chunk_idx}_",
+        )
+        with os.fdopen(chunk_fd, "wb") as f:
+            pickle.dump(records, f, protocol=pickle.HIGHEST_PROTOCOL)
+        chunk_files.append(chunk_path)
+        logger.info(
+            "Chunk %d/%d: saved %d records to %s",
+            chunk_idx + 1,
+            num_chunks,
+            len(records),
+            chunk_path,
+        )
+        del records
+        gc.collect()
+
+    all_records: list[dict[str, Any]] = []
+    for chunk_path in chunk_files:
+        with open(chunk_path, "rb") as f:
+            chunk_records = pickle.load(f)
+        all_records.extend(chunk_records)
+        os.unlink(chunk_path)
+
+    logger.info(
+        "Fast-generated %d training records from %d requested games (%d chunks)",
+        total_records,
+        num_games,
+        num_chunks,
+    )
+    return all_records

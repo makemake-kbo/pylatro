@@ -66,6 +66,12 @@ def main():
     )
     parser.add_argument("--workers", type=int, default=0, help="CPU workers for game generation (default: all cores)")
     parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=10000,
+        help="Generate games in chunks of this size, writing each to disk to limit memory (default: 10000)",
+    )
+    parser.add_argument(
         "--log-dir",
         type=str,
         default=None,
@@ -308,6 +314,7 @@ def main():
                 action_entropy_coeff=args.supervised_entropy_coeff,
                 num_workers=args.workers,
                 min_ante=args.min_ante,
+                chunk_size=args.chunk_size,
                 log_interval=args.log_interval,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/supervised",

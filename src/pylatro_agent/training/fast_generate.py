@@ -27,6 +27,7 @@ from pylatro_cli.controller import GamePhase
 from ..action import decode_action
 from ..heuristic import HeuristicAgent
 from ..reward import default_reward
+from ..shop_eval import capture_build_features
 from ..survival import compute_ante_survival_targets
 from ..tokenizer import Tokenizer
 from ..vocab import Vocab, build_vocab
@@ -67,7 +68,7 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
     pack_cr = state.pack.choices_remaining if state.pack is not None else 0
     shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
     pack_cards = state.pack.cards if state.pack is not None else ()
-    return {
+    info = {
         "ante": state.round_resets.ante,
         "round_score": runner.round_score,
         "blind_beaten": runner.phase == GamePhase.HAND_PLAY and runner._ctrl.blind_beaten(),
@@ -96,6 +97,8 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
         "steps_since_progress": runner.steps_since_progress,
         "stalled": stalled,
     }
+    info.update(capture_build_features(state))
+    return info
 
 
 def _info_signature(info: dict[str, Any]) -> tuple[Any, ...]:

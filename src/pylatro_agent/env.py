@@ -23,6 +23,7 @@ from .reward import (
     default_reward,
     default_reward_components,
 )
+from .shop_eval import capture_build_features
 from .subset_actions import consumable_subset_indices, subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
@@ -419,7 +420,7 @@ class BalatroEnv(gymnasium.Env):
         pack_choices_remaining = state.pack.choices_remaining if state.pack is not None else 0
         shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
         pack_cards = state.pack.cards if state.pack is not None else ()
-        return {
+        info = {
             "ante": state.round_resets.ante,
             "round_score": self._round_score,
             "blind_beaten": self._controller.blind_beaten() if self._controller.phase == GamePhase.HAND_PLAY else False,
@@ -444,6 +445,8 @@ class BalatroEnv(gymnasium.Env):
             "pack_card_details": tuple(_pack_card_detail(state, card) for card in pack_cards),
             "pack_choices_remaining": pack_choices_remaining,
         }
+        info.update(capture_build_features(state))
+        return info
 
     def _blind_target(self, state) -> int:
         blind = state.round_resets.blind

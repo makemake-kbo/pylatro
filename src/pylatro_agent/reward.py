@@ -641,17 +641,18 @@ def default_reward_components(
     # ratio. Out-of-candidates plays get nothing (no penalty), so the
     # agent's only path to accumulating reward is to play well rather
     # than terminating early.
-    if config.enable_hand_candidate_rewards:
-        if action_type == "play_subset" and not curr_info.get(
-            "hand_play_not_in_candidates", False
-        ):
-            ratio = curr_info.get("hand_play_candidate_value_ratio")
-            if ratio is not None:
-                components["hand_subset_bonus"] += HAND_SUBSET_BONUS_SCALE * float(ratio)
-            if curr_info.get("hand_play_top1", False):
-                components["hand_top1_bonus"] += HAND_TOP1_BONUS
-            elif curr_info.get("hand_play_top3", False):
-                components["hand_top3_bonus"] += HAND_TOP3_BONUS
+    if (
+        config.enable_hand_candidate_rewards
+        and action_type == "play_subset"
+        and not curr_info.get("hand_play_not_in_candidates", False)
+    ):
+        ratio = curr_info.get("hand_play_candidate_value_ratio")
+        if ratio is not None:
+            components["hand_subset_bonus"] += HAND_SUBSET_BONUS_SCALE * float(ratio)
+        if curr_info.get("hand_play_top1", False):
+            components["hand_top1_bonus"] += HAND_TOP1_BONUS
+        elif curr_info.get("hand_play_top3", False):
+            components["hand_top3_bonus"] += HAND_TOP3_BONUS
 
     # Planet alignment bonus: rewards using or claiming planets that match
     # already-played hand types, with extra weight for the main hand. This is

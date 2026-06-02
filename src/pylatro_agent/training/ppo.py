@@ -19,7 +19,7 @@ from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..env import BalatroEnv
-from ..reward import REWARD_INFO_KEYS, RewardConfig
+from ..reward import _COMPONENT_GROUP, REWARD_INFO_KEYS, RewardConfig
 from ..survival import compute_ante_survival_targets
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
@@ -767,6 +767,21 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
             _safe_mean(terminal_vals) if terminal_vals else 0.0
         )
         writer.add_scalar("reward/dense_total_mean", dense_total_mean, update_count)
+
+    # Reward group totals — surface how much shaping comes from already-solved
+    # local hand play vs strategic shop/joker/economy signal, so a run can be
+    # diagnosed when local play drowns out the strategic loop.
+    group_sums: defaultdict = defaultdict(float)
+    for name, vals in rm.reward_component_values.items():
+        component = name.removeprefix("reward_")
+        if component == "total":
+            continue
+        group = _COMPONENT_GROUP.get(component)
+        if group is None:
+            continue
+        group_sums[group] += _safe_mean(vals)
+    for group, value in group_sums.items():
+        writer.add_scalar(f"reward/group_{group}_total_mean", value, update_count)
 
 
 def _write_counter_fractions(writer, prefix: str, counter: Counter, update_count: int) -> None:
@@ -1596,11 +1611,36 @@ def train_ppo(
             float(np.mean(update_stats.on_policy_return_means)),
             update_count,
         )
-        writer.add_scalar(
-            "ppo/minibatches_processed",
-            int(np.sum(update_stats.ppo_minibatches_processed)),
-            update_count,
-        )
+        minibatches_processed = int(np.sum(update_stats.ppo_minibatches_processed))
+        writer.add_scalar("ppo/minibatches_processed", minibatches_processed, update_count)
+        # Target-KL early stopping can halt an update after far fewer minibatches
+        # than expected; without this it is invisible. Expected = full passes over
+        # the rollout for every PPO epoch.
+        n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
+        if n_samples > 0:
+            minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
+            minibatches_expected = minibatches_per_epoch * config.ppo_epochs
+            writer.add_scalar("ppo/minibatches_expected", minibatches_expected, update_count)
+            frac = min(1.0, minibatches_processed / minibatches_expected)
+            writer.add_scalar("ppo/minibatch_fraction", frac, update_count)
+            writer.add_scalar("ppo/epochs_expected", config.ppo_epochs, update_count)
+            writer.add_scalar("ppo/epochs_completed_fraction", frac, update_count)
+            writer.add_scalar(
+                "ppo/early_stop_fraction",
+                1.0 if minibatches_processed < minibatches_expected else 0.0,
+                update_count,
+            )
+        if update_approx_kls:
+            writer.add_scalar("ppo/approx_kl_max", float(np.max(update_approx_kls)), update_count)
+            writer.add_scalar("ppo/approx_kl_p95", float(np.percentile(update_approx_kls, 95)), update_count)
+            if config.target_kl is not None:
+                writer.add_scalar(
+                    "ppo/early_stop_kl",
+                    1.0 if float(np.max(update_approx_kls)) > config.target_kl else 0.0,
+                    update_count,
+                )
+        if update_clip_fracs:
+            writer.add_scalar("ppo/clip_fraction_max", float(np.max(update_clip_fracs)), update_count)
         writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
         writer.add_scalar(
             "dagger/bc_loss",

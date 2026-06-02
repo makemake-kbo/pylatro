@@ -755,6 +755,19 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
             update_count,
         )
 
+    # Per-step dense shaping total = total reward minus the terminal component.
+    # Means are linear over the same per-step samples, so this is the mean of
+    # (total - terminal). Lets us confirm the dense_reward_scale ablation drops
+    # dense shaping roughly proportionally while reward/terminal_mean is
+    # unchanged.
+    total_vals = rm.reward_component_values.get("reward_total")
+    terminal_vals = rm.reward_component_values.get("reward_terminal")
+    if total_vals:
+        dense_total_mean = _safe_mean(total_vals) - (
+            _safe_mean(terminal_vals) if terminal_vals else 0.0
+        )
+        writer.add_scalar("reward/dense_total_mean", dense_total_mean, update_count)
+
 
 def _write_counter_fractions(writer, prefix: str, counter: Counter, update_count: int) -> None:
     total = sum(counter.values())
@@ -1628,6 +1641,8 @@ def train_ppo(
         writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
         writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
         writer.add_scalar("ppo/total_steps", total_steps, update_count)
+        dense_scale = config.reward_config.dense_reward_scale if config.reward_config is not None else 1.0
+        writer.add_scalar("reward/dense_scale", float(dense_scale), update_count)
         _write_rollout_scalars(writer, update_count, rm)
 
         if return_rms is not None:
@@ -1641,6 +1656,21 @@ def train_ppo(
             flat_adv = buffer._flat_advantages
             writer.add_scalar("debug/advantages_mean", float(np.mean(flat_adv)), update_count)
             writer.add_scalar("debug/advantages_std", float(np.std(flat_adv)), update_count)
+
+        # Release the rollout buffer before the eval/checkpoint memory peak.
+        # The buffer holds the full rollout's observation/action_mask arrays
+        # (the largest host allocation in the loop) and is not read again until
+        # the next iteration reallocates it. Holding it alive through eval
+        # (which spins up `eval_games` fresh envs) and the checkpoint save
+        # stacks two large allocations on top of it. On a long MPS run that
+        # peak is enough to trip the OS memory-pressure killer, which SIGKILLs
+        # the main process (largest footprint) with no Python traceback and
+        # leaves every AsyncVectorEnv worker dying on EOFError/BrokenPipe.
+        # Free it here and return cached device memory to the OS so the peak
+        # does not accumulate update over update.
+        del buffer
+        if device.type == "mps":
+            torch.mps.empty_cache()
 
         if episode_rewards:
             recent = episode_rewards[-100:]
@@ -1681,6 +1711,10 @@ def train_ppo(
             )
             writer.add_scalar("eval/win_rate", win_rate, update_count)
             eval_win_rate = win_rate
+            # eval runs `eval_games` full games in-process; release the
+            # forward-pass allocations it cached before the next rollout.
+            if device.type == "mps":
+                torch.mps.empty_cache()
 
         should_log_progress = update_count % config.log_interval == 0 or should_eval or update_count == planned_updates
         if should_log_progress:

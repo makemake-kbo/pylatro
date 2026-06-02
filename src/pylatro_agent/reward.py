@@ -21,6 +21,12 @@ class RewardConfig:
     enable_ante_advance_reward: bool = True
     enable_score_progress: bool = True
     enable_pressure_progress: bool = True
+    # Multiplier applied to all dense/local shaping components at the common
+    # exit of default_reward_components. Terminal win/loss reward is NOT
+    # affected by this — it is emitted on its own early-return path. Set < 1.0
+    # to shrink shaping while preserving the supervised terminal value scale,
+    # so the policy optimizes *winning* rather than farming bounded shaping.
+    dense_reward_scale: float = 1.0
 
 
 DEFAULT_REWARD_CONFIG = RewardConfig()
@@ -40,8 +46,10 @@ PPO_SPARSE_CONFIG = RewardConfig(
 # default_reward_components. Terminal outcomes are divided by REWARD_SCALE
 # before that common exit path, so changing this value changes only dense
 # shaping strength while preserving the supervised value-target scale for
-# wins/losses.
-REWARD_SCALE = 1.0
+# wins/losses. For run-to-run dense shaping ablations prefer
+# RewardConfig.dense_reward_scale (a per-config multiplier layered on top of
+# this global) so terminal reward stays bit-for-bit identical.
+REWARD_SCALE = 1.0  # default dense shaping multiplier
 
 # PPO terminal targets stay close to the supervised value-head scale for losses,
 # while wins get a larger positive value so rare successes survive rollout noise.
@@ -222,8 +230,9 @@ def default_reward_components(
     if terminated or curr_info.get("stalled", False):
         death_ante = int(curr_info.get("ante", state.round_resets.ante))
         win_ante = int(getattr(state, "win_ante", 8) or 8)
-        # Store in raw component units because the common exit path applies
-        # REWARD_SCALE to every component.
+        # Store in raw component units because this terminal exit path applies
+        # REWARD_SCALE (and only REWARD_SCALE — not dense_reward_scale) to every
+        # component, leaving the terminal value at its supervised scale.
         components["terminal"] += pretraining_outcome_value(
             won=won,
             ante=death_ante,
@@ -328,8 +337,13 @@ def default_reward_components(
         idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
         components["idle_penalty"] -= idle_penalty
 
+    # This branch only ever accumulates dense/local shaping — the terminal
+    # component is emitted on the early-return path above and never reaches
+    # here — so layering dense_reward_scale on top of REWARD_SCALE shrinks
+    # shaping without touching terminal win/loss reward.
+    dense_scale = REWARD_SCALE * config.dense_reward_scale
     for key in components:
-        components[key] *= REWARD_SCALE
+        components[key] *= dense_scale
     components["total"] = sum(components.values())
     return components
 

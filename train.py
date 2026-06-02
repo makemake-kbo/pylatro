@@ -54,6 +54,28 @@ def main():
     parser.add_argument("--pretrained", type=str, default=None, help="Path to pretrained checkpoint")
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
     parser.add_argument("--lr", type=float, default=1e-4, help="PPO learning rate (default: 1e-4)")
+    parser.add_argument(
+        "--clip-eps",
+        type=float,
+        default=0.1,
+        help=(
+            "PPO clipped-surrogate range (default: 0.1, tighter than the usual 0.2). "
+            "Raise toward 0.2 to let updates move the policy more when approx_kl sits "
+            "well below --target-kl."
+        ),
+    )
+    parser.add_argument(
+        "--gae-lambda",
+        type=float,
+        default=0.95,
+        help="GAE lambda for advantage estimation (default: 0.95).",
+    )
+    parser.add_argument(
+        "--value-loss-coeff",
+        type=float,
+        default=0.25,
+        help="Weight on the critic (value) loss (default: 0.25).",
+    )
     parser.add_argument("--d-model", type=int, default=384, help="Model dimension (default: 384)")
     parser.add_argument("--n-layers", type=int, default=12, help="Transformer layers (default: 12)")
     parser.add_argument("--n-heads", type=int, default=8, help="Transformer attention heads (default: 8)")
@@ -250,6 +272,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--dense-reward-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Multiplier for dense shaping rewards. Terminal win/loss reward is unchanged. "
+            "Set < 1.0 (e.g. 0.25) to shrink shaping so the policy optimizes winning rather "
+            "than farming bounded shaping. Default: 1.0 (no change to existing behavior)."
+        ),
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -324,6 +356,7 @@ def main():
         )
 
     elif args.phase == "ppo":
+        from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.ppo import PPOConfig, train_ppo
         train_ppo(
             PPOConfig(
@@ -333,6 +366,9 @@ def main():
                 ppo_epochs=args.ppo_epochs,
                 mini_batch_size=args.batch,
                 lr=args.lr,
+                clip_epsilon=args.clip_eps,
+                gae_lambda=args.gae_lambda,
+                value_loss_coeff=args.value_loss_coeff,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/ppo",
                 log_dir=log_dir or "runs/ppo",
@@ -361,6 +397,10 @@ def main():
                 rollout_temperature=args.rollout_temperature,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
+                # A RewardConfig with dense_reward_scale=1.0 is field-for-field
+                # identical to DEFAULT_REWARD_CONFIG, so runs without the flag
+                # keep their exact prior shaping behavior.
+                reward_config=RewardConfig(dense_reward_scale=args.dense_reward_scale),
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

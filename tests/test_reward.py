@@ -911,6 +911,83 @@ def test_sparse_config_keeps_terminal_reward() -> None:
     assert sparse["terminal"] == pytest.approx(expected_terminal)
 
 
+def test_dense_reward_scale_shrinks_shaping_proportionally() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr_info = {
+        "round_score": 100,
+        "blind_target": 800,
+        "action_type": "play_subset",
+        "progress_made": True,
+        "hand_play_top1": True,
+        "hand_play_candidate_value_ratio": 1.0,
+        "hand_play_not_in_candidates": False,
+    }
+
+    full = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+    quarter = default_reward(
+        state,
+        prev_info,
+        curr_info,
+        terminated=False,
+        won=False,
+        config=RewardConfig(dense_reward_scale=0.25),
+    )
+
+    assert full > 0.0
+    # Dense shaping at 0.25 must be exactly a quarter of the full-scale shaping.
+    assert quarter == pytest.approx(0.25 * full)
+
+
+def test_dense_reward_scale_leaves_terminal_reward_unchanged() -> None:
+    prev_info = {"ante": 3}
+    loss_curr = {"ante": 3, "stalled": False}
+
+    for won, state in (
+        (False, _dummy_state(ante=3)),
+        (True, _dummy_state(ante=8)),
+    ):
+        full = default_reward(
+            state, prev_info, loss_curr, terminated=True, won=won
+        )
+        quarter = default_reward(
+            state,
+            prev_info,
+            loss_curr,
+            terminated=True,
+            won=won,
+            config=RewardConfig(dense_reward_scale=0.25),
+        )
+        # Terminal win/loss reward must be identical regardless of dense scale.
+        assert quarter == pytest.approx(full)
+        assert quarter == pytest.approx(
+            pretraining_outcome_value(won=won, ante=3 if not won else 8, win_ante=state.win_ante)
+        )
+
+
+def test_dense_reward_scale_default_matches_unscaled_behavior() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 800}
+    curr_info = {
+        "round_score": 100,
+        "blind_target": 800,
+        "action_type": "shop_reroll",
+        "progress_made": True,
+    }
+
+    baseline = default_reward(state, prev_info, curr_info, terminated=False, won=False)
+    explicit_default = default_reward(
+        state,
+        prev_info,
+        curr_info,
+        terminated=False,
+        won=False,
+        config=RewardConfig(dense_reward_scale=1.0),
+    )
+
+    assert explicit_default == pytest.approx(baseline)
+
+
 def test_config_flags_independent() -> None:
     state = _dummy_state()
     prev = {"ante": 1, "round_score": 0, "blind_target": 800}

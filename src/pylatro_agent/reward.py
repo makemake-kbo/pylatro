@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
+
+from .shop_eval import (
+    BuildEval,
+    evaluate_build,
+    evaluate_shop_opportunity,
+    interest_tiers,
+    score_shop_item,
+)
 
 if TYPE_CHECKING:
     from pylatro.models import RunState
@@ -21,12 +29,57 @@ class RewardConfig:
     enable_ante_advance_reward: bool = True
     enable_score_progress: bool = True
     enable_pressure_progress: bool = True
+
+    # ── Strategic shop / build / economy shaping ──
+    # These fire only when the step ``info`` carries the build features added by
+    # shop_eval.capture_build_features (i.e. real env / training rollouts). When
+    # active they replace the flat reroll/sell shaping with context-aware,
+    # build-delta rewards. Unit tests that hand-build minimal info dicts fall
+    # through to the legacy flat path so they stay unchanged.
+    enable_shop_strategy_rewards: bool = True
+    enable_economy_strategy_rewards: bool = True
+    enable_joker_context_rewards: bool = True
+
+    shop_engine_delta_coeff: float = 0.35
+    shop_purchase_value_coeff: float = 0.25
+    shop_bad_buy_penalty_coeff: float = 0.25
+    shop_reroll_good_coeff: float = 0.08
+    shop_reroll_bad_coeff: float = 0.15
+    shop_leave_good_coeff: float = 0.08
+    shop_leave_missed_upgrade_coeff: float = 0.25
+
+    economy_interest_progress_coeff: float = 0.025
+    economy_interest_breakpoint_coeff: float = 0.06
+    economy_overspend_penalty_coeff: float = 0.05
+
+    joker_slot_fill_coeff: float = 0.12
+    joker_sell_good_coeff: float = 0.06
+    joker_sell_bad_coeff: float = 0.30
+    xmult_acquisition_coeff: float = 0.20
+    consumable_improvement_coeff: float = 0.50
+
+    # Per-step clamp on the aggregate strategic shop/joker/economy contribution
+    # (pre dense-scale) so a single shop step cannot dominate terminal reward.
+    max_single_shop_reward: float = 0.50
+    max_single_shop_penalty: float = 0.50
+
     # Multiplier applied to all dense/local shaping components at the common
     # exit of default_reward_components. Terminal win/loss reward is NOT
     # affected by this — it is emitted on its own early-return path. Set < 1.0
     # to shrink shaping while preserving the supervised terminal value scale,
     # so the policy optimizes *winning* rather than farming bounded shaping.
     dense_reward_scale: float = 1.0
+
+    # Per-group dense scales layered on top of dense_reward_scale. Default 1.0
+    # keeps reward identical to the pre-split behavior; lower local_hand to stop
+    # already-solved hand play from drowning out strategic shop/economy signal
+    # (the plan's "Option B" recommends ~0.10 local / 1.0 shop / 0.5 economy).
+    local_hand_reward_scale: float = 1.0
+    progression_reward_scale: float = 1.0
+    shop_strategy_reward_scale: float = 1.0
+    joker_strategy_reward_scale: float = 1.0
+    economy_reward_scale: float = 1.0
+    consumable_reward_scale: float = 1.0
 
 
 DEFAULT_REWARD_CONFIG = RewardConfig()
@@ -39,6 +92,9 @@ PPO_SPARSE_CONFIG = RewardConfig(
     enable_ante_advance_reward=True,
     enable_score_progress=True,
     enable_pressure_progress=True,
+    enable_shop_strategy_rewards=False,
+    enable_economy_strategy_rewards=False,
+    enable_joker_context_rewards=False,
 )
 
 
@@ -133,8 +189,90 @@ REWARD_COMPONENT_NAMES = (
     "hand_top3_bonus",
     "planet_match_bonus",
     "planet_played_hand_bonus",
+    # Strategic shop / build / economy shaping (gated on enriched info).
+    "shop_engine_delta",
+    "shop_purchase_value",
+    "shop_bad_buy_penalty",
+    "shop_reroll_good",
+    "shop_reroll_bad",
+    "shop_leave_good",
+    "shop_leave_missed_upgrade_penalty",
+    "economy_interest_progress",
+    "economy_interest_breakpoint",
+    "economy_overspend_penalty",
+    "joker_slot_fill",
+    "joker_sell_good",
+    "joker_sell_bad",
+    "xmult_acquisition",
+    "consumable_improvement",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
+
+# Component → dense-scale group. Components not listed default to the
+# "progression" group (scale 1.0), preserving legacy behavior. The terminal
+# component is scaled on its own early-return path and is intentionally absent.
+_COMPONENT_GROUP = {
+    "score_progress": "progression",
+    "pressure_progress": "progression",
+    "blind_clear": "progression",
+    "hands_bonus": "progression",
+    "ante_bonus": "progression",
+    "interest_bonus": "progression",
+    "idle_penalty": "progression",
+    "consumable_targeted_use": "consumable",
+    "planet_match_bonus": "consumable",
+    "planet_played_hand_bonus": "consumable",
+    "consumable_improvement": "consumable",
+    "hand_subset_bonus": "local_hand",
+    "hand_top1_bonus": "local_hand",
+    "hand_top3_bonus": "local_hand",
+    "shop_sell_penalty": "shop_strategy",
+    "shop_reroll_reward": "shop_strategy",
+    "tarot_skip_penalty": "shop_strategy",
+    "planet_skip_penalty": "shop_strategy",
+    "planet_fool_overwrite_penalty": "shop_strategy",
+    "standard_overfull_penalty": "shop_strategy",
+    "shop_engine_delta": "shop_strategy",
+    "shop_purchase_value": "shop_strategy",
+    "shop_bad_buy_penalty": "shop_strategy",
+    "shop_reroll_good": "shop_strategy",
+    "shop_reroll_bad": "shop_strategy",
+    "shop_leave_good": "shop_strategy",
+    "shop_leave_missed_upgrade_penalty": "shop_strategy",
+    "economy_interest_progress": "economy",
+    "economy_interest_breakpoint": "economy",
+    "economy_overspend_penalty": "economy",
+    "joker_slot_fill": "joker_strategy",
+    "joker_sell_good": "joker_strategy",
+    "joker_sell_bad": "joker_strategy",
+    "xmult_acquisition": "joker_strategy",
+}
+
+# Strategic components clamped together per step (pre dense-scale).
+_STRATEGIC_SHOP_COMPONENTS = (
+    "shop_engine_delta",
+    "shop_purchase_value",
+    "shop_bad_buy_penalty",
+    "shop_reroll_good",
+    "shop_reroll_bad",
+    "shop_leave_good",
+    "shop_leave_missed_upgrade_penalty",
+    "economy_interest_progress",
+    "economy_interest_breakpoint",
+    "economy_overspend_penalty",
+    "joker_slot_fill",
+    "joker_sell_good",
+    "joker_sell_bad",
+    "xmult_acquisition",
+    "consumable_improvement",
+)
+
+# Per-tier interest opportunity cost expressed in reward units. Matches the
+# accounting used inside shop_eval so build/shop value and lost-interest are
+# comparable. One interest tier ≈ this much shaped reward.
+_INTEREST_TIER_VALUE = 0.05
+# A "good" joker buy must clear this raw build-value threshold.
+_GOOD_BUY_THRESHOLD = 0.20
 
 _FIXED_DECK_SIGNATURE_SHARE = 0.70
 _FIXED_DECK_MIN_SIGNATURE_COUNT = 8
@@ -212,6 +350,224 @@ def _blind_pressure(info: dict, *, cleared_blind: bool = False) -> float | None:
     remaining_fraction = max(blind_target - float(info.get("round_score", 0)), 0.0) / blind_target
     effective_resources = max(float(hands_left) + DISCARD_RESOURCE_WEIGHT * float(discards_left), 1.0)
     return remaining_fraction / effective_resources
+
+
+# ───────────────────────── strategic shop shaping ─────────────────────────
+
+
+def _clip(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def _has_build_info(info: dict) -> bool:
+    return "joker_details" in info
+
+
+def _bought_shop_card(prev_info: dict, curr_info: dict) -> dict | None:
+    """Map a shop_buy action_index onto the prev-step shop_cards entry."""
+    action_index = curr_info.get("action_index")
+    try:
+        index = int(action_index)
+    except (TypeError, ValueError):
+        return None
+    cards = tuple(prev_info.get("shop_cards", ()))
+    if 0 <= index < len(cards) and isinstance(cards[index], dict):
+        return cards[index]
+    return None
+
+
+def _emergency(build: BuildEval) -> bool:
+    return build.survival_margin < 1.0 or not build.has_scoring_joker
+
+
+def _reward_shop_buy(
+    prev_info: dict,
+    curr_info: dict,
+    prev_build: BuildEval,
+    curr_build: BuildEval,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    card = _bought_shop_card(prev_info, curr_info)
+    if card is None:
+        return
+    cset = card.get("set", "")
+    value = score_shop_item(prev_info, card, prev_build)
+
+    dollars = int(prev_info.get("dollars", 0) or 0)
+    cap = prev_build.interest_cap_cash
+    cost = int(card.get("cost", 0) or 0)
+    lost_tiers = interest_tiers(dollars, cap) - interest_tiers(dollars - cost, cap)
+    opp_cost = lost_tiers * (_INTEREST_TIER_VALUE * (0.25 if _emergency(prev_build) else 1.0))
+    net = value - opp_cost
+
+    if cset == "Joker":
+        if value > _GOOD_BUY_THRESHOLD:
+            components["shop_purchase_value"] += config.shop_purchase_value_coeff * _clip(net, 0.0, 1.0)
+        else:
+            components["shop_bad_buy_penalty"] -= config.shop_bad_buy_penalty_coeff * _clip(-net, 0.0, 1.0)
+        if prev_build.joker_slots_left > 0 and curr_build.joker_slots_used > prev_build.joker_slots_used:
+            components["joker_slot_fill"] += config.joker_slot_fill_coeff
+        if not prev_build.has_xmult_joker and curr_build.has_xmult_joker:
+            components["xmult_acquisition"] += config.xmult_acquisition_coeff
+    elif cset in ("Tarot", "Planet", "Spectral"):
+        components["consumable_improvement"] += config.consumable_improvement_coeff * _clip(value, -1.0, 1.0)
+
+
+def _reward_shop_reroll(
+    prev_info: dict,
+    prev_build: BuildEval,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    opp = evaluate_shop_opportunity(prev_info, prev_build)
+    if opp.has_critical_upgrade:
+        components["shop_reroll_bad"] -= config.shop_reroll_bad_coeff
+        return
+    if opp.has_affordable_upgrade and opp.best_visible_net_value > _GOOD_BUY_THRESHOLD:
+        components["shop_reroll_bad"] -= config.shop_reroll_bad_coeff * _clip(opp.best_visible_net_value, 0.0, 1.0)
+        return
+
+    ante = int(prev_info.get("ante", 1) or 1)
+    emergency_hunt = _emergency(prev_build) or (not prev_build.has_xmult_joker and ante >= 3)
+    if opp.can_reroll_above_interest_cap and opp.reroll_desirable:
+        components["shop_reroll_good"] += config.shop_reroll_good_coeff
+    elif emergency_hunt and opp.reroll_desirable:
+        components["shop_reroll_good"] += config.shop_reroll_good_coeff * 0.5
+    else:
+        components["shop_reroll_bad"] -= config.shop_reroll_bad_coeff * (1 + opp.lost_interest_tiers_if_reroll)
+
+
+def _reward_shop_leave(
+    prev_info: dict,
+    prev_build: BuildEval,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    opp = evaluate_shop_opportunity(prev_info, prev_build)
+    if opp.has_critical_upgrade:
+        components["shop_leave_missed_upgrade_penalty"] -= config.shop_leave_missed_upgrade_coeff * 1.6
+        return
+    if opp.has_affordable_upgrade and opp.best_visible_net_value > _GOOD_BUY_THRESHOLD:
+        components["shop_leave_missed_upgrade_penalty"] -= config.shop_leave_missed_upgrade_coeff * _clip(
+            opp.best_visible_net_value, 0.0, 1.0
+        )
+        return
+    dollars = int(prev_info.get("dollars", 0) or 0)
+    reroll_cost = int(prev_info.get("reroll_cost", 0) or 0)
+    if opp.reroll_desirable and dollars - reroll_cost >= prev_build.interest_cap_cash:
+        components["shop_leave_missed_upgrade_penalty"] -= config.shop_leave_missed_upgrade_coeff * 0.6
+        return
+    if dollars >= prev_build.interest_cap_cash:
+        components["shop_leave_good"] += config.shop_leave_good_coeff
+    if prev_build.survival_margin >= 1.5:
+        components["shop_leave_good"] += config.shop_leave_good_coeff * 0.5
+
+
+def _reward_joker_sell(
+    prev_info: dict,
+    curr_info: dict,
+    prev_build: BuildEval,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    # The sold joker occupied curr_info's action_index slot in the prev build.
+    prev_jokers = list(prev_info.get("joker_details", ()))
+    try:
+        idx = int(curr_info.get("action_index"))
+    except (TypeError, ValueError):
+        idx = -1
+    sold = prev_jokers[idx] if 0 <= idx < len(prev_jokers) else None
+    opp = evaluate_shop_opportunity(prev_info, prev_build)
+    if sold is None:
+        components["joker_sell_bad"] -= config.joker_sell_bad_coeff * 0.25
+        return
+    # Selling a scaling / xmult engine is bad; selling a weak joker to fund a
+    # strictly better visible upgrade is fine.
+    if sold.get("is_scaling") or sold.get("x_mult", 1.0) > 1.0:
+        components["joker_sell_bad"] -= config.joker_sell_bad_coeff
+    elif opp.best_visible_net_value > _GOOD_BUY_THRESHOLD:
+        components["joker_sell_good"] += config.joker_sell_good_coeff
+    else:
+        components["joker_sell_bad"] -= config.joker_sell_bad_coeff * 0.25
+
+
+def _reward_economy(
+    prev_info: dict,
+    curr_info: dict,
+    prev_build: BuildEval,
+    curr_build: BuildEval,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    cap = prev_build.interest_cap_cash
+    prev_d = int(prev_info.get("dollars", 0) or 0)
+    curr_d = int(curr_info.get("dollars", 0) or 0)
+    prev_tiers = interest_tiers(prev_d, cap)
+    curr_tiers = interest_tiers(curr_d, cap)
+    tier_delta = curr_tiers - prev_tiers
+
+    if tier_delta > 0:
+        gate = 1.0 if (curr_build.has_scoring_joker and curr_build.survival_margin >= 1.0) else 0.25
+        components["economy_interest_progress"] += config.economy_interest_progress_coeff * tier_delta * gate
+        if curr_d >= cap and prev_d < cap:
+            components["economy_interest_breakpoint"] += config.economy_interest_breakpoint_coeff
+    elif tier_delta < 0:
+        lost = -tier_delta
+        # Justified if the spend bought real build power or we were in trouble.
+        purchase_value = max(0.0, curr_build.total - prev_build.total)
+        justified = purchase_value > lost * _INTEREST_TIER_VALUE or _emergency(prev_build)
+        if not justified:
+            components["economy_overspend_penalty"] -= config.economy_overspend_penalty_coeff * lost
+
+
+def _apply_strategic_shop_rewards(
+    prev_info: dict,
+    curr_info: dict,
+    action_type: str,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    """Context-aware shop/build/economy shaping; replaces flat reroll/sell.
+
+    Active only when both infos carry build features (real env / training).
+    Caps the aggregate strategic contribution so a single shop step cannot
+    dominate the terminal win/loss reward.
+    """
+    prev_build = evaluate_build(prev_info)
+    curr_build = evaluate_build(curr_info)
+
+    # Build-power delta from any in-shop action (buy/sell/pack claim).
+    delta = curr_build.total - prev_build.total
+    if abs(delta) > 1e-6:
+        components["shop_engine_delta"] += config.shop_engine_delta_coeff * _clip(delta, -1.0, 1.0)
+
+    if action_type == "shop_buy":
+        _reward_shop_buy(prev_info, curr_info, prev_build, curr_build, config, components)
+    elif action_type == "shop_reroll":
+        _reward_shop_reroll(prev_info, prev_build, config, components)
+    elif action_type == "shop_leave":
+        _reward_shop_leave(prev_info, prev_build, config, components)
+    elif action_type == "shop_sell_joker" and config.enable_joker_context_rewards:
+        _reward_joker_sell(prev_info, curr_info, prev_build, config, components)
+
+    if config.enable_economy_strategy_rewards:
+        _reward_economy(prev_info, curr_info, prev_build, curr_build, config, components)
+
+    # Clamp the aggregate strategic contribution (positives and negatives
+    # independently so logging stays interpretable).
+    pos = sum(max(0.0, components[k]) for k in _STRATEGIC_SHOP_COMPONENTS)
+    neg = -sum(min(0.0, components[k]) for k in _STRATEGIC_SHOP_COMPONENTS)
+    if pos > config.max_single_shop_reward and pos > 0:
+        factor = config.max_single_shop_reward / pos
+        for k in _STRATEGIC_SHOP_COMPONENTS:
+            if components[k] > 0:
+                components[k] *= factor
+    if neg > config.max_single_shop_penalty and neg > 0:
+        factor = config.max_single_shop_penalty / neg
+        for k in _STRATEGIC_SHOP_COMPONENTS:
+            if components[k] < 0:
+                components[k] *= factor
 
 
 def default_reward_components(
@@ -309,10 +665,26 @@ def default_reward_components(
             if curr_info.get(f"{prefix}_main_hand_match", False):
                 components["planet_match_bonus"] += PLANET_MATCH_BONUS
 
-    if action_type in ("shop_sell_joker", "shop_sell_consumable"):
+    # Strategic shop/build/economy shaping is active only when the step info
+    # carries the build features (real env / training rollouts). When active it
+    # supersedes the legacy flat reroll/sell shaping below.
+    strategic = (
+        config.enable_shop_strategy_rewards
+        and _has_build_info(prev_info)
+        and _has_build_info(curr_info)
+    )
+    if strategic and action_type in ("shop_buy", "shop_reroll", "shop_leave", "shop_sell_joker"):
+        _apply_strategic_shop_rewards(prev_info, curr_info, action_type, config, components)
+    elif strategic and prev_info.get("in_shop") and config.enable_economy_strategy_rewards:
+        # Interest accrual / overspend on shop steps without a dedicated handler.
+        _apply_strategic_shop_rewards(prev_info, curr_info, action_type, config, components)
+
+    if action_type in ("shop_sell_joker", "shop_sell_consumable") and not (
+        strategic and config.enable_joker_context_rewards and action_type == "shop_sell_joker"
+    ):
         components["shop_sell_penalty"] -= SHOP_SELL_PENALTY
 
-    if config.enable_shop_reroll_reward and action_type == "shop_reroll":
+    if action_type == "shop_reroll" and not strategic and config.enable_shop_reroll_reward:
         components["shop_reroll_reward"] += SHOP_REROLL_REWARD
 
     if action_type == "pack_skip":
@@ -340,10 +712,22 @@ def default_reward_components(
     # This branch only ever accumulates dense/local shaping — the terminal
     # component is emitted on the early-return path above and never reaches
     # here — so layering dense_reward_scale on top of REWARD_SCALE shrinks
-    # shaping without touching terminal win/loss reward.
+    # shaping without touching terminal win/loss reward. Each component is
+    # additionally scaled by its group multiplier (default 1.0 → identical to
+    # the pre-split behavior) so local hand play can be annealed independently
+    # of strategic shop/economy signal.
+    group_scales = {
+        "progression": config.progression_reward_scale,
+        "local_hand": config.local_hand_reward_scale,
+        "shop_strategy": config.shop_strategy_reward_scale,
+        "joker_strategy": config.joker_strategy_reward_scale,
+        "economy": config.economy_reward_scale,
+        "consumable": config.consumable_reward_scale,
+    }
     dense_scale = REWARD_SCALE * config.dense_reward_scale
     for key in components:
-        components[key] *= dense_scale
+        group = _COMPONENT_GROUP.get(key, "progression")
+        components[key] *= dense_scale * group_scales[group]
     components["total"] = sum(components.values())
     return components
 

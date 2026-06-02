@@ -282,6 +282,45 @@ def main():
         ),
     )
     parser.add_argument(
+        "--local-hand-reward-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Group dense-scale for already-solved local hand-play shaping "
+            "(hand_subset/top1/top3 bonuses). Lower (e.g. 0.10) to stop local hand "
+            "play from drowning out strategic shop/economy signal. Default: 1.0."
+        ),
+    )
+    parser.add_argument(
+        "--shop-strategy-reward-scale",
+        type=float,
+        default=1.0,
+        help="Group dense-scale for strategic shop buy/reroll/leave shaping. Default: 1.0.",
+    )
+    parser.add_argument(
+        "--joker-strategy-reward-scale",
+        type=float,
+        default=1.0,
+        help="Group dense-scale for joker slot-fill / xmult / sell shaping. Default: 1.0.",
+    )
+    parser.add_argument(
+        "--economy-reward-scale",
+        type=float,
+        default=1.0,
+        help="Group dense-scale for interest-progress / overspend shaping. Default: 1.0.",
+    )
+    parser.add_argument(
+        "--consumable-reward-scale",
+        type=float,
+        default=1.0,
+        help="Group dense-scale for planet/tarot/spectral improvement shaping. Default: 1.0.",
+    )
+    parser.add_argument(
+        "--disable-shop-strategy-rewards",
+        action="store_true",
+        help="Disable context-aware strategic shop/economy/joker rewards (legacy flat shaping only).",
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -397,10 +436,20 @@ def main():
                 rollout_temperature=args.rollout_temperature,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
-                # A RewardConfig with dense_reward_scale=1.0 is field-for-field
-                # identical to DEFAULT_REWARD_CONFIG, so runs without the flag
-                # keep their exact prior shaping behavior.
-                reward_config=RewardConfig(dense_reward_scale=args.dense_reward_scale),
+                # A RewardConfig with all scales 1.0 and strategic rewards on is
+                # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
+                # without these flags keep their exact prior shaping behavior.
+                reward_config=RewardConfig(
+                    dense_reward_scale=args.dense_reward_scale,
+                    local_hand_reward_scale=args.local_hand_reward_scale,
+                    shop_strategy_reward_scale=args.shop_strategy_reward_scale,
+                    joker_strategy_reward_scale=args.joker_strategy_reward_scale,
+                    economy_reward_scale=args.economy_reward_scale,
+                    consumable_reward_scale=args.consumable_reward_scale,
+                    enable_shop_strategy_rewards=not args.disable_shop_strategy_rewards,
+                    enable_economy_strategy_rewards=not args.disable_shop_strategy_rewards,
+                    enable_joker_context_rewards=not args.disable_shop_strategy_rewards,
+                ),
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,

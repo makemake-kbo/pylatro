@@ -2084,9 +2084,10 @@ class HeuristicAgent:
         ante = state.round_resets.ante
         main_type = self._get_main_hand_type(state)
 
-        # Balatro pays $1 interest per $5 held, capped at $5/round
-        interest_cap = 5
-        interest_threshold = interest_cap * 5
+        # Balatro pays `interest_amount` per $5 held, up to the `interest_cap` cash
+        # threshold (default $25, Seed Money $50, Money Tree $100). Roll/spend down to
+        # this threshold to preserve max interest income.
+        interest_threshold = state.interest_cap
 
         best_joker_action = -1
         best_joker_score = -1e9

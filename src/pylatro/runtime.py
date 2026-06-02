@@ -13,6 +13,21 @@ if TYPE_CHECKING:
     from .models import RunState, ShopCard
 
 
+def compute_interest(dollars: int, interest_cap: int, interest_amount: int) -> int:
+    """Balatro interest: $`interest_amount` per $5 held, capped at `interest_cap` dollars.
+
+    `interest_cap` is the *cash threshold* above which no further interest accrues
+    (default 25, Seed Money 50, Money Tree 100), NOT a tier count. The number of paid
+    tiers is therefore ``min(dollars // 5, interest_cap // 5)`` and each tier pays
+    ``interest_amount`` (raised by To the Moon). Mirrors Balatro's
+    ``min(floor(dollars/5), interest_cap/5) * interest_amount``.
+    """
+    if interest_amount <= 0 or dollars < 5:
+        return 0
+    tiers = min(dollars // 5, interest_cap // 5)
+    return tiers * interest_amount
+
+
 def joker_limit(state: RunState) -> int:
     return max(0, state.starting_params.joker_slots)
 
@@ -401,9 +416,7 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     results["dollars"] = int(results["dollars"]) + hands_left * money_per_hand
 
     if not state.modifiers.get("no_interest"):
-        interest_rate = state.interest_amount
-        interest_cap = state.interest_cap
-        interest = min(floor(state.dollars / 5), floor(interest_cap / interest_rate)) * interest_rate
+        interest = compute_interest(state.dollars, state.interest_cap, state.interest_amount)
         results["dollars"] = int(results["dollars"]) + max(0, interest)
 
     dollars = int(results["dollars"])

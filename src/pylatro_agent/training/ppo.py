@@ -405,6 +405,54 @@ def _validate_ppo_config(config: PPOConfig) -> None:
             )
 
 
+def resolve_distill_coeff(config: "PPOConfig", total_steps: int) -> float:
+    """Return the heuristic-teacher distillation coefficient at ``total_steps``.
+
+    Semantics:
+
+    * ``heuristic_distill_coeff <= 0`` -> distillation is fully disabled (returns 0.0).
+      This makes ``--heuristic-distill-coeff 0.0`` an explicit "turn it off" switch
+      regardless of ``--heuristic-distill-min``.
+    * Otherwise the coefficient linearly decays from ``heuristic_distill_coeff``
+      toward a floor over ``distill_decay_fraction`` of training (defaulting to
+      the full run when ``None``).
+    * The floor is clamped to ``min(heuristic_distill_min, heuristic_distill_coeff)``
+      so a misconfigured floor that exceeds the start value cannot silently pin
+      distillation above the requested starting coefficient; a warning is logged
+      the first time that condition is seen.
+    """
+    if config.heuristic_distill_coeff <= 0.0:
+        return 0.0
+
+    floor = min(config.heuristic_distill_min, config.heuristic_distill_coeff)
+    if floor < config.heuristic_distill_min:
+        # Only log on the first call so we don't spam the training loop.
+        if not getattr(resolve_distill_coeff, "_floor_clamp_warned", False):
+            logger.warning(
+                "heuristic_distill_min=%.4f exceeds heuristic_distill_coeff=%.4f; "
+                "clamping the distillation floor to %.4f. Set --heuristic-distill-min "
+                "<= --heuristic-distill-coeff to remove this warning.",
+                config.heuristic_distill_min,
+                config.heuristic_distill_coeff,
+                floor,
+            )
+            resolve_distill_coeff._floor_clamp_warned = True  # type: ignore[attr-defined]
+
+    decay_fraction = (
+        config.distill_decay_fraction
+        if config.distill_decay_fraction is not None
+        else 1.0
+    )
+    decay_steps = max(1, int(config.total_timesteps * decay_fraction))
+    progress = min(1.0, total_steps / decay_steps)
+
+    return max(
+        floor,
+        config.heuristic_distill_coeff
+        - (config.heuristic_distill_coeff - floor) * progress,
+    )
+
+
 def _run_ppo_update(
     model: nn.Module,
     optimizer: Adam,
@@ -1850,6 +1898,14 @@ def evaluate_model(
     wins = 0
 
     for game_idx in range(num_games):
+        # Eval runs serially in-process; each game caches MPS forward-pass
+        # allocations that are only released when the whole eval finishes. Over
+        # a large `num_games` that ramp builds enough unified-memory pressure to
+        # let the OS jetsam an idle AsyncVectorEnv worker (-> EOFError/BrokenPipe
+        # on the next rollout step). Drain the cache periodically to cap the peak.
+        if device.type == "mps" and game_idx > 0 and game_idx % 50 == 0:
+            torch.mps.empty_cache()
+
         env = BalatroEnv(
             seed=10000 + game_idx,
             data=data,

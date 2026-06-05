@@ -143,6 +143,19 @@ def main():
         help="Games per PPO eval pass (default: 50). Wins are rare; small samples are noisy.",
     )
     parser.add_argument(
+        "--eval-device",
+        type=str,
+        default=None,
+        help=(
+            "Optional device override for the PPO eval pass (cpu, mps, cuda). "
+            "Useful when training on MPS: eval runs serially in-process and "
+            "its forward-pass allocations compete with idle AsyncVectorEnv "
+            "workers for unified memory. Setting --eval-device cpu moves "
+            "those allocations off the GPU entirely at the cost of slower "
+            "eval. Default: same as --device."
+        ),
+    )
+    parser.add_argument(
         "--rollout-temperature",
         type=float,
         default=0.7,
@@ -440,6 +453,7 @@ def main():
                 rollout_temperature=args.rollout_temperature,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
+                eval_device=args.eval_device,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.

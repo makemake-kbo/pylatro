@@ -185,6 +185,13 @@ class PPOConfig:
     # ~39% at ante 4). 10 eval games can't measure rare-event winrate; bump
     # the default so eval/win_rate has signal to compare against.
     eval_games: int = 50
+    # Optional override for the device used during eval. When set (e.g. "cpu"),
+    # eval games run on that device instead of the training device. Useful for
+    # long MPS runs where the eval loop's serial forward-pass allocations
+    # otherwise compete with idle AsyncVectorEnv workers for unified memory and
+    # can trip the OS memory-pressure killer. The model is moved to the eval
+    # device for the duration of evaluate_model and moved back afterward.
+    eval_device: str | None = None
     # Curriculum: cap the run's victory threshold below the engine default
     # (8). Heuristic-teacher win rates by ante are ~39% at 4, ~12% at 5,
     # ~2% at 6. Set to None for the standard ante-8 victory condition.
@@ -1930,16 +1937,38 @@ def train_ppo(
                 # Flush before eval so any preceding scalars survive a
                 # parent-process crash during the (potentially long) eval.
                 writer.flush()
-                win_rate = evaluate_model(
-                    model,
-                    data,
-                    vocab,
-                    config.eval_games,
-                    device,
-                    max_no_progress_steps=config.max_no_progress_steps,
-                    win_ante=config.win_ante,
-                    temperature=config.rollout_temperature,
-                )
+                # Optionally run eval on a different device to keep MPS
+                # memory pressure down. The model is temporarily moved to
+                # the eval device and moved back when eval finishes.
+                eval_device = device
+                if config.eval_device:
+                    eval_device = torch.device(config.eval_device)
+                    model_to_eval = model.to(eval_device)
+                else:
+                    model_to_eval = model
+                try:
+                    win_rate = evaluate_model(
+                        model_to_eval,
+                        data,
+                        vocab,
+                        config.eval_games,
+                        eval_device,
+                        max_no_progress_steps=config.max_no_progress_steps,
+                        win_ante=config.win_ante,
+                        temperature=config.rollout_temperature,
+                    )
+                finally:
+                    if config.eval_device and eval_device != device:
+                        # Move model back to the training device for the next
+                        # rollout. Failure to do this leaves the optimizer's
+                        # param groups pointing at the wrong device.
+                        model.to(device)
+                    # Force-release any large eval-side allocations before the
+                    # next training rollout; this is a no-op on CPU but
+                    # materially reduces MPS high-water-mark usage.
+                    if eval_device.type == "mps":
+                        torch.mps.empty_cache()
+                    del model_to_eval
                 writer.add_scalar("eval/win_rate", win_rate, update_count)
                 writer.flush()
                 eval_win_rate = win_rate
@@ -2051,41 +2080,54 @@ def evaluate_model(
     temperature: float = 1.0,
     stake: int = 1,
 ) -> float:
-    """Evaluate model win rate with greedy action selection over num_games."""
+    """Evaluate model win rate with greedy action selection over num_games.
+
+    Memory safety:
+
+    * Runs under ``torch.inference_mode`` so eval never builds an autograd
+      graph. Categorical sampling on MPS otherwise leaks intermediate
+      tensors that accumulate across ``num_games``.
+    * Drains the MPS cache every 50 games so peak unified-memory usage
+      stays bounded; without this an eval-heavy run can jetsam the idle
+      AsyncVectorEnv workers (manifesting as EOFError/BrokenPipe on the
+      next rollout step).
+    """
     model.eval()
     wins = 0
 
-    for game_idx in range(num_games):
-        # Eval runs serially in-process; each game caches MPS forward-pass
-        # allocations that are only released when the whole eval finishes. Over
-        # a large `num_games` that ramp builds enough unified-memory pressure to
-        # let the OS jetsam an idle AsyncVectorEnv worker (-> EOFError/BrokenPipe
-        # on the next rollout step). Drain the cache periodically to cap the peak.
-        if device.type == "mps" and game_idx > 0 and game_idx % 50 == 0:
-            torch.mps.empty_cache()
+    with torch.inference_mode():
+        for game_idx in range(num_games):
+            # Eval runs serially in-process; each game caches MPS forward-pass
+            # allocations that are only released when the whole eval finishes. Over
+            # a large `num_games` that ramp builds enough unified-memory pressure to
+            # let the OS jetsam an idle AsyncVectorEnv worker (-> EOFError/BrokenPipe
+            # on the next rollout step). Drain the cache periodically to cap the peak.
+            if device.type == "mps" and game_idx > 0 and game_idx % 50 == 0:
+                torch.mps.empty_cache()
 
-        env = BalatroEnv(
-            seed=10000 + game_idx,
-            data=data,
-            vocab=vocab,
-            stake=stake,
-            max_steps=max_no_progress_steps,
-            win_ante=win_ante,
-        )
-        obs, _ = env.reset()
-        done = False
+            env = BalatroEnv(
+                seed=10000 + game_idx,
+                data=data,
+                vocab=vocab,
+                stake=stake,
+                max_steps=max_no_progress_steps,
+                win_ante=win_ante,
+            )
+            obs, _ = env.reset()
+            done = False
 
-        while not done:
-            with torch.no_grad():
+            while not done:
                 batch = _single_obs_to_batch(obs, device)
                 dist, _ = _grammar_distribution(model, batch, temperature=temperature)
                 action = dist.mode().item()
+                # Drop the per-step inference tensors immediately; otherwise
+                # they sit on the MPS allocator until the end of the game.
+                del batch, dist
+                obs, _reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
 
-            obs, _reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-
-        if info.get("won", False):
-            wins += 1
+            if info.get("won", False):
+                wins += 1
 
     return wins / max(num_games, 1)
 

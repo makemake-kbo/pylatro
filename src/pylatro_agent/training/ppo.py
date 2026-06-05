@@ -1344,7 +1344,6 @@ def train_ppo(
         reward_config=config.reward_config,
     )
     obs_dict, reset_info = vec_env.reset()
-
     # Pre-allocate obs tensors for batched inference
     obs_buf = _ObsBuffer(config.num_envs, device)
     obs_buf.update(obs_dict)
@@ -1432,23 +1431,229 @@ def train_ppo(
     # episodes only.
     env_episode_start_step = np.zeros(config.num_envs, dtype=np.int64)
 
-    while update_count < planned_updates:
-        buffer = RolloutBuffer(
-            num_envs=config.num_envs,
-            rollout_length=config.rollout_length,
-            gamma=config.gamma,
-            gae_lambda=config.gae_lambda,
-        )
-        env_episode_start_step[:] = 0
-        rm = _RolloutMetrics()
-        rollout_progress = total_steps / max(1, config.total_timesteps)
-        teacher_rollout_prob_now = _scheduled_teacher_rollout_prob(config, rollout_progress)
+    try:
+        while update_count < planned_updates:
+            buffer = RolloutBuffer(
+                num_envs=config.num_envs,
+                rollout_length=config.rollout_length,
+                gamma=config.gamma,
+                gae_lambda=config.gae_lambda,
+            )
+            env_episode_start_step[:] = 0
+            rm = _RolloutMetrics()
+            rollout_progress = total_steps / max(1, config.total_timesteps)
+            teacher_rollout_prob_now = _scheduled_teacher_rollout_prob(config, rollout_progress)
 
-        # === Collect rollouts (vectorized) ===
-        model.eval()
-        for step in range(config.rollout_length):
+            # === Collect rollouts (vectorized) ===
+            model.eval()
+            for step in range(config.rollout_length):
+                with torch.no_grad():
+                    dist, value_dict = _unwrap_model(model).action_distribution(
+                        obs_buf.tokens,
+                        obs_buf.token_types,
+                        obs_buf.scalars,
+                        obs_buf.attention_mask,
+                        obs_buf.action_mask,
+                        temperature=config.rollout_temperature,
+                    )
+                    actions = dist.sample()
+                    use_teacher = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
+                    if teacher_rollout_prob_now > 0.0:
+                        teacher_actions_t = torch.as_tensor(teacher_action_buf, dtype=torch.long, device=device)
+                        teacher_valid = (
+                            (teacher_actions_t >= 0)
+                            & (teacher_actions_t < NUM_ACTIONS)
+                            & obs_buf.action_mask.gather(
+                                1,
+                                teacher_actions_t.clamp(0, NUM_ACTIONS - 1).unsqueeze(-1),
+                            ).squeeze(-1).bool()
+                        )
+                        use_teacher = (
+                            torch.rand(config.num_envs, device=device) < teacher_rollout_prob_now
+                        ) & teacher_valid
+                        actions = torch.where(use_teacher, teacher_actions_t, actions)
+                    log_probs = dist.log_prob(actions)
+                    values = value_dict["expected_score"]
+                    chosen_action_probs = dist.selected_prob(actions)
+                    max_action_probs = dist.max_prob()
+
+                actions_np = actions.cpu().numpy()
+                log_probs_np = log_probs.cpu().numpy()
+                values_np = values.cpu().numpy()
+                if return_rms is not None:
+                    values_np = return_rms.denormalize(values_np)
+                chosen_action_probs_np = chosen_action_probs.cpu().numpy()
+                max_action_probs_np = max_action_probs.cpu().numpy()
+                use_teacher_np = use_teacher.cpu().numpy()
+
+                # Step all envs at once
+                next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
+                dones = terminated | truncated
+                bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
+                teacher_actions_np = np.asarray(
+                    [
+                        int(
+                            _extract_step_info_value(
+                                infos, "teacher_action", env_idx, done=bool(dones[env_idx]), default=-1
+                            )
+                        )
+                        for env_idx in range(config.num_envs)
+                    ],
+                    dtype=np.int64,
+                )
+                distill_weights_np = np.asarray(
+                    [
+                        _compute_distill_weight(infos, env_idx, done=bool(dones[env_idx]))
+                        for env_idx in range(config.num_envs)
+                    ],
+                    dtype=np.float32,
+                )
+
+                if np.any(truncated) and "final_obs" in infos:
+                    final_obs_arr = infos["final_obs"]
+                    truncated_indices = [idx for idx in np.where(truncated)[0] if final_obs_arr[idx] is not None]
+                    if truncated_indices:
+                        final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
+                        with torch.no_grad():
+                            _, truncated_value_dict = _grammar_distribution(
+                                model, final_obs_batch, temperature=config.rollout_temperature
+                            )
+                        truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
+                        if return_rms is not None:
+                            truncated_vals = return_rms.denormalize(truncated_vals)
+                        bootstrap_values_np[np.asarray(truncated_indices, dtype=np.int64)] = truncated_vals
+
+                # Store transition (using pre-step obs from obs_buf)
+                buffer.add_batch(
+                    step=step,
+                    obs=obs_buf.as_numpy_dict(),
+                    actions=actions_np,
+                    rewards=rewards.astype(np.float32),
+                    values=values_np,
+                    log_probs=log_probs_np,
+                    terminated=terminated,
+                    truncated=truncated,
+                    bootstrap_values=bootstrap_values_np,
+                    teacher_actions=teacher_actions_np,
+                    distill_weights=distill_weights_np,
+                    teacher_forced=use_teacher_np,
+                )
+
+                # Track per-env episode stats
+                env_ep_reward += rewards
+                env_ep_length += 1
+                rm.step_rewards.extend(rewards.astype(np.float64).tolist())
+                rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
+                rm.max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
+                rm.teacher_rollout_used.extend(use_teacher_np.astype(np.float64).tolist())
+                rm.done_flags.extend(dones.astype(np.float64).tolist())
+                rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
+                rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
+                for action_id in actions_np:
+                    rm.action_type_counts[_action_type_name(int(action_id))] += 1
+                for env_idx in range(config.num_envs):
+                    step_done = bool(dones[env_idx])
+                    pre_sub_phase = _extract_step_info_value(
+                        infos,
+                        "pre_sub_phase",
+                        env_idx,
+                        done=step_done,
+                        default="",
+                    )
+                    action_type_name = _action_type_name(int(actions_np[env_idx]))
+
+                    in_choose_action = pre_sub_phase == "choose_action"
+                    rm.pre_choose_action_flags.append(float(in_choose_action))
+                    if action_type_name == ActionType.PLAY_SUBSET.value:
+                        rm.play_subset_count += 1
+                    elif action_type_name == ActionType.DISCARD_SUBSET.value:
+                        rm.discard_subset_count += 1
+
+                    rm.progress_flags.append(
+                        float(
+                            bool(
+                                _extract_step_info_value(
+                                    infos,
+                                    "progress_made",
+                                    env_idx,
+                                    done=step_done,
+                                    default=False,
+                                )
+                            )
+                        )
+                    )
+                    rm.steps_since_progress.append(
+                        float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
+                    )
+                    for component_name in REWARD_INFO_KEYS:
+                        component_value = _extract_step_info_value(
+                            infos,
+                            component_name,
+                            env_idx,
+                            done=step_done,
+                            default=None,
+                        )
+                        if component_value is not None:
+                            rm.reward_component_values[component_name].append(float(component_value))
+
+                    _record_action_diagnostics(rm, infos, env_idx, done=step_done)
+
+                # Handle completed episodes (vectorized envs auto-reset)
+                for i in np.where(dones)[0]:
+                    episode_rewards.append(float(env_ep_reward[i]))
+                    episode_lengths.append(int(env_ep_length[i]))
+                    ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
+                    ep_stalled = bool(_extract_step_info_value(infos, "stalled", i, done=True, default=False))
+                    ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+                    episode_wins.append(ep_won)
+                    episode_stalls.append(ep_stalled)
+                    # Fill ante-survival targets for every step in this episode.
+                    # Truncated-by-stall episodes have no conclusive outcome on
+                    # their final ante, so leave mask=0 and skip the fill.
+                    if not ep_stalled:
+                        surv_target, surv_mask = compute_ante_survival_targets(ep_ante, ep_won)
+                        buffer.set_episode_survival(
+                            env_idx=int(i),
+                            start_step=int(env_episode_start_step[i]),
+                            end_step=step,
+                            target=surv_target,
+                            mask=surv_mask,
+                        )
+                    env_episode_start_step[i] = step + 1
+                    env_ep_reward[i] = 0.0
+                    env_ep_length[i] = 0
+
+                # Update obs buffer with new observations
+                obs_buf.update(next_obs_dict)
+                next_teacher_actions = np.asarray(
+                    [
+                        int(_extract_step_info_value(
+                            infos,
+                            "next_teacher_action",
+                            env_idx,
+                            done=bool(dones[env_idx]),
+                            default=-1,
+                        ))
+                        for env_idx in range(config.num_envs)
+                    ],
+                    dtype=np.int64,
+                )
+                if np.any(dones):
+                    for done_idx in np.where(dones)[0]:
+                        reset_teacher = _extract_vector_info_value(
+                            infos,
+                            "teacher_action",
+                            int(done_idx),
+                            _MISSING,
+                        )
+                        if reset_teacher is not _MISSING:
+                            next_teacher_actions[int(done_idx)] = int(reset_teacher)
+                teacher_action_buf = next_teacher_actions
+                total_steps += config.num_envs
+
+            # Bootstrap values for GAE
             with torch.no_grad():
-                dist, value_dict = _unwrap_model(model).action_distribution(
+                _, value_dict = _unwrap_model(model).action_distribution(
                     obs_buf.tokens,
                     obs_buf.token_types,
                     obs_buf.scalars,
@@ -1456,513 +1661,330 @@ def train_ppo(
                     obs_buf.action_mask,
                     temperature=config.rollout_temperature,
                 )
-                actions = dist.sample()
-                use_teacher = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
-                if teacher_rollout_prob_now > 0.0:
-                    teacher_actions_t = torch.as_tensor(teacher_action_buf, dtype=torch.long, device=device)
-                    teacher_valid = (
-                        (teacher_actions_t >= 0)
-                        & (teacher_actions_t < NUM_ACTIONS)
-                        & obs_buf.action_mask.gather(
-                            1,
-                            teacher_actions_t.clamp(0, NUM_ACTIONS - 1).unsqueeze(-1),
-                        ).squeeze(-1).bool()
-                    )
-                    use_teacher = (
-                        torch.rand(config.num_envs, device=device) < teacher_rollout_prob_now
-                    ) & teacher_valid
-                    actions = torch.where(use_teacher, teacher_actions_t, actions)
-                log_probs = dist.log_prob(actions)
-                values = value_dict["expected_score"]
-                chosen_action_probs = dist.selected_prob(actions)
-                max_action_probs = dist.max_prob()
+                last_values = value_dict["expected_score"].cpu().numpy()
+                if return_rms is not None:
+                    last_values = return_rms.denormalize(last_values)
 
-            actions_np = actions.cpu().numpy()
-            log_probs_np = log_probs.cpu().numpy()
-            values_np = values.cpu().numpy()
+            buffer.compute_returns_and_advantages(last_values=last_values)
+            buffer.normalize_advantages()
             if return_rms is not None:
-                values_np = return_rms.denormalize(values_np)
-            chosen_action_probs_np = chosen_action_probs.cpu().numpy()
-            max_action_probs_np = max_action_probs.cpu().numpy()
-            use_teacher_np = use_teacher.cpu().numpy()
+                return_rms.update(buffer._flat_returns)
 
-            # Step all envs at once
-            next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
-            dones = terminated | truncated
-            bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
-            teacher_actions_np = np.asarray(
-                [
-                    int(
-                        _extract_step_info_value(
-                            infos, "teacher_action", env_idx, done=bool(dones[env_idx]), default=-1
-                        )
-                    )
-                    for env_idx in range(config.num_envs)
-                ],
-                dtype=np.int64,
-            )
-            distill_weights_np = np.asarray(
-                [
-                    _compute_distill_weight(infos, env_idx, done=bool(dones[env_idx]))
-                    for env_idx in range(config.num_envs)
-                ],
-                dtype=np.float32,
+            # Resolve the distillation coefficient via the shared helper so the
+            # schedule semantics (zero-disables, floor clamp, decay window) are
+            # consistent across the train loop, the test suite, and any future
+            # call sites. See resolve_distill_coeff for the full contract.
+            distill_coeff_now = resolve_distill_coeff(config, total_steps)
+
+            update_stats = _run_ppo_update(
+                model=model,
+                optimizer=optimizer,
+                buffer=buffer,
+                return_rms=return_rms,
+                entropy_coeff=entropy_coeff,
+                distill_coeff=distill_coeff_now,
+                config=config,
+                accum_steps=accum_steps,
+                effective_batch_size=effective_batch_size,
+                device=device,
+                use_pin_memory=use_pin_memory,
             )
 
-            if np.any(truncated) and "final_obs" in infos:
-                final_obs_arr = infos["final_obs"]
-                truncated_indices = [idx for idx in np.where(truncated)[0] if final_obs_arr[idx] is not None]
-                if truncated_indices:
-                    final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
-                    with torch.no_grad():
-                        _, truncated_value_dict = _grammar_distribution(
-                            model, final_obs_batch, temperature=config.rollout_temperature
-                        )
-                    truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
-                    if return_rms is not None:
-                        truncated_vals = return_rms.denormalize(truncated_vals)
-                    bootstrap_values_np[np.asarray(truncated_indices, dtype=np.int64)] = truncated_vals
-
-            # Store transition (using pre-step obs from obs_buf)
-            buffer.add_batch(
-                step=step,
-                obs=obs_buf.as_numpy_dict(),
-                actions=actions_np,
-                rewards=rewards.astype(np.float32),
-                values=values_np,
-                log_probs=log_probs_np,
-                terminated=terminated,
-                truncated=truncated,
-                bootstrap_values=bootstrap_values_np,
-                teacher_actions=teacher_actions_np,
-                distill_weights=distill_weights_np,
-                teacher_forced=use_teacher_np,
+            dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
+                model=model,
+                optimizer=optimizer,
+                buffer=buffer,
+                coeff=config.dagger_bc_coeff,
+                config=config,
+                accum_steps=accum_steps,
+                effective_batch_size=effective_batch_size,
+                device=device,
+                use_pin_memory=use_pin_memory,
             )
+            update_policy_losses = update_stats.policy_losses
+            update_value_losses = update_stats.value_losses
+            update_survival_losses = update_stats.survival_losses
+            update_entropies = update_stats.entropies
+            update_normalized_entropies = update_stats.normalized_entropies
+            update_action_type_entropies = update_stats.action_type_entropies
+            update_clip_fracs = update_stats.clip_fracs
+            update_approx_kls = update_stats.approx_kls
+            update_valid_action_counts = update_stats.valid_action_counts
+            update_valid_action_type_counts = update_stats.valid_action_type_counts
+            update_distill_losses = update_stats.distill_losses
+            update_teacher_match_fractions = update_stats.teacher_match_fractions
+            update_distill_weight_means = update_stats.distill_weight_means
+            update_on_policy_fractions = update_stats.on_policy_fractions
 
-            # Track per-env episode stats
-            env_ep_reward += rewards
-            env_ep_length += 1
-            rm.step_rewards.extend(rewards.astype(np.float64).tolist())
-            rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
-            rm.max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
-            rm.teacher_rollout_used.extend(use_teacher_np.astype(np.float64).tolist())
-            rm.done_flags.extend(dones.astype(np.float64).tolist())
-            rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
-            rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
-            for action_id in actions_np:
-                rm.action_type_counts[_action_type_name(int(action_id))] += 1
-            for env_idx in range(config.num_envs):
-                step_done = bool(dones[env_idx])
-                pre_sub_phase = _extract_step_info_value(
-                    infos,
-                    "pre_sub_phase",
-                    env_idx,
-                    done=step_done,
-                    default="",
-                )
-                action_type_name = _action_type_name(int(actions_np[env_idx]))
-
-                in_choose_action = pre_sub_phase == "choose_action"
-                rm.pre_choose_action_flags.append(float(in_choose_action))
-                if action_type_name == ActionType.PLAY_SUBSET.value:
-                    rm.play_subset_count += 1
-                elif action_type_name == ActionType.DISCARD_SUBSET.value:
-                    rm.discard_subset_count += 1
-
-                rm.progress_flags.append(
-                    float(
-                        bool(
-                            _extract_step_info_value(
-                                infos,
-                                "progress_made",
-                                env_idx,
-                                done=step_done,
-                                default=False,
-                            )
-                        )
-                    )
-                )
-                rm.steps_since_progress.append(
-                    float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
-                )
-                for component_name in REWARD_INFO_KEYS:
-                    component_value = _extract_step_info_value(
-                        infos,
-                        component_name,
-                        env_idx,
-                        done=step_done,
-                        default=None,
-                    )
-                    if component_value is not None:
-                        rm.reward_component_values[component_name].append(float(component_value))
-
-                _record_action_diagnostics(rm, infos, env_idx, done=step_done)
-
-            # Handle completed episodes (vectorized envs auto-reset)
-            for i in np.where(dones)[0]:
-                episode_rewards.append(float(env_ep_reward[i]))
-                episode_lengths.append(int(env_ep_length[i]))
-                ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
-                ep_stalled = bool(_extract_step_info_value(infos, "stalled", i, done=True, default=False))
-                ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
-                episode_wins.append(ep_won)
-                episode_stalls.append(ep_stalled)
-                # Fill ante-survival targets for every step in this episode.
-                # Truncated-by-stall episodes have no conclusive outcome on
-                # their final ante, so leave mask=0 and skip the fill.
-                if not ep_stalled:
-                    surv_target, surv_mask = compute_ante_survival_targets(ep_ante, ep_won)
-                    buffer.set_episode_survival(
-                        env_idx=int(i),
-                        start_step=int(env_episode_start_step[i]),
-                        end_step=step,
-                        target=surv_target,
-                        mask=surv_mask,
-                    )
-                env_episode_start_step[i] = step + 1
-                env_ep_reward[i] = 0.0
-                env_ep_length[i] = 0
-
-            # Update obs buffer with new observations
-            obs_buf.update(next_obs_dict)
-            next_teacher_actions = np.asarray(
-                [
-                    int(_extract_step_info_value(
-                        infos,
-                        "next_teacher_action",
-                        env_idx,
-                        done=bool(dones[env_idx]),
-                        default=-1,
-                    ))
-                    for env_idx in range(config.num_envs)
-                ],
-                dtype=np.int64,
+            # Track the normalized entropy signal every update, even with fixed entropy.
+            mean_normalized_entropy = float(np.mean(update_normalized_entropies))
+            entropy_signal_ema = _smoothed_entropy_signal(
+                entropy_signal_ema,
+                mean_normalized_entropy,
+                config.entropy_ema_beta,
             )
-            if np.any(dones):
-                for done_idx in np.where(dones)[0]:
-                    reset_teacher = _extract_vector_info_value(
-                        infos,
-                        "teacher_action",
-                        int(done_idx),
-                        _MISSING,
-                    )
-                    if reset_teacher is not _MISSING:
-                        next_teacher_actions[int(done_idx)] = int(reset_teacher)
-            teacher_action_buf = next_teacher_actions
-            total_steps += config.num_envs
+            if config.adaptive_entropy:
+                assert log_alpha is not None
+                assert alpha_optimizer is not None
+                alpha_loss = _entropy_alpha_loss(log_alpha, entropy_signal_ema, config.target_entropy)
+                alpha_optimizer.zero_grad()
+                alpha_loss.backward()
+                alpha_optimizer.step()
+                with torch.no_grad():
+                    log_alpha.clamp_(np.log(config.alpha_min), np.log(config.alpha_max))
+                entropy_coeff = log_alpha.exp().item()
+            update_count += 1
 
-        # Bootstrap values for GAE
-        with torch.no_grad():
-            _, value_dict = _unwrap_model(model).action_distribution(
-                obs_buf.tokens,
-                obs_buf.token_types,
-                obs_buf.scalars,
-                obs_buf.attention_mask,
-                obs_buf.action_mask,
-                temperature=config.rollout_temperature,
-            )
-            last_values = value_dict["expected_score"].cpu().numpy()
-            if return_rms is not None:
-                last_values = return_rms.denormalize(last_values)
-
-        buffer.compute_returns_and_advantages(last_values=last_values)
-        buffer.normalize_advantages()
-        if return_rms is not None:
-            return_rms.update(buffer._flat_returns)
-
-        # Resolve the distillation coefficient via the shared helper so the
-        # schedule semantics (zero-disables, floor clamp, decay window) are
-        # consistent across the train loop, the test suite, and any future
-        # call sites. See resolve_distill_coeff for the full contract.
-        distill_coeff_now = resolve_distill_coeff(config, total_steps)
-
-        update_stats = _run_ppo_update(
-            model=model,
-            optimizer=optimizer,
-            buffer=buffer,
-            return_rms=return_rms,
-            entropy_coeff=entropy_coeff,
-            distill_coeff=distill_coeff_now,
-            config=config,
-            accum_steps=accum_steps,
-            effective_batch_size=effective_batch_size,
-            device=device,
-            use_pin_memory=use_pin_memory,
-        )
-
-        dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
-            model=model,
-            optimizer=optimizer,
-            buffer=buffer,
-            coeff=config.dagger_bc_coeff,
-            config=config,
-            accum_steps=accum_steps,
-            effective_batch_size=effective_batch_size,
-            device=device,
-            use_pin_memory=use_pin_memory,
-        )
-        update_policy_losses = update_stats.policy_losses
-        update_value_losses = update_stats.value_losses
-        update_survival_losses = update_stats.survival_losses
-        update_entropies = update_stats.entropies
-        update_normalized_entropies = update_stats.normalized_entropies
-        update_action_type_entropies = update_stats.action_type_entropies
-        update_clip_fracs = update_stats.clip_fracs
-        update_approx_kls = update_stats.approx_kls
-        update_valid_action_counts = update_stats.valid_action_counts
-        update_valid_action_type_counts = update_stats.valid_action_type_counts
-        update_distill_losses = update_stats.distill_losses
-        update_teacher_match_fractions = update_stats.teacher_match_fractions
-        update_distill_weight_means = update_stats.distill_weight_means
-        update_on_policy_fractions = update_stats.on_policy_fractions
-
-        # Track the normalized entropy signal every update, even with fixed entropy.
-        mean_normalized_entropy = float(np.mean(update_normalized_entropies))
-        entropy_signal_ema = _smoothed_entropy_signal(
-            entropy_signal_ema,
-            mean_normalized_entropy,
-            config.entropy_ema_beta,
-        )
-        if config.adaptive_entropy:
-            assert log_alpha is not None
-            assert alpha_optimizer is not None
-            alpha_loss = _entropy_alpha_loss(log_alpha, entropy_signal_ema, config.target_entropy)
-            alpha_optimizer.zero_grad()
-            alpha_loss.backward()
-            alpha_optimizer.step()
-            with torch.no_grad():
-                log_alpha.clamp_(np.log(config.alpha_min), np.log(config.alpha_max))
-            entropy_coeff = log_alpha.exp().item()
-        update_count += 1
-
-        # TensorBoard logging
-        mean_entropy = float(np.mean(update_entropies))
-        writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
-        writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
-        writer.add_scalar("ppo/survival_loss", np.mean(update_survival_losses), update_count)
-        writer.add_scalar("ppo/entropy", mean_entropy, update_count)
-        writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
-        writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
-        writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
-        writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
-        writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
-        writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
-        if update_stats.distill_losses_weighted:
-            writer.add_scalar(
-                "ppo/distill_loss_weighted",
-                float(np.mean(update_stats.distill_losses_weighted)),
-                update_count,
-            )
-        if update_stats.teacher_valid_mask_fractions:
-            writer.add_scalar(
-                "ppo/teacher_valid_mask_fraction",
-                float(np.mean(update_stats.teacher_valid_mask_fractions)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/teacher_reachable_fraction",
-                float(np.mean(update_stats.teacher_reachable_fractions)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/teacher_unreachable_fraction",
-                float(np.mean(update_stats.teacher_unreachable_fractions)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/teacher_lp_mean_reachable",
-                float(np.mean(update_stats.teacher_lp_mean_reachable)),
-                update_count,
-            )
-        writer.add_scalar("ppo/on_policy_fraction", float(np.mean(update_on_policy_fractions)), update_count)
-        writer.add_scalar(
-            "ppo/on_policy_advantage_mean",
-            float(np.mean(update_stats.on_policy_advantage_means)),
-            update_count,
-        )
-        writer.add_scalar(
-            "ppo/on_policy_advantage_std",
-            float(np.mean(update_stats.on_policy_advantage_stds)),
-            update_count,
-        )
-        writer.add_scalar(
-            "ppo/on_policy_positive_advantage_fraction",
-            float(np.mean(update_stats.on_policy_positive_advantage_fractions)),
-            update_count,
-        )
-        writer.add_scalar(
-            "ppo/on_policy_return_mean",
-            float(np.mean(update_stats.on_policy_return_means)),
-            update_count,
-        )
-        minibatches_processed = int(np.sum(update_stats.ppo_minibatches_processed))
-        writer.add_scalar("ppo/minibatches_processed", minibatches_processed, update_count)
-        # Target-KL early stopping can halt an update after far fewer minibatches
-        # than expected; without this it is invisible. Expected = full passes over
-        # the rollout for every PPO epoch.
-        n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
-        if n_samples > 0:
-            minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
-            minibatches_expected = minibatches_per_epoch * config.ppo_epochs
-            writer.add_scalar("ppo/minibatches_expected", minibatches_expected, update_count)
-            frac = min(1.0, minibatches_processed / minibatches_expected)
-            writer.add_scalar("ppo/minibatch_fraction", frac, update_count)
-            writer.add_scalar("ppo/epochs_expected", config.ppo_epochs, update_count)
-            writer.add_scalar("ppo/epochs_completed_fraction", frac, update_count)
-            writer.add_scalar(
-                "ppo/early_stop_fraction",
-                1.0 if minibatches_processed < minibatches_expected else 0.0,
-                update_count,
-            )
-        if update_approx_kls:
-            writer.add_scalar("ppo/approx_kl_max", float(np.max(update_approx_kls)), update_count)
-            writer.add_scalar("ppo/approx_kl_p95", float(np.percentile(update_approx_kls, 95)), update_count)
-            if config.target_kl is not None:
+            # TensorBoard logging
+            mean_entropy = float(np.mean(update_entropies))
+            writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
+            writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
+            writer.add_scalar("ppo/survival_loss", np.mean(update_survival_losses), update_count)
+            writer.add_scalar("ppo/entropy", mean_entropy, update_count)
+            writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
+            writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
+            writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
+            writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
+            writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
+            writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
+            if update_stats.distill_losses_weighted:
                 writer.add_scalar(
-                    "ppo/early_stop_kl",
-                    1.0 if float(np.max(update_approx_kls)) > config.target_kl else 0.0,
+                    "ppo/distill_loss_weighted",
+                    float(np.mean(update_stats.distill_losses_weighted)),
                     update_count,
                 )
-        if update_clip_fracs:
-            writer.add_scalar("ppo/clip_fraction_max", float(np.max(update_clip_fracs)), update_count)
-        writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
-        writer.add_scalar(
-            "dagger/bc_loss",
-            float(np.mean(dagger_losses)) if dagger_losses else float("nan"),
-            update_count,
-        )
-        writer.add_scalar(
-            "dagger/teacher_match_fraction",
-            float(np.nanmean(dagger_teacher_match_fractions)) if dagger_teacher_match_fractions else float("nan"),
-            update_count,
-        )
-        writer.add_scalar(
-            "ppo/teacher_match_fraction",
-            float(np.mean(update_teacher_match_fractions)),
-            update_count,
-        )
-        writer.add_scalar(
-            "ppo/distill_weight_mean",
-            float(np.mean(update_distill_weight_means)),
-            update_count,
-        )
-        writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
-        writer.add_scalar("ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count)
-        writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
-        writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_normalized_entropy, update_count)
-        writer.add_scalar(
-            "ppo/action_type_entropy_bonus",
-            entropy_coeff * config.action_type_entropy_scale * np.mean(update_action_type_entropies),
-            update_count,
-        )
-        writer.add_scalar(
-            "ppo/entropy_bonus_total",
-            entropy_coeff
-            * (mean_normalized_entropy + config.action_type_entropy_scale * np.mean(update_action_type_entropies)),
-            update_count,
-        )
-        writer.add_scalar("ppo/entropy_bonus_raw", entropy_coeff * mean_entropy, update_count)
-        writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
-        writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
-        writer.add_scalar("ppo/total_steps", total_steps, update_count)
-        dense_scale = config.reward_config.dense_reward_scale if config.reward_config is not None else 1.0
-        writer.add_scalar("reward/dense_scale", float(dense_scale), update_count)
-        _write_rollout_scalars(writer, update_count, rm)
-
-        if return_rms is not None:
-            writer.add_scalar("ppo/return_norm_mean", return_rms.mean, update_count)
-            writer.add_scalar("ppo/return_norm_std", return_rms.std, update_count)
-
-        flat_returns = buffer._flat_returns
-        if len(flat_returns) > 0:
-            writer.add_scalar("debug/returns_mean", float(np.mean(flat_returns)), update_count)
-            writer.add_scalar("debug/returns_std", float(np.std(flat_returns)), update_count)
-            flat_adv = buffer._flat_advantages
-            writer.add_scalar("debug/advantages_mean", float(np.mean(flat_adv)), update_count)
-            writer.add_scalar("debug/advantages_std", float(np.std(flat_adv)), update_count)
-
-        # Release the rollout buffer before the eval/checkpoint memory peak.
-        # The buffer holds the full rollout's observation/action_mask arrays
-        # (the largest host allocation in the loop) and is not read again until
-        # the next iteration reallocates it. Holding it alive through eval
-        # (which spins up `eval_games` fresh envs) and the checkpoint save
-        # stacks two large allocations on top of it. On a long MPS run that
-        # peak is enough to trip the OS memory-pressure killer, which SIGKILLs
-        # the main process (largest footprint) with no Python traceback and
-        # leaves every AsyncVectorEnv worker dying on EOFError/BrokenPipe.
-        # Free it here and return cached device memory to the OS so the peak
-        # does not accumulate update over update.
-        del buffer
-        if device.type == "mps":
-            torch.mps.empty_cache()
-
-        if episode_rewards:
-            recent = episode_rewards[-100:]
-            recent_wins = episode_wins[-100:]
-            recent_stalls = episode_stalls[-100:]
-            writer.add_scalar("rollout/ep_reward_mean", np.mean(recent), update_count)
-            writer.add_scalar("rollout/ep_length_mean", np.mean(episode_lengths[-100:]), update_count)
-            writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
-            writer.add_scalar("rollout/stall_rate", np.mean(recent_stalls), update_count)
-            writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
-            recent_reward_mean = float(np.mean(recent))
-            recent_length_mean = float(np.mean(episode_lengths[-100:]))
-            recent_win_rate = float(np.mean(recent_wins))
-            recent_stall_rate = float(np.mean(recent_stalls))
-        else:
-            recent_reward_mean = float("nan")
-            recent_length_mean = float("nan")
-            recent_win_rate = float("nan")
-            recent_stall_rate = float("nan")
-
-        should_checkpoint = update_count % config.checkpoint_interval == 0 or update_count == planned_updates
-        if should_checkpoint:
-            checkpoint_path = _save_checkpoint(model, save_path, update_count)
-            logger.info("Saved checkpoint: %s", checkpoint_path)
-
-        eval_win_rate: float | None = None
-        should_eval = update_count % config.eval_interval == 0 or update_count == planned_updates
-        if should_eval:
-            win_rate = evaluate_model(
-                model,
-                data,
-                vocab,
-                config.eval_games,
-                device,
-                max_no_progress_steps=config.max_no_progress_steps,
-                win_ante=config.win_ante,
-                temperature=config.rollout_temperature,
+            if update_stats.teacher_valid_mask_fractions:
+                writer.add_scalar(
+                    "ppo/teacher_valid_mask_fraction",
+                    float(np.mean(update_stats.teacher_valid_mask_fractions)),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "ppo/teacher_reachable_fraction",
+                    float(np.mean(update_stats.teacher_reachable_fractions)),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "ppo/teacher_unreachable_fraction",
+                    float(np.mean(update_stats.teacher_unreachable_fractions)),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "ppo/teacher_lp_mean_reachable",
+                    float(np.mean(update_stats.teacher_lp_mean_reachable)),
+                    update_count,
+                )
+            writer.add_scalar("ppo/on_policy_fraction", float(np.mean(update_on_policy_fractions)), update_count)
+            writer.add_scalar(
+                "ppo/on_policy_advantage_mean",
+                float(np.mean(update_stats.on_policy_advantage_means)),
+                update_count,
             )
-            writer.add_scalar("eval/win_rate", win_rate, update_count)
-            eval_win_rate = win_rate
-            # eval runs `eval_games` full games in-process; release the
-            # forward-pass allocations it cached before the next rollout.
+            writer.add_scalar(
+                "ppo/on_policy_advantage_std",
+                float(np.mean(update_stats.on_policy_advantage_stds)),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/on_policy_positive_advantage_fraction",
+                float(np.mean(update_stats.on_policy_positive_advantage_fractions)),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/on_policy_return_mean",
+                float(np.mean(update_stats.on_policy_return_means)),
+                update_count,
+            )
+            minibatches_processed = int(np.sum(update_stats.ppo_minibatches_processed))
+            writer.add_scalar("ppo/minibatches_processed", minibatches_processed, update_count)
+            # Target-KL early stopping can halt an update after far fewer minibatches
+            # than expected; without this it is invisible. Expected = full passes over
+            # the rollout for every PPO epoch.
+            n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
+            if n_samples > 0:
+                minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
+                minibatches_expected = minibatches_per_epoch * config.ppo_epochs
+                writer.add_scalar("ppo/minibatches_expected", minibatches_expected, update_count)
+                frac = min(1.0, minibatches_processed / minibatches_expected)
+                writer.add_scalar("ppo/minibatch_fraction", frac, update_count)
+                writer.add_scalar("ppo/epochs_expected", config.ppo_epochs, update_count)
+                writer.add_scalar("ppo/epochs_completed_fraction", frac, update_count)
+                writer.add_scalar(
+                    "ppo/early_stop_fraction",
+                    1.0 if minibatches_processed < minibatches_expected else 0.0,
+                    update_count,
+                )
+            if update_approx_kls:
+                writer.add_scalar("ppo/approx_kl_max", float(np.max(update_approx_kls)), update_count)
+                writer.add_scalar("ppo/approx_kl_p95", float(np.percentile(update_approx_kls, 95)), update_count)
+                if config.target_kl is not None:
+                    writer.add_scalar(
+                        "ppo/early_stop_kl",
+                        1.0 if float(np.max(update_approx_kls)) > config.target_kl else 0.0,
+                        update_count,
+                    )
+            if update_clip_fracs:
+                writer.add_scalar("ppo/clip_fraction_max", float(np.max(update_clip_fracs)), update_count)
+            writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
+            writer.add_scalar(
+                "dagger/bc_loss",
+                float(np.mean(dagger_losses)) if dagger_losses else float("nan"),
+                update_count,
+            )
+            writer.add_scalar(
+                "dagger/teacher_match_fraction",
+                float(np.nanmean(dagger_teacher_match_fractions)) if dagger_teacher_match_fractions else float("nan"),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/teacher_match_fraction",
+                float(np.mean(update_teacher_match_fractions)),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/distill_weight_mean",
+                float(np.mean(update_distill_weight_means)),
+                update_count,
+            )
+            writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
+            writer.add_scalar("ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count)
+            writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
+            writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_normalized_entropy, update_count)
+            writer.add_scalar(
+                "ppo/action_type_entropy_bonus",
+                entropy_coeff * config.action_type_entropy_scale * np.mean(update_action_type_entropies),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/entropy_bonus_total",
+                entropy_coeff
+                * (mean_normalized_entropy + config.action_type_entropy_scale * np.mean(update_action_type_entropies)),
+                update_count,
+            )
+            writer.add_scalar("ppo/entropy_bonus_raw", entropy_coeff * mean_entropy, update_count)
+            writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
+            writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
+            writer.add_scalar("ppo/total_steps", total_steps, update_count)
+            dense_scale = config.reward_config.dense_reward_scale if config.reward_config is not None else 1.0
+            writer.add_scalar("reward/dense_scale", float(dense_scale), update_count)
+            _write_rollout_scalars(writer, update_count, rm)
+
+            if return_rms is not None:
+                writer.add_scalar("ppo/return_norm_mean", return_rms.mean, update_count)
+                writer.add_scalar("ppo/return_norm_std", return_rms.std, update_count)
+
+            flat_returns = buffer._flat_returns
+            if len(flat_returns) > 0:
+                writer.add_scalar("debug/returns_mean", float(np.mean(flat_returns)), update_count)
+                writer.add_scalar("debug/returns_std", float(np.std(flat_returns)), update_count)
+                flat_adv = buffer._flat_advantages
+                writer.add_scalar("debug/advantages_mean", float(np.mean(flat_adv)), update_count)
+                writer.add_scalar("debug/advantages_std", float(np.std(flat_adv)), update_count)
+
+            # Release the rollout buffer before the eval/checkpoint memory peak.
+            # The buffer holds the full rollout's observation/action_mask arrays
+            # (the largest host allocation in the loop) and is not read again until
+            # the next iteration reallocates it. Holding it alive through eval
+            # (which spins up `eval_games` fresh envs) and the checkpoint save
+            # stacks two large allocations on top of it. On a long MPS run that
+            # peak is enough to trip the OS memory-pressure killer, which SIGKILLs
+            # the main process (largest footprint) with no Python traceback and
+            # leaves every AsyncVectorEnv worker dying on EOFError/BrokenPipe.
+            # Free it here and return cached device memory to the OS so the peak
+            # does not accumulate update over update.
+            del buffer
             if device.type == "mps":
                 torch.mps.empty_cache()
 
-        should_log_progress = update_count % config.log_interval == 0 or should_eval or update_count == planned_updates
-        if should_log_progress:
-            progress = (
-                f"Update {update_count}/{planned_updates}, steps {total_steps}/{config.total_timesteps}: "
-                f"policy_loss={np.mean(update_policy_losses):.4f}, "
-                f"value_loss={np.mean(update_value_losses):.4f}, "
-                f"entropy={mean_entropy:.4f}, "
-                f"entropy_signal={entropy_signal_ema:.4f}, "
-                f"entropy_coeff={entropy_coeff:.5f}, "
-                f"clip_fraction={np.mean(update_clip_fracs):.4f}, "
-                f"approx_kl={np.mean(update_approx_kls):.5f}, "
-                f"valid_actions={np.mean(update_valid_action_counts):.1f}, "
-                f"ep_reward_mean={recent_reward_mean:.3f}, "
-                f"ep_length_mean={recent_length_mean:.1f}, "
-                f"rollout_win_rate={recent_win_rate:.3f}, "
-                f"rollout_stall_rate={recent_stall_rate:.3f}"
-            )
-            if eval_win_rate is not None:
-                progress += f", eval_win_rate={eval_win_rate:.3f}"
-            logger.info(progress)
+            if episode_rewards:
+                recent = episode_rewards[-100:]
+                recent_wins = episode_wins[-100:]
+                recent_stalls = episode_stalls[-100:]
+                writer.add_scalar("rollout/ep_reward_mean", np.mean(recent), update_count)
+                writer.add_scalar("rollout/ep_length_mean", np.mean(episode_lengths[-100:]), update_count)
+                writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
+                writer.add_scalar("rollout/stall_rate", np.mean(recent_stalls), update_count)
+                writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
+                recent_reward_mean = float(np.mean(recent))
+                recent_length_mean = float(np.mean(episode_lengths[-100:]))
+                recent_win_rate = float(np.mean(recent_wins))
+                recent_stall_rate = float(np.mean(recent_stalls))
+            else:
+                recent_reward_mean = float("nan")
+                recent_length_mean = float("nan")
+                recent_win_rate = float("nan")
+                recent_stall_rate = float("nan")
 
-    vec_env.close()
-    writer.close()
+            should_checkpoint = update_count % config.checkpoint_interval == 0 or update_count == planned_updates
+            if should_checkpoint:
+                # Make sure all preceding scalars (rollout, distill, etc.)
+                # land on disk before the checkpoint save, which is itself
+                # a long sync that could crash if memory is tight.
+                writer.flush()
+                checkpoint_path = _save_checkpoint(model, save_path, update_count)
+                logger.info("Saved checkpoint: %s", checkpoint_path)
+
+            eval_win_rate: float | None = None
+            should_eval = update_count % config.eval_interval == 0 or update_count == planned_updates
+            if should_eval:
+                # Flush before eval so any preceding scalars survive a
+                # parent-process crash during the (potentially long) eval.
+                writer.flush()
+                win_rate = evaluate_model(
+                    model,
+                    data,
+                    vocab,
+                    config.eval_games,
+                    device,
+                    max_no_progress_steps=config.max_no_progress_steps,
+                    win_ante=config.win_ante,
+                    temperature=config.rollout_temperature,
+                )
+                writer.add_scalar("eval/win_rate", win_rate, update_count)
+                writer.flush()
+                eval_win_rate = win_rate
+                # eval runs `eval_games` full games in-process; release the
+                # forward-pass allocations it cached before the next rollout.
+                if device.type == "mps":
+                    torch.mps.empty_cache()
+
+            should_log_progress = update_count % config.log_interval == 0 or should_eval or update_count == planned_updates
+            if should_log_progress:
+                progress = (
+                    f"Update {update_count}/{planned_updates}, steps {total_steps}/{config.total_timesteps}: "
+                    f"policy_loss={np.mean(update_policy_losses):.4f}, "
+                    f"value_loss={np.mean(update_value_losses):.4f}, "
+                    f"entropy={mean_entropy:.4f}, "
+                    f"entropy_signal={entropy_signal_ema:.4f}, "
+                    f"entropy_coeff={entropy_coeff:.5f}, "
+                    f"clip_fraction={np.mean(update_clip_fracs):.4f}, "
+                    f"approx_kl={np.mean(update_approx_kls):.5f}, "
+                    f"valid_actions={np.mean(update_valid_action_counts):.1f}, "
+                    f"ep_reward_mean={recent_reward_mean:.3f}, "
+                    f"ep_length_mean={recent_length_mean:.1f}, "
+                    f"rollout_win_rate={recent_win_rate:.3f}, "
+                    f"rollout_stall_rate={recent_stall_rate:.3f}"
+                )
+                if eval_win_rate is not None:
+                    progress += f", eval_win_rate={eval_win_rate:.3f}"
+                logger.info(progress)
+
+    finally:
+        # Always close the vector env and TensorBoard writer, even on
+        # KeyboardInterrupt, OOM, or any unhandled exception in the training
+        # loop. Without this, an early parent-process exit leaves every
+        # AsyncVectorEnv worker alive long enough to flood the log with
+        # EOFError/BrokenPipe traceback cascades that mask the real cause.
+        try:
+            vec_env.close()
+        except Exception:
+            logger.exception("Failed to close vector env cleanly")
+        if writer is not None:
+            try:
+                writer.flush()
+                writer.close()
+            except Exception:
+                logger.exception("Failed to close TensorBoard writer cleanly")
     logger.info(
         "PPO training complete after %d updates and %d env steps.",
         update_count,

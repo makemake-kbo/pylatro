@@ -272,9 +272,14 @@ class _UpdateStats:
     valid_action_counts: list[float]
     valid_action_type_counts: list[float]
     distill_losses: list[float]
-    teacher_match_fractions: list[float]
-    distill_weight_means: list[float]
-    on_policy_fractions: list[float]
+    distill_losses_weighted: list[float] = field(default_factory=list)
+    teacher_match_fractions: list[float] = field(default_factory=list)
+    distill_weight_means: list[float] = field(default_factory=list)
+    teacher_valid_mask_fractions: list[float] = field(default_factory=list)
+    teacher_reachable_fractions: list[float] = field(default_factory=list)
+    teacher_unreachable_fractions: list[float] = field(default_factory=list)
+    teacher_lp_mean_reachable: list[float] = field(default_factory=list)
+    on_policy_fractions: list[float] = field(default_factory=list)
     on_policy_advantage_means: list[float] = field(default_factory=list)
     on_policy_advantage_stds: list[float] = field(default_factory=list)
     on_policy_positive_advantage_fractions: list[float] = field(default_factory=list)
@@ -453,6 +458,63 @@ def resolve_distill_coeff(config: "PPOConfig", total_steps: int) -> float:
     )
 
 
+def _teacher_reachability_mask(
+    teacher: torch.Tensor,
+    teacher_lp: torch.Tensor,
+    action_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Return a float tensor marking which teacher actions can safely drive distillation.
+
+    A teacher action is "reachable" when ALL of:
+      * the env actually emitted one (``teacher >= 0``);
+      * the slot itself is legal under the current step's action_mask;
+      * the policy distribution reports a finite log-prob above the
+        ``-1e8`` floor used by ``ActionGrammarDistribution.log_prob`` for
+        out-of-candidates slots.
+
+    The third condition is what protects us from the historical blow-up where
+    the heuristic teacher picked a valid raw hand action that the structured
+    policy cannot represent in its candidate-hand slots, ``log_prob`` returned
+    ``-1e8``, and the resulting NLL term dominated the PPO loss with values in
+    the 17M-21M range.
+    """
+    teacher_in_range = (teacher >= 0) & (teacher < NUM_ACTIONS)
+    teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
+    teacher_valid_under_mask = teacher_in_range & (
+        action_mask.gather(1, teacher_safe.unsqueeze(-1)).squeeze(-1).bool()
+    )
+    teacher_reachable = (
+        teacher_valid_under_mask
+        & torch.isfinite(teacher_lp)
+        & (teacher_lp > -1e7)
+    )
+    return teacher_reachable.float()
+
+
+def _safe_distill_loss(
+    teacher_lp: torch.Tensor,
+    reachable: torch.Tensor,
+    distill_weights: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute a reachability-masked distillation NLL plus the weighted version.
+
+    The raw teacher log-prob is clamped at ``-50`` before negation so even an
+    extremely unlikely-but-reachable teacher action contributes a bounded
+    gradient (~= 50) instead of an unbounded one. Without this clamp a single
+    very-low-probability teacher action could still spike the loss into the
+    tens of millions when the structured distribution is sharply concentrated
+    elsewhere.
+
+    Returns ``(distill_loss, distill_loss_weighted)`` where the weighted variant
+    folds in the runtime ``distill_coeff``-scaled weight for diagnostics only.
+    """
+    valid_count = reachable.sum().clamp(min=1.0)
+    teacher_lp_for_loss = teacher_lp.clamp_min(-50.0)
+    distill_loss = -(teacher_lp_for_loss * reachable * distill_weights).sum() / valid_count
+    distill_loss_weighted = distill_loss  # caller scales by distill_coeff for the loss term
+    return distill_loss, distill_loss_weighted
+
+
 def _run_ppo_update(
     model: nn.Module,
     optimizer: Adam,
@@ -540,23 +602,57 @@ def _run_ppo_update(
             # current structured distribution. Replaces the frozen-reference
             # KL anchor; per-state supervision rather than a snapshot
             # comparison. Sentinel -1 means "no valid teacher this step".
+            #
+            # Reachability masking: the heuristic teacher occasionally picks
+            # a hand action that is legal in the raw env but is not one of
+            # the candidate-hand slots the structured distribution emits.
+            # ActionGrammarDistribution.log_prob returns the -1e8 floor for
+            # those slots; naively including them in the NLL average produced
+            # distill_loss values in the 17M-21M range that dominated PPO.
+            # We drop those rows from the loss and log the skipped fraction
+            # so the silent-label-drop is visible in TensorBoard.
             teacher = batch["teacher_actions"]
-            valid = (teacher >= 0).float()
-            valid_count = valid.sum().clamp(min=1.0)
-            teacher_safe = teacher.clamp(min=0)
+            teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
             teacher_lp = dist.log_prob(teacher_safe)
+            reachable = _teacher_reachability_mask(
+                teacher, teacher_lp, batch["action_mask"]
+            )
+            reachable_count = reachable.sum().clamp(min=1.0)
             distill_weights = batch["distill_weights"]
             # Per-step weighting: regret signals (out-of-candidates,
             # mismatched planet use) up-weight teacher NLL on those steps
             # so distillation pressure concentrates where the policy
             # diverged from the heuristic on a high-stakes decision.
-            distill_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
+            distill_loss, _ = _safe_distill_loss(teacher_lp, reachable, distill_weights)
             with torch.no_grad():
                 policy_choice = dist.mode() if hasattr(dist, "mode") else batch["actions"]
-                teacher_match = (((policy_choice == teacher_safe).float() * valid).sum() / valid_count).item()
-                distill_weight_mean = (
-                    (distill_weights * valid).sum() / valid_count
+                teacher_match = (
+                    ((policy_choice == teacher_safe).float() * reachable).sum()
+                    / reachable_count
                 ).item()
+                distill_weight_mean = (
+                    (distill_weights * reachable).sum() / reachable_count
+                ).item()
+
+                # Diagnostics: how often did the teacher produce a label
+                # at all, how often was it reachable, and what was the
+                # mean reachable log-prob. The unreachable fraction is the
+                # key metric for spotting -1e8 floor contamination.
+                teacher_present = (teacher >= 0).float()
+                teacher_present_count = teacher_present.sum().clamp(min=1.0)
+                teacher_valid_mask_fraction = (
+                    teacher_present.sum() / max(1.0, float(teacher.numel()))
+                ).item()
+                teacher_reachable_fraction = (
+                    reachable.sum() / teacher_present_count
+                ).item()
+                teacher_unreachable_fraction = 1.0 - teacher_reachable_fraction
+                teacher_lp_mean_reachable = (
+                    (teacher_lp * reachable).sum() / reachable_count
+                ).item()
+                distill_loss_weighted_value = (
+                    float(distill_loss.item()) * distill_coeff
+                )
 
             policy_objective_loss = (
                 policy_loss
@@ -632,8 +728,13 @@ def _run_ppo_update(
             stats.valid_action_counts.append(valid_action_count_mean)
             stats.valid_action_type_counts.append(valid_action_type_count_mean)
             stats.distill_losses.append(distill_loss.item())
+            stats.distill_losses_weighted.append(distill_loss_weighted_value)
             stats.teacher_match_fractions.append(teacher_match)
             stats.distill_weight_means.append(distill_weight_mean)
+            stats.teacher_valid_mask_fractions.append(teacher_valid_mask_fraction)
+            stats.teacher_reachable_fractions.append(teacher_reachable_fraction)
+            stats.teacher_unreachable_fractions.append(teacher_unreachable_fraction)
+            stats.teacher_lp_mean_reachable.append(teacher_lp_mean_reachable)
             stats.on_policy_fractions.append(on_policy_fraction)
             minibatches_processed += 1
 
@@ -680,9 +781,8 @@ def _run_dagger_bc_update(
             optimizer.zero_grad()
             for i, batch in enumerate(batches):
                 teacher = batch["teacher_actions"]
-                valid = (teacher >= 0).float()
-                valid_count = valid.sum().clamp(min=1.0)
-                if valid.sum().item() <= 0:
+                teacher_present = (teacher >= 0).float()
+                if teacher_present.sum().item() <= 0:
                     continue
 
                 dist, _value_dict = _grammar_distribution(
@@ -690,10 +790,17 @@ def _run_dagger_bc_update(
                     batch,
                     temperature=config.rollout_temperature,
                 )
-                teacher_safe = teacher.clamp(min=0)
+                teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
                 teacher_lp = dist.log_prob(teacher_safe)
+                # Mirror the PPO update's reachability mask so DAgger BC
+                # also ignores -1e8 floor rows from candidate-hand mismatches.
+                reachable = _teacher_reachability_mask(
+                    teacher, teacher_lp, batch["action_mask"]
+                )
+                if reachable.sum().item() <= 0:
+                    continue
                 distill_weights = batch["distill_weights"]
-                bc_loss = -(teacher_lp * valid * distill_weights).sum() / valid_count
+                bc_loss, _ = _safe_distill_loss(teacher_lp, reachable, distill_weights)
                 (coeff * bc_loss).div(accum_steps).backward()
 
                 if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
@@ -702,9 +809,13 @@ def _run_dagger_bc_update(
                     optimizer.zero_grad()
 
                 with torch.no_grad():
+                    reachable_count = reachable.sum().clamp(min=1.0)
                     if hasattr(dist, "mode"):
                         mode = dist.mode()
-                        teacher_match = (((mode == teacher_safe).float() * valid).sum() / valid_count).item()
+                        teacher_match = (
+                            ((mode == teacher_safe).float() * reachable).sum()
+                            / reachable_count
+                        ).item()
                     else:
                         teacher_match = float("nan")
                 losses.append(bc_loss.item())
@@ -1636,6 +1747,33 @@ def train_ppo(
         writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
         writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
         writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
+        if update_stats.distill_losses_weighted:
+            writer.add_scalar(
+                "ppo/distill_loss_weighted",
+                float(np.mean(update_stats.distill_losses_weighted)),
+                update_count,
+            )
+        if update_stats.teacher_valid_mask_fractions:
+            writer.add_scalar(
+                "ppo/teacher_valid_mask_fraction",
+                float(np.mean(update_stats.teacher_valid_mask_fractions)),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/teacher_reachable_fraction",
+                float(np.mean(update_stats.teacher_reachable_fractions)),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/teacher_unreachable_fraction",
+                float(np.mean(update_stats.teacher_unreachable_fractions)),
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/teacher_lp_mean_reachable",
+                float(np.mean(update_stats.teacher_lp_mean_reachable)),
+                update_count,
+            )
         writer.add_scalar("ppo/on_policy_fraction", float(np.mean(update_on_policy_fractions)), update_count)
         writer.add_scalar(
             "ppo/on_policy_advantage_mean",

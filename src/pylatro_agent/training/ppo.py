@@ -928,6 +928,12 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
     # unchanged.
     total_vals = rm.reward_component_values.get("reward_total")
     terminal_vals = rm.reward_component_values.get("reward_terminal")
+    if terminal_vals:
+        writer.add_scalar(
+            "reward/terminal_mean",
+            _safe_mean(terminal_vals),
+            update_count,
+        )
     if total_vals:
         dense_total_mean = _safe_mean(total_vals) - (
             _safe_mean(terminal_vals) if terminal_vals else 0.0
@@ -1997,6 +2003,75 @@ def train_ppo(
                 if eval_win_rate is not None:
                     progress += f", eval_win_rate={eval_win_rate:.3f}"
                 logger.info(progress)
+
+            # === Diagnostic warnings ===
+            # Surface unhealthy PPO dynamics on the console so they are not
+            # buried in TensorBoard. Each warning is rate-limited by
+            # log_interval (the same gate as the progress line above) so the
+            # log stays readable when a condition is persistently true.
+            mean_policy_loss = float(np.mean(update_policy_losses))
+            if (
+                update_stats.distill_losses_weighted
+                and mean_policy_loss > 0.0
+            ):
+                mean_distill_weighted = float(
+                    np.mean(update_stats.distill_losses_weighted)
+                )
+                if mean_distill_weighted > 10.0 * mean_policy_loss:
+                    logger.warning(
+                        "ppo/distill_loss_weighted=%.4f is >10x ppo/policy_loss=%.4f "
+                        "at update %d; distillation is dominating the policy gradient. "
+                        "Check ppo/teacher_unreachable_fraction and consider lowering "
+                        "--heuristic-distill-coeff.",
+                        mean_distill_weighted,
+                        mean_policy_loss,
+                        update_count,
+                    )
+
+            if update_stats.teacher_reachable_fractions:
+                mean_reachable = float(
+                    np.mean(update_stats.teacher_reachable_fractions)
+                )
+                # Only warn when there are actually teacher labels in the
+                # batch (i.e. teacher_valid_mask_fraction > 0.1). A batch
+                # with no teacher labels trivially has reachability 0.
+                mean_teacher_present = float(
+                    np.mean(update_stats.teacher_valid_mask_fractions)
+                )
+                if mean_teacher_present > 0.1 and mean_reachable < 0.95:
+                    logger.warning(
+                        "ppo/teacher_reachable_fraction=%.3f (<0.95) at update %d; "
+                        "%.1f%% of teacher labels were dropped as unreachable. "
+                        "Inspect hand/not_in_candidates_fraction to see if the "
+                        "structured policy is missing hand slots the heuristic uses.",
+                        mean_reachable,
+                        update_count,
+                        (1.0 - mean_reachable) * 100.0,
+                    )
+
+            if update_stats.ppo_minibatches_processed:
+                minibatches_done = int(
+                    np.sum(update_stats.ppo_minibatches_processed)
+                )
+                n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
+                if n_samples > 0:
+                    minibatches_per_epoch = max(
+                        1, math.ceil(n_samples / effective_batch_size)
+                    )
+                    minibatches_expected = (
+                        minibatches_per_epoch * config.ppo_epochs
+                    )
+                    frac = min(1.0, minibatches_done / minibatches_expected)
+                    if frac < 0.5:
+                        logger.warning(
+                            "PPO update %d only processed %d/%d expected minibatches "
+                            "(%.0f%%); target_kl is stopping updates early. Consider "
+                            "raising --target-kl or lowering --ppo-epochs.",
+                            update_count,
+                            minibatches_done,
+                            minibatches_expected,
+                            frac * 100.0,
+                        )
 
     finally:
         # Always close the vector env and TensorBoard writer, even on

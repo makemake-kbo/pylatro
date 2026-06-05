@@ -2004,6 +2004,11 @@ def train_ppo(
         # loop. Without this, an early parent-process exit leaves every
         # AsyncVectorEnv worker alive long enough to flood the log with
         # EOFError/BrokenPipe traceback cascades that mask the real cause.
+        #
+        # If you are debugging a crash where the visible trace is just
+        # AsyncVectorEnv EOFError/BrokenPipe, the real exception is usually
+        # above it in the log (or in this finally block). Re-running with
+        # --sync-envs surfaces env-worker errors directly in the parent.
         try:
             vec_env.close()
         except Exception:

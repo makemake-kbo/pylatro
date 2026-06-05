@@ -99,7 +99,17 @@ def main():
         default=None,
         help="Base dir for TensorBoard logs (default: runs/<phase>)",
     )
-    parser.add_argument("--sync-envs", action="store_true", help="Use SyncVectorEnv instead of AsyncVectorEnv for PPO")
+    parser.add_argument(
+        "--sync-envs",
+        action="store_true",
+        help=(
+            "Use SyncVectorEnv instead of AsyncVectorEnv for PPO rollouts. "
+            "Async is faster but worker exceptions surface as EOFError/"
+            "BrokenPipe in the parent with no traceback. Pass --sync-envs "
+            "to reproduce env-worker crashes synchronously in the parent "
+            "process for debugging. Default: async."
+        ),
+    )
     parser.add_argument(
         "--log-interval",
         type=int,

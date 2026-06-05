@@ -1179,10 +1179,17 @@ def train_ppo(
         _load_checkpoint_compatible(model, pretrained_path, device)
         logger.info(f"Loaded pretrained model from {pretrained_path}")
     if config.heuristic_distill_coeff > 0.0:
+        floor = min(config.heuristic_distill_min, config.heuristic_distill_coeff)
         logger.info(
             "Heuristic distillation active (coeff=%.4f, floor=%.4f)",
             config.heuristic_distill_coeff,
-            config.heuristic_distill_min,
+            floor,
+        )
+    else:
+        logger.info(
+            "Heuristic distillation disabled (coeff=%.4f <= 0); "
+            "ppo/distill_coeff will be 0.0 for the whole run.",
+            config.heuristic_distill_coeff,
         )
     logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
                 config.rollout_temperature)
@@ -1552,20 +1559,11 @@ def train_ppo(
         if return_rms is not None:
             return_rms.update(buffer._flat_returns)
 
-        # Linearly decay the distillation coefficient from
-        # heuristic_distill_coeff -> heuristic_distill_min.
-        # distill_decay_fraction controls what fraction of total_timesteps
-        # the decay spans. Defaults to 1.0 (full training), but setting to
-        # e.g. 0.5 completes the decay at the halfway mark, leaving the
-        # second half as a pure no-teacher fine-tune phase.
-        decay_fraction = config.distill_decay_fraction if config.distill_decay_fraction is not None else 1.0
-        decay_steps = max(1, int(config.total_timesteps * decay_fraction))
-        distill_progress = min(1.0, total_steps / decay_steps)
-        distill_coeff_now = max(
-            config.heuristic_distill_min,
-            config.heuristic_distill_coeff
-            - (config.heuristic_distill_coeff - config.heuristic_distill_min) * distill_progress,
-        )
+        # Resolve the distillation coefficient via the shared helper so the
+        # schedule semantics (zero-disables, floor clamp, decay window) are
+        # consistent across the train loop, the test suite, and any future
+        # call sites. See resolve_distill_coeff for the full contract.
+        distill_coeff_now = resolve_distill_coeff(config, total_steps)
 
         update_stats = _run_ppo_update(
             model=model,

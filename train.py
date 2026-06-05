@@ -207,14 +207,18 @@ def main():
             "Initial coefficient for the heuristic-teacher distillation loss "
             "(NLL of HeuristicAgent.select_action under the policy). Decays "
             "linearly to --heuristic-distill-min over total_timesteps. "
-            "Default: 0.3."
+            "Set to <= 0 to disable distillation entirely. Default: 0.3."
         ),
     )
     parser.add_argument(
         "--heuristic-distill-min",
         type=float,
         default=0.03,
-        help="Floor for the distillation coefficient after linear decay (default: 0.03).",
+        help=(
+            "Floor for the distillation coefficient after linear decay (default: 0.03). "
+            "Ignored when --heuristic-distill-coeff <= 0. Clamped to the start "
+            "coefficient if it would otherwise exceed it."
+        ),
     )
     parser.add_argument(
         "--teacher-rollout-prob",

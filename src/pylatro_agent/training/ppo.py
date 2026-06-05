@@ -1814,14 +1814,16 @@ def train_ppo(
             # than expected; without this it is invisible. Expected = full passes over
             # the rollout for every PPO epoch.
             n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
+            minibatches_expected = 0
+            minibatch_fraction = 1.0
             if n_samples > 0:
                 minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
                 minibatches_expected = minibatches_per_epoch * config.ppo_epochs
                 writer.add_scalar("ppo/minibatches_expected", minibatches_expected, update_count)
-                frac = min(1.0, minibatches_processed / minibatches_expected)
-                writer.add_scalar("ppo/minibatch_fraction", frac, update_count)
+                minibatch_fraction = min(1.0, minibatches_processed / minibatches_expected)
+                writer.add_scalar("ppo/minibatch_fraction", minibatch_fraction, update_count)
                 writer.add_scalar("ppo/epochs_expected", config.ppo_epochs, update_count)
-                writer.add_scalar("ppo/epochs_completed_fraction", frac, update_count)
+                writer.add_scalar("ppo/epochs_completed_fraction", minibatch_fraction, update_count)
                 writer.add_scalar(
                     "ppo/early_stop_fraction",
                     1.0 if minibatches_processed < minibatches_expected else 0.0,
@@ -2053,25 +2055,22 @@ def train_ppo(
                 minibatches_done = int(
                     np.sum(update_stats.ppo_minibatches_processed)
                 )
-                n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
-                if n_samples > 0:
-                    minibatches_per_epoch = max(
-                        1, math.ceil(n_samples / effective_batch_size)
+                # minibatches_expected and minibatch_fraction were captured
+                # above, before `del buffer`. The buffer is released before
+                # eval/checkpoint to bound MPS memory peak.
+                if (
+                    minibatches_expected > 0
+                    and minibatch_fraction < 0.5
+                ):
+                    logger.warning(
+                        "PPO update %d only processed %d/%d expected minibatches "
+                        "(%.0f%%); target_kl is stopping updates early. Consider "
+                        "raising --target-kl or lowering --ppo-epochs.",
+                        update_count,
+                        minibatches_done,
+                        minibatches_expected,
+                        minibatch_fraction * 100.0,
                     )
-                    minibatches_expected = (
-                        minibatches_per_epoch * config.ppo_epochs
-                    )
-                    frac = min(1.0, minibatches_done / minibatches_expected)
-                    if frac < 0.5:
-                        logger.warning(
-                            "PPO update %d only processed %d/%d expected minibatches "
-                            "(%.0f%%); target_kl is stopping updates early. Consider "
-                            "raising --target-kl or lowering --ppo-epochs.",
-                            update_count,
-                            minibatches_done,
-                            minibatches_expected,
-                            frac * 100.0,
-                        )
 
     finally:
         # Always close the vector env and TensorBoard writer, even on

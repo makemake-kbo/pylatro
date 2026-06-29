@@ -81,6 +81,12 @@ class RewardConfig:
     economy_reward_scale: float = 1.0
     consumable_reward_scale: float = 1.0
 
+    # Optional per-step penalties for engaging with planets that do NOT match an
+    # already-played hand type. Default 0.0 (disabled) so the next run's first
+    # intervention is lowering consumable shaping, not adding new penalties.
+    planet_unmatched_use_penalty_coeff: float = 0.0
+    planet_unmatched_claim_penalty_coeff: float = 0.0
+
 
 DEFAULT_REWARD_CONFIG = RewardConfig()
 PPO_SPARSE_CONFIG = RewardConfig(
@@ -189,6 +195,8 @@ REWARD_COMPONENT_NAMES = (
     "hand_top3_bonus",
     "planet_match_bonus",
     "planet_played_hand_bonus",
+    "planet_unmatched_use_penalty",
+    "planet_unmatched_claim_penalty",
     # Strategic shop / build / economy shaping (gated on enriched info).
     "shop_engine_delta",
     "shop_purchase_value",
@@ -222,6 +230,8 @@ _COMPONENT_GROUP = {
     "consumable_targeted_use": "consumable",
     "planet_match_bonus": "consumable",
     "planet_played_hand_bonus": "consumable",
+    "planet_unmatched_use_penalty": "consumable",
+    "planet_unmatched_claim_penalty": "consumable",
     "consumable_improvement": "consumable",
     "hand_subset_bonus": "local_hand",
     "hand_top1_bonus": "local_hand",
@@ -657,14 +667,22 @@ def default_reward_components(
     # Planet alignment bonus: rewards using or claiming planets that match
     # already-played hand types, with extra weight for the main hand. This is
     # deliberately state-conditional so random planet use does not get paid.
+    # Optional penalties for *unmatched* planet engagement are layered on top
+    # (default coeff 0.0 so they are off unless explicitly enabled).
     if config.enable_planet_match_rewards:
         for prefix in ("planet_use", "planet_claim"):
             if not curr_info.get(f"{prefix}_observed", False):
                 continue
             if curr_info.get(f"{prefix}_played_hand", False):
                 components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
-            if curr_info.get(f"{prefix}_main_hand_match", False):
+            main_match = curr_info.get(f"{prefix}_main_hand_match", False)
+            if main_match:
                 components["planet_match_bonus"] += PLANET_MATCH_BONUS
+            else:
+                if prefix == "planet_use" and config.planet_unmatched_use_penalty_coeff > 0.0:
+                    components["planet_unmatched_use_penalty"] -= config.planet_unmatched_use_penalty_coeff
+                elif prefix == "planet_claim" and config.planet_unmatched_claim_penalty_coeff > 0.0:
+                    components["planet_unmatched_claim_penalty"] -= config.planet_unmatched_claim_penalty_coeff
 
     # Strategic shop/build/economy shaping is active only when the step info
     # carries the build features (real env / training rollouts). When active it

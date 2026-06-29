@@ -489,6 +489,69 @@ def test_planet_match_bonus_zero_when_mismatch() -> None:
     assert components["planet_match_bonus"] == pytest.approx(0.0)
 
 
+def test_planet_unmatched_use_penalty_applies_only_when_enabled() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "use_consumable_no_target",
+        "planet_use_observed": True,
+        "planet_use_main_hand_match": False,
+    }
+
+    # Default config: penalty disabled (coeff 0.0), so no unmatched penalty.
+    default_components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
+    assert default_components["planet_unmatched_use_penalty"] == pytest.approx(0.0)
+
+    # With the penalty enabled, an unmatched planet use incurs the penalty.
+    config = RewardConfig(planet_unmatched_use_penalty_coeff=0.3)
+    components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False, config=config)
+    assert components["planet_unmatched_use_penalty"] == pytest.approx(-0.3 * REWARD_SCALE)
+
+
+def test_planet_unmatched_claim_penalty_applies_only_when_enabled() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_claim",
+        "planet_claim_observed": True,
+        "planet_claim_main_hand_match": False,
+    }
+    default_components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False)
+    assert default_components["planet_unmatched_claim_penalty"] == pytest.approx(0.0)
+
+    config = RewardConfig(planet_unmatched_claim_penalty_coeff=0.25)
+    components = default_reward_components(state, prev_info, curr_info, terminated=False, won=False, config=config)
+    assert components["planet_unmatched_claim_penalty"] == pytest.approx(-0.25 * REWARD_SCALE)
+
+
+def test_progression_reward_scale_scales_progress_components() -> None:
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 300,
+        "blind_target": 300,
+        "progress_made": True,
+        "blind_just_beaten": True,
+        "hands_left": 2,
+    }
+    default_components = default_reward_components(
+        state, prev_info, curr_info, terminated=False, won=False
+    )
+    config = RewardConfig(progression_reward_scale=0.5)
+    scaled_components = default_reward_components(
+        state, prev_info, curr_info, terminated=False, won=False, config=config
+    )
+
+    assert scaled_components["blind_clear"] == pytest.approx(default_components["blind_clear"] * 0.5)
+    assert scaled_components["hands_bonus"] == pytest.approx(default_components["hands_bonus"] * 0.5)
+
+
 def test_default_reward_rewards_shop_reroll() -> None:
     state = _dummy_state()
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}

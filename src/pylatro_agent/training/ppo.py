@@ -66,12 +66,38 @@ _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
     dtype=torch.long,
 )
 
+# Coarse action families used to break down *unreachable* teacher labels, so a
+# distillation run can tell whether the heuristic teacher is unreachable because
+# it picks hand subsets the structured policy can't represent, shop/pack items,
+# or blind selections.
+_ACTION_FAMILY_NAMES = ("play_subset", "use_consumable", "shop", "pack", "blind")
+_ACTION_TYPE_TO_FAMILY: dict[ActionType, int] = {
+    ActionType.BLIND_PLAY: 4,
+    ActionType.BLIND_SKIP: 4,
+    ActionType.BLIND_REROLL: 4,
+    ActionType.PLAY_SUBSET: 0,
+    ActionType.DISCARD_SUBSET: 0,
+    ActionType.USE_CONSUMABLE_NO_TARGET: 1,
+    ActionType.USE_CONSUMABLE_HAND_SUBSET: 1,
+    ActionType.USE_CONSUMABLE_JOKER: 1,
+    ActionType.SHOP_BUY: 2,
+    ActionType.SHOP_REROLL: 2,
+    ActionType.SHOP_SELL_JOKER: 2,
+    ActionType.SHOP_SELL_CONSUMABLE: 2,
+    ActionType.SHOP_LEAVE: 2,
+    ActionType.PACK_CLAIM: 3,
+    ActionType.PACK_SKIP: 3,
+}
+_ACTION_ID_TO_FAMILY = torch.tensor(
+    [_ACTION_TYPE_TO_FAMILY[decode_action(action_id).action_type] for action_id in range(NUM_ACTIONS)],
+    dtype=torch.long,
+)
 
-def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
-    """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift."""
-    from ..checkpoint import load_checkpoint_payload
-    state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
 
+def _load_state_dict_into_model(model: nn.Module, state_dict: dict, checkpoint_path: str) -> None:
+    """Load a raw ``state_dict`` into ``model``, handling DataParallel prefix
+    mismatch and minor head shape drift. Shared by weights-only init and resume.
+    """
     has_module_prefix = any(k.startswith("module.") for k in state_dict)
     is_wrapped = isinstance(model, nn.DataParallel)
 
@@ -104,6 +130,36 @@ def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: 
         logger.warning("Checkpoint missing %d params after compatibility filter", len(missing))
     if skipped:
         logger.warning("Checkpoint skipped %d incompatible params", len(skipped))
+
+
+def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
+    """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift."""
+    from ..checkpoint import load_checkpoint_payload
+    state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
+    _load_state_dict_into_model(model, state_dict, checkpoint_path)
+
+
+def _optimizer_to(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    """Move optimizer state tensors to ``device`` after ``load_state_dict``."""
+    for state in optimizer.state.values():
+        for key, value in state.items():
+            if torch.is_tensor(value):
+                state[key] = value.to(device)
+
+
+def _apply_lr_override(
+    optimizer: torch.optim.Optimizer, new_lr: float, checkpoint_lr: float | None
+) -> None:
+    """Set each param group's LR to ``new_lr``, warning if it differs from the checkpoint."""
+    for group in optimizer.param_groups:
+        group["lr"] = new_lr
+    if checkpoint_lr is not None and abs(checkpoint_lr - new_lr) > 1e-12:
+        logger.warning(
+            "Overriding optimizer LR from checkpoint %.2e to CLI %.2e. "
+            "Adam moments are preserved; only the step LR changes.",
+            checkpoint_lr,
+            new_lr,
+        )
 
 
 def _make_env(
@@ -158,12 +214,21 @@ class PPOConfig:
     num_envs: int = 32
     rollout_length: int = 256
     total_timesteps: int = 1_000_000
+    # When set, overrides total_timesteps: the run trains for exactly this many
+    # PPO updates and total_timesteps is derived as total_updates * steps_per_update.
+    # Useful for "N more updates" semantics without doing the timesteps math.
+    total_updates: int | None = None
     ppo_epochs: int = 4
     mini_batch_size: int = 64
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1  # PPO clip range; tighter than the usual 0.2
     target_kl: float | None = 0.03
+    # Optional trust-region diagnostic guards (do not stop training on their
+    # own; they log ppo/stop_reason_* and emit console warnings when breached).
+    target_kl_p95: float | None = None
+    target_kl_max: float | None = None
+    min_minibatch_fraction: float | None = None
     entropy_coeff: float = 0.001
     adaptive_entropy: bool = False
     target_entropy: float = 0.15
@@ -286,6 +351,18 @@ class _UpdateStats:
     teacher_reachable_fractions: list[float] = field(default_factory=list)
     teacher_unreachable_fractions: list[float] = field(default_factory=list)
     teacher_lp_mean_reachable: list[float] = field(default_factory=list)
+    # Phase 6: clearer teacher-reachability semantics. ``label_present`` is the
+    # fraction of all steps where the env emitted a teacher label; the legacy
+    # ``teacher_valid_mask_fractions`` kept the same meaning under a misleading
+    # name. ``action_mask_valid`` is, of those labels, how many are legal under
+    # the step's action mask; ``reachable`` is the subset that also has a finite
+    # policy log-prob above the -1e8 floor.
+    teacher_label_present_fractions: list[float] = field(default_factory=list)
+    teacher_action_mask_valid_fractions: list[float] = field(default_factory=list)
+    # Breakdown of unreachable (present-but-not-reachable) teacher labels by
+    # action family, so distillation diagnostics can tell hand-subset
+    # mismatches apart from shop/pack/blind unreachability.
+    teacher_unreachable_family_fractions: dict[str, list[float]] = field(default_factory=dict)
     on_policy_fractions: list[float] = field(default_factory=list)
     on_policy_advantage_means: list[float] = field(default_factory=list)
     on_policy_advantage_stds: list[float] = field(default_factory=list)
@@ -645,10 +722,25 @@ def _run_ppo_update(
                 # at all, how often was it reachable, and what was the
                 # mean reachable log-prob. The unreachable fraction is the
                 # key metric for spotting -1e8 floor contamination.
-                teacher_present = (teacher >= 0).float()
+                teacher_present_bool = teacher >= 0
+                teacher_present = teacher_present_bool.float()
                 teacher_present_count = teacher_present.sum().clamp(min=1.0)
-                teacher_valid_mask_fraction = (
+                # "label present" = fraction of ALL steps with a teacher label.
+                # Kept under both the new precise name and the legacy
+                # teacher_valid_mask_fraction alias (which historically meant
+                # "label present", not "valid under mask").
+                teacher_label_present_fraction = (
                     teacher_present.sum() / max(1.0, float(teacher.numel()))
+                ).item()
+                teacher_valid_mask_fraction = teacher_label_present_fraction
+                # "action mask valid" = of the present labels, how many are
+                # legal under the current step's action_mask.
+                teacher_safe_t = teacher.clamp(0, NUM_ACTIONS - 1)
+                teacher_mask_valid = teacher_present_bool & batch["action_mask"].gather(
+                    1, teacher_safe_t.unsqueeze(-1)
+                ).squeeze(-1).bool()
+                teacher_action_mask_valid_fraction = (
+                    teacher_mask_valid.float().sum() / teacher_present_count
                 ).item()
                 teacher_reachable_fraction = (
                     reachable.sum() / teacher_present_count
@@ -657,6 +749,18 @@ def _run_ppo_update(
                 teacher_lp_mean_reachable = (
                     (teacher_lp * reachable).sum() / reachable_count
                 ).item()
+                # Break the *unreachable* (present-but-not-reachable) labels
+                # down by action family so distillation diagnostics can tell
+                # hand-subset mismatches from shop/pack/blind unreachability.
+                unreachable_mask = teacher_present_bool & (~reachable.bool())
+                unreachable_denom = unreachable_mask.float().sum().clamp(min=1.0)
+                family_ids = _ACTION_ID_TO_FAMILY.to(device=teacher.device)[teacher_safe_t]
+                unreachable_family_fracs: dict[str, float] = {}
+                for fam_idx, fam_name in enumerate(_ACTION_FAMILY_NAMES):
+                    unreachable_family_fracs[fam_name] = (
+                        (unreachable_mask & (family_ids == fam_idx)).float().sum()
+                        / unreachable_denom
+                    ).item()
                 distill_loss_weighted_value = (
                     float(distill_loss.item()) * distill_coeff
                 )
@@ -739,9 +843,13 @@ def _run_ppo_update(
             stats.teacher_match_fractions.append(teacher_match)
             stats.distill_weight_means.append(distill_weight_mean)
             stats.teacher_valid_mask_fractions.append(teacher_valid_mask_fraction)
+            stats.teacher_label_present_fractions.append(teacher_label_present_fraction)
+            stats.teacher_action_mask_valid_fractions.append(teacher_action_mask_valid_fraction)
             stats.teacher_reachable_fractions.append(teacher_reachable_fraction)
             stats.teacher_unreachable_fractions.append(teacher_unreachable_fraction)
             stats.teacher_lp_mean_reachable.append(teacher_lp_mean_reachable)
+            for fam_name, frac in unreachable_family_fracs.items():
+                stats.teacher_unreachable_family_fractions.setdefault(fam_name, []).append(frac)
             stats.on_policy_fractions.append(on_policy_fraction)
             minibatches_processed += 1
 
@@ -857,7 +965,12 @@ def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float
 def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> None:
     """Write the rollout-collected metrics for one update to TensorBoard."""
     writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rm.chosen_action_probs), update_count)
-    writer.add_scalar("debug/max_action_prob_mean", _safe_mean(rm.max_action_probs), update_count)
+    # Renamed: this is the max ACTION-TYPE probability (over the grammar's
+    # action-type distribution), not a true flat-action max. Kept under the
+    # precise name; the legacy tag is mirrored for existing dashboards.
+    _max_action_type_prob = _safe_mean(rm.max_action_probs)
+    writer.add_scalar("debug/max_action_type_prob_mean", _max_action_type_prob, update_count)
+    writer.add_scalar("debug/max_action_prob_mean", _max_action_type_prob, update_count)
     writer.add_scalar("debug/teacher_rollout_used_fraction", _safe_mean(rm.teacher_rollout_used), update_count)
     writer.add_scalar("debug/step_reward_mean", _safe_mean(rm.step_rewards), update_count)
     writer.add_scalar("rollout/progress_rate", _safe_mean(rm.progress_flags), update_count)
@@ -900,6 +1013,24 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
     writer.add_scalar("planet/use_count", float(len(rm.planet_use_observed)), update_count)
     writer.add_scalar("planet/use_played_hand_fraction", _safe_mean(rm.planet_use_played_hand), update_count)
     writer.add_scalar("planet/use_main_hand_match_fraction", _safe_mean(rm.planet_use_main_hand_match), update_count)
+    # Unmatched / not-played fractions expose the planet-churn pathology
+    # directly: a rising unmatched fraction with falling match fraction means
+    # the policy is engaging with planets that do not align with its build.
+    use_unmatched = [0.0 if v else 1.0 for v in rm.planet_use_main_hand_match]
+    claim_unmatched = [0.0 if v else 1.0 for v in rm.planet_claim_main_hand_match]
+    use_not_played = [0.0 if v else 1.0 for v in rm.planet_use_played_hand]
+    claim_not_played = [0.0 if v else 1.0 for v in rm.planet_claim_played_hand]
+    writer.add_scalar("planet/use_unmatched_fraction", _safe_mean(use_unmatched), update_count)
+    writer.add_scalar("planet/claim_unmatched_fraction", _safe_mean(claim_unmatched), update_count)
+    writer.add_scalar("planet/use_not_played_hand_fraction", _safe_mean(use_not_played), update_count)
+    writer.add_scalar("planet/claim_not_played_hand_fraction", _safe_mean(claim_not_played), update_count)
+    episode_count = max(int(sum(rm.done_flags)), 1)
+    writer.add_scalar("planet/use_count_per_episode", float(len(rm.planet_use_observed)) / episode_count, update_count)
+    writer.add_scalar(
+        "planet/claim_count_per_episode",
+        float(len(rm.planet_claim_observed)) / episode_count,
+        update_count,
+    )
     _write_counter_fractions(writer, "planet/use_key", rm.planet_use_key_counts, update_count)
 
     writer.add_scalar("planet/claim_count", float(len(rm.planet_claim_observed)), update_count)
@@ -924,16 +1055,10 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
     # Per-step dense shaping total = total reward minus the terminal component.
     # Means are linear over the same per-step samples, so this is the mean of
     # (total - terminal). Lets us confirm the dense_reward_scale ablation drops
-    # dense shaping roughly proportionally while reward/terminal_mean is
-    # unchanged.
+    # dense shaping roughly proportionally while reward/terminal_mean (logged
+    # once by the per-component loop above) is unchanged.
     total_vals = rm.reward_component_values.get("reward_total")
     terminal_vals = rm.reward_component_values.get("reward_terminal")
-    if terminal_vals:
-        writer.add_scalar(
-            "reward/terminal_mean",
-            _safe_mean(terminal_vals),
-            update_count,
-        )
     if total_vals:
         dense_total_mean = _safe_mean(total_vals) - (
             _safe_mean(terminal_vals) if terminal_vals else 0.0
@@ -964,11 +1089,57 @@ def _write_counter_fractions(writer, prefix: str, counter: Counter, update_count
         writer.add_scalar(f"{prefix}/{_sanitize_tag_part(str(key))}_fraction", count / total, update_count)
 
 
-def _save_checkpoint(model: nn.Module, save_path: Path, update_count: int) -> Path:
-    """Persist a numbered PPO checkpoint and return its path."""
-    from ..checkpoint import save_checkpoint
-    checkpoint_path = save_path / f"ppo_update{update_count}.pt"
-    save_checkpoint(_unwrap_model(model), checkpoint_path)
+def _save_checkpoint(
+    *,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    save_path: Path,
+    update_count: int,
+    total_steps: int,
+    planned_updates: int,
+    entropy_coeff: float,
+    entropy_signal_ema: float | None,
+    lr: float,
+    log_alpha: torch.Tensor | None = None,
+    alpha_optimizer: torch.optim.Optimizer | None = None,
+    return_rms: "RunningMeanStd | None" = None,
+    agent_config: "AgentConfig | None" = None,
+    config: "PPOConfig | None" = None,
+    filename: str | None = None,
+    extra: dict | None = None,
+) -> Path:
+    """Persist a full PPO resume checkpoint and return its path."""
+    from ..checkpoint import save_ppo_checkpoint
+
+    checkpoint_path = save_path / (filename or f"ppo_update{update_count}.pt")
+    # Snapshot the PPOConfig fields that affect resume correctness so a future
+    # resume can warn on mismatched hyperparameters (kept lightweight: only
+    # scalar scheduling fields, not the full dataclass).
+    config_fields: dict[str, object] = {}
+    if config is not None:
+        for key in (
+            "ppo_epochs", "mini_batch_size", "clip_epsilon", "gae_lambda",
+            "rollout_temperature", "action_type_entropy_scale", "gamma",
+            "target_entropy", "entropy_ema_beta", "adaptive_entropy",
+        ):
+            config_fields[key] = getattr(config, key)
+    save_ppo_checkpoint(
+        _unwrap_model(model),
+        checkpoint_path,
+        optimizer=optimizer,
+        update_count=update_count,
+        total_steps=total_steps,
+        planned_updates=planned_updates,
+        entropy_coeff=entropy_coeff,
+        entropy_signal_ema=entropy_signal_ema,
+        lr=lr,
+        log_alpha=log_alpha,
+        alpha_optimizer=alpha_optimizer,
+        return_rms=return_rms,
+        agent_config=agent_config,
+        ppo_config_fields=config_fields,
+        extra=extra,
+    )
     return checkpoint_path
 
 
@@ -1284,9 +1455,23 @@ def train_ppo(
     config: PPOConfig,
     agent_config: AgentConfig | None = None,
     pretrained_path: str | None = None,
+    resume_path: str | None = None,
+    additional_updates: int | None = None,
     data: GameData | None = None,
 ) -> BalatroAgent:
-    """Run PPO training with vectorized environments."""
+    """Run PPO training with vectorized environments.
+
+    Resume semantics:
+
+    * ``pretrained_path``: weights-only init. Optimizer, counters, and entropy
+      controller all start fresh at update 0.
+    * ``resume_path``: strict resume. Loads optimizer state, update counter,
+      total_steps, entropy controller, RNG, and return normalization. Requires a
+      full PPO checkpoint (``checkpoint_format == "ppo_full"``); a weights-only
+      checkpoint raises a clear error pointing at ``--pretrained``.
+    * ``additional_updates``: only meaningful with ``resume_path``. Runs that
+      many more updates *after* the checkpoint's saved update count.
+    """
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
@@ -1299,7 +1484,28 @@ def train_ppo(
 
     _validate_ppo_config(config)
 
-    if pretrained_path:
+    if resume_path and pretrained_path:
+        raise ValueError(
+            "Pass either --pretrained or --resume, not both. --pretrained is "
+            "weights-only init; --resume restores optimizer/counters/RNG."
+        )
+    if additional_updates is not None and not resume_path:
+        raise ValueError("--additional-updates requires --resume PATH")
+
+    # === Strict resume: load full PPO state before optimizer creation ===
+    resume_state: dict | None = None
+    if resume_path:
+        from ..checkpoint import load_ppo_resume_payload, restore_rng_states
+        resume_state = load_ppo_resume_payload(resume_path, device)
+        _load_state_dict_into_model(model, resume_state["state_dict"], resume_path)
+        logger.info(
+            "Resumed model weights from %s (update_count=%d, total_steps=%d)",
+            resume_path,
+            resume_state.get("update_count", 0),
+            resume_state.get("total_steps", 0),
+        )
+        restore_rng_states(resume_state.get("rng_states", {}))
+    elif pretrained_path:
         _load_checkpoint_compatible(model, pretrained_path, device)
         logger.info(f"Loaded pretrained model from {pretrained_path}")
     if config.heuristic_distill_coeff > 0.0:
@@ -1346,6 +1552,11 @@ def train_ppo(
         effective_batch_size = config.mini_batch_size
 
     optimizer = _make_policy_optimizer(model.parameters(), config.lr)
+    if resume_state is not None and "optimizer_state_dict" in resume_state:
+        optimizer.load_state_dict(resume_state["optimizer_state_dict"])
+        _optimizer_to(optimizer, device)
+        _apply_lr_override(optimizer, config.lr, resume_state.get("lr"))
+        logger.info("Restored PPO optimizer state (Adam moments + counters) from checkpoint.")
 
     # Create vectorized environments
     vec_env = _make_vectorized_envs(
@@ -1376,6 +1587,10 @@ def train_ppo(
 
     steps_per_update = config.num_envs * config.rollout_length
     planned_updates = max(1, math.ceil(config.total_timesteps / steps_per_update))
+    if config.total_updates is not None:
+        # --updates N semantics: run exactly N updates, deriving timesteps from it.
+        planned_updates = config.total_updates
+        config.total_timesteps = planned_updates * steps_per_update
     if config.total_timesteps % steps_per_update != 0:
         logger.info(
             "PPO total_timesteps=%d is not divisible by steps_per_update=%d; "
@@ -1431,10 +1646,80 @@ def train_ppo(
         alpha_optimizer = None
     return_rms = RunningMeanStd() if config.normalize_returns else None
     entropy_signal_ema: float | None = None
+
+    # === Restore mutable training state from the resume checkpoint ===
+    if resume_state is not None:
+        update_count = int(resume_state.get("update_count", 0))
+        total_steps = int(resume_state.get("total_steps", 0))
+        saved_entropy_coeff = resume_state.get("entropy_coeff")
+        if saved_entropy_coeff is not None:
+            entropy_coeff = float(saved_entropy_coeff)
+        saved_ema = resume_state.get("entropy_signal_ema")
+        if saved_ema is not None:
+            entropy_signal_ema = float(saved_ema)
+        if config.adaptive_entropy:
+            assert log_alpha is not None
+            assert alpha_optimizer is not None
+            saved_log_alpha = resume_state.get("log_alpha")
+            if saved_log_alpha is not None:
+                with torch.no_grad():
+                    log_alpha.copy_(saved_log_alpha.to(device))
+                if "alpha_optimizer_state_dict" in resume_state:
+                    alpha_optimizer.load_state_dict(resume_state["alpha_optimizer_state_dict"])
+                    _optimizer_to(alpha_optimizer, device)
+                logger.info(
+                    "Restored adaptive-entropy controller: entropy_coeff=%.5f, signal_ema=%s",
+                    entropy_coeff,
+                    "None" if entropy_signal_ema is None else f"{entropy_signal_ema:.4f}",
+                )
+        if config.normalize_returns and "return_rms" in resume_state:
+            rms = resume_state["return_rms"]
+            return_rms = RunningMeanStd()
+            return_rms.mean = float(rms["mean"])
+            return_rms.var = float(rms["var"])
+            return_rms.count = float(rms["count"])
+        # Resolve the target update count for this resumed run, in priority order:
+        #   1. --additional-updates N  -> relative: saved_count + N
+        #   2. --updates N (--total-updates) -> absolute target N
+        #   3. checkpoint's saved planned_updates (continue the original plan)
+        if additional_updates is not None:
+            planned_updates = update_count + additional_updates
+            config.total_timesteps = planned_updates * steps_per_update
+            logger.info(
+                "Resuming from update %d: running %d additional updates (target %d).",
+                update_count,
+                additional_updates,
+                planned_updates,
+            )
+        elif config.total_updates is not None:
+            planned_updates = config.total_updates
+            config.total_timesteps = planned_updates * steps_per_update
+            logger.info(
+                "Resuming from update %d toward absolute target %d updates (--updates).",
+                update_count,
+                planned_updates,
+            )
+        else:
+            saved_planned = resume_state.get("planned_updates")
+            if saved_planned is not None and saved_planned > update_count:
+                planned_updates = int(saved_planned)
+                config.total_timesteps = planned_updates * steps_per_update
+            logger.info(
+                "Resuming from update %d toward planned_updates=%d.",
+                update_count,
+                planned_updates,
+            )
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
     episode_stalls: list[bool] = []
+    # Best-eval tracking for ppo_best_eval.pt selection. On resume, carry the
+    # saved best forward so the resumed run keeps the prior best unless it beats it.
+    best_eval_win_rate: float | None = None
+    best_eval_update: int | None = None
+    if resume_state is not None:
+        best_eval_win_rate = resume_state.get("best_eval_win_rate")
+        best_eval_update = resume_state.get("best_eval_update")
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
@@ -1772,6 +2057,19 @@ def train_ppo(
                     float(np.mean(update_stats.teacher_valid_mask_fractions)),
                     update_count,
                 )
+                # Phase 6: clearer semantics. teacher_label_present_fraction
+                # == teacher_valid_mask_fraction (kept as alias); add the
+                # mask-valid and reachable fractions under precise names.
+                writer.add_scalar(
+                    "ppo/teacher_label_present_fraction",
+                    float(np.mean(update_stats.teacher_label_present_fractions)),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "ppo/teacher_action_mask_valid_fraction",
+                    float(np.mean(update_stats.teacher_action_mask_valid_fractions)),
+                    update_count,
+                )
                 writer.add_scalar(
                     "ppo/teacher_reachable_fraction",
                     float(np.mean(update_stats.teacher_reachable_fractions)),
@@ -1782,6 +2080,15 @@ def train_ppo(
                     float(np.mean(update_stats.teacher_unreachable_fractions)),
                     update_count,
                 )
+                # Unreachable-by-family breakdown.
+                for fam_name in _ACTION_FAMILY_NAMES:
+                    fam_vals = update_stats.teacher_unreachable_family_fractions.get(fam_name)
+                    if fam_vals:
+                        writer.add_scalar(
+                            f"ppo/teacher_unreachable/{fam_name}_fraction",
+                            float(np.mean(fam_vals)),
+                            update_count,
+                        )
                 writer.add_scalar(
                     "ppo/teacher_lp_mean_reachable",
                     float(np.mean(update_stats.teacher_lp_mean_reachable)),
@@ -1829,17 +2136,28 @@ def train_ppo(
                     1.0 if minibatches_processed < minibatches_expected else 0.0,
                     update_count,
                 )
+            # Trust-region statistics: capture once so both the TensorBoard
+            # ppo/stop_reason_* scalars and the console diagnostic warnings
+            # below use identical values for this update.
+            kl_mean = float(np.mean(update_approx_kls)) if update_approx_kls else 0.0
+            kl_p95 = float(np.percentile(update_approx_kls, 95)) if update_approx_kls else 0.0
+            kl_max = float(np.max(update_approx_kls)) if update_approx_kls else 0.0
+            clip_frac_max = float(np.max(update_clip_fracs)) if update_clip_fracs else 0.0
+            writer.add_scalar("ppo/stop_reason_kl_mean", kl_mean, update_count)
+            writer.add_scalar("ppo/stop_reason_kl_p95", kl_p95, update_count)
+            writer.add_scalar("ppo/stop_reason_kl_max", kl_max, update_count)
+            writer.add_scalar("ppo/stop_reason_minibatch_fraction", minibatch_fraction, update_count)
             if update_approx_kls:
-                writer.add_scalar("ppo/approx_kl_max", float(np.max(update_approx_kls)), update_count)
-                writer.add_scalar("ppo/approx_kl_p95", float(np.percentile(update_approx_kls, 95)), update_count)
+                writer.add_scalar("ppo/approx_kl_max", kl_max, update_count)
+                writer.add_scalar("ppo/approx_kl_p95", kl_p95, update_count)
                 if config.target_kl is not None:
                     writer.add_scalar(
                         "ppo/early_stop_kl",
-                        1.0 if float(np.max(update_approx_kls)) > config.target_kl else 0.0,
+                        1.0 if kl_max > config.target_kl else 0.0,
                         update_count,
                     )
             if update_clip_fracs:
-                writer.add_scalar("ppo/clip_fraction_max", float(np.max(update_clip_fracs)), update_count)
+                writer.add_scalar("ppo/clip_fraction_max", clip_frac_max, update_count)
             writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
             writer.add_scalar(
                 "dagger/bc_loss",
@@ -1864,6 +2182,20 @@ def train_ppo(
             writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
             writer.add_scalar("ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count)
             writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
+            # Entropy-controller saturation flags: 1.0 when entropy_coeff is
+            # pinned at its min/max clamp, so an adaptive run can be diagnosed
+            # when the controller has run out of room (e.g. permanently at max
+            # because the policy is too deterministic even at max entropy).
+            writer.add_scalar(
+                "ppo/entropy_coeff_at_min",
+                1.0 if config.adaptive_entropy and entropy_coeff <= config.alpha_min + 1e-9 else 0.0,
+                update_count,
+            )
+            writer.add_scalar(
+                "ppo/entropy_coeff_at_max",
+                1.0 if config.adaptive_entropy and entropy_coeff >= config.alpha_max - 1e-9 else 0.0,
+                update_count,
+            )
             writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_normalized_entropy, update_count)
             writer.add_scalar(
                 "ppo/action_type_entropy_bonus",
@@ -1936,7 +2268,36 @@ def train_ppo(
                 # land on disk before the checkpoint save, which is itself
                 # a long sync that could crash if memory is tight.
                 writer.flush()
-                checkpoint_path = _save_checkpoint(model, save_path, update_count)
+                checkpoint_path = _save_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    save_path=save_path,
+                    update_count=update_count,
+                    total_steps=total_steps,
+                    planned_updates=planned_updates,
+                    entropy_coeff=entropy_coeff,
+                    entropy_signal_ema=entropy_signal_ema,
+                    lr=config.lr,
+                    log_alpha=log_alpha,
+                    alpha_optimizer=alpha_optimizer,
+                    return_rms=return_rms,
+                    agent_config=agent_config,
+                    config=config,
+                    extra={
+                        "best_eval_win_rate": best_eval_win_rate,
+                        "best_eval_update": best_eval_update,
+                    },
+                )
+                # Always mirror the latest checkpoint so resume/eval always has
+                # a stable path without guessing the highest update number.
+                latest_path = save_path / "ppo_latest.pt"
+                try:
+                    latest_path.unlink(missing_ok=True)
+                    import shutil
+
+                    shutil.copy2(checkpoint_path, latest_path)
+                except OSError:
+                    logger.warning("Could not mirror latest checkpoint to %s", latest_path)
                 logger.info("Saved checkpoint: %s", checkpoint_path)
 
             eval_win_rate: float | None = None
@@ -1980,6 +2341,42 @@ def train_ppo(
                 writer.add_scalar("eval/win_rate", win_rate, update_count)
                 writer.flush()
                 eval_win_rate = win_rate
+                # Track the best eval win rate and snapshot ppo_best_eval.pt so
+                # checkpoint selection does not rely on reading every event file.
+                is_best = best_eval_win_rate is None or win_rate > best_eval_win_rate
+                if is_best:
+                    best_eval_win_rate = win_rate
+                    best_eval_update = update_count
+                    best_path = _save_checkpoint(
+                        model=model,
+                        optimizer=optimizer,
+                        save_path=save_path,
+                        update_count=update_count,
+                        total_steps=total_steps,
+                        planned_updates=planned_updates,
+                        entropy_coeff=entropy_coeff,
+                        entropy_signal_ema=entropy_signal_ema,
+                        lr=config.lr,
+                        log_alpha=log_alpha,
+                        alpha_optimizer=alpha_optimizer,
+                        return_rms=return_rms,
+                        agent_config=agent_config,
+                        config=config,
+                        filename="ppo_best_eval.pt",
+                        extra={
+                            "best_eval_win_rate": best_eval_win_rate,
+                            "best_eval_update": best_eval_update,
+                        },
+                    )
+                    logger.info(
+                        "New best eval win_rate=%.3f at update %d -> %s",
+                        win_rate,
+                        update_count,
+                        best_path,
+                    )
+                writer.add_scalar("eval/best_win_rate", best_eval_win_rate, update_count)
+                writer.add_scalar("eval/best_update", best_eval_update, update_count)
+                writer.add_scalar("checkpoint/is_best_eval", 1.0 if is_best else 0.0, update_count)
                 # eval runs `eval_games` full games in-process; release the
                 # forward-pass allocations it cached before the next rollout.
                 if device.type == "mps":
@@ -2070,6 +2467,95 @@ def train_ppo(
                         minibatches_done,
                         minibatches_expected,
                         minibatch_fraction * 100.0,
+                    )
+
+            # === Trust-region diagnostic warnings (Phase 3) ===
+            # Surface dangerous KL spikes and premature early-stopping. The
+            # hard thresholds can be tightened via the CLI guards below.
+            if should_log_progress:
+                if kl_max > 0.25:
+                    logger.warning(
+                        "ppo/approx_kl_max=%.4f (>0.25) at update %d; a minibatch "
+                        "moved the policy far outside the trust region. Lower "
+                        "--target-kl / --lr or --ppo-epochs.",
+                        kl_max,
+                        update_count,
+                    )
+                if kl_p95 > 0.10:
+                    logger.warning(
+                        "ppo/approx_kl_p95=%.4f (>0.10) at update %d; the 95th "
+                        "percentile minibatch KL is unsafe. Consider a tighter --target-kl.",
+                        kl_p95,
+                        update_count,
+                    )
+                if minibatches_expected > 0 and minibatch_fraction < 0.25:
+                    logger.warning(
+                        "ppo/minibatch_fraction=%.2f (<0.25) at update %d; target_kl "
+                        "is halting updates almost immediately.",
+                        minibatch_fraction,
+                        update_count,
+                    )
+                if clip_frac_max > 0.30:
+                    logger.warning(
+                        "ppo/clip_fraction_max=%.3f (>0.30) at update %d; many "
+                        "minibatches are hitting the PPO clip, a sign of large "
+                        "policy moves.",
+                        clip_frac_max,
+                        update_count,
+                    )
+                # Honor explicit CLI guards if provided (tighter than the defaults).
+                if config.target_kl_max is not None and kl_max > config.target_kl_max:
+                    logger.warning(
+                        "--target-kl-max=%.3f exceeded: ppo/approx_kl_max=%.4f at update %d.",
+                        config.target_kl_max,
+                        kl_max,
+                        update_count,
+                    )
+                if config.target_kl_p95 is not None and kl_p95 > config.target_kl_p95:
+                    logger.warning(
+                        "--target-kl-p95=%.3f exceeded: ppo/approx_kl_p95=%.4f at update %d.",
+                        config.target_kl_p95,
+                        kl_p95,
+                        update_count,
+                    )
+                if (
+                    config.min_minibatch_fraction is not None
+                    and minibatches_expected > 0
+                    and minibatch_fraction < config.min_minibatch_fraction
+                ):
+                    logger.warning(
+                        "--min-minibatch-fraction=%.2f not met: ppo/minibatch_fraction=%.2f at update %d.",
+                        config.min_minibatch_fraction,
+                        minibatch_fraction,
+                        update_count,
+                    )
+
+            # === Exploration-pressure warnings (Phase 4) ===
+            mean_normalized_entropy_update = float(np.mean(update_normalized_entropies))
+            mean_chosen_action_prob = _safe_mean(rm.chosen_action_probs)
+            mean_action_type_entropy_update = float(np.mean(update_action_type_entropies))
+            if should_log_progress:
+                if mean_normalized_entropy_update < 0.10:
+                    logger.warning(
+                        "ppo/entropy_normalized=%.3f (<0.10) at update %d; the policy "
+                        "is near-deterministic. Raise --entropy-coeff / --target-entropy "
+                        "or enable --adaptive-entropy.",
+                        mean_normalized_entropy_update,
+                        update_count,
+                    )
+                if rm.chosen_action_probs and mean_chosen_action_prob > 0.80:
+                    logger.warning(
+                        "debug/chosen_action_prob_mean=%.3f (>0.80) at update %d; the "
+                        "sampled action is almost always the greedy one.",
+                        mean_chosen_action_prob,
+                        update_count,
+                    )
+                if mean_action_type_entropy_update < 0.20:
+                    logger.warning(
+                        "ppo/action_type_entropy_normalized=%.3f (<0.20) at update %d; "
+                        "the policy has collapsed onto a single action family.",
+                        mean_action_type_entropy_update,
+                        update_count,
                     )
 
     finally:

@@ -51,7 +51,42 @@ def main():
     )
     parser.add_argument("--batch", type=int, default=128, help="Batch size (default: 128)")
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO epochs per update (default: 4)")
-    parser.add_argument("--pretrained", type=str, default=None, help="Path to pretrained checkpoint")
+    parser.add_argument(
+        "--pretrained",
+        type=str,
+        default=None,
+        help="Path to pretrained checkpoint (weights-only init; optimizer/counters start fresh)",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help=(
+            "Strictly resume a PPO run: restores model weights, optimizer (Adam moments), "
+            "update counter, total_steps, entropy controller, RNG state, and return normalization. "
+            "Requires a full PPO checkpoint (checkpoint_format == 'ppo_full'). Use --pretrained "
+            "for weights-only initialization instead."
+        ),
+    )
+    parser.add_argument(
+        "--additional-updates",
+        type=int,
+        default=None,
+        help=(
+            "With --resume: run this many more PPO updates after the checkpoint's saved update "
+            "count. The target update count becomes saved_update_count + N. Requires --resume."
+        ),
+    )
+    parser.add_argument(
+        "--updates",
+        type=int,
+        default=None,
+        help=(
+            "Run exactly N PPO updates from scratch, converting to N * envs * rollout_length "
+            "timesteps internally. Overrides --steps. Combine with --pretrained for weights-only "
+            "fine-tuning of a fixed length, or with --resume to set the total target instead of --additional-updates."
+        ),
+    )
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
     parser.add_argument("--lr", type=float, default=1e-4, help="PPO learning rate (default: 1e-4)")
     parser.add_argument(
@@ -189,6 +224,35 @@ def main():
         help="Stop each PPO epoch early when approximate KL exceeds this value; <=0 disables (default: 0.03)",
     )
     parser.add_argument(
+        "--target-kl-p95",
+        type=float,
+        default=None,
+        help=(
+            "Optional hard guard: warn (and log ppo/stop_reason_kl_p95) when the 95th "
+            "percentile minibatch approx_kl exceeds this. Does not stop training by "
+            "itself; pair with --target-kl for early stopping. Default: disabled."
+        ),
+    )
+    parser.add_argument(
+        "--target-kl-max",
+        type=float,
+        default=None,
+        help=(
+            "Optional hard guard: warn when the max minibatch approx_kl exceeds this "
+            "(logged as ppo/stop_reason_kl_max). Use ~0.25 to surface dangerous KL spikes. "
+            "Default: disabled."
+        ),
+    )
+    parser.add_argument(
+        "--min-minibatch-fraction",
+        type=float,
+        default=None,
+        help=(
+            "Optional hard guard: warn when ppo/minibatch_fraction falls below this "
+            "(target_kl is stopping updates too early). Use ~0.50. Default: disabled."
+        ),
+    )
+    parser.add_argument(
         "--entropy-ema-beta",
         type=float,
         default=0.6,
@@ -319,6 +383,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--progression-reward-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Group dense-scale for blind-clear / ante-advance / score & pressure "
+            "progress shaping. Lower to de-emphasize progression farming relative "
+            "to terminal win/loss. Default: 1.0."
+        ),
+    )
+    parser.add_argument(
         "--shop-strategy-reward-scale",
         type=float,
         default=1.0,
@@ -341,6 +415,25 @@ def main():
         type=float,
         default=1.0,
         help="Group dense-scale for planet/tarot/spectral improvement shaping. Default: 1.0.",
+    )
+    parser.add_argument(
+        "--planet-unmatched-use-penalty-coeff",
+        type=float,
+        default=0.0,
+        help=(
+            "Per-step penalty coefficient for using a planet that does NOT match an "
+            "already-played hand type. Defaults to 0.0 (disabled); enable to discourage "
+            "planet churn. Default: 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--planet-unmatched-claim-penalty-coeff",
+        type=float,
+        default=0.0,
+        help=(
+            "Per-step penalty coefficient for claiming a planet that does NOT match an "
+            "already-played hand type. Defaults to 0.0 (disabled). Default: 0.0."
+        ),
     )
     parser.add_argument(
         "--disable-shop-strategy-rewards",
@@ -424,11 +517,23 @@ def main():
     elif args.phase == "ppo":
         from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.ppo import PPOConfig, train_ppo
+        if args.resume and args.pretrained:
+            parser.error("Pass either --pretrained or --resume, not both.")
+        if args.additional_updates is not None and not args.resume:
+            parser.error("--additional-updates requires --resume PATH.")
+        if args.resume and args.updates is not None and args.additional_updates is not None:
+            parser.error(
+                "--updates and --additional-updates are mutually exclusive with --resume "
+                "(--updates is an absolute target, --additional-updates is relative)."
+            )
+        # --updates N overrides --steps and is converted internally to
+        # N * envs * rollout_length timesteps via PPOConfig.total_updates.
         train_ppo(
             PPOConfig(
                 num_envs=args.envs,
                 rollout_length=args.rollout_length,
                 total_timesteps=args.steps,
+                total_updates=args.updates,
                 ppo_epochs=args.ppo_epochs,
                 mini_batch_size=args.batch,
                 lr=args.lr,
@@ -444,6 +549,9 @@ def main():
                 max_no_progress_steps=args.max_idle_steps,
                 entropy_coeff=args.entropy_coeff,
                 target_kl=None if args.target_kl <= 0.0 else args.target_kl,
+                target_kl_p95=args.target_kl_p95,
+                target_kl_max=args.target_kl_max,
+                min_minibatch_fraction=args.min_minibatch_fraction,
                 adaptive_entropy=args.adaptive_entropy and not args.no_adaptive_entropy,
                 target_entropy=args.target_entropy,
                 entropy_ema_beta=args.entropy_ema_beta,
@@ -470,10 +578,13 @@ def main():
                 reward_config=RewardConfig(
                     dense_reward_scale=args.dense_reward_scale,
                     local_hand_reward_scale=args.local_hand_reward_scale,
+                    progression_reward_scale=args.progression_reward_scale,
                     shop_strategy_reward_scale=args.shop_strategy_reward_scale,
                     joker_strategy_reward_scale=args.joker_strategy_reward_scale,
                     economy_reward_scale=args.economy_reward_scale,
                     consumable_reward_scale=args.consumable_reward_scale,
+                    planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+                    planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
                     enable_shop_strategy_rewards=not args.disable_shop_strategy_rewards,
                     enable_economy_strategy_rewards=not args.disable_shop_strategy_rewards,
                     enable_joker_context_rewards=not args.disable_shop_strategy_rewards,
@@ -481,6 +592,8 @@ def main():
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,
+            resume_path=args.resume,
+            additional_updates=args.additional_updates,
         )
 
     elif args.phase == "self_play":

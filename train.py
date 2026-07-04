@@ -36,10 +36,35 @@ def main():
         help="Entropy bonus coefficient for supervised behavior cloning (default: 0.001)",
     )
     parser.add_argument(
+        "--hand-ar-mixture-eps",
+        type=float,
+        default=None,
+        help=(
+            "Mixture weight on the autoregressive hand/discard head (Phase 1). 0.0 "
+            "reproduces the historical candidate-only support; the default depends on "
+            "phase: 0.5 for supervised (trains the AR head on every label), 0.1 for PPO "
+            "(targeted exploration). Pass explicitly to override."
+        ),
+    )
+    parser.add_argument(
+        "--outcome-weight-beta",
+        type=float,
+        default=1.5,
+        help=(
+            "Phase 5: AWR-style outcome weight beta for BC. w = exp(beta * normalized_outcome) "
+            "clamped to [0.25, 4]. Tilts imitation toward successful trajectories while "
+            "preserving full state coverage. 0.0 = uniform weights (no tilt). Default: 1.5."
+        ),
+    )
+    parser.add_argument(
         "--min-ante",
         type=int,
-        default=5,
-        help="Minimum ante a heuristic game must reach to be kept for supervised pretraining (default: 5)",
+        default=1,
+        help=(
+            "Minimum ante a heuristic game must reach to be kept for supervised pretraining. "
+            "Phase 5: default changed from 5 to 1 (no filter) — hard outcome filtering creates "
+            "survivorship bias. Outcome weighting (--outcome-weight-beta) replaces the filter."
+        ),
     )
     parser.add_argument("--steps", type=int, default=1_000_000, help="PPO total timesteps (default: 1000000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
@@ -88,7 +113,7 @@ def main():
         ),
     )
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
-    parser.add_argument("--lr", type=float, default=1e-4, help="PPO learning rate (default: 1e-4)")
+    parser.add_argument("--lr", type=float, default=5e-5, help="PPO learning rate (default: 5e-5)")
     parser.add_argument(
         "--clip-eps",
         type=float,
@@ -203,25 +228,24 @@ def main():
     parser.add_argument(
         "--rollout-temperature",
         type=float,
-        default=0.7,
+        default=1.0,
         help=(
             "Softmax temperature applied at all PPO distribution sites (rollout sampling, "
-            "training forward pass, value bootstraps). <1 sharpens the policy so sampled "
-            "trajectories actually finish blinds and PPO sees positive-advantage rollouts. "
-            "Set to 1.0 to disable sharpening (default: 0.7)."
+            "training forward pass, value bootstraps). Set to 1.0 to disable sharpening "
+            "(default: 1.0). The 0.7 crutch is obsolete post-Phase-1 BC."
         ),
     )
     parser.add_argument(
         "--entropy-coeff",
         type=float,
-        default=0.001,
-        help="PPO entropy coefficient (default: 0.001)",
+        default=0.01,
+        help="PPO entropy coefficient (default: 0.01)",
     )
     parser.add_argument(
         "--target-kl",
         type=float,
-        default=0.03,
-        help="Stop each PPO epoch early when approximate KL exceeds this value; <=0 disables (default: 0.03)",
+        default=0.05,
+        help="Stop each PPO epoch early when approximate KL exceeds this value; <=0 disables (default: 0.05)",
     )
     parser.add_argument(
         "--target-kl-p95",
@@ -300,9 +324,10 @@ def main():
     parser.add_argument(
         "--heuristic-distill-min",
         type=float,
-        default=0.03,
+        default=0.0,
         help=(
-            "Floor for the distillation coefficient after linear decay (default: 0.03). "
+            "Floor for the distillation coefficient after linear decay (default: 0.0). "
+            "A nonzero floor anchors the policy to the heuristic forever. "
             "Ignored when --heuristic-distill-coeff <= 0. Clamped to the start "
             "coefficient if it would otherwise exceed it."
         ),
@@ -441,6 +466,59 @@ def main():
         help="Disable context-aware strategic shop/economy/joker rewards (legacy flat shaping only).",
     )
     parser.add_argument(
+        "--reward-v2",
+        action="store_true",
+        help=(
+            "Use the Phase 2 PPO_V2_REWARD_CONFIG: kills all prescriptive heuristic-"
+            "agreement shaping and replaces it with policy-invariant potential-based "
+            "shaping. Terminal reward uses the halved v2 scale so outcome dominates "
+            "return. The gamma from --gamma is plumbed into the potential telescope."
+        ),
+    )
+    parser.add_argument(
+        "--planet-match-shaping",
+        action="store_true",
+        help=(
+            "With --reward-v2: re-enable the planet-alignment shaping component "
+            "(bonuses for using/claiming planets that match played hand types, plus "
+            "the --planet-unmatched-*-penalty-coeff penalties). The sparse v2 signal "
+            "cannot credit-assign planet choices; without this agents drift to ~90%% "
+            "unmatched planet use. No effect without --reward-v2."
+        ),
+    )
+    parser.add_argument(
+        "--build-curve-shaping",
+        action="store_true",
+        help=(
+            "With --reward-v2: re-enable the joker build-curve shaping component — "
+            "a positive-only bonus for acquiring jokers whose scoring profile fits "
+            "the ante phase (chip scaling in antes 1-3, additive mult by ante 4, "
+            "xmult from ante 6 or any earlier point). Which joker profile to buy "
+            "when is invisible to the sparse win signal. No effect without --reward-v2."
+        ),
+    )
+    parser.add_argument(
+        "--critic-warmup-updates",
+        type=int,
+        default=0,
+        help=(
+            "Phase 3.2: number of PPO updates to train only the critic (+survival head) "
+            "with the policy frozen. After a reward-function change, advantages are "
+            "garbage until the critic tracks the new return distribution; warming it up "
+            "on-policy removes the window in which PPO earnestly optimizes noise. "
+            "Pair with --reinit-value-head. Default: 0 (disabled)."
+        ),
+    )
+    parser.add_argument(
+        "--reinit-value-head",
+        action="store_true",
+        help=(
+            "Phase 3.2/2.4: reinitialize the value head when loading --pretrained. "
+            "Required after any reward-function change so the critic doesn't start from "
+            "a stale return mapping."
+        ),
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -497,6 +575,7 @@ def main():
 
     if args.phase == "supervised":
         from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
+        sup_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.5
         train_supervised(
             SupervisedConfig(
                 num_games=args.games,
@@ -510,12 +589,14 @@ def main():
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/supervised",
                 log_dir=log_dir or "runs/supervised",
+                hand_ar_mixture_eps=sup_eps,
+                outcome_weight_beta=args.outcome_weight_beta,
             ),
             agent_config=agent_config,
         )
 
     elif args.phase == "ppo":
-        from pylatro_agent.reward import RewardConfig
+        from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, RewardConfig
         from pylatro_agent.training.ppo import PPOConfig, train_ppo
         if args.resume and args.pretrained:
             parser.error("Pass either --pretrained or --resume, not both.")
@@ -526,8 +607,17 @@ def main():
                 "--updates and --additional-updates are mutually exclusive with --resume "
                 "(--updates is an absolute target, --additional-updates is relative)."
             )
+        if args.reward_v2 and args.pretrained and not args.reinit_value_head:
+            parser.error(
+                "--reward-v2 with --pretrained requires --reinit-value-head (Phase 2.4): "
+                "the pretrained value head regresses returns from the old reward "
+                "function, producing systematically wrong advantages that can destroy "
+                "the BC policy before the critic re-converges. Pair it with "
+                "--critic-warmup-updates to warm the fresh head."
+            )
         # --updates N overrides --steps and is converted internally to
         # N * envs * rollout_length timesteps via PPOConfig.total_updates.
+        ppo_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.1
         train_ppo(
             PPOConfig(
                 num_envs=args.envs,
@@ -572,22 +662,37 @@ def main():
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
                 eval_device=args.eval_device,
+                hand_ar_mixture_eps=ppo_eps,
+                critic_warmup_updates=args.critic_warmup_updates,
+                reinit_value_head=args.reinit_value_head,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.
-                reward_config=RewardConfig(
-                    dense_reward_scale=args.dense_reward_scale,
-                    local_hand_reward_scale=args.local_hand_reward_scale,
-                    progression_reward_scale=args.progression_reward_scale,
-                    shop_strategy_reward_scale=args.shop_strategy_reward_scale,
-                    joker_strategy_reward_scale=args.joker_strategy_reward_scale,
-                    economy_reward_scale=args.economy_reward_scale,
-                    consumable_reward_scale=args.consumable_reward_scale,
-                    planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
-                    planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-                    enable_shop_strategy_rewards=not args.disable_shop_strategy_rewards,
-                    enable_economy_strategy_rewards=not args.disable_shop_strategy_rewards,
-                    enable_joker_context_rewards=not args.disable_shop_strategy_rewards,
+                # --reward-v2 overrides with the Phase 2 potential-based config.
+                reward_config=(
+                    PPO_V2_REWARD_CONFIG(
+                        gamma=args.gamma,
+                        win_ante=args.win_ante or 8,
+                        planet_match_shaping=args.planet_match_shaping,
+                        planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+                        planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
+                        build_curve_shaping=args.build_curve_shaping,
+                    )
+                    if args.reward_v2
+                    else RewardConfig(
+                        dense_reward_scale=args.dense_reward_scale,
+                        local_hand_reward_scale=args.local_hand_reward_scale,
+                        progression_reward_scale=args.progression_reward_scale,
+                        shop_strategy_reward_scale=args.shop_strategy_reward_scale,
+                        joker_strategy_reward_scale=args.joker_strategy_reward_scale,
+                        economy_reward_scale=args.economy_reward_scale,
+                        consumable_reward_scale=args.consumable_reward_scale,
+                        planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+                        planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
+                        enable_shop_strategy_rewards=not args.disable_shop_strategy_rewards,
+                        enable_economy_strategy_rewards=not args.disable_shop_strategy_rewards,
+                        enable_joker_context_rewards=not args.disable_shop_strategy_rewards,
+                    )
                 ),
             ),
             agent_config=agent_config,

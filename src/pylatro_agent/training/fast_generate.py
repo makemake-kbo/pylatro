@@ -519,8 +519,12 @@ def generate_training_data(
     num_games: int,
     data: GameData | None = None,
     vocab: Vocab | None = None,
-    min_ante: int = 5,
-    gamma: float = 0.995,
+    # Phase 5: no outcome filter by default (min_ante=1) — hard filtering a fixed
+    # policy's rollouts by outcome imitates luck, not skill, and deletes the
+    # recovery states PPO visits. Outcome weighting in supervised.py replaces it.
+    # gamma matches SupervisedConfig.gamma (the PPO gamma of the next phase).
+    min_ante: int = 1,
+    gamma: float = 0.99,
     num_workers: int = 0,
     keep_below_threshold_ratio: float = 0.0,
     chunk_size: int = 10_000,

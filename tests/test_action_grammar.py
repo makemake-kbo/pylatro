@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import torch
 
 from pylatro_agent.action import ActionType, encode_action
@@ -327,3 +329,190 @@ def test_head_produces_candidate_logits():
 
     assert output.candidate_play_logits.shape == (batch, HAND_CANDIDATE_MAX)
     assert output.candidate_discard_logits.shape == (batch, HAND_CANDIDATE_MAX)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 1: candidate-biased autoregressive mixture tests
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _hand_state_with_candidates_and_distractor():
+    """Build a 1-row synthetic state with one candidate play and one extra legal play.
+
+    Returns (output, action_mask, tokens, candidate_action, distractor_action).
+    The candidate maps to play subset {0,2,4}; the distractor is play {1,3},
+    which is legal but not in the candidate list — exactly the situation where
+    the historical -1e8 floor poisoned BC and blocked exploration.
+    """
+    from pylatro_agent.constants import HAND_CANDIDATE_START
+
+    candidate_action = encode_action(ActionType.PLAY_SUBSET, subset_index([0, 2, 4]))
+    distractor_action = encode_action(ActionType.PLAY_SUBSET, subset_index([1, 3]))
+
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, candidate_action] = 1
+    action_mask[0, distractor_action] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+    output.candidate_play_logits = output.candidate_play_logits.clone()
+    output.candidate_play_logits[0, 0] = 5.0
+
+    tokens = torch.zeros(1, 160, 13, dtype=torch.long)
+    tokens[0, HAND_CANDIDATE_START + 0, 0] = 1
+    tokens[0, HAND_CANDIDATE_START + 0, 2] = 3
+    for j, idx in enumerate([0, 2, 4]):
+        tokens[0, HAND_CANDIDATE_START + 0, 5 + j] = idx + 1
+
+    return output, action_mask, tokens, candidate_action, distractor_action
+
+
+def test_mixture_eps_zero_matches_historical_behavior():
+    """eps=0 must reproduce the historical candidate-only log_prob exactly."""
+    output, action_mask, tokens, cand_action, dist_action = _hand_state_with_candidates_and_distractor()
+
+    dist_eps0 = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.0)
+    dist_legacy = ActionGrammarDistribution(output, action_mask, tokens=tokens)
+
+    # The candidate action gets a finite log_prob; the distractor gets the -1e8 floor.
+    lp_cand = dist_eps0.log_prob(torch.tensor([cand_action]))
+    lp_dist = dist_eps0.log_prob(torch.tensor([dist_action]))
+    lp_legacy_cand = dist_legacy.log_prob(torch.tensor([cand_action]))
+    lp_legacy_dist = dist_legacy.log_prob(torch.tensor([dist_action]))
+
+    assert torch.allclose(lp_cand, lp_legacy_cand, atol=1e-6)
+    assert torch.allclose(lp_dist, lp_legacy_dist, atol=1e-6)
+    # Distractor is unreachable at eps=0 (the -1e8 floor).
+    assert lp_dist.item() < -1e7
+
+
+def test_mixture_eps_positive_gives_full_support():
+    """With eps>0, every legal play (including non-candidate) has log_prob > -1e7."""
+    output, action_mask, tokens, cand_action, dist_action = _hand_state_with_candidates_and_distractor()
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.1)
+    lp_cand = dist.log_prob(torch.tensor([cand_action]))
+    lp_dist = dist.log_prob(torch.tensor([dist_action]))
+
+    assert lp_cand.item() > -1e7, "candidate play must have finite log_prob"
+    assert lp_dist.item() > -1e7, "non-candidate play must now have finite log_prob (full support)"
+
+
+def test_mixture_normalizes_over_legal_hand_plays():
+    """exp(log_prob) over all legal play actions (conditional on macro=PLAY) sums to ~1.
+
+    Uses a small subset of play actions (the first 8) rather than all 6884
+    hand subsets, so the enumeration is fast. The normalization property holds
+    regardless of which plays are legal — what matters is that the distribution
+    over the legal set sums to 1.
+    """
+    from pylatro_agent.subset_actions import HAND_SUBSETS
+
+    # Take the first 8 play subsets as the legal set.
+    play_actions = [encode_action(ActionType.PLAY_SUBSET, i) for i in range(8)]
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    for a in play_actions:
+        action_mask[0, a] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, :] = -10.0
+    output.macro_logits[0, play_idx] = 0.0  # force macro = PLAY
+
+    for eps in (0.0, 0.1, 0.5):
+        dist = ActionGrammarDistribution(output, action_mask, tokens=None, hand_ar_mixture_eps=eps)
+        # tokens=None -> no candidates -> pure AR path. Enumerate the 8 legal plays.
+        total = 0.0
+        for a in play_actions:
+            lp = dist.log_prob(torch.tensor([a])).item()
+            total += math.exp(lp)
+        # Each exp(log_prob) includes the macro prob (=1.0 here since PLAY is the
+        # only valid macro). So the sum should be ~1.0.
+        assert abs(total - 1.0) < 1e-3, f"eps={eps}: sum={total}, expected ~1.0"
+
+
+def test_mixture_sampling_produces_non_candidate_plays():
+    """Sampling with eps=0.1 yields >=1 non-candidate play on a strict-subset state."""
+    output, action_mask, tokens, cand_action, dist_action = _hand_state_with_candidates_and_distractor()
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.1)
+    torch.manual_seed(42)
+    non_cand_count = 0
+    # Sample the hand-play component directly (fast) rather than the full
+    # dist.sample() which also draws the macro. 1000 draws is enough to see the
+    # eps=0.1 mass produce at least one AR (non-candidate) play.
+    for _ in range(1000):
+        s = dist._sample_hand_actions(is_play=True).item()
+        if s == dist_action:
+            non_cand_count += 1
+    assert non_cand_count >= 1, "eps=0.1 should occasionally sample the non-candidate play"
+
+
+def test_mixture_log_prob_has_gradient_to_both_components():
+    """The logsumexp routes gradient to both candidate and AR heads when eps>0."""
+    from pylatro_agent.constants import HAND_CANDIDATE_START
+
+    # Two candidates so the candidate softmax is non-degenerate (a single valid
+    # candidate gives prob=1.0 and zero gradient on its own logit).
+    cand_a = encode_action(ActionType.PLAY_SUBSET, subset_index([0, 2, 4]))
+    cand_b = encode_action(ActionType.PLAY_SUBSET, subset_index([1, 3]))
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, cand_a] = 1
+    action_mask[0, cand_b] = 1
+
+    output = _blank_output(batch_size=1)
+    play_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+    output.macro_logits[0, play_idx] = 10.0
+    output.candidate_play_logits = output.candidate_play_logits.clone()
+    output.candidate_play_logits[0, 0] = 5.0
+    output.candidate_play_logits[0, 1] = 3.0
+
+    tokens = torch.zeros(1, 160, 13, dtype=torch.long)
+    for slot, idxs in enumerate(([0, 2, 4], [1, 3])):
+        tokens[0, HAND_CANDIDATE_START + slot, 0] = 1
+        tokens[0, HAND_CANDIDATE_START + slot, 2] = len(idxs)
+        for j, idx in enumerate(idxs):
+            tokens[0, HAND_CANDIDATE_START + slot, 5 + j] = idx + 1
+
+    output.candidate_play_logits.requires_grad_(True)
+    output.hand_count_logits = output.hand_count_logits.clone().requires_grad_(True)
+    output.hand_card_logits = output.hand_card_logits.clone().requires_grad_(True)
+
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.5)
+    lp = dist.log_prob(torch.tensor([cand_a]))
+    loss = -lp.sum()
+    loss.backward()
+
+    # Both the candidate head and the AR head should receive gradient.
+    assert output.candidate_play_logits.grad is not None
+    assert output.candidate_play_logits.grad.abs().sum() > 0
+    assert output.hand_count_logits.grad is not None
+    assert output.hand_count_logits.grad.abs().sum() > 0
+
+
+def test_mixture_entropy_is_finite_and_positive():
+    output, action_mask, tokens, _, _ = _hand_state_with_candidates_and_distractor()
+    for eps in (0.0, 0.1, 0.5):
+        dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=eps)
+        ent = dist._hand_entropy(is_play=True)
+        assert torch.isfinite(ent).all()
+        assert ent.item() >= 0.0
+
+
+def test_mixture_normalizes_with_candidates_present():
+    """With candidates present, exp(log_prob) over all legal plays sums to ~1.
+
+    Complements test_mixture_normalizes_over_legal_hand_plays (which exercises
+    the pure-AR path): here both mixture components are active, so this catches
+    double-counting between the candidate and AR components.
+    """
+    output, action_mask, tokens, cand_action, dist_action = _hand_state_with_candidates_and_distractor()
+
+    for eps in (0.1, 0.5, 1.0):
+        dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=eps)
+        total = sum(
+            math.exp(dist.log_prob(torch.tensor([a])).item())
+            for a in (cand_action, dist_action)
+        )
+        assert abs(total - 1.0) < 1e-3, f"eps={eps}: sum={total}, expected ~1.0"

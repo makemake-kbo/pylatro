@@ -12,6 +12,7 @@ intermediate select/deselect states, so it cannot enter selection loops.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -32,11 +33,9 @@ from .constants import (
     JOKER_START,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
-    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
-    MAX_PLAY_CANDIDATES,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
     NUM_CONSUMABLE_HAND_SUBSETS,
@@ -281,6 +280,7 @@ class ActionGrammarDistribution:
         action_mask: torch.Tensor,
         temperature: float = 1.0,
         tokens: torch.Tensor | None = None,
+        hand_ar_mixture_eps: float = 0.0,
     ) -> None:
         self.output = output
         self.action_mask = action_mask > 0
@@ -288,6 +288,15 @@ class ActionGrammarDistribution:
         self.device = action_mask.device
         self.batch_size = action_mask.shape[0]
         self.tokens = tokens
+        # Mixture weight on the autoregressive hand/discard head:
+        #   p(a) = (1 - eps) * p_cand(a) + eps * p_ar(a)
+        # p_cand has support only over candidate slots; p_ar covers every legal
+        # subset under the mask. eps > 0 gives the policy full support over hand
+        # plays (the -1e8 floor for non-candidate actions becomes a finite
+        # log(eps) + ar_logp), so the policy can finally express plays the
+        # candidate generator never proposed. eps = 0 reproduces the historical
+        # candidate-only behavior bit-for-bit (backward-compat escape hatch).
+        self.hand_ar_mixture_eps = min(max(float(hand_ar_mixture_eps), 0.0), 1.0)
         self.macro_mask = _macro_valid_mask(self.action_mask)
         has_any = self.macro_mask.any(dim=-1, keepdim=True)
         fallback = torch.zeros_like(self.macro_mask)
@@ -652,7 +661,29 @@ class ActionGrammarDistribution:
         cand_logp = torch.where(has_match, cand_logp, torch.full_like(cand_logp, -1e8))
 
         ar_logp = self._hand_log_prob_autoregressive(action_index, action_count, is_play=is_play)
-        return torch.where(has_candidates, cand_logp, ar_logp)
+
+        eps = self.hand_ar_mixture_eps
+        if eps <= 0.0:
+            # Backward-compat: candidate distribution when candidates exist, AR
+            # otherwise. Bit-for-bit identical to the pre-mixture behavior.
+            return torch.where(has_candidates, cand_logp, ar_logp)
+        if eps >= 1.0:
+            # Pure AR: the candidate component has zero weight, and
+            # log(1 - eps) is undefined.
+            return ar_logp
+
+        # Mixture: p(a) = (1-eps)*p_cand(a) + eps*p_ar(a).
+        # For candidate actions cand_logp is the softmax log-prob; for
+        # non-candidate actions cand_logp is the -1e8 floor, so the AR term
+        # dominates and log_prob is finite (log(eps) + ar_logp) — full support
+        # over every legal hand play. Rows with no candidates collapse to AR.
+        log_one_minus_eps = math.log(1.0 - eps)
+        log_eps = math.log(eps)
+        mix_logp = torch.logsumexp(
+            torch.stack([log_one_minus_eps + cand_logp, log_eps + ar_logp], dim=-1),
+            dim=-1,
+        )
+        return torch.where(has_candidates, mix_logp, ar_logp)
 
     def _hand_log_prob_autoregressive(
         self,
@@ -688,7 +719,14 @@ class ActionGrammarDistribution:
         has_candidates = cand_valid.any(dim=-1)
         cand_entropy = _masked_entropy(cand_logits, cand_valid)
         ar_entropy = self._hand_entropy_autoregressive(is_play=is_play)
-        return torch.where(has_candidates, cand_entropy, ar_entropy)
+        eps = self.hand_ar_mixture_eps
+        if eps <= 0.0:
+            return torch.where(has_candidates, cand_entropy, ar_entropy)
+        # Exact mixture entropy is expensive; use the standard lower bound
+        # H >= (1-eps)*H_cand + eps*H_ar. Entropy here only feeds a small bonus
+        # coefficient; the bound's bias is acceptable and monotone in eps.
+        mix_entropy = (1.0 - eps) * cand_entropy + eps * ar_entropy
+        return torch.where(has_candidates, mix_entropy, ar_entropy)
 
     def _hand_entropy_autoregressive(self, *, is_play: bool) -> torch.Tensor:
         family = 0 if is_play else 1
@@ -704,10 +742,19 @@ class ActionGrammarDistribution:
         return count_entropy + expected_count * _masked_entropy(card_logits, card_mask)
 
     def _sample_hand_actions(self, *, is_play: bool) -> torch.Tensor:
+        eps = self.hand_ar_mixture_eps
         cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=False)
         has_candidates = cand_actions >= 0
-        fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=False)
-        return torch.where(has_candidates, cand_actions, fallback)
+        if eps <= 0.0:
+            # Backward-compat: candidate when available, AR otherwise.
+            fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=False)
+            return torch.where(has_candidates, cand_actions, fallback)
+        # Mixture sampling: draw Bernoulli(eps) per row to route between the
+        # candidate sampler and the AR sampler. Rows without candidates always
+        # use AR (the candidate component is empty for them).
+        use_ar = (torch.rand(self.batch_size, device=self.device) < eps) | (~has_candidates)
+        ar_actions = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=False)
+        return torch.where(use_ar, ar_actions, cand_actions.clamp_min(0))
 
     def _greedy_hand_actions(self, *, is_play: bool) -> torch.Tensor:
         cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=True)

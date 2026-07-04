@@ -7,6 +7,12 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from .heuristic import (
+    _CHIPS_PROFILE_JOKER_KEYS,
+    _MULT_PROFILE_JOKER_KEYS,
+    _RETRIGGER_JOKER_KEYS,
+    _XMULT_PROFILE_JOKER_KEYS,
+)
 from .shop_eval import (
     BuildEval,
     evaluate_build,
@@ -87,6 +93,33 @@ class RewardConfig:
     planet_unmatched_use_penalty_coeff: float = 0.0
     planet_unmatched_claim_penalty_coeff: float = 0.0
 
+    # ── Build-curve shaping (joker scaling profile vs ante phase) ──
+    # Bonus for acquiring jokers whose scoring profile fits the desired build
+    # curve: chip scaling carries the early game (antes 1-3), additive mult
+    # must be online by ante 4, and xmult is the late-game engine (ante 6+)
+    # that is welcome at any earlier point. Positive-only: a mistimed profile
+    # earns a reduced bonus, never a penalty, so acquiring jokers is never
+    # discouraged outright (the planet-penalty experiment showed penalties
+    # suppress engagement instead of redirecting it).
+    enable_build_curve_rewards: bool = False
+    build_curve_coeff: float = 0.25
+
+    # ── Potential-based shaping (Phase 2) ──
+    # When enabled, replaces all killed heuristic-agreement shaping with a
+    # single potential-based term F(s,s') = gamma*Phi(s') - Phi(s), the unique
+    # form that does not change the optimal policy under discounting (Ng et al.
+    # 1999). Gamma is plumbed from PPOConfig so the telescope matches the
+    # return the value function regresses.
+    enable_potential_shaping: bool = False
+    gamma: float = 0.99
+    # Potential weights. Bounded so terminal reward (~+10) dominates return.
+    potential_w_blind: float = 0.5
+    potential_w_ante: float = 2.0
+    potential_win_ante: int = 8
+    # Terminal rescale for the v2 reward. Halves the supervised ±20/-10 scale so
+    # terminal is ~2/3 of achievable return magnitude alongside the potential.
+    v2_terminal_scale: float = 0.5
+
 
 DEFAULT_REWARD_CONFIG = RewardConfig()
 PPO_SPARSE_CONFIG = RewardConfig(
@@ -104,6 +137,59 @@ PPO_SPARSE_CONFIG = RewardConfig(
 )
 
 
+def PPO_V2_REWARD_CONFIG(
+    *,
+    gamma: float = 0.99,
+    win_ante: int = 8,
+    planet_match_shaping: bool = False,
+    planet_unmatched_use_penalty_coeff: float = 0.0,
+    planet_unmatched_claim_penalty_coeff: float = 0.0,
+    build_curve_shaping: bool = False,
+) -> RewardConfig:
+    """Phase 2 reward config: potential-based shaping + terminal-dominated return.
+
+    Kills every prescriptive heuristic-agreement component (hand bonuses, planet
+    matching, shop strategy, economy) and replaces them with a single
+    policy-invariant potential-based shaping term. Terminal reward uses the halved
+    v2 scale so outcome is ~2/3 of achievable return magnitude. Gamma is plumbed
+    from PPOConfig so the potential telescope matches the value function's return.
+
+    ``planet_match_shaping`` re-enables just the planet-alignment component on top
+    of the v2 baseline: the sparse win signal cannot credit-assign which planet to
+    level, and without it agents settle into ~90% unmatched planet use. The
+    bounded bonuses (PLANET_MATCH_BONUS main-hand match, PLANET_PLAYED_HAND_BONUS
+    played-hand) and optional unmatched-use/claim penalties stay small relative
+    to the ~10 terminal reward.
+
+    ``build_curve_shaping`` re-enables the joker build-curve component: a
+    positive-only bonus for acquiring jokers whose scoring profile fits the
+    ante phase (chips early, mult by ante 4, xmult late — or earlier). Like
+    planet choice, joker-profile timing is invisible to the sparse win signal.
+    """
+    return RewardConfig(
+        # Kill all prescriptive shaping (planet matching optionally retained —
+        # see docstring).
+        enable_hand_candidate_rewards=False,
+        enable_planet_match_rewards=planet_match_shaping,
+        planet_unmatched_use_penalty_coeff=planet_unmatched_use_penalty_coeff,
+        planet_unmatched_claim_penalty_coeff=planet_unmatched_claim_penalty_coeff,
+        enable_build_curve_rewards=build_curve_shaping,
+        enable_shop_reroll_reward=False,
+        enable_consumable_targeted_reward=False,
+        enable_shop_strategy_rewards=False,
+        enable_economy_strategy_rewards=False,
+        enable_joker_context_rewards=False,
+        # Enable potential-based shaping (the only dense signal besides terminal).
+        enable_potential_shaping=True,
+        gamma=gamma,
+        potential_w_blind=0.5,
+        potential_w_ante=2.0,
+        potential_win_ante=win_ante,
+        v2_terminal_scale=0.5,
+    )
+
+
+
 # All dense reward components are multiplied by REWARD_SCALE at the exit of
 # default_reward_components. Terminal outcomes are divided by REWARD_SCALE
 # before that common exit path, so changing this value changes only dense
@@ -119,6 +205,18 @@ PRETRAIN_WIN_VALUE = 20.0
 PRETRAIN_LOSS_BASE = -10.0
 PRETRAIN_ANTE_PROGRESS_VALUE = 1.0
 PRETRAIN_STALL_EXTRA_PENALTY = 2.0
+
+# Phase 2 v2 terminal values: halved from the supervised scale so terminal
+# reward (~+10 win, ~-5 to 0 loss) dominates return alongside the bounded
+# potential shaping (w_blind + w_ante = 0.5 + 2.0 = 2.5). This makes the value
+# head regress an O(1-10) return without normalize_returns.
+V2_WIN_VALUE = 10.0
+V2_LOSS_BASE = -5.0
+V2_ANTE_PROGRESS_VALUE = 0.5
+V2_STALL_EXTRA_PENALTY = 1.0
+
+# Blind index mapping for the macro-progress potential.
+_BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
 
 SCORE_PROGRESS_SCALE = 0.5
 PRESSURE_PROGRESS_SCALE = 1.0
@@ -171,8 +269,8 @@ STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
 HAND_SUBSET_BONUS_SCALE = 0.3
 HAND_TOP1_BONUS = 0.35
 HAND_TOP3_BONUS = 0.12
-PLANET_MATCH_BONUS = 0.25
-PLANET_PLAYED_HAND_BONUS = 0.12
+PLANET_MATCH_BONUS = 0.5
+PLANET_PLAYED_HAND_BONUS = 0.25
 
 REWARD_COMPONENT_NAMES = (
     "terminal",
@@ -213,6 +311,10 @@ REWARD_COMPONENT_NAMES = (
     "joker_sell_bad",
     "xmult_acquisition",
     "consumable_improvement",
+    "build_curve_bonus",
+    # Phase 2: potential-based shaping (policy-invariant; replaces killed
+    # heuristic-agreement components when enable_potential_shaping is set).
+    "potential_shaping",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
 
@@ -256,6 +358,7 @@ _COMPONENT_GROUP = {
     "joker_sell_good": "joker_strategy",
     "joker_sell_bad": "joker_strategy",
     "xmult_acquisition": "joker_strategy",
+    "build_curve_bonus": "joker_strategy",
 }
 
 # Strategic components clamped together per step (pre dense-scale).
@@ -331,6 +434,72 @@ def pretraining_outcome_value(
     if stalled:
         value -= PRETRAIN_STALL_EXTRA_PENALTY
     return value
+
+
+def v2_outcome_value(
+    *,
+    won: bool,
+    ante: int,
+    win_ante: int = 8,
+    stalled: bool = False,
+) -> float:
+    """Phase 2 v2 terminal value: halved scale so outcome dominates return."""
+    if won:
+        return V2_WIN_VALUE
+
+    capped_ante = min(max(int(ante), 1), max(int(win_ante), 1))
+    value = V2_LOSS_BASE + V2_ANTE_PROGRESS_VALUE * capped_ante
+    if stalled:
+        value -= V2_STALL_EXTRA_PENALTY
+    return value
+
+
+def state_potential(info: dict, config: RewardConfig) -> float:
+    """Bounded, monotone progress potential Phi(s) for potential-based shaping.
+
+    Phi(s) = w_blind * min(round_score / blind_target, 1)        # within-blind, [0, w_blind]
+           + w_ante * macro_progress                              # [0, w_ante]
+
+    where macro_progress = (ante - 1 + blind_index/3) / (win_ante - 1), and
+    blind_index in {0,1,2} for small/big/boss. Phi is bounded in
+    [0, w_blind + w_ante] and monotone in progress, so the telescoping
+    property F(s,s') = gamma*Phi(s') - Phi(s) holds and cannot be farmed.
+    """
+    w_blind = config.potential_w_blind
+    w_ante = config.potential_w_ante
+    win_ante = max(config.potential_win_ante, 2)
+
+    blind_target = max(float(info.get("blind_target", 0)), 1.0)
+    round_score = float(info.get("round_score", 0))
+    within_blind = w_blind * min(round_score / blind_target, 1.0)
+
+    ante = max(int(info.get("ante", 1)), 1)
+    blind_on_deck = str(info.get("blind_on_deck", "small")).lower()
+    blind_index = _BLIND_INDEX.get(blind_on_deck, 0)
+    macro_denom = max(win_ante - 1, 1)
+    macro_progress = w_ante * (ante - 1 + blind_index / 3.0) / macro_denom
+
+    return within_blind + macro_progress
+
+
+def potential_shaping_reward(prev_info: dict, curr_info: dict, config: RewardConfig) -> float:
+    """Potential-based shaping: F(s,s') = gamma*Phi(s') - Phi(s).
+
+    This is the unique form guaranteed not to change the optimal policy under
+    discounting (Ng, Harada, Russell 1999). The gamma is taken from the live
+    config (plumbed from PPOConfig) so the telescope matches the return the
+    value function regresses. At terminal states Phi(s')=0 so the accumulated
+    potential is paid back (standard treatment).
+    """
+    gamma = config.gamma
+    phi_curr = state_potential(curr_info, config)
+    # Terminal states have Phi(s') = 0: detect via terminated/stalled flags the
+    # caller sets on curr_info, or by the blind being cleared with no further
+    # progress available.
+    if curr_info.get("_potential_terminal", False):
+        phi_curr = 0.0
+    phi_prev = state_potential(prev_info, config)
+    return gamma * phi_curr - phi_prev
 
 
 def _blind_pressure(info: dict, *, cleared_blind: bool = False) -> float | None:
@@ -580,6 +749,97 @@ def _apply_strategic_shop_rewards(
                 components[k] *= factor
 
 
+def _apply_planet_match_rewards(
+    curr_info: dict,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    """Add planet-alignment bonuses/penalties for this step into ``components``.
+
+    Shared by the legacy dense path and the v2 potential-shaping path (where
+    ``planet_match_shaping`` re-enables just this component).
+    """
+    for prefix in ("planet_use", "planet_claim"):
+        if not curr_info.get(f"{prefix}_observed", False):
+            continue
+        if curr_info.get(f"{prefix}_played_hand", False):
+            components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
+        main_match = curr_info.get(f"{prefix}_main_hand_match", False)
+        if main_match:
+            components["planet_match_bonus"] += PLANET_MATCH_BONUS
+        else:
+            if prefix == "planet_use" and config.planet_unmatched_use_penalty_coeff > 0.0:
+                components["planet_unmatched_use_penalty"] -= config.planet_unmatched_use_penalty_coeff
+            elif prefix == "planet_claim" and config.planet_unmatched_claim_penalty_coeff > 0.0:
+                components["planet_unmatched_claim_penalty"] -= config.planet_unmatched_claim_penalty_coeff
+
+
+def _build_curve_weight(joker: dict, ante: int) -> float:
+    """Ante-phase fit of a joker's scoring profile, in [0, 1].
+
+    Desired curve: chip scaling carries antes 1-3, additive mult is online by
+    ante 4, xmult is the ante-6+ engine that is welcome at any earlier point.
+    A joker with several profiles takes the best one (chips+mult is good early
+    via chips AND good late via mult). Economy/utility jokers score 0 — this
+    component only shapes the scoring curve.
+    """
+    key = str(joker.get("key", ""))
+    weights = [0.0]
+    x_mult = float(joker.get("x_mult", 1.0) or 1.0)
+    if x_mult > 1.0 or joker.get("is_scaling_xmult", False) or key in _XMULT_PROFILE_JOKER_KEYS:
+        weights.append(1.0)
+    # Retriggers amplify whatever the build already scores — phase-neutral,
+    # full weight at any ante (they are top-priority pickups).
+    if joker.get("is_retrigger", False) or key in _RETRIGGER_JOKER_KEYS:
+        weights.append(1.0)
+    if float(joker.get("t_chips", 0) or 0) > 0.0 or key in _CHIPS_PROFILE_JOKER_KEYS:
+        weights.append(1.0 if ante <= 3 else (0.5 if ante <= 5 else 0.25))
+    if (
+        float(joker.get("mult", 0) or 0) + float(joker.get("t_mult", 0) or 0) > 0.0
+        or key in _MULT_PROFILE_JOKER_KEYS
+    ):
+        weights.append(1.0 if ante >= 4 else 0.5)
+    return max(weights)
+
+
+def _acquired_jokers(prev_info: dict, curr_info: dict) -> list[dict]:
+    """Joker summaries present in curr_info but not prev_info (multiset by key)."""
+    prev_counts: dict[str, int] = {}
+    for joker in prev_info.get("joker_details", ()):
+        if isinstance(joker, dict):
+            key = str(joker.get("key", ""))
+            prev_counts[key] = prev_counts.get(key, 0) + 1
+    acquired: list[dict] = []
+    for joker in curr_info.get("joker_details", ()):
+        if not isinstance(joker, dict):
+            continue
+        key = str(joker.get("key", ""))
+        if prev_counts.get(key, 0) > 0:
+            prev_counts[key] -= 1
+        else:
+            acquired.append(joker)
+    return acquired
+
+
+def _apply_build_curve_rewards(
+    prev_info: dict,
+    curr_info: dict,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    """Bonus for each joker acquired this step, weighted by ante-phase fit.
+
+    Acquisitions are detected by diffing joker_details between steps, so shop
+    buys, buffoon-pack claims, and tarot-created jokers all count. Positive-only
+    by design: a mistimed profile earns less, never a penalty.
+    """
+    ante = max(int(curr_info.get("ante", 1) or 1), 1)
+    for joker in _acquired_jokers(prev_info, curr_info):
+        weight = _build_curve_weight(joker, ante)
+        if weight > 0.0:
+            components["build_curve_bonus"] += config.build_curve_coeff * weight
+
+
 def default_reward_components(
     state: RunState,
     prev_info: dict,
@@ -599,14 +859,82 @@ def default_reward_components(
         # Store in raw component units because this terminal exit path applies
         # REWARD_SCALE (and only REWARD_SCALE — not dense_reward_scale) to every
         # component, leaving the terminal value at its supervised scale.
-        components["terminal"] += pretraining_outcome_value(
-            won=won,
-            ante=death_ante,
-            win_ante=win_ante,
-            stalled=bool(curr_info.get("stalled", False)),
-        ) / REWARD_SCALE
+        if config.enable_potential_shaping:
+            outcome_fn = v2_outcome_value
+            # Use the env's win_ante for the potential normalization.
+            pot_config = RewardConfig(
+                enable_potential_shaping=True,
+                gamma=config.gamma,
+                potential_w_blind=config.potential_w_blind,
+                potential_w_ante=config.potential_w_ante,
+                potential_win_ante=win_ante,
+            )
+            # Terminal potential Phi(s') = 0; pay the final shaping transition.
+            curr_info_terminal = dict(curr_info)
+            curr_info_terminal["_potential_terminal"] = True
+            components["potential_shaping"] += potential_shaping_reward(
+                prev_info, curr_info_terminal, pot_config
+            )
+            components["terminal"] += outcome_fn(
+                won=won,
+                ante=death_ante,
+                win_ante=win_ante,
+                stalled=bool(curr_info.get("stalled", False)),
+            ) / REWARD_SCALE
+        else:
+            components["terminal"] += pretraining_outcome_value(
+                won=won,
+                ante=death_ante,
+                win_ante=win_ante,
+                stalled=bool(curr_info.get("stalled", False)),
+            ) / REWARD_SCALE
         for key in components:
             components[key] *= REWARD_SCALE
+        components["total"] = sum(components.values())
+        return components
+
+    # ── Phase 2 potential-based shaping path ──
+    # When enabled, replace all killed heuristic-agreement shaping with a single
+    # policy-invariant potential term F(s,s') = gamma*Phi(s') - Phi(s), plus the
+    # small idle_penalty. Every prescriptive component is skipped.
+    if config.enable_potential_shaping:
+        win_ante = int(getattr(state, "win_ante", config.potential_win_ante) or config.potential_win_ante)
+        pot_config = RewardConfig(
+            enable_potential_shaping=True,
+            gamma=config.gamma,
+            potential_w_blind=config.potential_w_blind,
+            potential_w_ante=config.potential_w_ante,
+            potential_win_ante=win_ante,
+        )
+        components["potential_shaping"] += potential_shaping_reward(prev_info, curr_info, pot_config)
+
+        # Planet-alignment shaping is the one prescriptive component that can be
+        # re-enabled on top of v2 (planet_match_shaping): the sparse win signal
+        # cannot credit-assign which planet to level. Bounded per-event, scaled
+        # by dense_scale below like idle_penalty.
+        if config.enable_planet_match_rewards:
+            _apply_planet_match_rewards(curr_info, config, components)
+
+        # Build-curve shaping: same rationale — which joker profile to buy at
+        # which ante is invisible to the sparse win signal. Bounded per
+        # acquisition, scaled by dense_scale below like idle_penalty.
+        if config.enable_build_curve_rewards:
+            _apply_build_curve_rewards(prev_info, curr_info, config, components)
+
+        if not curr_info.get("progress_made", False):
+            idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
+            idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
+            idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
+            components["idle_penalty"] -= idle_penalty
+
+        # potential_shaping is scaled by REWARD_SCALE only — the same factor the
+        # terminal exit path applies — so the telescoping sum stays exact for any
+        # dense_reward_scale. Scaling the potential term differently across steps
+        # would leave a per-step residual that breaks the policy-invariance
+        # guarantee (the entire point of potential-based shaping).
+        dense_scale = REWARD_SCALE * config.dense_reward_scale
+        for key in components:
+            components[key] *= REWARD_SCALE if key == "potential_shaping" else dense_scale
         components["total"] = sum(components.values())
         return components
 
@@ -670,19 +998,11 @@ def default_reward_components(
     # Optional penalties for *unmatched* planet engagement are layered on top
     # (default coeff 0.0 so they are off unless explicitly enabled).
     if config.enable_planet_match_rewards:
-        for prefix in ("planet_use", "planet_claim"):
-            if not curr_info.get(f"{prefix}_observed", False):
-                continue
-            if curr_info.get(f"{prefix}_played_hand", False):
-                components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
-            main_match = curr_info.get(f"{prefix}_main_hand_match", False)
-            if main_match:
-                components["planet_match_bonus"] += PLANET_MATCH_BONUS
-            else:
-                if prefix == "planet_use" and config.planet_unmatched_use_penalty_coeff > 0.0:
-                    components["planet_unmatched_use_penalty"] -= config.planet_unmatched_use_penalty_coeff
-                elif prefix == "planet_claim" and config.planet_unmatched_claim_penalty_coeff > 0.0:
-                    components["planet_unmatched_claim_penalty"] -= config.planet_unmatched_claim_penalty_coeff
+        _apply_planet_match_rewards(curr_info, config, components)
+
+    # Build-curve bonus (off by default): joker scoring profile vs ante phase.
+    if config.enable_build_curve_rewards:
+        _apply_build_curve_rewards(prev_info, curr_info, config, components)
 
     # Strategic shop/build/economy shaping is active only when the step info
     # carries the build features (real env / training rollouts). When active it

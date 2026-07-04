@@ -21,7 +21,7 @@ class RolloutBuffer:
         self,
         num_envs: int,
         rollout_length: int,
-        gamma: float = 0.995,
+        gamma: float = 0.99,
         gae_lambda: float = 0.95,
     ) -> None:
         self.num_envs = num_envs
@@ -271,4 +271,14 @@ class RolloutBuffer:
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
             valid.append(self.advantages[start:start + n])
+        return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
+
+    @property
+    def _flat_values(self) -> np.ndarray:
+        """Valid-step value predictions, aligned index-for-index with _flat_returns."""
+        valid = []
+        for env_idx in range(self.num_envs):
+            start = env_idx * self.rollout_length
+            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
+            valid.append(self.values[start:start + n])
         return np.concatenate(valid) if valid else np.array([], dtype=np.float32)

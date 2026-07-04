@@ -36,7 +36,7 @@ _ACTION_ID_TO_TYPE = tuple(decode_action(action_id).action_type.value for action
 class SupervisedConfig:
     num_games: int = 10000
     batch_size: int = 256
-    gamma: float = 0.995
+    gamma: float = 0.99  # Phase 5.3: must match the PPO gamma of the next phase so value targets are calibrated
     lr: float = 3e-4
     weight_decay: float = 0.01
     warmup_steps: int = 1000
@@ -44,7 +44,16 @@ class SupervisedConfig:
     value_loss_coeff: float = 0.5
     action_entropy_coeff: float = 0.001
     num_workers: int = 0  # 0 = auto-detect (all available cores)
-    min_ante: int = 5
+    min_ante: int = 1  # Phase 5: was 5; hard outcome filtering creates survivorship bias
+    # Phase 5: outcome weighting replaces hard filtering. Every game is kept;
+    # per-record BC loss weight w = exp(beta * normalized_outcome), clamped to
+    # [bc_weight_min, bc_weight_max]. This tilts imitation toward successful
+    # trajectories (AWR-style) while preserving full state coverage, including
+    # the recovery states PPO visits. Applied to the BC NLL only, never to
+    # value/win/survival losses (else the critic inherits the optimism bias).
+    outcome_weight_beta: float = 1.5
+    bc_weight_min: float = 0.25
+    bc_weight_max: float = 4.0
     # Fraction of below-threshold games to keep in the training set,
     # used to break the survivorship bias of filtering exclusively for
     # successful runs (which left the model unable to recognize the
@@ -56,6 +65,12 @@ class SupervisedConfig:
     log_dir: str = "runs/supervised"
     log_interval: int = 10
     device: str = "cpu"
+    # Mixture weight on the autoregressive hand/discard head during BC. BC is
+    # the only phase with dense, cheap labels for the AR head; at 0.5 the AR
+    # component receives strong gradient on every hand-play label, including
+    # the ~6% of teacher plays the candidate head can never match (those rows
+    # now train the AR head exclusively). At PPO time this drops to 0.1.
+    hand_ar_mixture_eps: float = 0.5
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -118,6 +133,9 @@ def train_supervised(
     vocab = build_vocab(data)
     if agent_config is None:
         agent_config = AgentConfig()
+    # Apply the BC-phase mixture weight so the AR head trains alongside the
+    # candidate head on every label (Phase 1.2).
+    agent_config.hand_ar_mixture_eps = config.hand_ar_mixture_eps
 
     from torch.utils.tensorboard import SummaryWriter
 
@@ -210,7 +228,7 @@ def train_supervised(
             batch_idx = indices[batch_start:batch_end]
             batch_records = [records[i] for i in batch_idx]
 
-            batch = _collate_batch(batch_records, device)
+            batch = _collate_batch(batch_records, device, config=config)
             dist, value_dict = _grammar_distribution(model, batch)
 
             # Action loss: behavior-cloning NLL over legal actions only.
@@ -219,7 +237,32 @@ def train_supervised(
             # class. In this action space that pushes rarely-valid heads
             # (notably hand-targeted consumables) to extreme negative logits
             # before PPO ever gets a chance to explore them.
-            action_loss = -dist.log_prob(batch["actions"]).mean()
+            # Phase 5: outcome-weighted BC NLL. The weight tilts imitation toward
+            # successful trajectories while preserving full state coverage. Applied
+            # to the action loss ONLY — value/win/survival losses use unweighted
+            # targets so the critic stays unbiased.
+            bc_weights = batch["bc_weight"]
+            logp = dist.log_prob(batch["actions"])
+            with torch.no_grad():
+                # Fraction of BC labels at the -1e8 grammar-unreachable floor.
+                # These rows contribute a constant to the loss with zero useful
+                # gradient (the -1e8 floor), and historically inflated
+                # train/action_loss to ~6e6 while crushing healthy-row gradients
+                # under clip_grad_norm. PPO's distill path already masks these;
+                # supervised BC did not, which is why the poisoning was invisible
+                # except through the absurd loss magnitude. Phase 1's mixture
+                # makes this 0.0 by construction.
+                unreachable_label_fraction = (logp < -1e7).float().mean()
+            if config.hand_ar_mixture_eps > 0.0 and unreachable_label_fraction.item() > 0.0:
+                # Phase 1.2 safety gate: with the AR mixture on, every legal label
+                # must have finite log_prob. A nonzero fraction means the mixture
+                # has a support bug (or a label is illegal under its own mask).
+                raise RuntimeError(
+                    f"{unreachable_label_fraction.item():.4f} of BC labels are at the "
+                    f"-1e8 unreachable floor despite hand_ar_mixture_eps="
+                    f"{config.hand_ar_mixture_eps} — the mixture has a support bug."
+                )
+            action_loss = -(logp * bc_weights).sum() / bc_weights.sum().clamp(min=1e-6)
 
             # Value loss: BCE on win prediction + MSE on expected_score
             win_loss = F.binary_cross_entropy(
@@ -286,6 +329,7 @@ def train_supervised(
                 writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean(), global_step)
                 writer.add_scalar("train/expected_score_mean", value_dict["expected_score"].mean(), global_step)
                 writer.add_scalar("train/survival_loss", survival_loss, global_step)
+                writer.add_scalar("train/unreachable_label_fraction", unreachable_label_fraction, global_step)
 
             global_step += 1
 
@@ -315,7 +359,16 @@ def train_supervised(
     return model
 
 
-def _collate_batch(records: list[dict], device: torch.device) -> dict[str, torch.Tensor]:
+def _collate_batch(
+    records: list[dict], device: torch.device, config: SupervisedConfig | None = None
+) -> dict[str, torch.Tensor]:
+    if config is None:
+        # Default config for backward-compat callers (weight=1 for all).
+        bc_weights = np.ones(len(records), dtype=np.float32)
+    else:
+        bc_weights = np.array(
+            [_outcome_weight(r, config) for r in records], dtype=np.float32
+        )
     return {
         "tokens": torch.tensor(
             np.array([r["obs"]["tokens"] for r in records]), dtype=torch.long, device=device,
@@ -359,7 +412,28 @@ def _collate_batch(records: list[dict], device: torch.device) -> dict[str, torch
             np.array([_survival_target(r)[1] for r in records]),
             dtype=torch.float32, device=device,
         ),
+        "bc_weight": torch.tensor(bc_weights, dtype=torch.float32, device=device),
     }
+
+
+def _outcome_weight(record: dict, config: SupervisedConfig) -> float:
+    """AWR-style outcome weight: w = exp(beta * normalized_outcome), clamped.
+
+    normalized_outcome maps pretraining_outcome_value to [0, 1]. Applied to the
+    BC NLL only — never to value/win/survival targets — so the critic stays
+    unbiased while imitation tilts toward successful trajectories.
+    """
+    import math
+
+    won = bool(record.get("won", False))
+    max_ante = int(record.get("max_ante", 1))
+    outcome = pretraining_outcome_value(won=won, ante=max_ante)
+    min_outcome = pretraining_outcome_value(won=False, ante=1, stalled=True)
+    max_outcome = pretraining_outcome_value(won=True, ante=1)
+    span = max(max_outcome - min_outcome, 1e-6)
+    normalized = (outcome - min_outcome) / span
+    weight = math.exp(config.outcome_weight_beta * normalized)
+    return max(config.bc_weight_min, min(config.bc_weight_max, weight))
 
 
 def _survival_target(record: dict) -> tuple[np.ndarray, np.ndarray]:

@@ -28,6 +28,11 @@ class AgentConfig:
     d_ff: int = 1536
     dropout: float = 0.1
     max_seq_len: int = MAX_SEQ_LEN
+    # Mixture weight on the autoregressive hand/discard head. 0.0 reproduces
+    # the historical candidate-only support exactly. >0 gives the policy full
+    # support over every legal hand play (Phase 1). Set per phase: 0.5 during
+    # supervised BC (dense cheap labels train the AR head), 0.1 during PPO.
+    hand_ar_mixture_eps: float = 0.0
 
 
 class BalatroAgent(nn.Module):
@@ -110,18 +115,32 @@ class BalatroAgent(nn.Module):
         attention_mask: torch.Tensor,
         action_mask: torch.Tensor,
         temperature: float = 1.0,
+        hand_ar_mixture_eps: float | None = None,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
         """Return the structured action-grammar distribution and value head output.
 
         This is the training/rollout path. The legacy ``forward`` method still
         returns dense flat logits for compatibility tests and old callers.
+
+        ``hand_ar_mixture_eps`` overrides ``self.config.hand_ar_mixture_eps`` for
+        this call when set; ``None`` uses the config default.
         """
+        eps = self.config.hand_ar_mixture_eps if hand_ar_mixture_eps is None else hand_ar_mixture_eps
         x = self.embedding(tokens, token_types, scalars)
         padding_mask = (attention_mask == 0)
         x = self.backbone(x, padding_mask=padding_mask)
         grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
         value_dict = self.value_head(x, attention_mask)
-        return ActionGrammarDistribution(grammar_output, action_mask, temperature=temperature, tokens=tokens), value_dict
+        return (
+            ActionGrammarDistribution(
+                grammar_output,
+                action_mask,
+                temperature=temperature,
+                tokens=tokens,
+                hand_ar_mixture_eps=eps,
+            ),
+            value_dict,
+        )
 
     def _compute_logits(
         self,

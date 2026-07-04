@@ -17,6 +17,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import time
 
@@ -74,12 +75,172 @@ def main() -> None:
     parser.add_argument("--n-layers", type=int, default=12, help="Transformer layers (default: 12).")
     parser.add_argument("--n-heads", type=int, default=8, help="Transformer heads (default: 8).")
     parser.add_argument("--d-ff", type=int, default=1536, help="Transformer feed-forward dim (default: 1536).")
+    parser.add_argument(
+        "--fixed-seeds",
+        action="store_true",
+        help=(
+            "Evaluate on the versioned EVAL_SEEDS_V1 list (400 fixed seeds) and "
+            "persist per-seed outcomes to a JSON/CSV next to the checkpoint. This "
+            "enables paired comparisons against any other policy evaluated on the "
+            "same seeds, reducing the variance of the win-rate difference by an "
+            "order of magnitude vs unpaired eval."
+        ),
+    )
+    parser.add_argument(
+        "--heuristic-baseline",
+        action="store_true",
+        help=(
+            "Evaluate the heuristic teacher on the fixed seed list (requires "
+            "--fixed-seeds). Produces the baseline every learned checkpoint must beat."
+        ),
+    )
+    parser.add_argument(
+        "--paired-outcomes",
+        type=str,
+        default=None,
+        help=(
+            "Path to a per-seed outcomes JSON (produced by a prior --fixed-seeds run) "
+            "to compare against. Reports the win-rate delta with a McNemar test and a "
+            "paired-bootstrap 95%% confidence interval. Requires --fixed-seeds."
+        ),
+    )
+    parser.add_argument(
+        "--outcomes-path",
+        type=str,
+        default=None,
+        help=(
+            "Where to persist the per-seed outcomes JSON when --fixed-seeds is set. "
+            "Defaults to <checkpoint>.outcomes.json next to the checkpoint."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.paired_outcomes is not None and not args.fixed_seeds:
+        parser.error("--paired-outcomes requires --fixed-seeds.")
+    if args.heuristic_baseline and not args.fixed_seeds:
+        parser.error("--heuristic-baseline requires --fixed-seeds.")
 
     load_device = _resolve_device(args.device)
     eval_device = _resolve_device(args.eval_device or args.device)
 
     from pylatro import load_game_data
+
+    data = load_game_data()
+
+    # === Fixed-seed paired-eval path ===
+    if args.fixed_seeds:
+        from pylatro_agent.eval import (
+            EVAL_SEEDS_V1,
+            evaluate_heuristic_on_seeds,
+            evaluate_on_seeds,
+            load_outcomes,
+            paired_win_rate_delta,
+            save_outcomes,
+        )
+        from pylatro_agent.vocab import build_vocab
+
+        vocab = build_vocab(data)
+        seeds = EVAL_SEEDS_V1[: args.games]
+        logger.info(
+            "Fixed-seed eval: %d seeds (EVAL_SEEDS_V1), win_ante=%s, stake=%d, temperature=%.3f",
+            len(seeds),
+            args.win_ante,
+            args.stake,
+            args.rollout_temperature,
+        )
+        start = time.time()
+
+        if args.heuristic_baseline:
+            outcomes = evaluate_heuristic_on_seeds(
+                data,
+                vocab,
+                seeds,
+                max_no_progress_steps=args.max_idle_steps,
+                win_ante=args.win_ante,
+                stake=args.stake,
+            )
+            label = "heuristic"
+        else:
+            import torch
+
+            from pylatro_agent.agent import AgentConfig, BalatroAgent
+            from pylatro_agent.checkpoint import load_checkpoint_payload
+
+            logger.info("Loading checkpoint: %s", args.checkpoint)
+            payload = load_checkpoint_payload(args.checkpoint, load_device)
+            saved_agent_config = payload.get("agent_config") if isinstance(payload, dict) else None
+            agent_config = AgentConfig(
+                d_model=args.d_model,
+                n_layers=args.n_layers,
+                n_heads=args.n_heads,
+                d_ff=args.d_ff,
+            )
+            if saved_agent_config:
+                with contextlib.suppress(TypeError):
+                    agent_config = AgentConfig(**saved_agent_config)
+            device = torch.device(eval_device)
+            model = BalatroAgent(agent_config, vocab).to(device)
+            model_state = model.state_dict()
+            state_dict = payload["state_dict"] if isinstance(payload, dict) else payload
+            if any(k.startswith("module.") for k in state_dict) and not any(
+                k.startswith("module.") for k in model_state
+            ):
+                state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+            compatible = {
+                k: v for k, v in state_dict.items() if k in model_state and model_state[k].shape == v.shape
+            }
+            model.load_state_dict(compatible, strict=False)
+            label = args.checkpoint
+            outcomes = evaluate_on_seeds(
+                model,
+                data,
+                vocab,
+                seeds,
+                device,
+                max_no_progress_steps=args.max_idle_steps,
+                win_ante=args.win_ante,
+                temperature=args.rollout_temperature,
+                stake=args.stake,
+            )
+
+        elapsed = time.time() - start
+        win_rate = sum(o.won_int for o in outcomes) / max(len(outcomes), 1)
+
+        outcomes_path = args.outcomes_path or f"{args.checkpoint}.outcomes.json"
+        if args.heuristic_baseline:
+            outcomes_path = args.outcomes_path or "heuristic.outcomes.json"
+        saved = save_outcomes(outcomes, outcomes_path)
+        logger.info("Persisted %d per-seed outcomes to %s", len(outcomes), saved)
+
+        print(
+            f"\nlabel={label}\n"
+            f"seeds={len(outcomes)}  win_rate={win_rate:.4f}  "
+            f"wins={sum(o.won_int for o in outcomes)}/{len(outcomes)}  "
+            f"elapsed={elapsed:.1f}s  device={eval_device}\n"
+            f"win_ante={args.win_ante}  temperature={args.rollout_temperature}  stake={args.stake}\n"
+            f"outcomes={outcomes_path}"
+        )
+
+        if args.paired_outcomes is not None:
+            other = load_outcomes(args.paired_outcomes)
+            delta = paired_win_rate_delta(outcomes, other)
+            winner = "A(checkpoint)" if delta.delta >= 0 else "B(reference)"
+            print(
+                f"\n--- Paired comparison (this vs {args.paired_outcomes}) ---\n"
+                f"win_rate this   = {delta.win_rate_a:.4f}\n"
+                f"win_rate ref    = {delta.win_rate_b:.4f}\n"
+                f"delta           = {delta.delta:+.4f}  (favoring {winner})\n"
+                f"n_shared_seeds  = {delta.n_seeds}\n"
+                f"discordant      = b(A-only-win)={delta.discordant_b}  c(B-only-win)={delta.discordant_c}\n"
+                f"McNemar p-value = {delta.mcnemar_pvalue:.5f}\n"
+                f"bootstrap mean  = {delta.bootstrap_mean:+.4f}\n"
+                f"95% CI          = [{delta.bootstrap_ci_low:+.4f}, {delta.bootstrap_ci_high:+.4f}]\n"
+                f"CI excludes 0   = {delta.excludes_zero_at(0.95)}"
+            )
+        return
+
+    # === Legacy unpaired path (unchanged) ===
+
     from pylatro_agent.agent import AgentConfig, BalatroAgent
     from pylatro_agent.checkpoint import load_checkpoint_payload
     from pylatro_agent.training.ppo import evaluate_model

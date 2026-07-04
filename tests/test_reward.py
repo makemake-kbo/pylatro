@@ -1071,3 +1071,275 @@ def test_config_flags_independent() -> None:
 
     assert result["hand_top1_bonus"] == 0.0
     assert result["blind_clear"] > 0
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 2: potential-based shaping + PPO_V2_REWARD_CONFIG
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_state_potential_is_bounded_and_monotone():
+    from pylatro_agent.reward import state_potential
+
+    cfg = RewardConfig(enable_potential_shaping=True, potential_w_blind=0.5, potential_w_ante=2.0, potential_win_ante=8)
+
+    # Early game: ante 1, small blind, no score.
+    early = {"ante": 1, "round_score": 0, "blind_target": 300, "blind_on_deck": "small"}
+    phi_early = state_potential(early, cfg)
+    assert phi_early >= 0.0
+    assert phi_early < 0.01  # ~0 at start
+
+    # Mid-game progress: ante 3, big blind, half score.
+    mid = {"ante": 3, "round_score": 150, "blind_target": 300, "blind_on_deck": "big"}
+    phi_mid = state_potential(mid, cfg)
+    assert phi_mid > phi_early  # monotone
+
+    # Late game: ante 7, boss blind, full score.
+    late = {"ante": 7, "round_score": 300, "blind_target": 300, "blind_on_deck": "boss"}
+    phi_late = state_potential(late, cfg)
+    assert phi_late > phi_mid
+    # Bounded by w_blind + w_ante.
+    assert phi_late <= 0.5 + 2.0 + 1e-6
+
+
+def test_potential_shaping_telescopes_to_terminal():
+    """For any trajectory, sum_t gamma^t * F(s_t, s_{t+1}) = -Phi(s_0).
+
+    This is the defining property of potential-based shaping (Ng et al. 1999)
+    with Phi(terminal) = 0. It catches off-by-one on gamma, missing terminal
+    handling, and one-sided clipping.
+    """
+    from pylatro_agent.reward import potential_shaping_reward, state_potential
+
+    gamma = 0.99
+    cfg = RewardConfig(
+        enable_potential_shaping=True,
+        gamma=gamma,
+        potential_w_blind=0.5,
+        potential_w_ante=2.0,
+        potential_win_ante=8,
+    )
+
+    # Simulated trajectory of info dicts with varying progress.
+    infos = [
+        {"ante": 1, "round_score": 0, "blind_target": 300, "blind_on_deck": "small"},
+        {"ante": 1, "round_score": 100, "blind_target": 300, "blind_on_deck": "small"},
+        {"ante": 1, "round_score": 300, "blind_target": 300, "blind_on_deck": "small"},
+        {"ante": 2, "round_score": 0, "blind_target": 400, "blind_on_deck": "big"},
+        {"ante": 3, "round_score": 0, "blind_target": 500, "blind_on_deck": "boss"},
+    ]
+    # Terminal: Phi(s') = 0.
+    terminal_info = {"ante": 3, "round_score": 0, "blind_target": 500, "blind_on_deck": "boss"}
+    terminal_info["_potential_terminal"] = True
+
+    discounted_sum = 0.0
+    for t in range(len(infos) - 1):
+        f = potential_shaping_reward(infos[t], infos[t + 1], cfg)
+        discounted_sum += (gamma ** t) * f
+    # Final transition to terminal.
+    f_terminal = potential_shaping_reward(infos[-1], terminal_info, cfg)
+    discounted_sum += (gamma ** (len(infos) - 1)) * f_terminal
+
+    # Expected: gamma^T * Phi(terminal) - Phi(s_0) = 0 - Phi(s_0).
+    phi_0 = state_potential(infos[0], cfg)
+    assert abs(discounted_sum - (-phi_0)) < 1e-5, (
+        f"Telescoping failed: sum={discounted_sum}, expected={-phi_0}"
+    )
+
+
+def test_v2_reward_config_kills_prescriptive_and_uses_potential():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.997, win_ante=4)
+    assert cfg.enable_potential_shaping is True
+    assert cfg.gamma == 0.997
+    assert cfg.potential_win_ante == 4
+    # All prescriptive components killed.
+    assert cfg.enable_hand_candidate_rewards is False
+    assert cfg.enable_planet_match_rewards is False
+    assert cfg.enable_shop_strategy_rewards is False
+    assert cfg.enable_economy_strategy_rewards is False
+    assert cfg.enable_joker_context_rewards is False
+
+
+def test_v2_planet_match_shaping_reenables_planet_component_only():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(
+        gamma=0.99,
+        win_ante=4,
+        planet_match_shaping=True,
+        planet_unmatched_use_penalty_coeff=0.08,
+        planet_unmatched_claim_penalty_coeff=0.08,
+    )
+    assert cfg.enable_planet_match_rewards is True
+    assert cfg.planet_unmatched_use_penalty_coeff == 0.08
+    assert cfg.planet_unmatched_claim_penalty_coeff == 0.08
+    # Everything else stays killed; potential shaping stays on.
+    assert cfg.enable_potential_shaping is True
+    assert cfg.enable_hand_candidate_rewards is False
+    assert cfg.enable_shop_strategy_rewards is False
+    assert cfg.enable_economy_strategy_rewards is False
+    assert cfg.enable_joker_context_rewards is False
+
+    state = _dummy_state(ante=2, win_ante=4)
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400}
+    matched = {
+        "ante": 2,
+        "round_score": 0,
+        "blind_target": 400,
+        "progress_made": True,
+        "action_type": "use_consumable_no_target",
+        "planet_use_observed": True,
+        "planet_use_main_hand_match": True,
+    }
+    result = default_reward_components(state, prev, matched, terminated=False, won=False, config=cfg)
+    assert result["planet_match_bonus"] == pytest.approx(PLANET_MATCH_BONUS * REWARD_SCALE)
+
+    unmatched = dict(matched, planet_use_main_hand_match=False)
+    result = default_reward_components(state, prev, unmatched, terminated=False, won=False, config=cfg)
+    assert result["planet_match_bonus"] == pytest.approx(0.0)
+    assert result["planet_unmatched_use_penalty"] == pytest.approx(-0.08 * REWARD_SCALE)
+
+
+def test_v2_default_keeps_planet_match_shaping_off():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=4)
+    assert cfg.enable_planet_match_rewards is False
+    assert cfg.planet_unmatched_use_penalty_coeff == 0.0
+    assert cfg.planet_unmatched_claim_penalty_coeff == 0.0
+
+
+def test_v2_build_curve_shaping_rewards_phase_fit_jokers():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    assert cfg.enable_build_curve_rewards is True
+    # Everything else stays killed; potential shaping stays on.
+    assert cfg.enable_potential_shaping is True
+    assert cfg.enable_shop_strategy_rewards is False
+    assert cfg.enable_joker_context_rewards is False
+
+    coeff = cfg.build_curve_coeff
+
+    def acquire(joker, ante):
+        state = _dummy_state(ante=ante, win_ante=8)
+        prev = {"ante": ante, "round_score": 0, "blind_target": 400, "joker_details": ()}
+        curr = {
+            "ante": ante,
+            "round_score": 0,
+            "blind_target": 400,
+            "progress_made": True,
+            "action_type": "shop_buy",
+            "joker_details": (joker,),
+        }
+        return default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+
+    chip_joker = {"key": "j_chip", "t_chips": 30.0, "mult": 0.0, "t_mult": 0.0, "x_mult": 1.0}
+    mult_joker = {"key": "j_mult", "t_chips": 0.0, "mult": 4.0, "t_mult": 0.0, "x_mult": 1.0}
+    xmult_joker = {"key": "j_x", "t_chips": 0.0, "mult": 0.0, "t_mult": 0.0, "x_mult": 3.0}
+    econ_joker = {"key": "j_econ", "t_chips": 0.0, "mult": 0.0, "t_mult": 0.0, "x_mult": 1.0}
+
+    # Chips: full weight early (antes 1-3), fading afterwards.
+    assert acquire(chip_joker, 2)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
+    assert acquire(chip_joker, 5)["build_curve_bonus"] == pytest.approx(0.5 * coeff * REWARD_SCALE)
+    assert acquire(chip_joker, 7)["build_curve_bonus"] == pytest.approx(0.25 * coeff * REWARD_SCALE)
+    # Mult: half weight before ante 4, full weight from ante 4.
+    assert acquire(mult_joker, 2)["build_curve_bonus"] == pytest.approx(0.5 * coeff * REWARD_SCALE)
+    assert acquire(mult_joker, 4)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
+    # Xmult: full weight at any ante (earlier is better, never discounted).
+    assert acquire(xmult_joker, 1)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
+    assert acquire(xmult_joker, 7)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
+    # Economy/utility jokers earn nothing from this component.
+    assert acquire(econ_joker, 2)["build_curve_bonus"] == pytest.approx(0.0)
+
+
+def test_v2_build_curve_off_by_default_and_requires_acquisition():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg_off = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8)
+    assert cfg_off.enable_build_curve_rewards is False
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    state = _dummy_state(ante=2, win_ante=8)
+    joker = {"key": "j_x", "x_mult": 3.0}
+    # Same joker on both sides of the step: no acquisition, no bonus.
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400, "joker_details": (joker,)}
+    curr = dict(prev, progress_made=True, action_type="play_subset")
+    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+    assert result["build_curve_bonus"] == pytest.approx(0.0)
+
+
+def test_v2_reward_terminal_dominates_return():
+    from pylatro_agent.reward import V2_WIN_VALUE, PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=4)
+    state = _dummy_state(ante=2, win_ante=4)
+
+    # A win at ante 4 should have terminal = V2_WIN_VALUE (10.0).
+    prev = {"ante": 4, "round_score": 0, "blind_target": 300}
+    curr = {"ante": 4, "round_score": 0, "blind_target": 300}
+    result = default_reward_components(state, prev, curr, terminated=True, won=True, config=cfg)
+    assert result["terminal"] == pytest.approx(V2_WIN_VALUE)
+
+    # The potential shaping on a terminal step should also be present (the
+    # final F(s, terminal) transition).
+    assert "potential_shaping" in result
+
+
+def test_v2_reward_no_prescriptive_components_on_dense_step():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8)
+    state = _dummy_state(ante=2)
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400, "blind_on_deck": "small"}
+    curr = {
+        "ante": 2,
+        "round_score": 200,
+        "blind_target": 400,
+        "blind_on_deck": "small",
+        "action_type": "play_subset",
+        "progress_made": True,
+        "hand_play_top1": True,
+        "hand_play_candidate_value_ratio": 1.0,
+        "hand_play_not_in_candidates": False,
+    }
+
+    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+    # All prescriptive components must be zero.
+    assert result["hand_top1_bonus"] == 0.0
+    assert result["hand_subset_bonus"] == 0.0
+    assert result["score_progress"] == 0.0
+    assert result["blind_clear"] == 0.0
+    # Potential shaping must be the only dense signal (plus possibly idle_penalty).
+    assert abs(result["potential_shaping"]) > 0 or abs(result["idle_penalty"]) > 0
+
+
+def test_v2_potential_shaping_invariant_to_dense_reward_scale():
+    """The potential term must carry the same scale on dense and terminal steps.
+
+    potential_shaping is deliberately scaled by REWARD_SCALE only (never
+    dense_reward_scale): scaling the potential differently across steps leaves a
+    per-step residual that breaks the telescoping sum and with it the
+    policy-invariance guarantee of potential-based shaping.
+    """
+    import dataclasses
+
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    state = _dummy_state(ante=2)
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400, "blind_on_deck": "small"}
+    curr = {"ante": 2, "round_score": 200, "blind_target": 400, "blind_on_deck": "small", "progress_made": True}
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8)
+    cfg_scaled = dataclasses.replace(cfg, dense_reward_scale=2.0)
+
+    dense = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+    dense_scaled = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg_scaled)
+    assert dense["potential_shaping"] != 0.0
+    assert dense_scaled["potential_shaping"] == pytest.approx(dense["potential_shaping"])
+
+    terminal = default_reward_components(state, prev, curr, terminated=True, won=False, config=cfg)
+    terminal_scaled = default_reward_components(state, prev, curr, terminated=True, won=False, config=cfg_scaled)
+    assert terminal_scaled["potential_shaping"] == pytest.approx(terminal["potential_shaping"])

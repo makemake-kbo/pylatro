@@ -116,7 +116,9 @@ def restore_rng_states(states: dict[str, Any]) -> None:
     if "numpy" in states:
         np.random.set_state(states["numpy"])
     if "torch_cpu" in states:
-        torch.set_rng_state(states["torch_cpu"])
+        # torch.load(map_location=device) may have moved the saved CPU state
+        # to an accelerator; set_rng_state requires a CPU ByteTensor.
+        torch.set_rng_state(states["torch_cpu"].to(device="cpu", dtype=torch.uint8))
     if "torch_cuda" in states and torch.cuda.is_available():
         torch.cuda.set_rng_state_all(states["torch_cuda"])
 

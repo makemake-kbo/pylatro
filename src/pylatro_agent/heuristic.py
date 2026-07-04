@@ -161,6 +161,81 @@ _RETRIGGER_JOKER_KEYS = frozenset(
     {"j_hanging_chad", "j_sock_and_buskin", "j_selzer", "j_mime", "j_dusk", "j_hack"}
 )
 
+# Scoring-profile key sets for jokers whose effect lives in per-joker code
+# rather than the numeric config fields (t_chips / mult / Xmult), so the
+# generic _joker_summary numerics cannot classify them. Used by the
+# build-curve reward shaping to place a joker on the chips → mult → xmult
+# curve. Jokers absent from all sets and without config numerics are
+# utility/economy and score no build-curve weight.
+_CHIPS_PROFILE_JOKER_KEYS = frozenset(
+    {
+        "j_arrowhead",      # +50 chips per scored spade
+        "j_banner",         # +30 chips per remaining discard
+        "j_blue_joker",     # +2 chips per card left in deck
+        "j_bull",           # +2 chips per dollar
+        "j_castle",         # chips grow per discarded card of the daily suit
+        "j_hiker",          # permanently grows played cards' chips
+        "j_ice_cream",      # +100 chips, melting -5 per hand
+        "j_odd_todd",       # +31 chips per odd rank
+        "j_runner",         # chips grow per straight played
+        "j_scary_face",     # +30 chips per face card
+        "j_scholar",        # +20 chips +4 mult per ace
+        "j_square",         # chips grow per 4-card hand played
+        "j_stone",          # +25 chips per stone card in deck
+        "j_stuntman",       # +250 chips, -2 hand size
+        "j_walkie_talkie",  # +10 chips +4 mult per 10 or 4
+        "j_wee",            # chips grow per scored 2
+    }
+)
+_MULT_PROFILE_JOKER_KEYS = frozenset(
+    {
+        "j_abstract",       # +3 mult per joker owned
+        "j_bootstraps",     # +2 mult per $5 owned
+        "j_erosion",        # +4 mult per card below starting deck size
+        "j_even_steven",    # +4 mult per even rank
+        "j_fibonacci",      # +8 mult per A/2/3/5/8
+        "j_flash",          # +2 mult per shop reroll
+        "j_fortune_teller", # +1 mult per tarot used
+        "j_gluttenous_joker",  # +3 mult per scored club
+        "j_greedy_joker",   # +3 mult per scored diamond
+        "j_green_joker",    # +1 mult per hand, -1 per discard
+        "j_gros_michel",    # +15 mult (may go extinct)
+        "j_half",           # +20 mult on hands of 3 or fewer cards
+        "j_lusty_joker",    # +3 mult per scored heart
+        "j_misprint",       # +0..23 random mult
+        "j_mystic_summit",  # +15 mult at 0 discards
+        "j_onyx_agate",     # +7 mult per scored club
+        "j_raised_fist",    # mult from lowest held rank
+        "j_red_card",       # +3 mult per pack skipped
+        "j_ride_the_bus",   # +1 mult per faceless consecutive hand
+        "j_shoot_the_moon", # +13 mult per queen held
+        "j_smiley",         # +5 mult per face card
+        "j_supernova",      # mult = times hand played
+        "j_trousers",       # +2 mult per two-pair played
+        "j_wrathful_joker", # +3 mult per scored spade
+    }
+)
+_XMULT_PROFILE_JOKER_KEYS = frozenset(
+    {
+        "j_acrobat",          # x3 on final hand
+        "j_baseball",         # x1.5 per uncommon joker
+        "j_blueprint",        # copies the joker to its right (phase-neutral amplifier)
+        "j_brainstorm",       # copies the leftmost joker (phase-neutral amplifier)
+        "j_caino",            # xmult per face card destroyed
+        "j_drivers_license",  # x3 with 16+ enhanced cards
+        "j_flower_pot",       # x3 with all four suits
+        "j_hit_the_road",     # xmult per jack discarded this round
+        "j_idol",             # x2 per scored copy of the idol card
+        "j_lucky_cat",        # xmult grows per lucky trigger
+        "j_madness",          # xmult grows per blind (destroys jokers)
+        "j_photograph",       # first face card x2
+        "j_seeing_double",    # x2 with club + other suit
+        "j_stencil",          # x1 per empty joker slot
+        "j_triboulet",        # kings/queens x2
+        "j_yorick",           # xmult after discards
+    }
+)
+
 
 class HeuristicAgent:
     _hand_cache_key: tuple

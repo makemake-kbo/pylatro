@@ -132,10 +132,37 @@ def _load_state_dict_into_model(model: nn.Module, state_dict: dict, checkpoint_p
         logger.warning("Checkpoint skipped %d incompatible params", len(skipped))
 
 
-def _load_checkpoint_compatible(model: nn.Module, checkpoint_path: str, device: torch.device) -> None:
-    """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift."""
+def _load_checkpoint_compatible(
+    model: nn.Module,
+    checkpoint_path: str,
+    device: torch.device,
+    *,
+    reinit_value_head: bool = False,
+) -> None:
+    """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift.
+
+    When ``reinit_value_head`` is set, the value head weights are *not* loaded —
+    they keep their random init. Use this after a reward-function change (Phase
+    2.4): a critic regressing returns from a deleted reward function produces
+    systematically wrong advantages until it re-converges, during which PPO can
+    destroy the BC policy. Reinitializing forces the critic to learn the new
+    return from scratch rather than unlearning a stale mapping.
+    """
     from ..checkpoint import load_checkpoint_payload
     state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
+    if reinit_value_head:
+        # Match both bare and DataParallel-prefixed keys — the module. prefix is
+        # only stripped later, inside _load_state_dict_into_model.
+        state_dict = {
+            k: v
+            for k, v in state_dict.items()
+            if not k.startswith(("value_head.", "module.value_head."))
+        }
+        logger.info(
+            "Reinitializing value head (reinit_value_head=True); %d tensors loaded, "
+            "value_head.* skipped.",
+            len(state_dict),
+        )
     _load_state_dict_into_model(model, state_dict, checkpoint_path)
 
 
@@ -223,13 +250,13 @@ class PPOConfig:
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.1  # PPO clip range; tighter than the usual 0.2
-    target_kl: float | None = 0.03
+    target_kl: float | None = 0.05  # Phase 4: raised from 0.03; chronic KL-stop means the step size is wrong, not the trust region
     # Optional trust-region diagnostic guards (do not stop training on their
     # own; they log ppo/stop_reason_* and emit console warnings when breached).
     target_kl_p95: float | None = None
     target_kl_max: float | None = None
     min_minibatch_fraction: float | None = None
-    entropy_coeff: float = 0.001
+    entropy_coeff: float = 0.01  # Phase 4: fixed at 0.01 (was 0.001); mixture eps is now the primary exploration mechanism
     adaptive_entropy: bool = False
     target_entropy: float = 0.15
     alpha_lr: float = 1e-2
@@ -239,7 +266,7 @@ class PPOConfig:
     action_type_entropy_scale: float = 0.0
     value_loss_coeff: float = 0.25
     max_grad_norm: float = 0.5
-    lr: float = 1e-4
+    lr: float = 5e-5  # Phase 4: lowered from 1e-4; chronic KL-stop at lr=1e-4 means the step size was too large
     device: str = "cpu"
     save_dir: str = "checkpoints/ppo"
     log_dir: str = "runs/ppo"
@@ -278,7 +305,7 @@ class PPOConfig:
     # frozen-reference KL anchor — denser per-state supervision and no extra
     # forward pass through a second model.
     heuristic_distill_coeff: float = 0.3
-    heuristic_distill_min: float = 0.03
+    heuristic_distill_min: float = 0.0  # Phase 4: was 0.03; a nonzero floor anchors the policy to the heuristic forever
     # During curriculum smoke/training, execute the heuristic action with this
     # probability when the env exposes one. The transition still stores the
     # policy log-prob of that action, so PPO and distillation both train on the
@@ -300,7 +327,7 @@ class PPOConfig:
     # PPO consistent — old_log_probs and new_log_probs are computed under the same
     # distribution — while letting the agent take competent actions in rollouts. Set to 1.0
     # to disable; lower for more deterministic behavior.
-    rollout_temperature: float = 0.7
+    rollout_temperature: float = 1.0  # Phase 4: was 0.7; the sharpening crutch now only suppresses exploration post-Phase-1 BC
     # Weight on the ante_survival auxiliary BCE loss. Small by default —
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
@@ -312,9 +339,13 @@ class PPOConfig:
     dagger_bc_coeff: float = 1.0
     dagger_bc_lr_mult: float = 1.0
     # When True, the critic loss is included in the main backward pass so
-    # value gradients flow through the shared trunk. The default (False)
-    # isolates critic gradients to the value head only via autograd.grad.
-    critic_updates_trunk: bool = False
+    # value gradients flow through the shared trunk (the PPO default for
+    # shared-backbone models). Phase 3.1 flips this from False: with the flag
+    # off, a 2-layer ValueHead must fit returns from features it cannot
+    # influence, leaving ppo/value_loss stuck at 20-35 (RMSE ~5 on a ±10
+    # return scale). Value-gradient-through-trunk is controlled by
+    # value_loss_coeff=0.25 initially; halve it if policy KL becomes erratic.
+    critic_updates_trunk: bool = True
     # Linear decay schedule for heuristic distillation. When set, the
     # distill coefficient linearly decays from heuristic_distill_coeff
     # to heuristic_distill_min over this fraction of total training.
@@ -322,13 +353,40 @@ class PPOConfig:
     # Set to None to disable decay (keep constant distill weight).
     # To run a true no-teacher fine-tune phase, also set
     # heuristic_distill_min=0.0.
-    distill_decay_fraction: float | None = None
+    # Phase 4: distill decays to 0 over half of training (was constant with a 0.03
+    # floor). The teacher is a good warmup prior and a terrible ceiling.
+    distill_decay_fraction: float | None = 0.5
     # Optional reward shaping override. Threaded through BalatroEnv to
     # default_reward_components. Use PPO_SPARSE_CONFIG to ablate away
     # heuristic-derived dense components (hand-candidate top1/top3,
     # planet match, shop reroll, etc.) while keeping terminal and
     # progress signals. Defaults to None (DEFAULT_REWARD_CONFIG).
     reward_config: "RewardConfig | None" = None
+    # Fixed, versioned seed list for the in-training eval pass. Passing a
+    # stable list (pylatro_agent.eval.EVAL_SEEDS_V1) makes every checkpoint's
+    # eval reproducible and pairable across runs via the McNemar / paired
+    # bootstrap harness in pylatro_agent.eval. None preserves the historical
+    # 10000 + game_idx seeds.
+    eval_seeds: list[int] | None = None
+    # Mixture weight on the autoregressive hand/discard head (Phase 1). 0.0
+    # reproduces the historical candidate-only support; 0.1 (default for PPO)
+    # gives the policy full support over every legal hand play while keeping
+    # the candidate head dominant. The AR head is by this point a competent
+    # proposal distribution (trained at eps=0.5 during BC), not noise.
+    hand_ar_mixture_eps: float = 0.1
+    # Phase 3.2: frozen-policy critic warmup. For the first ``critic_warmup_updates``
+    # PPO updates, collect rollouts with the (sampling) policy but train *only*
+    # the critic (+survival head) on GAE returns; policy/distill/entropy losses
+    # are multiplied by 0. After a reward-function change, advantages are garbage
+    # until the critic tracks the new return distribution; warming it up
+    # on-policy removes the window in which PPO earnestly optimizes noise.
+    # Unfreezing is gated on explained_variance > critic_warmup_min_ev (0 = no gate).
+    critic_warmup_updates: int = 0
+    critic_warmup_min_ev: float = 0.7
+    # Phase 3.2: reinitialize the value head when loading a pretrained checkpoint.
+    # Required after any reward-function change so the critic doesn't start from a
+    # stale return mapping. Pair with critic_warmup_updates to warm the fresh head.
+    reinit_value_head: bool = False
 
 
 @dataclass
@@ -611,6 +669,7 @@ def _run_ppo_update(
     effective_batch_size: int,
     device: torch.device,
     use_pin_memory: bool,
+    policy_loss_scale: float = 1.0,
 ) -> _UpdateStats:
     """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
 
@@ -771,6 +830,9 @@ def _run_ppo_update(
                 * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
                 + distill_coeff * distill_loss
             )
+            # Phase 3.2: during critic warmup, freeze the policy (scale=0) so
+            # only the critic (+survival head) trains on the new reward's GAE.
+            policy_objective_loss = policy_objective_loss * policy_loss_scale
             critic_loss = config.value_loss_coeff * value_loss + config.survival_loss_coeff * survival_loss
 
             if config.critic_updates_trunk:
@@ -1064,6 +1126,23 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
             _safe_mean(terminal_vals) if terminal_vals else 0.0
         )
         writer.add_scalar("reward/dense_total_mean", dense_total_mean, update_count)
+
+    # Episode-level fraction of return magnitude contributed by the terminal
+    # outcome: abs(terminal_sum) / (abs(terminal_sum) + abs(dense_sum)). This is
+    # the quantity Phase 2 targets (> 0.5). Per-step means (logged above) cannot
+    # answer "how much of what the agent optimizes is winning", because terminal
+    # rewards fire on ~1 step while dense shaping fires on every step; the
+    # episode-level magnitude ratio is the correct measure. ~0.13 in recover_v3.
+    if total_vals and terminal_vals:
+        terminal_sum = float(np.sum(np.abs(terminal_vals)))
+        dense_sum = float(np.sum(np.abs(np.asarray(total_vals)))) - terminal_sum
+        denom = terminal_sum + dense_sum
+        if denom > 1e-9:
+            writer.add_scalar(
+                "reward/terminal_fraction_of_return",
+                terminal_sum / denom,
+                update_count,
+            )
 
     # Reward group totals — surface how much shaping comes from already-solved
     # local hand play vs strategic shop/joker/economy signal, so a run can be
@@ -1477,6 +1556,10 @@ def train_ppo(
     vocab = build_vocab(data)
     if agent_config is None:
         agent_config = AgentConfig()
+    # Apply the PPO-phase mixture weight so the AR head provides targeted
+    # exploration alongside the candidate head (Phase 1.2). The model reads
+    # this from its config at every action_distribution() call.
+    agent_config.hand_ar_mixture_eps = config.hand_ar_mixture_eps
 
     device = torch.device(config.device)
     use_pin_memory = device.type == "cuda"
@@ -1506,8 +1589,17 @@ def train_ppo(
         )
         restore_rng_states(resume_state.get("rng_states", {}))
     elif pretrained_path:
-        _load_checkpoint_compatible(model, pretrained_path, device)
-        logger.info(f"Loaded pretrained model from {pretrained_path}")
+        _load_checkpoint_compatible(
+            model, pretrained_path, device, reinit_value_head=config.reinit_value_head
+        )
+        if config.reinit_value_head:
+            logger.info(
+                "Loaded pretrained model from %s with value head reinitialized "
+                "(reward function changed; critic will warm up from scratch).",
+                pretrained_path,
+            )
+        else:
+            logger.info(f"Loaded pretrained model from {pretrained_path}")
     if config.heuristic_distill_coeff > 0.0:
         floor = min(config.heuristic_distill_min, config.heuristic_distill_coeff)
         logger.info(
@@ -1523,6 +1615,20 @@ def train_ppo(
         )
     logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
                 config.rollout_temperature)
+    # Phase 3.3: discount-horizon diagnostic. At gamma=0.99 a terminal reward
+    # is discounted to ~0.22 at 150 steps, ~0.05 at 300 — the early-game shop
+    # economy decisions that matter most for winning are nearly invisible. For
+    # win_ante >= 6 (long episodes), 0.997 is recommended (0.997^300 ~ 0.41).
+    effective_win_ante = config.win_ante if config.win_ante is not None else 8
+    if effective_win_ante >= 6 and config.gamma < 0.995:
+        logger.warning(
+            "gamma=%.4f with win_ante=%d: terminal reward is discounted to "
+            "%.3f at ~300 steps. Consider --gamma 0.997 for long-horizon runs "
+            "(Phase 3.3).",
+            config.gamma,
+            effective_win_ante,
+            config.gamma ** 300,
+        )
     if config.teacher_rollout_prob > 0.0:
         logger.info("Teacher-guided rollout probability: %.3f", config.teacher_rollout_prob)
     if config.teacher_rollout_final_prob is not None:
@@ -1557,6 +1663,11 @@ def train_ppo(
         _optimizer_to(optimizer, device)
         _apply_lr_override(optimizer, config.lr, resume_state.get("lr"))
         logger.info("Restored PPO optimizer state (Adam moments + counters) from checkpoint.")
+
+    # Sync gamma into the reward config so potential-based shaping (Phase 2)
+    # telescopes under the same discount the value function regresses.
+    if config.reward_config is not None:
+        config.reward_config.gamma = config.gamma
 
     # Create vectorized environments
     vec_env = _make_vectorized_envs(
@@ -1652,8 +1763,23 @@ def train_ppo(
         update_count = int(resume_state.get("update_count", 0))
         total_steps = int(resume_state.get("total_steps", 0))
         saved_entropy_coeff = resume_state.get("entropy_coeff")
-        if saved_entropy_coeff is not None:
-            entropy_coeff = float(saved_entropy_coeff)
+        if config.adaptive_entropy:
+            # Adaptive mode: the controller state in the checkpoint is the
+            # source of truth; the CLI value is only the initial seed.
+            if saved_entropy_coeff is not None:
+                entropy_coeff = float(saved_entropy_coeff)
+        elif (
+            saved_entropy_coeff is not None
+            and abs(float(saved_entropy_coeff) - entropy_coeff) > 1e-12
+        ):
+            # Fixed-coefficient mode: the CLI value is authoritative, mirroring
+            # _apply_lr_override — silently restoring the checkpoint's coeff
+            # would make --entropy-coeff a no-op on resume.
+            logger.warning(
+                "Overriding entropy_coeff from checkpoint %.5f to CLI %.5f.",
+                float(saved_entropy_coeff),
+                entropy_coeff,
+            )
         saved_ema = resume_state.get("entropy_signal_ema")
         if saved_ema is not None:
             entropy_signal_ema = float(saved_ema)
@@ -1713,6 +1839,17 @@ def train_ppo(
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
     episode_stalls: list[bool] = []
+    episode_antes: list[int] = []
+    # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
+    _low_minibatch_streak = 0
+    # Phase 3.2: latch set once explained variance clears critic_warmup_min_ev;
+    # the policy stays frozen until then (metric-gated unfreeze, not count-gated).
+    _critic_warmup_ev_cleared = False
+    # Phase 6: rolling win_rate/ep_reward history for the correlation acceptance
+    # criterion (corr > 0.5). Currently ~0/negative because dense shaping is
+    # farmable independent of winning.
+    _rolling_win_rates: list[float] = []
+    _rolling_ep_rewards: list[float] = []
     # Best-eval tracking for ppo_best_eval.pt selection. On resume, carry the
     # saved best forward so the resumed run keeps the prior best unless it beats it.
     best_eval_win_rate: float | None = None
@@ -1905,6 +2042,7 @@ def train_ppo(
                     ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)
+                    episode_antes.append(ep_ante)
                     # Fill ante-survival targets for every step in this episode.
                     # Truncated-by-stall episodes have no conclusive outcome on
                     # their final ante, so leave mask=0 and skip the fill.
@@ -1968,6 +2106,60 @@ def train_ppo(
             if return_rms is not None:
                 return_rms.update(buffer._flat_returns)
 
+            # Phase 3.2: explained variance of the critic on this rollout.
+            # 1 - Var(returns - values) / Var(returns). ~0.6 currently (derived
+            # from ppo/value_loss ~25 vs returns_std ~9.5); gate critic-warmup
+            # unfreezing on this exceeding critic_warmup_min_ev (>0.7).
+            flat_returns = buffer._flat_returns
+            explained_variance = float("nan")
+            if len(flat_returns) > 1:
+                var_returns = float(np.var(flat_returns))
+                if var_returns > 1e-9:
+                    explained_variance = 1.0 - float(
+                        np.var(flat_returns - buffer._flat_values)
+                    ) / var_returns
+            writer.add_scalar("ppo/explained_variance", explained_variance, update_count + 1)
+
+            # Phase 3.2: determine whether this update is in critic-warmup
+            # (policy frozen, only critic + survival train). Unfreezing is
+            # gated on the EV metric, not the update count: the policy stays
+            # frozen past critic_warmup_updates until EV clears
+            # critic_warmup_min_ev (latched — a later noisy dip does not
+            # re-freeze). A 4x hard cap prevents an unreachable gate from
+            # freezing the policy forever. With critic_warmup_min_ev <= 0 the
+            # warmup is purely count-based.
+            in_critic_warmup = False
+            if config.critic_warmup_updates > 0 and not _critic_warmup_ev_cleared:
+                if config.critic_warmup_min_ev <= 0.0:
+                    in_critic_warmup = update_count < config.critic_warmup_updates
+                elif (
+                    update_count > 0
+                    and np.isfinite(explained_variance)
+                    and explained_variance >= config.critic_warmup_min_ev
+                ):
+                    _critic_warmup_ev_cleared = True
+                elif update_count >= 4 * config.critic_warmup_updates:
+                    _critic_warmup_ev_cleared = True
+                    logger.warning(
+                        "Critic warmup EV gate (%.2f) not reached after %d updates "
+                        "(4x critic_warmup_updates cap); unfreezing anyway. EV=%.3f. "
+                        "Advantages may be noisy — consider a longer warmup or a "
+                        "higher value_loss_coeff.",
+                        config.critic_warmup_min_ev,
+                        update_count,
+                        explained_variance,
+                    )
+                else:
+                    in_critic_warmup = True
+            if in_critic_warmup:
+                writer.add_scalar("ppo/critic_warmup_active", 1.0, update_count + 1)
+                logger.info(
+                    "Critic warmup active at update %d (EV=%.3f, gate=%.2f); policy frozen.",
+                    update_count + 1,
+                    explained_variance,
+                    config.critic_warmup_min_ev,
+                )
+
             # Resolve the distillation coefficient via the shared helper so the
             # schedule semantics (zero-disables, floor clamp, decay window) are
             # consistent across the train loop, the test suite, and any future
@@ -1986,6 +2178,7 @@ def train_ppo(
                 effective_batch_size=effective_batch_size,
                 device=device,
                 use_pin_memory=use_pin_memory,
+                policy_loss_scale=0.0 if in_critic_warmup else 1.0,
             )
 
             dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
@@ -2252,10 +2445,33 @@ def train_ppo(
                 writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
                 writer.add_scalar("rollout/stall_rate", np.mean(recent_stalls), update_count)
                 writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
+                # Where episodes end: mean ante reached, plus the loss-only
+                # distribution (wins excluded so the "wall" ante stands out).
+                recent_antes = episode_antes[-100:]
+                writer.add_scalar("rollout/ante_reached_mean", float(np.mean(recent_antes)), update_count)
+                loss_antes = [a for a, w in zip(recent_antes, recent_wins) if not w]
+                if loss_antes:
+                    for bucket in range(1, 9):
+                        writer.add_scalar(
+                            f"rollout/loss_ante/{bucket}_fraction",
+                            float(np.mean([a == bucket for a in loss_antes])),
+                            update_count,
+                        )
                 recent_reward_mean = float(np.mean(recent))
                 recent_length_mean = float(np.mean(episode_lengths[-100:]))
                 recent_win_rate = float(np.mean(recent_wins))
                 recent_stall_rate = float(np.mean(recent_stalls))
+                # Phase 6: track rolling win_rate/ep_reward for the correlation
+                # acceptance criterion (they are currently decoupled because
+                # dense shaping is farmable independent of winning).
+                _rolling_win_rates.append(recent_win_rate)
+                _rolling_ep_rewards.append(recent_reward_mean)
+                if len(_rolling_win_rates) > 100:
+                    _rolling_win_rates = _rolling_win_rates[-100:]
+                    _rolling_ep_rewards = _rolling_ep_rewards[-100:]
+                if len(_rolling_win_rates) >= 5:
+                    corr = float(np.corrcoef(_rolling_win_rates, _rolling_ep_rewards)[0, 1])
+                    writer.add_scalar("rollout/win_rate_ep_reward_corr", corr, update_count)
             else:
                 recent_reward_mean = float("nan")
                 recent_length_mean = float("nan")
@@ -2325,6 +2541,7 @@ def train_ppo(
                         max_no_progress_steps=config.max_no_progress_steps,
                         win_ante=config.win_ante,
                         temperature=config.rollout_temperature,
+                        seeds=config.eval_seeds,
                     )
                 finally:
                     if config.eval_device and eval_device != device:
@@ -2467,6 +2684,25 @@ def train_ppo(
                         minibatches_done,
                         minibatches_expected,
                         minibatch_fraction * 100.0,
+                    )
+
+                # Phase 4: alert if minibatch_fraction < 0.8 for 10 consecutive
+                # updates — chronic KL-stop means the step size (lr) is wrong,
+                # not the trust region. Prefer fixing lr over reverting target_kl.
+                if minibatches_expected > 0 and minibatch_fraction < 0.8:
+                    _low_minibatch_streak += 1
+                else:
+                    _low_minibatch_streak = 0
+                if _low_minibatch_streak >= 10:
+                    logger.warning(
+                        "ppo/minibatch_fraction < 0.8 for %d consecutive updates "
+                        "(current=%.2f at update %d). Chronic KL-stop means the step "
+                        "size is wrong: reduce --lr (currently %.2e) before touching "
+                        "--target-kl.",
+                        _low_minibatch_streak,
+                        minibatch_fraction,
+                        update_count,
+                        config.lr,
                     )
 
             # === Trust-region diagnostic warnings (Phase 3) ===
@@ -2644,8 +2880,14 @@ def evaluate_model(
     win_ante: int | None = None,
     temperature: float = 1.0,
     stake: int = 1,
+    seeds: list[int] | None = None,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games.
+
+    When ``seeds`` is provided it is used verbatim (and truncated to
+    ``num_games``); otherwise the historical ``10000 + game_idx`` seeds are
+    generated. Passing the versioned :data:`pylatro_agent.eval.EVAL_SEEDS_V1`
+    list makes every checkpoint's eval reproducible and pairable across runs.
 
     Memory safety:
 
@@ -2659,6 +2901,7 @@ def evaluate_model(
     """
     model.eval()
     wins = 0
+    seed_list = seeds[:num_games] if seeds is not None else None
 
     with torch.inference_mode():
         for game_idx in range(num_games):
@@ -2670,8 +2913,9 @@ def evaluate_model(
             if device.type == "mps" and game_idx > 0 and game_idx % 50 == 0:
                 torch.mps.empty_cache()
 
+            env_seed = seed_list[game_idx] if seed_list is not None else 10000 + game_idx
             env = BalatroEnv(
-                seed=10000 + game_idx,
+                seed=env_seed,
                 data=data,
                 vocab=vocab,
                 stake=stake,

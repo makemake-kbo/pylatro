@@ -753,12 +753,16 @@ def _apply_planet_match_rewards(
     curr_info: dict,
     config: RewardConfig,
     components: dict[str, float],
+    win_ante: int | None = None,
 ) -> None:
     """Add planet-alignment bonuses/penalties for this step into ``components``.
 
     Shared by the legacy dense path and the v2 potential-shaping path (where
     ``planet_match_shaping`` re-enables just this component).
     """
+    effective_win_ante = max(
+        int(win_ante if win_ante is not None else config.potential_win_ante), 2
+    )
     for prefix in ("planet_use", "planet_claim"):
         if not curr_info.get(f"{prefix}_observed", False):
             continue
@@ -773,10 +777,32 @@ def _apply_planet_match_rewards(
         if main_match:
             components["planet_match_bonus"] += PLANET_MATCH_BONUS
         else:
+            # Weight the penalty by how far the planet's hand is from the
+            # workhorse: leveling a strong #2 hand (play share ~0.9) is nearly
+            # free, leveling a never-played hand pays the full penalty. Missing
+            # key (older infos/tests) keeps the original flat penalty.
+            share_weight = 1.0 - float(curr_info.get(f"{prefix}_play_share", 0.0) or 0.0)
+            # Play share is backward-looking and cannot see a planned pivot
+            # (leveling Flush Five while still playing Bloodstone flushes), so
+            # discount by ante progress: unplayed-hand claims are free early,
+            # when stockpiling levels for a pivot is legitimate planning, and
+            # pay in full near win_ante, when a still-never-played hand is
+            # farming. Missing ante (older infos/tests) keeps full weight.
+            ante_raw = curr_info.get("ante")
+            progress = (
+                1.0
+                if ante_raw is None
+                else _clip((int(ante_raw) - 1) / (effective_win_ante - 1), 0.0, 1.0)
+            )
+            weight = share_weight * progress
             if prefix == "planet_use" and config.planet_unmatched_use_penalty_coeff > 0.0:
-                components["planet_unmatched_use_penalty"] -= config.planet_unmatched_use_penalty_coeff
+                components["planet_unmatched_use_penalty"] -= (
+                    config.planet_unmatched_use_penalty_coeff * weight
+                )
             elif prefix == "planet_claim" and config.planet_unmatched_claim_penalty_coeff > 0.0:
-                components["planet_unmatched_claim_penalty"] -= config.planet_unmatched_claim_penalty_coeff
+                components["planet_unmatched_claim_penalty"] -= (
+                    config.planet_unmatched_claim_penalty_coeff * weight
+                )
 
 
 def _build_curve_weight(joker: dict, ante: int) -> float:
@@ -932,7 +958,7 @@ def default_reward_components(
         # cannot credit-assign which planet to level. Bounded per-event, scaled
         # by dense_scale below like idle_penalty.
         if config.enable_planet_match_rewards:
-            _apply_planet_match_rewards(curr_info, config, components)
+            _apply_planet_match_rewards(curr_info, config, components, win_ante=win_ante)
 
         # Build-curve shaping: same rationale — which joker profile to buy at
         # which ante is invisible to the sparse win signal. Bounded per
@@ -1017,7 +1043,12 @@ def default_reward_components(
     # Optional penalties for *unmatched* planet engagement are layered on top
     # (default coeff 0.0 so they are off unless explicitly enabled).
     if config.enable_planet_match_rewards:
-        _apply_planet_match_rewards(curr_info, config, components)
+        _apply_planet_match_rewards(
+            curr_info,
+            config,
+            components,
+            win_ante=int(getattr(state, "win_ante", 8) or 8),
+        )
 
     # Build-curve bonus (off by default): joker scoring profile vs ante phase.
     if config.enable_build_curve_rewards:

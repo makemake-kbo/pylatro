@@ -446,9 +446,11 @@ def main():
         type=float,
         default=0.0,
         help=(
-            "Per-step penalty coefficient for using a planet that does NOT match an "
-            "already-played hand type. Defaults to 0.0 (disabled); enable to discourage "
-            "planet churn. Default: 0.0."
+            "Per-step penalty coefficient for using a planet whose hand is not the "
+            "main played hand, weighted by (1 - play_share) so leveling a strong "
+            "secondary hand is nearly free, and ramped by ante progress toward "
+            "win_ante so early pivot planning (leveling a hand you intend to play) "
+            "is not taxed. Defaults to 0.0 (disabled). Default: 0.0."
         ),
     )
     parser.add_argument(
@@ -456,8 +458,9 @@ def main():
         type=float,
         default=0.0,
         help=(
-            "Per-step penalty coefficient for claiming a planet that does NOT match an "
-            "already-played hand type. Defaults to 0.0 (disabled). Default: 0.0."
+            "Per-step penalty coefficient for claiming a planet whose hand is not the "
+            "main played hand, weighted by (1 - play_share) and ramped by ante "
+            "progress like the use penalty. Defaults to 0.0 (disabled). Default: 0.0."
         ),
     )
     parser.add_argument(

@@ -763,7 +763,12 @@ def _apply_planet_match_rewards(
         if not curr_info.get(f"{prefix}_observed", False):
             continue
         if curr_info.get(f"{prefix}_played_hand", False):
-            components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
+            # Scale by the hand's play share so "technically played once" hands
+            # (High Card in nearly every run) can't farm the full bonus — the
+            # update-1200..1600 run learned to claim Pluto 3x over uniform for
+            # exactly this reason. Missing key (older infos/tests) keeps 1.0.
+            share = float(curr_info.get(f"{prefix}_play_share", 1.0) or 0.0)
+            components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS * share
         main_match = curr_info.get(f"{prefix}_main_hand_match", False)
         if main_match:
             components["planet_match_bonus"] += PLANET_MATCH_BONUS
@@ -802,13 +807,15 @@ def _build_curve_weight(joker: dict, ante: int) -> float:
     return max(weights)
 
 
-def _acquired_jokers(prev_info: dict, curr_info: dict) -> list[dict]:
-    """Joker summaries present in curr_info but not prev_info (multiset by key)."""
+def _joker_diff(prev_info: dict, curr_info: dict) -> tuple[list[dict], list[dict]]:
+    """(acquired, removed) joker summaries between two infos (multiset by key)."""
     prev_counts: dict[str, int] = {}
+    prev_by_key: dict[str, dict] = {}
     for joker in prev_info.get("joker_details", ()):
         if isinstance(joker, dict):
             key = str(joker.get("key", ""))
             prev_counts[key] = prev_counts.get(key, 0) + 1
+            prev_by_key[key] = joker
     acquired: list[dict] = []
     for joker in curr_info.get("joker_details", ()):
         if not isinstance(joker, dict):
@@ -818,7 +825,12 @@ def _acquired_jokers(prev_info: dict, curr_info: dict) -> list[dict]:
             prev_counts[key] -= 1
         else:
             acquired.append(joker)
-    return acquired
+    removed = [
+        prev_by_key[key]
+        for key, count in prev_counts.items()
+        for _ in range(count)
+    ]
+    return acquired, removed
 
 
 def _apply_build_curve_rewards(
@@ -827,17 +839,24 @@ def _apply_build_curve_rewards(
     config: RewardConfig,
     components: dict[str, float],
 ) -> None:
-    """Bonus for each joker acquired this step, weighted by ante-phase fit.
+    """Delta of ante-phase build fit for jokers gained/lost this step.
 
-    Acquisitions are detected by diffing joker_details between steps, so shop
-    buys, buffoon-pack claims, and tarot-created jokers all count. Positive-only
-    by design: a mistimed profile earns less, never a penalty.
+    Acquisitions add +coeff*weight, removals (sells, destroyed jokers) subtract
+    it at the CURRENT ante's weight, so the component telescopes to the net
+    build change: buy→sell→rebuy nets one bonus, not three. The acquisition-only
+    version was churn-farmable — sell_joker_fraction rose ~35% over updates
+    1200..1600. Upgrades stay rewarded (sell 0.25-weight chip joker for a
+    1.0-weight xmult at ante 6 nets +0.75). Both infos must carry joker_details;
+    the terminal path returns before this so deaths never pay a removal bill.
     """
+    if "joker_details" not in prev_info or "joker_details" not in curr_info:
+        return
     ante = max(int(curr_info.get("ante", 1) or 1), 1)
-    for joker in _acquired_jokers(prev_info, curr_info):
-        weight = _build_curve_weight(joker, ante)
-        if weight > 0.0:
-            components["build_curve_bonus"] += config.build_curve_coeff * weight
+    acquired, removed = _joker_diff(prev_info, curr_info)
+    for joker in acquired:
+        components["build_curve_bonus"] += config.build_curve_coeff * _build_curve_weight(joker, ante)
+    for joker in removed:
+        components["build_curve_bonus"] -= config.build_curve_coeff * _build_curve_weight(joker, ante)
 
 
 def default_reward_components(

@@ -459,9 +459,11 @@ class _RolloutMetrics:
     hand_play_not_in_candidates: list[float] = field(default_factory=list)
     planet_use_observed: list[float] = field(default_factory=list)
     planet_use_played_hand: list[float] = field(default_factory=list)
+    planet_use_play_share: list[float] = field(default_factory=list)
     planet_use_main_hand_match: list[float] = field(default_factory=list)
     planet_claim_observed: list[float] = field(default_factory=list)
     planet_claim_played_hand: list[float] = field(default_factory=list)
+    planet_claim_play_share: list[float] = field(default_factory=list)
     planet_claim_main_hand_match: list[float] = field(default_factory=list)
     planet_pack_skip: list[float] = field(default_factory=list)
     play_subset_count: int = 0
@@ -1074,6 +1076,7 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
 
     writer.add_scalar("planet/use_count", float(len(rm.planet_use_observed)), update_count)
     writer.add_scalar("planet/use_played_hand_fraction", _safe_mean(rm.planet_use_played_hand), update_count)
+    writer.add_scalar("planet/use_play_share_mean", _safe_mean(rm.planet_use_play_share), update_count)
     writer.add_scalar("planet/use_main_hand_match_fraction", _safe_mean(rm.planet_use_main_hand_match), update_count)
     # Unmatched / not-played fractions expose the planet-churn pathology
     # directly: a rising unmatched fraction with falling match fraction means
@@ -1097,6 +1100,7 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
 
     writer.add_scalar("planet/claim_count", float(len(rm.planet_claim_observed)), update_count)
     writer.add_scalar("planet/claim_played_hand_fraction", _safe_mean(rm.planet_claim_played_hand), update_count)
+    writer.add_scalar("planet/claim_play_share_mean", _safe_mean(rm.planet_claim_play_share), update_count)
     writer.add_scalar(
         "planet/claim_main_hand_match_fraction",
         _safe_mean(rm.planet_claim_main_hand_match),
@@ -1455,6 +1459,13 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
             done=done,
             default=False,
         )))
+        rm.planet_use_play_share.append(float(_extract_step_info_value(
+            infos,
+            "planet_use_play_share",
+            env_idx,
+            done=done,
+            default=0.0,
+        )))
         rm.planet_use_main_hand_match.append(float(_extract_step_info_value(
             infos,
             "planet_use_main_hand_match",
@@ -1474,6 +1485,13 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
             env_idx,
             done=done,
             default=False,
+        )))
+        rm.planet_claim_play_share.append(float(_extract_step_info_value(
+            infos,
+            "planet_claim_play_share",
+            env_idx,
+            done=done,
+            default=0.0,
         )))
         rm.planet_claim_main_hand_match.append(float(_extract_step_info_value(
             infos,

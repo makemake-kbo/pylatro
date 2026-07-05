@@ -50,11 +50,19 @@ def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any
     hand_type = _planet_hand_type(state, center_key)
     main_hand = _main_hand_proxy(state)
     hand_info = state.hands.get(hand_type, {}) if hand_type else {}
+    played = int(hand_info.get("played", 0) or 0) if hand_info else 0
+    max_played = max(
+        (int(hand.get("played", 0) or 0) for hand in state.hands.values()),
+        default=0,
+    )
     return {
         f"{prefix}_observed": True,
         f"{prefix}_key": center_key,
         f"{prefix}_hand_type": hand_type,
-        f"{prefix}_played_hand": bool(hand_info.get("played", 0) if hand_info else False),
+        f"{prefix}_played_hand": played > 0,
+        # Play count of the planet's hand relative to the most-played hand this
+        # run — 1.0 for the workhorse hand, near 0 for a hand played once.
+        f"{prefix}_play_share": (played / max_played) if max_played > 0 else 0.0,
         f"{prefix}_main_hand": main_hand,
         f"{prefix}_main_hand_match": bool(hand_type and hand_type == main_hand),
     }

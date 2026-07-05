@@ -1271,6 +1271,74 @@ def test_v2_build_curve_off_by_default_and_requires_acquisition():
     assert result["build_curve_bonus"] == pytest.approx(0.0)
 
 
+def test_v2_build_curve_sell_subtracts_and_churn_telescopes():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    state = _dummy_state(ante=6, win_ante=8)
+    coeff = cfg.build_curve_coeff
+    chip_joker = {"key": "j_chip", "t_chips": 30.0, "x_mult": 1.0}
+    xmult_joker = {"key": "j_x", "x_mult": 3.0}
+
+    def step(prev_jokers, curr_jokers):
+        prev = {"ante": 6, "round_score": 0, "blind_target": 400, "joker_details": tuple(prev_jokers)}
+        curr = {
+            "ante": 6,
+            "round_score": 0,
+            "blind_target": 400,
+            "progress_made": True,
+            "action_type": "shop_sell_joker",
+            "joker_details": tuple(curr_jokers),
+        }
+        result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+        return result["build_curve_bonus"]
+
+    # Selling subtracts the joker's weight at the CURRENT ante (chips at ante 6
+    # is only 0.25), so a buy→sell round trip nets zero instead of farming the
+    # acquisition bonus via churn.
+    assert step([chip_joker], []) == pytest.approx(-0.25 * coeff * REWARD_SCALE)
+    assert step([], [chip_joker]) + step([chip_joker], []) == pytest.approx(0.0)
+    # Upgrading stays net positive: sell the faded chip joker, buy an xmult.
+    assert step([chip_joker], [xmult_joker]) == pytest.approx((1.0 - 0.25) * coeff * REWARD_SCALE)
+    # Missing joker_details on either side (e.g. sparse infos) is a no-op, not
+    # a mass removal event.
+    prev = {"ante": 6, "round_score": 0, "blind_target": 400, "joker_details": (xmult_joker,)}
+    curr = {"ante": 6, "round_score": 0, "blind_target": 400, "progress_made": True}
+    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+    assert result["build_curve_bonus"] == pytest.approx(0.0)
+
+
+def test_v2_planet_played_hand_bonus_scales_with_play_share():
+    from pylatro_agent.reward import PLANET_PLAYED_HAND_BONUS, PPO_V2_REWARD_CONFIG
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=4, planet_match_shaping=True)
+    state = _dummy_state(ante=2, win_ante=4)
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400}
+
+    def use(play_share=None):
+        curr = {
+            "ante": 2,
+            "round_score": 0,
+            "blind_target": 400,
+            "progress_made": True,
+            "action_type": "use_consumable_no_target",
+            "planet_use_observed": True,
+            "planet_use_played_hand": True,
+            "planet_use_main_hand_match": False,
+        }
+        if play_share is not None:
+            curr["planet_use_play_share"] = play_share
+        result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+        return result["planet_played_hand_bonus"]
+
+    # The Pluto exploit: High Card was "played" once against a Two Pair
+    # workhorse — the bonus shrinks to the play share instead of paying full.
+    assert use(play_share=0.1) == pytest.approx(0.1 * PLANET_PLAYED_HAND_BONUS * REWARD_SCALE)
+    assert use(play_share=1.0) == pytest.approx(PLANET_PLAYED_HAND_BONUS * REWARD_SCALE)
+    # Older infos without the key keep the pre-fix behavior (full bonus).
+    assert use(play_share=None) == pytest.approx(PLANET_PLAYED_HAND_BONUS * REWARD_SCALE)
+
+
 def test_v2_reward_terminal_dominates_return():
     from pylatro_agent.reward import V2_WIN_VALUE, PPO_V2_REWARD_CONFIG
 

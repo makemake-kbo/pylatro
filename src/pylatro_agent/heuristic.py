@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pylatro import can_use_consumable, evaluate_poker_hand, get_blind_amount
+from pylatro import can_use_consumable, get_blind_amount
 from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
@@ -428,7 +428,7 @@ class HeuristicAgent:
             retriggers[0] += 2
         if "Sock and Buskin" in joker_centers_by_name:
             for i, c in enumerate(scoring_cards):
-                if c.rank in ("Jack", "Queen", "King"):
+                if c.rank in ("J", "Q", "K"):
                     retriggers[i] += 1
         if "Hack" in joker_centers_by_name:
             for i, c in enumerate(scoring_cards):
@@ -510,38 +510,38 @@ class HeuristicAgent:
 
             if jname == "Fibonacci":
                 for r in scoring_ranks:
-                    if r in ("2", "3", "5", "8", "14", "Ace"):
+                    if r in ("2", "3", "5", "8", "A"):
                         total_mult += 8
             elif jname == "Even Steven":
                 for r in scoring_ranks:
-                    if r in ("2", "4", "6", "8", "10"):
+                    if r in ("2", "4", "6", "8", "T"):
                         total_mult += 4
             elif jname == "Odd Todd":
                 for r in scoring_ranks:
-                    if r in ("Ace", "3", "5", "7", "9"):
+                    if r in ("A", "3", "5", "7", "9"):
                         total_chips += 31
             elif jname == "Scary Face":
                 for r in scoring_ranks:
-                    if r in ("Jack", "Queen", "King"):
+                    if r in ("J", "Q", "K"):
                         total_chips += 30
             elif jname == "Smiley Face":
                 for r in scoring_ranks:
-                    if r in ("Jack", "Queen", "King"):
+                    if r in ("J", "Q", "K"):
                         total_mult += 5
             elif jname == "Scholar":
                 for r in scoring_ranks:
-                    if r == "Ace":
+                    if r == "A":
                         total_chips += 20
                         total_mult += 4
             elif jname == "Walkie Talkie":
                 for r in scoring_ranks:
-                    if r in ("4", "10"):
+                    if r in ("4", "T"):
                         total_chips += 10
                         total_mult += 4
             elif jname == "Photograph":
                 face_found = False
                 for r in scoring_ranks:
-                    if r in ("Jack", "Queen", "King") and not face_found:
+                    if r in ("J", "Q", "K") and not face_found:
                         x_mult_acc *= 2
                         face_found = True
             elif jname in ("Greedy Joker", "Lusty Joker", "Wrathful Joker", "Gluttonous Joker"):
@@ -566,11 +566,11 @@ class HeuristicAgent:
                         total_chips += 50
             elif jname == "Shoot the Moon":
                 for c in held_cards:
-                    if c.rank == "Queen":
+                    if c.rank == "Q":
                         total_mult += 13
             elif jname == "Baron":
                 for c in held_cards:
-                    if c.rank == "King":
+                    if c.rank == "K":
                         x_mult_acc *= 1.5
             elif jname == "Bootstraps":
                 total_mult += (dollars // 5) * 2
@@ -593,9 +593,7 @@ class HeuristicAgent:
                 total_chips += ante * 10
             elif jname == "Square Joker":
                 total_chips += ante * 4
-            elif jname == "Ride the Bus":
-                total_mult += ante * 2
-            elif jname == "Fortune Teller":
+            elif jname == "Ride the Bus" or jname == "Fortune Teller":
                 total_mult += ante * 2
             elif jname == "Flash":
                 total_chips += ante * 10
@@ -608,15 +606,16 @@ class HeuristicAgent:
             elif jname == "Triboulet":
                 xm = float(j.extra) if isinstance(j.extra, (int, float)) else 2.0
                 for r in scoring_ranks:
-                    if r in ("King", "Queen"):
+                    if r in ("K", "Q"):
                         x_mult_acc *= xm
             elif jname == "Bloodstone":
                 if isinstance(j.extra, dict):
                     xm = float(j.extra.get("Xmult", 1.5))
                     odds = float(j.extra.get("odds", 2)) or 2.0
                     p = 1.0 / odds
+                    # Bloodstone procs on Hearts; value the flip at its expectation.
                     for s in scoring_suits:
-                        if s == "Diamonds":
+                        if s == "Hearts":
                             x_mult_acc *= 1.0 + (xm - 1.0) * p
             elif jname == "The Idol":
                 idol = state.current_round.idol_card if hasattr(state, "current_round") else None
@@ -636,8 +635,8 @@ class HeuristicAgent:
                 if isinstance(j.extra, dict):
                     dollar_extra = float(j.extra.get("dollars", 1))
                     odds = float(j.extra.get("odds", 2)) or 2.0
-                    # held face cards earn $1 each w/ p=1/odds — value as +1 mult expectation per face
-                    held_faces = sum(1 for c in held_cards if c.rank in ("Jack", "Queen", "King"))
+                    # held face cards earn $1 each w/ p=1/odds, value as +1 mult expectation per face
+                    held_faces = sum(1 for c in held_cards if c.rank in ("J", "Q", "K"))
                     total_mult += int(held_faces * dollar_extra / odds)
             elif jname == "Blackboard":
                 if held_cards and all(c.suit in ("Spades", "Clubs") for c in held_cards):
@@ -701,7 +700,7 @@ class HeuristicAgent:
                 if sell_total > 0:
                     total_mult += sell_total
             elif jname == "Baseball Card":
-                # x1.5 per uncommon joker — uses uncommon rarity from center
+                # x1.5 per uncommon joker, uses uncommon rarity from center
                 xm = float(j.extra) if isinstance(j.extra, (int, float)) else 1.5
                 count = 0
                 for jj in state.jokers:
@@ -1257,9 +1256,7 @@ class HeuristicAgent:
         if isinstance(t_mult, (int, float)) and t_mult:
             if hand_type == main_type:
                 score += t_mult * 12.0
-            elif self._hand_type_synergy(state, hand_type) > 0:
-                score += t_mult * 6.0
-            elif hand_type in _COMMITTED_TYPES and not has_main_synergy:
+            elif self._hand_type_synergy(state, hand_type) > 0 or (hand_type in _COMMITTED_TYPES and not has_main_synergy):
                 score += t_mult * 6.0
             elif hand_type in _COMMITTED_TYPES:
                 score += t_mult * 2.0
@@ -1423,43 +1420,27 @@ class HeuristicAgent:
             score += 10.0 + state.dollars * 0.6
         elif jname == "Banner":
             score += 6.0
-        elif jname == "Abstract Joker":
-            score += 8.0
-        elif jname == "Mystic Summit":
+        elif jname == "Abstract Joker" or jname == "Mystic Summit":
             score += 8.0
         elif jname == "Cavendish":
             score += 10.0
-        elif jname == "Gros Michel":
+        elif jname == "Gros Michel" or jname == "Misprint":
             score += 8.0
-        elif jname == "Misprint":
-            score += 8.0
-        elif jname == "Burglar":
-            score += 7.0
-        elif jname == "Popcorn":
+        elif jname == "Burglar" or jname == "Popcorn":
             score += 7.0
         elif jname == "Dusk":
             score += 8.0
         elif jname == "Half Joker":
             score += 6.0
-        elif jname == "Ice Cream":
+        elif jname == "Ice Cream" or jname == "Flower Pot" or jname == "Seeing Double":
             score += 5.0
-        elif jname == "Flower Pot":
-            score += 5.0
-        elif jname == "Seeing Double":
-            score += 5.0
-        elif jname == "Blackboard":
-            score += 6.0
-        elif jname == "Vampire":
+        elif jname == "Blackboard" or jname == "Vampire":
             score += 6.0
         elif jname == "Stone Joker":
             score += 5.0
         elif jname == "Glass Joker":
             score += 6.0
-        elif jname == "Lucky Cat":
-            score += 5.0
-        elif jname == "Blue Joker":
-            score += 5.0
-        elif jname == "Red Card":
+        elif jname == "Lucky Cat" or jname == "Blue Joker" or jname == "Red Card":
             score += 5.0
         elif jname == "Throwback":
             score += 6.0
@@ -1894,7 +1875,7 @@ class HeuristicAgent:
         is_pair_type = main_type in ("Pair", "Two Pair", "Three of a Kind", "Full House", "Four of a Kind") and main_synergy > 0
         is_flush_type = main_type == "Flush" and main_synergy > 0
         is_sf_type = main_type == "Straight Flush" and main_synergy > 0
-        high_ranks = frozenset(("Ace", "King", "Queen", "Jack", "10"))
+        high_ranks = frozenset(("A", "K", "Q", "J", "T"))
 
         keep_scores: list[float] = []
         for i, card in enumerate(hand):
@@ -2027,7 +2008,7 @@ class HeuristicAgent:
                         return to_discard
 
         # Rule 2: Straight draw
-        if not ("Shortcut" in self._get_joker_names(state)):
+        if "Shortcut" not in self._get_joker_names(state):
             rank_ids = [(i, RANK_TO_ID[hand[i].rank]) for i in range(len(hand))]
             all_ranks = set()
             rank_to_indices: dict[int, list[int]] = {}
@@ -2299,7 +2280,7 @@ class HeuristicAgent:
             max_sell = max((cons.sell_cost for cons in state.consumables[:MAX_CONSUMABLE_SLOTS]), default=0)
             return dollars + max_sell >= all_items[item_idx].cost
 
-        # ═══ PRIORITY 1: Overstock voucher — best economy investment ═══
+        # ═══ PRIORITY 1: Overstock voucher, best economy investment ═══
         if overstock_action >= 0:
             item_idx = overstock_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
@@ -2317,7 +2298,7 @@ class HeuristicAgent:
                 if post_buy >= interest_threshold:
                     return priority_voucher_action
 
-        # ═══ PRIORITY 3: X-mult joker — buy immediately if affordable ═══
+        # ═══ PRIORITY 3: X-mult joker, buy immediately if affordable ═══
         if n_jokers > 0 and joker_slots_left == 0 and best_xmult_action >= 0:
             sell_act, _, sell_val = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
             if sell_act >= 0 and mask[sell_act]:
@@ -2332,7 +2313,7 @@ class HeuristicAgent:
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_xmult_action
 
-        # ═══ PRIORITY 4: Celestial pack — only after scoring joker or from ante 2 ═══
+        # ═══ PRIORITY 4: Celestial pack, only after scoring joker or from ante 2 ═══
         has_scoring_joker = any(
             j.mult or j.t_mult for j in state.jokers if not j.debuff
         )
@@ -2543,7 +2524,7 @@ class HeuristicAgent:
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_joker_action
 
-        # ═══ PRIORITY 23: Reroll — spend down to interest cap if no good buy ═══
+        # ═══ PRIORITY 23: Reroll, spend down to interest cap if no good buy ═══
         # Engine strength gates how aggressive we are: a strong engine
         # (xmult joker + ≥4 jokers) clears blinds easily, so don't burn cash.
         # Otherwise, max-reroll while we stay above the interest cap.
@@ -2625,7 +2606,7 @@ class HeuristicAgent:
 
         Picks the targeting variant that matches the consumable's config
         and targets the first k hand cards (k = max_highlighted clamped
-        to hand size) for hand-targeted consumables — replacing the old
+        to hand size) for hand-targeted consumables, replacing the old
         greedy multi-step sequence that walked CONSUMABLE_TARGET.
         """
         if slot >= len(state.consumables):

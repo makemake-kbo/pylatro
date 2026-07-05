@@ -1,4 +1,4 @@
-"""GameOverScreen — win/loss display with stats."""
+"""GameOverScreen, win/loss display with stats."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ from textual.binding import Binding
 from textual.containers import Center, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Static
-
-from ..theme import BALATRO_PALETTE
 
 
 class GameOverScreen(Screen):
@@ -48,22 +46,21 @@ class GameOverScreen(Screen):
         ctrl = self.app.controller
         state = ctrl.state
 
-        with Center():
-            with Vertical(id="gameover-box"):
-                if self.won:
-                    yield Static("YOU WIN!", id="result-text")
-                else:
-                    yield Static("GAME OVER", id="result-text")
+        with Center(), Vertical(id="gameover-box"):
+            if self.won:
+                yield Static("YOU WIN!", id="result-text")
+            else:
+                yield Static("GAME OVER", id="result-text")
 
-                if state:
-                    yield Static(f"Seed: {state.seed}")
-                    yield Static(f"Ante: {state.round_resets.ante}")
-                    yield Static(f"Round: {state.round}")
-                    yield Static(f"Jokers: {len(state.jokers)}")
-                    yield Static(f"Dollars: ${state.dollars}")
-                    yield Static(f"Hands Played: {state.hands_played}")
+            if state:
+                yield Static(f"Seed: {state.seed}")
+                yield Static(f"Ante: {state.round_resets.ante}")
+                yield Static(f"Round: {state.round}")
+                yield Static(f"Jokers: {len(state.jokers)}")
+                yield Static(f"Dollars: ${state.dollars}")
+                yield Static(f"Hands Played: {state.hands_played}")
 
-                yield Button("Return to Menu", id="menu-btn", variant="primary")
+            yield Button("Return to Menu", id="menu-btn", variant="primary")
 
     def on_mount(self) -> None:
         self.query_one("#result-text", Static).styles.color = "#27ae60" if self.won else "#e74c3c"

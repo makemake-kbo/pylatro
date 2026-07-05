@@ -4,16 +4,16 @@ The reward shaping in :mod:`pylatro_agent.reward` operates on serialized ``info`
 dicts captured at each environment step (it never sees the live ``RunState``).
 This module provides:
 
-* :func:`capture_build_features` — called from the env / fast-runner info
+* :func:`capture_build_features`, called from the env / fast-runner info
   builders to attach build, economy, slot, deck, and shop-card fields to the
   ``info`` dict. Centralizing it keeps PPO (BalatroEnv) and BC pretraining
   (fast_generate) emitting identical fields so the value head is consistent.
 * :func:`evaluate_build`, :func:`evaluate_shop_opportunity`,
-  :func:`score_shop_item` — pure functions over the ``info`` dict that score
+  :func:`score_shop_item`, pure functions over the ``info`` dict that score
   the current build and shop, used for delta/gated reward shaping.
 
 Scoring is intentionally *context-aware*: a joker's value depends on the current
-deck, money, slots, ante, main hand, and existing engine — not a global "good
+deck, money, slots, ante, main hand, and existing engine, not a global "good
 joker" table. Joker categories reuse the classification constants from
 :mod:`pylatro_agent.heuristic` so the heuristic and the reward agree on what
 counts as a scoring / xmult / scaling / economy / retrigger joker.

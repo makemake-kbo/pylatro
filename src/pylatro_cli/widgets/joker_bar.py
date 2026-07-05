@@ -1,4 +1,4 @@
-"""JokerBar — horizontal row of joker slots."""
+"""JokerBar, horizontal row of joker slots."""
 
 from __future__ import annotations
 

@@ -56,7 +56,7 @@ def load_checkpoint_payload(
     """Load a checkpoint and verify its tokenizer_version matches.
 
     Accepts both the new dict format and legacy raw state_dicts (warning
-    logged for the latter — no version can be verified).
+    logged for the latter, no version can be verified).
 
     Loads with ``weights_only=True`` first (the safe default for arbitrary
     checkpoints). Full PPO resume checkpoints carry optimizer/NumPy RNG state

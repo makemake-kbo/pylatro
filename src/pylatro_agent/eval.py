@@ -9,12 +9,12 @@ policies face identical deck orders, boss blinds, and shop rolls.
 
 This module provides:
 
-* ``EVAL_SEEDS_V1`` — a versioned, frozen list of 400 seeds, identical across
+* ``EVAL_SEEDS_V1``, a versioned, frozen list of 400 seeds, identical across
   every checkpoint and the heuristic baseline. Bump the version suffix only if
   the seed semantics change; never edit in place.
-* :func:`evaluate_on_seeds` — greedy per-seed eval that captures per-seed
+* :func:`evaluate_on_seeds`, greedy per-seed eval that captures per-seed
   outcomes (won, max_ante, final round score) for persistence and pairing.
-* :func:`paired_win_rate_delta` — win-rate delta with a McNemar test and a
+* :func:`paired_win_rate_delta`, win-rate delta with a McNemar test and a
   paired-bootstrap confidence interval on the difference.
 
 The per-seed outcomes are persisted to a JSON/CSV next to the checkpoint so a
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Versioned fixed seed list. Never edit in place — create EVAL_SEEDS_V2 if the
+# Versioned fixed seed list. Never edit in place, create EVAL_SEEDS_V2 if the
 # seed semantics must change, so historical paired comparisons stay reproducible.
 EVAL_SEEDS_V1: list[int] = list(range(10_000, 10_400))
 
@@ -192,7 +192,7 @@ def _heuristic_action(env) -> int:
 
     Delegates to the env's own teacher plumbing (the same query PPO
     distillation uses), so the baseline is exactly the teacher the policy is
-    trained against — not a reimplementation that can drift on mask or
+    trained against, not a reimplementation that can drift on mask or
     round-score details. gymnasium.Env.unwrapped is a property, not a method.
     """
     env_unwrapped = env.unwrapped

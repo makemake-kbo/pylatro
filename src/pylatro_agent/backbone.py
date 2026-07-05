@@ -1,4 +1,4 @@
-"""Transformer backbone — pre-LN transformer encoder stack."""
+"""Transformer backbone, pre-LN transformer encoder stack."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ class TransformerBackbone(nn.Module):
         """
         Args:
             x: (batch, seq_len, d_model)
-            padding_mask: (batch, seq_len) bool — True for PAD positions
+            padding_mask: (batch, seq_len) bool, True for PAD positions
         Returns:
             (batch, seq_len, d_model)
         """

@@ -1,4 +1,4 @@
-"""CardRow — horizontal scrollable container of PlayingCardWidgets."""
+"""CardRow, horizontal scrollable container of PlayingCardWidgets."""
 
 from __future__ import annotations
 

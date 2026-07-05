@@ -1,4 +1,4 @@
-"""Pylatro Agent — Transformer-based RL agent for Balatro."""
+"""Pylatro Agent, Transformer-based RL agent for Balatro."""
 
 from .constants import NUM_ACTIONS, SubPhase
 from .vocab import Vocab, build_vocab

@@ -156,7 +156,12 @@ def add_joker(
     elif name == "Turtle Bean" and isinstance(joker.extra, dict):
         state.starting_params.hand_size += int(joker.extra.get("h_size", 0) or 0)
         state.current_round.hand_size += int(joker.extra.get("h_size", 0) or 0)
-    elif edition and edition.get("negative"):
+
+    # Negative edition grants a slot regardless of which joker it is on.
+    # remove_joker undoes this unconditionally, so it must not sit in the
+    # name-dispatch elif chain above (a negative Credit Card would otherwise
+    # never gain the slot but still lose one when sold).
+    if edition and edition.get("negative"):
         state.starting_params.joker_slots += 1
 
     sync_all_jokers(state)

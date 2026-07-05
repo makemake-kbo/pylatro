@@ -1,26 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 import numpy as np
 
-from .instances import add_consumable, add_joker, remove_consumable, sync_all_jokers
+from .instances import add_joker, remove_consumable, sync_all_jokers
 from .models import ConsumableInstance, PlayingCard
-from .pool import _pick_pool_key, create_card_spec, get_current_pool, poll_edition
+from .pool import poll_edition
 from .runtime import (
     add_generated_consumable,
     add_generated_joker,
     add_playing_cards,
     apply_using_consumable,
-    can_add_consumable,
-    can_add_joker,
     consumable_limit,
     copy_playing_card,
     create_playing_card,
     joker_limit,
 )
-from .scoring import RANK_TO_ID, _level_up_hand, get_poker_hand_info
+from .scoring import RANK_TO_ID, _level_up_hand
 
 
 @dataclass(slots=True)
@@ -165,9 +163,11 @@ def use_consumable(
             )
             if name == "Ectoplasm":
                 chosen.edition = {"negative": True}
-                state.starting_params.hand_size -= state.ecto_minus
-                state.current_round.hand_size -= state.ecto_minus
-                state.ecto_minus += 1
+                # Each use costs one more hand-size point than the last.
+                penalty = int(state.ecto_minus)
+                state.starting_params.hand_size -= penalty
+                state.current_round.hand_size -= penalty
+                state.ecto_minus = penalty + 1
             elif name == "Hex":
                 chosen.edition = {"polychrome": True}
                 from .instances import remove_joker
@@ -292,7 +292,11 @@ def _register_consumable_use(state, center_key: str) -> None:
     if center["set"] == "Tarot":
         state.consumeable_usage_total["tarot"] += 1
         state.consumeable_usage_total["tarot_planet"] += 1
-        state.last_tarot_planet = center_key
+        # The Fool never records itself as the last used card, otherwise it
+        # would copy itself: usage is registered before the effect runs, and
+        # the effect reads last_tarot_planet.
+        if center["name"] != "The Fool":
+            state.last_tarot_planet = center_key
     elif center["set"] == "Planet":
         state.consumeable_usage_total["planet"] += 1
         state.consumeable_usage_total["tarot_planet"] += 1

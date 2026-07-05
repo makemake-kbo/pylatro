@@ -71,7 +71,7 @@ class RewardConfig:
 
     # Multiplier applied to all dense/local shaping components at the common
     # exit of default_reward_components. Terminal win/loss reward is NOT
-    # affected by this — it is emitted on its own early-return path. Set < 1.0
+    # affected by this, it is emitted on its own early-return path. Set < 1.0
     # to shrink shaping while preserving the supervised terminal value scale,
     # so the policy optimizes *winning* rather than farming bounded shaping.
     dense_reward_scale: float = 1.0
@@ -163,11 +163,11 @@ def PPO_V2_REWARD_CONFIG(
 
     ``build_curve_shaping`` re-enables the joker build-curve component: a
     positive-only bonus for acquiring jokers whose scoring profile fits the
-    ante phase (chips early, mult by ante 4, xmult late — or earlier). Like
+    ante phase (chips early, mult by ante 4, xmult late, or earlier). Like
     planet choice, joker-profile timing is invisible to the sparse win signal.
     """
     return RewardConfig(
-        # Kill all prescriptive shaping (planet matching optionally retained —
+        # Kill all prescriptive shaping (planet matching optionally retained ,
         # see docstring).
         enable_hand_candidate_rewards=False,
         enable_planet_match_rewards=planet_match_shaping,
@@ -233,9 +233,9 @@ IDLE_PENALTY_CAP = 0.02
 # Flat reward for committing an atomic consumable use that touches a
 # targeting consumable (hand subset or joker target). The cold-head
 # problem that motivated the previous CONSUMABLE_TARGET / CONSUMABLE_SLOT
-# / CONSUMABLE_CONFIRM shaping cluster is gone — atomic actions keep
+# / CONSUMABLE_CONFIRM shaping cluster is gone, atomic actions keep
 # every projection in ConsumableFlatHead receiving gradient every time
-# any consumable is used — so we keep a single small pull toward
+# any consumable is used, so we keep a single small pull toward
 # engaging with targeting consumables at all while the BC prior warms up.
 CONSUMABLE_TARGETED_USE_REWARD = 0.12
 # Flat penalty for selling jokers or consumables in the shop. The policy
@@ -263,7 +263,7 @@ STANDARD_OVERFULL_CARD_PENALTY_CAP = 0.75
 
 # Per-step shaping bonuses driven by env action diagnostics. Asymmetric
 # (positive-only) so the agent can't reduce expected reward by
-# terminating sooner — staying alive and playing well is the only path
+# terminating sooner, staying alive and playing well is the only path
 # to accumulating the bonus. Negative shaping created a die-fast
 # pathology in the v1 run; positive shaping flips the incentive.
 HAND_SUBSET_BONUS_SCALE = 0.3
@@ -768,7 +768,7 @@ def _apply_planet_match_rewards(
             continue
         if curr_info.get(f"{prefix}_played_hand", False):
             # Scale by the hand's play share so "technically played once" hands
-            # (High Card in nearly every run) can't farm the full bonus — the
+            # (High Card in nearly every run) can't farm the full bonus, the
             # update-1200..1600 run learned to claim Pluto 3x over uniform for
             # exactly this reason. Missing key (older infos/tests) keeps 1.0.
             share = float(curr_info.get(f"{prefix}_play_share", 1.0) or 0.0)
@@ -811,7 +811,7 @@ def _build_curve_weight(joker: dict, ante: int) -> float:
     Desired curve: chip scaling carries antes 1-3, additive mult is online by
     ante 4, xmult is the ante-6+ engine that is welcome at any earlier point.
     A joker with several profiles takes the best one (chips+mult is good early
-    via chips AND good late via mult). Economy/utility jokers score 0 — this
+    via chips AND good late via mult). Economy/utility jokers score 0, this
     component only shapes the scoring curve.
     """
     key = str(joker.get("key", ""))
@@ -819,7 +819,7 @@ def _build_curve_weight(joker: dict, ante: int) -> float:
     x_mult = float(joker.get("x_mult", 1.0) or 1.0)
     if x_mult > 1.0 or joker.get("is_scaling_xmult", False) or key in _XMULT_PROFILE_JOKER_KEYS:
         weights.append(1.0)
-    # Retriggers amplify whatever the build already scores — phase-neutral,
+    # Retriggers amplify whatever the build already scores, phase-neutral,
     # full weight at any ante (they are top-priority pickups).
     if joker.get("is_retrigger", False) or key in _RETRIGGER_JOKER_KEYS:
         weights.append(1.0)
@@ -870,7 +870,7 @@ def _apply_build_curve_rewards(
     Acquisitions add +coeff*weight, removals (sells, destroyed jokers) subtract
     it at the CURRENT ante's weight, so the component telescopes to the net
     build change: buy→sell→rebuy nets one bonus, not three. The acquisition-only
-    version was churn-farmable — sell_joker_fraction rose ~35% over updates
+    version was churn-farmable, sell_joker_fraction rose ~35% over updates
     1200..1600. Upgrades stay rewarded (sell 0.25-weight chip joker for a
     1.0-weight xmult at ante 6 nets +0.75). Both infos must carry joker_details;
     the terminal path returns before this so deaths never pay a removal bill.
@@ -902,7 +902,7 @@ def default_reward_components(
         death_ante = int(curr_info.get("ante", state.round_resets.ante))
         win_ante = int(getattr(state, "win_ante", 8) or 8)
         # Store in raw component units because this terminal exit path applies
-        # REWARD_SCALE (and only REWARD_SCALE — not dense_reward_scale) to every
+        # REWARD_SCALE (and only REWARD_SCALE, not dense_reward_scale) to every
         # component, leaving the terminal value at its supervised scale.
         if config.enable_potential_shaping:
             outcome_fn = v2_outcome_value
@@ -960,7 +960,7 @@ def default_reward_components(
         if config.enable_planet_match_rewards:
             _apply_planet_match_rewards(curr_info, config, components, win_ante=win_ante)
 
-        # Build-curve shaping: same rationale — which joker profile to buy at
+        # Build-curve shaping: same rationale, which joker profile to buy at
         # which ante is invisible to the sparse win signal. Bounded per
         # acquisition, scaled by dense_scale below like idle_penalty.
         if config.enable_build_curve_rewards:
@@ -972,8 +972,8 @@ def default_reward_components(
             idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
             components["idle_penalty"] -= idle_penalty
 
-        # potential_shaping is scaled by REWARD_SCALE only — the same factor the
-        # terminal exit path applies — so the telescoping sum stays exact for any
+        # potential_shaping is scaled by REWARD_SCALE only, the same factor the
+        # terminal exit path applies, so the telescoping sum stays exact for any
         # dense_reward_scale. Scaling the potential term differently across steps
         # would leave a per-step residual that breaks the policy-invariance
         # guarantee (the entire point of potential-based shaping).
@@ -1098,9 +1098,9 @@ def default_reward_components(
         idle_penalty = min(idle_penalty, IDLE_PENALTY_CAP)
         components["idle_penalty"] -= idle_penalty
 
-    # This branch only ever accumulates dense/local shaping — the terminal
+    # This branch only ever accumulates dense/local shaping, the terminal
     # component is emitted on the early-return path above and never reaches
-    # here — so layering dense_reward_scale on top of REWARD_SCALE shrinks
+    # here, so layering dense_reward_scale on top of REWARD_SCALE shrinks
     # shaping without touching terminal win/loss reward. Each component is
     # additionally scaled by its group multiplier (default 1.0 → identical to
     # the pre-split behavior) so local hand play can be annealed independently
@@ -1134,10 +1134,10 @@ def default_reward(
     prev_info / curr_info contain:
         ante, round_score, blind_beaten, hands_left, dollars, in_shop
     curr_info also has:
-        blind_just_beaten: bool — whether a blind was beaten this step
-        progress_made: bool — whether the environment state changed meaningfully
-        steps_since_progress: int — idle streak length after the action
-        action_type: ActionType — action type taken this step
+        blind_just_beaten: bool, whether a blind was beaten this step
+        progress_made: bool, whether the environment state changed meaningfully
+        steps_since_progress: int, idle streak length after the action
+        action_type: ActionType, action type taken this step
     """
     return default_reward_components(state, prev_info, curr_info, terminated, won, config)["total"]
 

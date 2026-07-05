@@ -1,4 +1,4 @@
-"""ShopScreen — buy cards, vouchers, and booster packs."""
+"""ShopScreen, buy cards, vouchers, and booster packs."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from textual.screen import Screen
 from textual.widgets import Button, Static
 
 from ..controller import GameController
+from ..theme import BALATRO_PALETTE
 from ..widgets.consumable_bar import ConsumableBar
 from ..widgets.joker_bar import JokerBar
-from ..theme import BALATRO_PALETTE
 
 
 class ShopScreen(Screen):
@@ -96,7 +96,7 @@ class ShopScreen(Screen):
         state = ctrl.state
         dollars = state.dollars if state else 0
 
-        yield Static(f"Shop — ${dollars}", id="shop-header")
+        yield Static(f"Shop, ${dollars}", id="shop-header")
         yield JokerBar(id="shop-joker-bar")
         with Vertical(id="shop-cards-area"):
             yield Static("Cards", classes="shop-zone-label")
@@ -123,7 +123,7 @@ class ShopScreen(Screen):
             return
 
         # Header
-        self.query_one("#shop-header", Static).update(f"Shop — ${state.dollars}")
+        self.query_one("#shop-header", Static).update(f"Shop, ${state.dollars}")
 
         # Cards
         items_text = self._render_shop_items(state.shop.cards, state.dollars, 0)

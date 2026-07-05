@@ -675,7 +675,7 @@ class ActionGrammarDistribution:
         # Mixture: p(a) = (1-eps)*p_cand(a) + eps*p_ar(a).
         # For candidate actions cand_logp is the softmax log-prob; for
         # non-candidate actions cand_logp is the -1e8 floor, so the AR term
-        # dominates and log_prob is finite (log(eps) + ar_logp) — full support
+        # dominates and log_prob is finite (log(eps) + ar_logp), full support
         # over every legal hand play. Rows with no candidates collapse to AR.
         log_one_minus_eps = math.log(1.0 - eps)
         log_eps = math.log(eps)

@@ -1,4 +1,4 @@
-"""BoosterPackScreen — modal overlay for opening packs."""
+"""BoosterPackScreen, modal overlay for opening packs."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ class BoosterPackScreen(Screen):
         pack_name = pack_center.get("name", pack.booster_key)
 
         self.query_one("#pack-header", Static).update(
-            f"{pack_name} — {pack.choices_remaining} choice(s) remaining"
+            f"{pack_name}, {pack.choices_remaining} choice(s) remaining"
         )
 
         # Render pack cards

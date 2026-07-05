@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from .blind import select_blind
 from .instances import sync_all_jokers
@@ -231,6 +232,9 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
                 list(state.jokers),
                 state.pseudorandom.pseudoseed("aajk"),
             )
+            # joker_keys must stay index-aligned with jokers: remove_joker pops
+            # the same index from both lists.
+            state.joker_keys = [joker.center_key for joker in state.jokers]
 
     for card in state.deck_cards:
         card.discarded = False

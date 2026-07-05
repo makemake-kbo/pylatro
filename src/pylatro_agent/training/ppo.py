@@ -141,7 +141,7 @@ def _load_checkpoint_compatible(
 ) -> None:
     """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift.
 
-    When ``reinit_value_head`` is set, the value head weights are *not* loaded —
+    When ``reinit_value_head`` is set, the value head weights are *not* loaded ,
     they keep their random init. Use this after a reward-function change (Phase
     2.4): a critic regressing returns from a deleted reward function produces
     systematically wrong advantages until it re-converges, during which PPO can
@@ -151,7 +151,7 @@ def _load_checkpoint_compatible(
     from ..checkpoint import load_checkpoint_payload
     state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
     if reinit_value_head:
-        # Match both bare and DataParallel-prefixed keys — the module. prefix is
+        # Match both bare and DataParallel-prefixed keys, the module. prefix is
         # only stripped later, inside _load_state_dict_into_model.
         state_dict = {
             k: v
@@ -302,7 +302,7 @@ class PPOConfig:
     # env emits HeuristicAgent.select_action(...) into info["teacher_action"];
     # PPO adds a NLL term -log pi(a_teacher | s) under the structured
     # ActionGrammarDistribution to its loss. Replaces the previous
-    # frozen-reference KL anchor — denser per-state supervision and no extra
+    # frozen-reference KL anchor, denser per-state supervision and no extra
     # forward pass through a second model.
     heuristic_distill_coeff: float = 0.3
     heuristic_distill_min: float = 0.0  # Phase 4: was 0.03; a nonzero floor anchors the policy to the heuristic forever
@@ -321,14 +321,14 @@ class PPOConfig:
     # Sharpens the on-policy distribution for both rollout sampling and PPO loss
     # computation. The BC-pretrained policy at temperature=1 has chosen_action_prob ≈ 0.5
     # over ~250 valid actions per state, which means a 30-step sampled episode has ~0.5^30
-    # probability of even matching its own greedy trajectory — sampled rollouts essentially
+    # probability of even matching its own greedy trajectory, sampled rollouts essentially
     # never win and PPO sees no positive advantage to lock onto. Sharpening the distribution
     # by a fixed factor at all sites (rollout, train forward, truncation bootstrap) keeps
-    # PPO consistent — old_log_probs and new_log_probs are computed under the same
-    # distribution — while letting the agent take competent actions in rollouts. Set to 1.0
+    # PPO consistent, old_log_probs and new_log_probs are computed under the same
+    # distribution, while letting the agent take competent actions in rollouts. Set to 1.0
     # to disable; lower for more deterministic behavior.
     rollout_temperature: float = 1.0  # Phase 4: was 0.7; the sharpening crutch now only suppresses exploration post-Phase-1 BC
-    # Weight on the ante_survival auxiliary BCE loss. Small by default —
+    # Weight on the ante_survival auxiliary BCE loss. Small by default ,
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
     survival_loss_coeff: float = 0.05
@@ -1148,7 +1148,7 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
                 update_count,
             )
 
-    # Reward group totals — surface how much shaping comes from already-solved
+    # Reward group totals, surface how much shaping comes from already-solved
     # local hand play vs strategic shop/joker/economy signal, so a run can be
     # diagnosed when local play drowns out the strategic loop.
     group_sums: defaultdict = defaultdict(float)
@@ -1634,7 +1634,7 @@ def train_ppo(
     logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
                 config.rollout_temperature)
     # Phase 3.3: discount-horizon diagnostic. At gamma=0.99 a terminal reward
-    # is discounted to ~0.22 at 150 steps, ~0.05 at 300 — the early-game shop
+    # is discounted to ~0.22 at 150 steps, ~0.05 at 300, the early-game shop
     # economy decisions that matter most for winning are nearly invisible. For
     # win_ante >= 6 (long episodes), 0.997 is recommended (0.997^300 ~ 0.41).
     effective_win_ante = config.win_ante if config.win_ante is not None else 8
@@ -1791,7 +1791,7 @@ def train_ppo(
             and abs(float(saved_entropy_coeff) - entropy_coeff) > 1e-12
         ):
             # Fixed-coefficient mode: the CLI value is authoritative, mirroring
-            # _apply_lr_override — silently restoring the checkpoint's coeff
+            # _apply_lr_override, silently restoring the checkpoint's coeff
             # would make --entropy-coeff a no-op on resume.
             logger.warning(
                 "Overriding entropy_coeff from checkpoint %.5f to CLI %.5f.",
@@ -2142,7 +2142,7 @@ def train_ppo(
             # (policy frozen, only critic + survival train). Unfreezing is
             # gated on the EV metric, not the update count: the policy stays
             # frozen past critic_warmup_updates until EV clears
-            # critic_warmup_min_ev (latched — a later noisy dip does not
+            # critic_warmup_min_ev (latched, a later noisy dip does not
             # re-freeze). A 4x hard cap prevents an unreachable gate from
             # freezing the policy forever. With critic_warmup_min_ev <= 0 the
             # warmup is purely count-based.
@@ -2161,7 +2161,7 @@ def train_ppo(
                     logger.warning(
                         "Critic warmup EV gate (%.2f) not reached after %d updates "
                         "(4x critic_warmup_updates cap); unfreezing anyway. EV=%.3f. "
-                        "Advantages may be noisy — consider a longer warmup or a "
+                        "Advantages may be noisy, consider a longer warmup or a "
                         "higher value_loss_coeff.",
                         config.critic_warmup_min_ev,
                         update_count,
@@ -2705,7 +2705,7 @@ def train_ppo(
                     )
 
                 # Phase 4: alert if minibatch_fraction < 0.8 for 10 consecutive
-                # updates — chronic KL-stop means the step size (lr) is wrong,
+                # updates, chronic KL-stop means the step size (lr) is wrong,
                 # not the trust region. Prefer fixing lr over reverting target_kl.
                 if minibatches_expected > 0 and minibatch_fraction < 0.8:
                     _low_minibatch_streak += 1

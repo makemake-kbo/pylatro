@@ -278,7 +278,7 @@ class RunState:
     joker_buffer: int = 0
     max_jokers: int = 0
     starting_deck_size: int = 52
-    ecto_minus: float = 1
+    ecto_minus: int = 1
     tag_tally: int = 0
     hands_played: int = 0
     unused_discards: int = 0
@@ -300,7 +300,7 @@ class RunState:
     blind_prepped: bool = False
     eye_hands: dict[str, bool] = field(default_factory=dict)
     mouth_only_hand: str | bool = False
-    _joker_name_cache: tuple[list[str], int, frozenset[str]] | None = field(default=None, repr=False, compare=False)
+    _joker_name_cache: tuple[tuple[str, ...], frozenset[str]] | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.pseudorandom = PseudorandomState(self.seed)
@@ -312,13 +312,16 @@ class RunState:
         }
 
     def has_joker(self, name: str) -> bool:
+        # joker_keys is mutated in place, so the cache must key on the actual
+        # contents. Comparing identity + length is not enough: selling one joker
+        # and gaining another leaves the same list at the same length.
         cache = getattr(self, "_joker_name_cache", None)
-        keys = self.joker_keys
-        if cache is None or cache[0] is not keys or cache[1] != len(keys):
+        keys = tuple(self.joker_keys)
+        if cache is None or cache[0] != keys:
             names = frozenset(self.data.centers[k]["name"] for k in keys)
-            self._joker_name_cache = (keys, len(keys), names)
+            self._joker_name_cache = (keys, names)
         else:
-            names = cache[2]
+            names = cache[1]
         return name in names
 
     def calculate_reroll_cost(self, skip_increment: bool = False) -> None:

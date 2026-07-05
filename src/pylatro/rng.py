@@ -1,7 +1,7 @@
 """Bit-exact reimplementation of Balatro's pseudo-random generator.
 
 Every constant here reproduces Balatro's own ``pseudohash`` / ``pseudoseed``
-recurrences. They look arbitrary because they are — the only requirement is that
+recurrences. They look arbitrary because they are, the only requirement is that
 they reproduce Balatro's generator exactly, otherwise a given run seed produces a
 different card/shop/boss sequence than the real game. Do not "clean up" or round
 these numbers.
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random as _random_mod
 from dataclasses import dataclass, field
-from math import floor, pi
+from math import pi
 from typing import TYPE_CHECKING, Any, TypeVar
 
 try:
@@ -126,7 +126,7 @@ class PseudorandomState:
         same fixed recurrence (constants ``2.134453429141`` / ``1.72431234`` and
         the 13-decimal rounding all reproduce Balatro's ``pseudoseed`` exactly)
         and then averaged with the run's ``hashed_seed``. ``predict_seed`` evaluates the
-        channel against a hypothetical run seed without mutating state — used for
+        channel against a hypothetical run seed without mutating state, used for
         previewing future draws (e.g. Telescope/voucher prediction).
         """
         if key == "seed":

@@ -1,15 +1,15 @@
-"""PlayingCardWidget — 7-wide × 5-tall Rich renderable card."""
+"""PlayingCardWidget, 7-wide × 5-tall Rich renderable card."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from rich.text import Text
+from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.message import Message
 
-from ..theme import SUIT_COLORS, SUIT_SYMBOLS, EDITION_COLORS, BALATRO_PALETTE
+from ..theme import BALATRO_PALETTE, EDITION_COLORS, SUIT_COLORS, SUIT_SYMBOLS
 
 if TYPE_CHECKING:
     from pylatro.models import PlayingCard

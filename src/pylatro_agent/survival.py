@@ -33,7 +33,7 @@ def compute_ante_survival_targets(
         mask[:capped] = 1.0
         return targets, mask
 
-    # Lost at ante `max_ante` — survived 1..max_ante-1, died on max_ante.
+    # Lost at ante `max_ante`, survived 1..max_ante-1, died on max_ante.
     capped = min(max_ante, num_antes)
     if capped >= 1:
         targets[: capped - 1] = 1.0

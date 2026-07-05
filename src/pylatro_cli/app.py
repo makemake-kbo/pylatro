@@ -1,8 +1,8 @@
-"""BalatroApp — main Textual application."""
+"""BalatroApp, main Textual application."""
 
 from __future__ import annotations
 
-from textual.app import App, ComposeResult
+from textual.app import App
 from textual.binding import Binding
 
 from pylatro import GameData, load_game_data
@@ -39,4 +39,4 @@ class BalatroApp(App):
             self.pop_screen()
 
     def action_help(self) -> None:
-        self.notify("pylatro — Terminal Balatro\n[q] Quit  [?] Help  [Esc] Back", title="Help")
+        self.notify("pylatro, Terminal Balatro\n[q] Quit  [?] Help  [Esc] Back", title="Help")

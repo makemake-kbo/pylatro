@@ -1,4 +1,4 @@
-"""BlindPanel — a single blind option in blind select screen."""
+"""BlindPanel, a single blind option in blind select screen."""
 
 from __future__ import annotations
 

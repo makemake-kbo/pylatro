@@ -2,7 +2,7 @@
 
 These functions compute per-step diagnostics (hand_play_*, planet_*,
 pack_skip_*) that default_reward_components reads as shaping inputs.
-Kept here — rather than on BalatroEnv — so fast_generate can produce
+Kept here, rather than on BalatroEnv, so fast_generate can produce
 the same diagnostic fields without depending on gymnasium.
 """
 
@@ -61,7 +61,7 @@ def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any
         f"{prefix}_hand_type": hand_type,
         f"{prefix}_played_hand": played > 0,
         # Play count of the planet's hand relative to the most-played hand this
-        # run — 1.0 for the workhorse hand, near 0 for a hand played once.
+        # run, 1.0 for the workhorse hand, near 0 for a hand played once.
         f"{prefix}_play_share": (played / max_played) if max_played > 0 else 0.0,
         f"{prefix}_main_hand": main_hand,
         f"{prefix}_main_hand_match": bool(hand_type and hand_type == main_hand),
@@ -71,7 +71,7 @@ def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any
 def action_diagnostics(state, decoded) -> dict[str, Any]:
     """Return policy-quality diagnostics for the pre-action state.
 
-    Mirrors the env's _action_diagnostics — when this returns fields,
+    Mirrors the env's _action_diagnostics, when this returns fields,
     default_reward_components reads them to award candidate / planet /
     pack-skip shaping bonuses. fast_generate calls this so its value-
     head BC targets see the same reward signal as PPO.

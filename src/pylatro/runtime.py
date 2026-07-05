@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
 from math import floor
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
-from ._helpers import _as_dict
 from .instances import add_consumable, add_joker, remove_consumable, remove_joker, sync_all_jokers
 from .models import ConsumableInstance, JokerInstance, PlayingCard
 from .pool import _pick_pool_key, create_card_spec, get_current_pool

@@ -29,7 +29,7 @@ for idx, subset in enumerate(HAND_SUBSETS):
     HAND_SUBSET_BITS[idx] = bitmask
 
 # Consumable targeting subsets are the size-1..MAX_CONSUMABLE_HAND_TARGETS
-# prefix of HAND_SUBSETS — since combinations enumerate by ascending size,
+# prefix of HAND_SUBSETS, since combinations enumerate by ascending size,
 # slicing the first NUM_CONSUMABLE_HAND_SUBSETS entries gives exactly the
 # valid targeting subsets in the same canonical order.
 CONSUMABLE_HAND_SUBSETS: tuple[tuple[int, ...], ...] = HAND_SUBSETS[:NUM_CONSUMABLE_HAND_SUBSETS]
@@ -75,8 +75,8 @@ def legal_consumable_subset_mask(hand_size: int, min_size: int, max_size: int) -
     present_bits = (1 << hand_size) - 1
     all_bits = (1 << MAX_HAND_SIZE) - 1
     missing_bits = np.uint16(all_bits ^ present_bits)
-    size_ok = (CONSUMABLE_HAND_SUBSET_SIZES >= min_size) & (
-        CONSUMABLE_HAND_SUBSET_SIZES <= max_size
+    size_ok = (min_size <= CONSUMABLE_HAND_SUBSET_SIZES) & (
+        max_size >= CONSUMABLE_HAND_SUBSET_SIZES
     )
     indices_ok = (CONSUMABLE_HAND_SUBSET_BITS & missing_bits) == 0
     return size_ok & indices_ok

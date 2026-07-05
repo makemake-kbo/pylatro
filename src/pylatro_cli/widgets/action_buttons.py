@@ -1,8 +1,7 @@
-"""ActionButtons — Play Hand, Sort, Discard buttons."""
+"""ActionButtons, Play Hand, Sort, Discard buttons."""
 
 from __future__ import annotations
 
-from textual.containers import Horizontal
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button

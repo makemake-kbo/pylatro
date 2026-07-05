@@ -12,7 +12,7 @@ from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
-from ..vocab import Vocab, build_vocab
+from ..vocab import build_vocab
 from .ppo import PPOConfig, evaluate_model, train_ppo
 
 logger = logging.getLogger(__name__)

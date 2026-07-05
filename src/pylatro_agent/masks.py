@@ -21,7 +21,6 @@ from .constants import (
     MAX_PACK_CARDS,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
-    NUM_CONSUMABLE_HAND_SUBSETS,
     ActionRange,
     SubPhase,
 )

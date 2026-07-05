@@ -1,4 +1,4 @@
-"""InfoSidebar — left sidebar showing blind info, score, hands/discards/dollars."""
+"""InfoSidebar, left sidebar showing blind info, score, hands/discards/dollars."""
 
 from __future__ import annotations
 

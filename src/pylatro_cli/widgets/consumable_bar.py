@@ -1,4 +1,4 @@
-"""ConsumableBar — horizontal row of consumable slots."""
+"""ConsumableBar, horizontal row of consumable slots."""
 
 from __future__ import annotations
 

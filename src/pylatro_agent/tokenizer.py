@@ -173,7 +173,7 @@ class Tokenizer:
                 tokens[p, 11] = ci if loc == 0 else 0
                 # Slot 12 formerly held a "pending consumable target" flag
                 # for the old CONSUMABLE_TARGET sub-phase. With atomic
-                # consumable actions there is no pending state — keep the
+                # consumable actions there is no pending state, keep the
                 # slot zeroed so the token layout stays stable.
                 tokens[p, 12] = 0
                 token_types[p] = TokenType.DECK

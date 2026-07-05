@@ -1,4 +1,4 @@
-"""MainMenuScreen — title screen with PLAY / OPTIONS / QUIT."""
+"""MainMenuScreen, title screen with PLAY / OPTIONS / QUIT."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from textual.binding import Binding
 from textual.containers import Center, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Input, Label, Static
-
-from ..controller import GamePhase
 
 TITLE_ART = r"""
              _       _
@@ -146,12 +144,11 @@ class MainMenuScreen(Screen):
     """
 
     def compose(self) -> ComposeResult:
-        with Center():
-            with Vertical(id="menu-box"):
-                yield Static(TITLE_ART, classes="menu-title")
-                yield Button("Play", id="play-btn", variant="primary")
-                yield Button("Settings", id="settings-btn", variant="default")
-                yield Button("Quit", id="quit-btn", variant="error")
+        with Center(), Vertical(id="menu-box"):
+            yield Static(TITLE_ART, classes="menu-title")
+            yield Button("Play", id="play-btn", variant="primary")
+            yield Button("Settings", id="settings-btn", variant="default")
+            yield Button("Quit", id="quit-btn", variant="error")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         match event.button.id:

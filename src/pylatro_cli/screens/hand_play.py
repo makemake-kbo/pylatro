@@ -1,10 +1,10 @@
-"""HandPlayScreen — the core gameplay screen."""
+"""HandPlayScreen, the core gameplay screen."""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
@@ -169,7 +169,7 @@ class HandPlayScreen(Screen):
             sidebar.refresh()
 
             self.query_one("#hand-label", Static).update(
-                f"{display_name} (Lv.{level}) — {chips} × {mult}"
+                f"{display_name} (Lv.{level}), {chips} × {mult}"
             )
 
         # Update action buttons

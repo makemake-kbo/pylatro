@@ -1,4 +1,4 @@
-"""BlindSelectScreen — choose which blind to face."""
+"""BlindSelectScreen, choose which blind to face."""
 
 from __future__ import annotations
 
@@ -6,14 +6,13 @@ from math import floor
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import Static
 
 from pylatro import get_blind_amount
 
-from ..controller import GameController
 from ..widgets.blind_panel import BlindPanel
 
 
@@ -52,7 +51,7 @@ class BlindSelectScreen(Screen):
         assert state is not None
 
         yield Static(
-            f"Ante {state.round_resets.ante} — Select Your Blind",
+            f"Ante {state.round_resets.ante}, Select Your Blind",
             id="blind-header",
         )
         with Horizontal(id="blind-panels"):

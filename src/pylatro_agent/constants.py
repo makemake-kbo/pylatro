@@ -31,7 +31,7 @@ NUM_HAND_SUBSETS = sum(math.comb(MAX_HAND_SIZE, k) for k in range(1, 6))
 # highlighted cards (The Moon / Star / Sun / World), so enumerating size
 # 1..3 subsets covers every targeting need; a consumable needs hand
 # subset XOR a single joker XOR no target at all (verified against
-# game_data.json — no consumable requires both).
+# game_data.json, no consumable requires both).
 MAX_CONSUMABLE_HAND_TARGETS = 3
 NUM_CONSUMABLE_HAND_SUBSETS = sum(
     math.comb(MAX_HAND_SIZE, k) for k in range(1, MAX_CONSUMABLE_HAND_TARGETS + 1)

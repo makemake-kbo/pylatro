@@ -27,14 +27,14 @@ def check_cython_freshness(warn_only: bool = True) -> list[str]:
       1. Is the imported module a compiled .so (not a .py)?
       2. Is the source .py older than the compiled .so?
 
-    When `warn_only` is True, never raises — just returns the list.
+    When `warn_only` is True, never raises, just returns the list.
     """
     issues: list[str] = []
     for modname in _EXPECTED_COMPILED:
         try:
             mod = importlib.import_module(modname)
         except ImportError as exc:
-            issues.append(f"{modname}: import failed — {exc}")
+            issues.append(f"{modname}: import failed, {exc}")
             continue
 
         mod_file = getattr(mod, "__file__", None)

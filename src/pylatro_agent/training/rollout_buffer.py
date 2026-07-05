@@ -30,14 +30,14 @@ class RolloutBuffer:
         self.gae_lambda = gae_lambda
         self.total_size = num_envs * rollout_length
 
-        # Pre-allocate observation arrays — shape: (total, ...)
+        # Pre-allocate observation arrays, shape: (total, ...)
         self.tokens = np.zeros((self.total_size, MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16)
         self.token_types = np.zeros((self.total_size, MAX_SEQ_LEN), dtype=np.int8)
         self.scalars = np.zeros((self.total_size, SCALAR_DIM), dtype=np.float32)
         self.attention_masks = np.zeros((self.total_size, MAX_SEQ_LEN), dtype=np.int8)
         self.action_masks = np.zeros((self.total_size, NUM_ACTIONS), dtype=np.float32)
 
-        # Pre-allocate action/value arrays — shape: (total,)
+        # Pre-allocate action/value arrays, shape: (total,)
         self.actions = np.zeros(self.total_size, dtype=np.int64)
         self.rewards = np.zeros(self.total_size, dtype=np.float32)
         self.values = np.zeros(self.total_size, dtype=np.float32)
@@ -209,7 +209,7 @@ class RolloutBuffer:
     ) -> list[dict[str, torch.Tensor]]:
         """Return shuffled mini-batches as tensors.
 
-        Uses numpy fancy indexing on pre-allocated arrays — no Python list
+        Uses numpy fancy indexing on pre-allocated arrays, no Python list
         comprehensions over individual transitions.
         """
         # Determine valid range (in case envs didn't all fill rollout_length)

@@ -17,10 +17,9 @@ from .constants import (
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
-    NUM_ACTIONS,
-    NUM_CONSUMABLE_HAND_SUBSETS,
-    SCALAR_DIM,
     MAX_SHOP_ITEMS,
+    NUM_ACTIONS,
+    SCALAR_DIM,
     SHOP_START,
     ActionRange,
     TokenType,
@@ -377,7 +376,7 @@ class ConsumableFlatHead(nn.Module):
             nn.GELU(),
             nn.Linear(d_model // 2, 1),
         )
-        # (NUM_CONSUMABLE_HAND_SUBSETS, MAX_HAND_SIZE) float mask — 1.0 for
+        # (NUM_CONSUMABLE_HAND_SUBSETS, MAX_HAND_SIZE) float mask, 1.0 for
         # cards in the subset, 0.0 otherwise. Pre-registered so it follows
         # the module to GPU/MPS with .to(device).
         self.register_buffer(

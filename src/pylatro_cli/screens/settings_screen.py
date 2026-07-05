@@ -1,4 +1,4 @@
-"""SettingsScreen — user settings modal."""
+"""SettingsScreen, user settings modal."""
 
 from __future__ import annotations
 

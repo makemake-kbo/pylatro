@@ -130,7 +130,7 @@ def _card_name(state: RunState, card: PlayingCard) -> str:
 
 
 # A center key's "effect" string is static within loaded game data, so cache it
-# globally. NOTE: this assumes a single GameData per process — it is not keyed by
+# globally. Assumes a single GameData per process: the cache is not keyed by
 # state/data instance and is never cleared.
 _card_effect_cache: dict[str, str] = {}
 
@@ -147,7 +147,7 @@ def _card_effect(state: RunState, card: PlayingCard) -> str:
 
 def _card_id(state: RunState, card: PlayingCard) -> int:
     # Stone Cards have no rank, so give each a unique negative id (from object
-    # identity) — that way they never group into pairs/straights with each other.
+    # identity), that way they never group into pairs/straights with each other.
     if _card_effect(state, card) == "Stone Card":
         return -id(card)
     return RANK_TO_ID[card.rank]
@@ -508,16 +508,13 @@ def _evaluate_joker(
     if joker.debuff:
         return None
 
-    # This is terrible, terrible. For performance and readability
-    # TODO: make this such that we load jokers and associate them with a hash so
-    # we can do dict lookups
+    # TODO: replace this name-dispatch if/elif chain with a per-joker handler
+    # table keyed by center_key so each phase is a dict lookup.
 
     if phase == "before":
         if name == "Spare Trousers" and (poker_hands["Two Pair"] or poker_hands["Full House"]) and isinstance(joker.extra, int):
             joker.mult += joker.extra
-        elif name == "Square Joker" and len(full_hand) == 4 and isinstance(joker.extra, dict):
-            joker.extra["chips"] += int(joker.extra.get("chip_mod", 0) or 0)
-        elif name == "Runner" and poker_hands["Straight"] and isinstance(joker.extra, dict):
+        elif (name == "Square Joker" and len(full_hand) == 4 and isinstance(joker.extra, dict)) or (name == "Runner" and poker_hands["Straight"] and isinstance(joker.extra, dict)):
             joker.extra["chips"] += int(joker.extra.get("chip_mod", 0) or 0)
         elif name == "Ride the Bus" and isinstance(joker.extra, int):
             if any(_is_face(state, card) for card in scoring_hand):
@@ -860,10 +857,9 @@ def score_hand(
         pure_stones = [card for card in full_hand if _card_effect(state, card) == "Stone Card" and card not in scoring_cards]
         scoring_cards.extend(pure_stones)
 
-    for joker in state.jokers:
-        state.current_round.free_rerolls = sum(
-            1 for owned in state.jokers if _joker_center(state, owned)["name"] == "Chaos the Clown"
-        )
+    state.current_round.free_rerolls = sum(
+        1 for owned in state.jokers if _joker_center(state, owned)["name"] == "Chaos the Clown"
+    )
 
     for index, joker in enumerate(state.jokers):
         _evaluate_joker(
@@ -1037,27 +1033,29 @@ def score_hand(
                 mult = _mod_mult(mult * effect["x_mult"])
             if "dollars" in effect:
                 _add_money(state, int(effect["dollars"]))
-            for other in state.jokers:
-                other_index = state.jokers.index(other)
-                on_joker = _evaluate_joker(
-                    state,
-                    other,
-                    index=other_index,
-                    phase="other_joker",
-                    full_hand=full_hand,
-                    scoring_hand=scoring_cards,
-                    held_hand=held_cards,
-                    scoring_name=scoring_name,
-                    poker_hands=poker_hands,
-                    other_joker=joker,
-                )
-                if on_joker:
-                    if "chips" in on_joker:
-                        hand_chips = _mod_chips(state, hand_chips + on_joker["chips"])
-                    if "mult" in on_joker:
-                        mult = _mod_mult(mult + on_joker["mult"])
-                    if "x_mult" in on_joker:
-                        mult = _mod_mult(mult * on_joker["x_mult"])
+        # Every joker gets an "other_joker" pass after it is scored, whether or
+        # not it produced an effect itself (Baseball Card triggers on uncommon
+        # jokers even when they contribute nothing this hand).
+        for other_index, other in enumerate(state.jokers):
+            on_joker = _evaluate_joker(
+                state,
+                other,
+                index=other_index,
+                phase="other_joker",
+                full_hand=full_hand,
+                scoring_hand=scoring_cards,
+                held_hand=held_cards,
+                scoring_name=scoring_name,
+                poker_hands=poker_hands,
+                other_joker=joker,
+            )
+            if on_joker:
+                if "chips" in on_joker:
+                    hand_chips = _mod_chips(state, hand_chips + on_joker["chips"])
+                if "mult" in on_joker:
+                    mult = _mod_mult(mult + on_joker["mult"])
+                if "x_mult" in on_joker:
+                    mult = _mod_mult(mult * on_joker["x_mult"])
 
     for consumable in state.consumables:
         effect = _evaluate_planet_consumable(state, consumable, scoring_name=scoring_name)

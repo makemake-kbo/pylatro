@@ -61,7 +61,7 @@ class BalatroEnv(gymnasium.Env):
         self._max_steps = max_steps
         # Override the run's victory threshold for curriculum training. None
         # uses the engine default (win_ante=8). Lower values let PPO see
-        # frequent wins early so it can bootstrap a value signal — the
+        # frequent wins early so it can bootstrap a value signal, the
         # heuristic teacher only wins ~1% at ante 8 but ~39% at ante 4.
         self._win_ante_override = win_ante
         self._reward_fn = reward_fn or default_reward
@@ -75,7 +75,7 @@ class BalatroEnv(gymnasium.Env):
         self._steps_since_progress = 0
 
         # Multi-step state (only used by the legacy SELECT_CARDS flow; the
-        # consumable flow is now atomic — every consumable action commits
+        # consumable flow is now atomic, every consumable action commits
         # slot + targets in one env.step() so no pending state is needed).
         self._selected_cards: set[int] = set()
         self._pending_action: str | None = None  # "play" or "discard"
@@ -86,7 +86,7 @@ class BalatroEnv(gymnasium.Env):
         self._blind_just_beaten: bool = False
 
         # Heuristic teacher for distillation. One instance per env (process)
-        # — the cache is per-instance and keyed on hand+joker signature, so
+        #, the cache is per-instance and keyed on hand+joker signature, so
         # parallel envs are isolated naturally.
         self._teacher = HeuristicAgent()
 
@@ -175,7 +175,7 @@ class BalatroEnv(gymnasium.Env):
         try:
             self._execute_action(decoded)
         except Exception as e:
-            # Invalid action — log and give small penalty, but don't terminate.
+            # Invalid action, log and give small penalty, but don't terminate.
             # Masking should prevent this; if it happens it's a bug to investigate.
             import logging
             logging.getLogger(__name__).warning(f"Action {action} raised {type(e).__name__}: {e}")

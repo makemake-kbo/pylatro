@@ -1,4 +1,4 @@
-"""ConsumableTargetScreen — modal for targeting consumable effects."""
+"""ConsumableTargetScreen, modal for targeting consumable effects."""
 
 from __future__ import annotations
 

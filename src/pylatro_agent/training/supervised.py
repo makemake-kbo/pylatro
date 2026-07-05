@@ -166,7 +166,7 @@ def train_supervised(
         logger.info("Using %d pre-generated training records", len(records))
 
     if not records:
-        logger.error("No training records provided — check min_ante or the upstream generator")
+        logger.error("No training records provided, check min_ante or the upstream generator")
         return model
 
     wins = sum(1 for r in records if r["won"])
@@ -239,7 +239,7 @@ def train_supervised(
             # before PPO ever gets a chance to explore them.
             # Phase 5: outcome-weighted BC NLL. The weight tilts imitation toward
             # successful trajectories while preserving full state coverage. Applied
-            # to the action loss ONLY — value/win/survival losses use unweighted
+            # to the action loss ONLY, value/win/survival losses use unweighted
             # targets so the critic stays unbiased.
             bc_weights = batch["bc_weight"]
             logp = dist.log_prob(batch["actions"])
@@ -260,7 +260,7 @@ def train_supervised(
                 raise RuntimeError(
                     f"{unreachable_label_fraction.item():.4f} of BC labels are at the "
                     f"-1e8 unreachable floor despite hand_ar_mixture_eps="
-                    f"{config.hand_ar_mixture_eps} — the mixture has a support bug."
+                    f"{config.hand_ar_mixture_eps}, the mixture has a support bug."
                 )
             action_loss = -(logp * bc_weights).sum() / bc_weights.sum().clamp(min=1e-6)
 
@@ -269,7 +269,7 @@ def train_supervised(
                 value_dict["win_prob"], batch["won"].float()
             )
             # Train expected_score to predict approximate game return
-            # This is CRITICAL — PPO uses expected_score as its value function
+            # This is CRITICAL, PPO uses expected_score as its value function
             score_loss = F.mse_loss(
                 value_dict["expected_score"], batch["value_target"]
             )
@@ -420,7 +420,7 @@ def _outcome_weight(record: dict, config: SupervisedConfig) -> float:
     """AWR-style outcome weight: w = exp(beta * normalized_outcome), clamped.
 
     normalized_outcome maps pretraining_outcome_value to [0, 1]. Applied to the
-    BC NLL only — never to value/win/survival targets — so the critic stays
+    BC NLL only, never to value/win/survival targets, so the critic stays
     unbiased while imitation tilts toward successful trajectories.
     """
     import math

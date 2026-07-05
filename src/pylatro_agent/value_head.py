@@ -1,4 +1,4 @@
-"""Value head — predicts win probability, expected score, and ante survival."""
+"""Value head, predicts win probability, expected score, and ante survival."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class ValueHead(nn.Module):
         """
         Args:
             backbone_out: (batch, seq_len, d_model)
-            padding_mask: (batch, seq_len) — 1 for real tokens, 0 for pad
+            padding_mask: (batch, seq_len), 1 for real tokens, 0 for pad
         Returns:
             dict with win_prob (batch,), expected_score (batch,), ante_survival (batch, max_ante)
         """

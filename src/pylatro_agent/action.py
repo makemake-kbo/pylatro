@@ -37,7 +37,7 @@ class ActionType(StrEnum):
 @dataclass(slots=True)
 class DecodedAction:
     action_type: ActionType
-    index: int = 0  # primary index — slot/card/shop offset depending on action
+    index: int = 0  # primary index, slot/card/shop offset depending on action
     # For USE_CONSUMABLE_HAND_SUBSET: hand-subset id inside the slot block.
     # For USE_CONSUMABLE_JOKER: joker target index.
     # For USE_CONSUMABLE_NO_TARGET: unused.

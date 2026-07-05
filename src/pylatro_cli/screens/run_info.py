@@ -1,4 +1,4 @@
-"""RunInfoScreen — modal showing poker hand levels and deck composition."""
+"""RunInfoScreen, modal showing poker hand levels and deck composition."""
 
 from __future__ import annotations
 

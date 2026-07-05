@@ -1,4 +1,4 @@
-"""GameController — pure data layer wrapping the pylatro engine. No Textual imports."""
+"""GameController, pure data layer wrapping the pylatro engine. No Textual imports."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from math import floor
 from typing import TYPE_CHECKING
 
 import pylatro
-from pylatro.models import BlindType, POKER_HANDS
 
 if TYPE_CHECKING:
     from pylatro import (
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
         PackState,
         PlayResult,
         RunState,
-        ScoreResult,
         UseConsumableResult,
     )
     from pylatro.models import PlayingCard, ShopCard
@@ -53,7 +51,6 @@ class GameController:
 
     def select_blind(self, blind_type: str = "Small") -> list[PlayingCard]:
         assert self.state is not None
-        pylatro.select_blind(self.state, blind_type)
         drawn = pylatro.start_blind(self.state, blind_type)
         self.round_score = 0
         self.phase = GamePhase.HAND_PLAY
@@ -211,17 +208,16 @@ class GameController:
         return hand_name, display_name, scoring
 
     def hand_chips_mult(self, hand_name: str) -> tuple[int, int]:
-        """Get the base chips and mult for a poker hand name."""
+        """Current chips and mult for a poker hand name.
+
+        The engine keeps hands[name]["chips"/"mult"] up to date with the hand's
+        level (_level_up_hand recomputes them), so no level math is needed here.
+        """
         assert self.state is not None
         hand_data = self.state.hands.get(hand_name)
         if hand_data is None:
             return 0, 0
-        level = hand_data.get("level", 1)
-        base_chips = hand_data.get("chips", 0)
-        base_mult = hand_data.get("mult", 0)
-        l_chips = hand_data.get("l_chips", 0)
-        l_mult = hand_data.get("l_mult", 0)
-        return base_chips + l_chips * (level - 1), base_mult + l_mult * (level - 1)
+        return hand_data.get("chips", 0), hand_data.get("mult", 0)
 
     def card_display_info(self, card: PlayingCard) -> dict:
         """Return display-friendly info for a playing card."""

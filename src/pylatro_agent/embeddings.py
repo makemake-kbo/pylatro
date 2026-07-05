@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 import torch.nn as nn
 
@@ -25,13 +23,10 @@ from .constants import (
     META_COUNT,
     META_START,
     OBJ_START,
-    SCALAR_DIM,
     SHOP_MAX,
     SHOP_START,
-    TOKEN_DIM,
     VOUCHER_MAX,
     VOUCHER_START,
-    TokenType,
 )
 from .vocab import Vocab
 

@@ -12,7 +12,7 @@ from .action_grammar import ActionGrammarDistribution, ActionGrammarHead
 from .action_heads import BlindSelectHead, ConsumableFlatHead, HandPlayHead, PackHead, ShopHead
 from .backbone import TransformerBackbone
 from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SubPhase
-from .distributions import MaskedCategorical  # noqa: F401 — re-exported for callers
+from .distributions import MaskedCategorical  # noqa: F401, re-exported for callers
 from .embeddings import ContentEmbeddingLayer
 from .value_head import ValueHead
 
@@ -75,8 +75,8 @@ class BalatroAgent(nn.Module):
             tokens: (batch, MAX_SEQ_LEN, TOKEN_DIM) int
             token_types: (batch, MAX_SEQ_LEN) int
             scalars: (batch, SCALAR_DIM) float
-            attention_mask: (batch, MAX_SEQ_LEN) int — 1=real, 0=pad
-            action_mask: (batch, NUM_ACTIONS) int — 1=valid
+            attention_mask: (batch, MAX_SEQ_LEN) int, 1=real, 0=pad
+            action_mask: (batch, NUM_ACTIONS) int, 1=valid
             sub_phase: SubPhase or list of SubPhase per batch element
         Returns:
             (action_distribution, value_dict)
@@ -84,7 +84,7 @@ class BalatroAgent(nn.Module):
         # Embed
         x = self.embedding(tokens, token_types, scalars)
 
-        # Backbone — padding_mask for MHA should be True where padded
+        # Backbone, padding_mask for MHA should be True where padded
         padding_mask = (attention_mask == 0)
         x = self.backbone(x, padding_mask=padding_mask)
 
@@ -103,7 +103,7 @@ class BalatroAgent(nn.Module):
         # Value prediction
         value_dict = self.value_head(x, attention_mask)
 
-        # Return raw logits — callers construct MaskedCategorical.
+        # Return raw logits, callers construct MaskedCategorical.
         # This is necessary for nn.DataParallel which can only gather tensors.
         return logits, value_dict
 

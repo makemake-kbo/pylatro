@@ -323,7 +323,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 # Seeded random keep so the kept-below sample is reproducible
                 # but unbiased across the seed range. The previous "seed %
                 # 1000 < N" predicate produced a deterministic first-N-of-
-                # every-1000 stripe — fine if you want a stable bucket, bad
+                # every-1000 stripe, fine if you want a stable bucket, bad
                 # if you want a representative sample of below-threshold
                 # runs.
                 if keep_below_ratio > 0 and random.Random(seed).random() < keep_below_ratio:
@@ -519,7 +519,7 @@ def generate_training_data(
     num_games: int,
     data: GameData | None = None,
     vocab: Vocab | None = None,
-    # Phase 5: no outcome filter by default (min_ante=1) — hard filtering a fixed
+    # Phase 5: no outcome filter by default (min_ante=1), hard filtering a fixed
     # policy's rollouts by outcome imitates luck, not skill, and deletes the
     # recovery states PPO visits. Outcome weighting in supervised.py replaces it.
     # gamma matches SupervisedConfig.gamma (the PPO gamma of the next phase).

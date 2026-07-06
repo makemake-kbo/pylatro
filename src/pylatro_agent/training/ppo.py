@@ -387,6 +387,11 @@ class PPOConfig:
     # Required after any reward-function change so the critic doesn't start from a
     # stale return mapping. Pair with critic_warmup_updates to warm the fresh head.
     reinit_value_head: bool = False
+    # Discard the resumed checkpoint's best_eval_win_rate so ppo_best_eval.pt
+    # selection restarts from scratch. Required when the eval task changes
+    # (e.g. a --win-ante bump), otherwise no best-eval checkpoint is ever
+    # written until the harder task beats the old task's record.
+    reset_best_eval: bool = False
 
 
 @dataclass
@@ -405,16 +410,13 @@ class _UpdateStats:
     distill_losses_weighted: list[float] = field(default_factory=list)
     teacher_match_fractions: list[float] = field(default_factory=list)
     distill_weight_means: list[float] = field(default_factory=list)
-    teacher_valid_mask_fractions: list[float] = field(default_factory=list)
     teacher_reachable_fractions: list[float] = field(default_factory=list)
     teacher_unreachable_fractions: list[float] = field(default_factory=list)
     teacher_lp_mean_reachable: list[float] = field(default_factory=list)
-    # Phase 6: clearer teacher-reachability semantics. ``label_present`` is the
-    # fraction of all steps where the env emitted a teacher label; the legacy
-    # ``teacher_valid_mask_fractions`` kept the same meaning under a misleading
-    # name. ``action_mask_valid`` is, of those labels, how many are legal under
-    # the step's action mask; ``reachable`` is the subset that also has a finite
-    # policy log-prob above the -1e8 floor.
+    # ``label_present`` is the fraction of all steps where the env emitted a
+    # teacher label. ``action_mask_valid`` is, of those labels, how many are
+    # legal under the step's action mask; ``reachable`` is the subset that also
+    # has a finite policy log-prob above the -1e8 floor.
     teacher_label_present_fractions: list[float] = field(default_factory=list)
     teacher_action_mask_valid_fractions: list[float] = field(default_factory=list)
     # Breakdown of unreachable (present-but-not-reachable) teacher labels by
@@ -427,8 +429,6 @@ class _UpdateStats:
     on_policy_positive_advantage_fractions: list[float] = field(default_factory=list)
     on_policy_return_means: list[float] = field(default_factory=list)
     ppo_minibatches_processed: list[int] = field(default_factory=list)
-    dagger_losses: list[float] = field(default_factory=list)
-    dagger_teacher_match_fractions: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -787,13 +787,9 @@ def _run_ppo_update(
                 teacher_present = teacher_present_bool.float()
                 teacher_present_count = teacher_present.sum().clamp(min=1.0)
                 # "label present" = fraction of ALL steps with a teacher label.
-                # Kept under both the new precise name and the legacy
-                # teacher_valid_mask_fraction alias (which historically meant
-                # "label present", not "valid under mask").
                 teacher_label_present_fraction = (
                     teacher_present.sum() / max(1.0, float(teacher.numel()))
                 ).item()
-                teacher_valid_mask_fraction = teacher_label_present_fraction
                 # "action mask valid" = of the present labels, how many are
                 # legal under the current step's action_mask.
                 teacher_safe_t = teacher.clamp(0, NUM_ACTIONS - 1)
@@ -906,7 +902,6 @@ def _run_ppo_update(
             stats.distill_losses_weighted.append(distill_loss_weighted_value)
             stats.teacher_match_fractions.append(teacher_match)
             stats.distill_weight_means.append(distill_weight_mean)
-            stats.teacher_valid_mask_fractions.append(teacher_valid_mask_fraction)
             stats.teacher_label_present_fractions.append(teacher_label_present_fraction)
             stats.teacher_action_mask_valid_fractions.append(teacher_action_mask_valid_fraction)
             stats.teacher_reachable_fractions.append(teacher_reachable_fraction)
@@ -1029,12 +1024,9 @@ def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float
 def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> None:
     """Write the rollout-collected metrics for one update to TensorBoard."""
     writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rm.chosen_action_probs), update_count)
-    # Renamed: this is the max ACTION-TYPE probability (over the grammar's
-    # action-type distribution), not a true flat-action max. Kept under the
-    # precise name; the legacy tag is mirrored for existing dashboards.
-    _max_action_type_prob = _safe_mean(rm.max_action_probs)
-    writer.add_scalar("debug/max_action_type_prob_mean", _max_action_type_prob, update_count)
-    writer.add_scalar("debug/max_action_prob_mean", _max_action_type_prob, update_count)
+    # This is the max ACTION-TYPE probability (over the grammar's action-type
+    # distribution), not a true flat-action max.
+    writer.add_scalar("debug/max_action_type_prob_mean", _safe_mean(rm.max_action_probs), update_count)
     writer.add_scalar("debug/teacher_rollout_used_fraction", _safe_mean(rm.teacher_rollout_used), update_count)
     writer.add_scalar("debug/step_reward_mean", _safe_mean(rm.step_rewards), update_count)
     writer.add_scalar("rollout/progress_rate", _safe_mean(rm.progress_flags), update_count)
@@ -1872,9 +1864,16 @@ def train_ppo(
     # saved best forward so the resumed run keeps the prior best unless it beats it.
     best_eval_win_rate: float | None = None
     best_eval_update: int | None = None
-    if resume_state is not None:
+    if resume_state is not None and not config.reset_best_eval:
         best_eval_win_rate = resume_state.get("best_eval_win_rate")
         best_eval_update = resume_state.get("best_eval_update")
+    elif resume_state is not None:
+        logger.info(
+            "reset_best_eval: discarding resumed best_eval_win_rate=%s (update %s); "
+            "best-eval selection restarts from scratch",
+            resume_state.get("best_eval_win_rate"),
+            resume_state.get("best_eval_update"),
+        )
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
@@ -2262,15 +2261,7 @@ def train_ppo(
                     float(np.mean(update_stats.distill_losses_weighted)),
                     update_count,
                 )
-            if update_stats.teacher_valid_mask_fractions:
-                writer.add_scalar(
-                    "ppo/teacher_valid_mask_fraction",
-                    float(np.mean(update_stats.teacher_valid_mask_fractions)),
-                    update_count,
-                )
-                # Phase 6: clearer semantics. teacher_label_present_fraction
-                # == teacher_valid_mask_fraction (kept as alias); add the
-                # mask-valid and reachable fractions under precise names.
+            if update_stats.teacher_label_present_fractions:
                 writer.add_scalar(
                     "ppo/teacher_label_present_fraction",
                     float(np.mean(update_stats.teacher_label_present_fractions)),
@@ -2340,8 +2331,6 @@ def train_ppo(
                 writer.add_scalar("ppo/minibatches_expected", minibatches_expected, update_count)
                 minibatch_fraction = min(1.0, minibatches_processed / minibatches_expected)
                 writer.add_scalar("ppo/minibatch_fraction", minibatch_fraction, update_count)
-                writer.add_scalar("ppo/epochs_expected", config.ppo_epochs, update_count)
-                writer.add_scalar("ppo/epochs_completed_fraction", minibatch_fraction, update_count)
                 writer.add_scalar(
                     "ppo/early_stop_fraction",
                     1.0 if minibatches_processed < minibatches_expected else 0.0,
@@ -2350,23 +2339,17 @@ def train_ppo(
             # Trust-region statistics: capture once so both the TensorBoard
             # ppo/stop_reason_* scalars and the console diagnostic warnings
             # below use identical values for this update.
-            kl_mean = float(np.mean(update_approx_kls)) if update_approx_kls else 0.0
             kl_p95 = float(np.percentile(update_approx_kls, 95)) if update_approx_kls else 0.0
             kl_max = float(np.max(update_approx_kls)) if update_approx_kls else 0.0
             clip_frac_max = float(np.max(update_clip_fracs)) if update_clip_fracs else 0.0
-            writer.add_scalar("ppo/stop_reason_kl_mean", kl_mean, update_count)
             writer.add_scalar("ppo/stop_reason_kl_p95", kl_p95, update_count)
             writer.add_scalar("ppo/stop_reason_kl_max", kl_max, update_count)
-            writer.add_scalar("ppo/stop_reason_minibatch_fraction", minibatch_fraction, update_count)
-            if update_approx_kls:
-                writer.add_scalar("ppo/approx_kl_max", kl_max, update_count)
-                writer.add_scalar("ppo/approx_kl_p95", kl_p95, update_count)
-                if config.target_kl is not None:
-                    writer.add_scalar(
-                        "ppo/early_stop_kl",
-                        1.0 if kl_max > config.target_kl else 0.0,
-                        update_count,
-                    )
+            if update_approx_kls and config.target_kl is not None:
+                writer.add_scalar(
+                    "ppo/early_stop_kl",
+                    1.0 if kl_max > config.target_kl else 0.0,
+                    update_count,
+                )
             if update_clip_fracs:
                 writer.add_scalar("ppo/clip_fraction_max", clip_frac_max, update_count)
             writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
@@ -2667,10 +2650,10 @@ def train_ppo(
                     np.mean(update_stats.teacher_reachable_fractions)
                 )
                 # Only warn when there are actually teacher labels in the
-                # batch (i.e. teacher_valid_mask_fraction > 0.1). A batch
+                # batch (i.e. teacher_label_present_fraction > 0.1). A batch
                 # with no teacher labels trivially has reachability 0.
                 mean_teacher_present = float(
-                    np.mean(update_stats.teacher_valid_mask_fractions)
+                    np.mean(update_stats.teacher_label_present_fractions)
                 )
                 if mean_teacher_present > 0.1 and mean_reachable < 0.95:
                     logger.warning(
@@ -2729,7 +2712,7 @@ def train_ppo(
             if should_log_progress:
                 if kl_max > 0.25:
                     logger.warning(
-                        "ppo/approx_kl_max=%.4f (>0.25) at update %d; a minibatch "
+                        "ppo/stop_reason_kl_max=%.4f (>0.25) at update %d; a minibatch "
                         "moved the policy far outside the trust region. Lower "
                         "--target-kl / --lr or --ppo-epochs.",
                         kl_max,
@@ -2737,7 +2720,7 @@ def train_ppo(
                     )
                 if kl_p95 > 0.10:
                     logger.warning(
-                        "ppo/approx_kl_p95=%.4f (>0.10) at update %d; the 95th "
+                        "ppo/stop_reason_kl_p95=%.4f (>0.10) at update %d; the 95th "
                         "percentile minibatch KL is unsafe. Consider a tighter --target-kl.",
                         kl_p95,
                         update_count,
@@ -2760,14 +2743,14 @@ def train_ppo(
                 # Honor explicit CLI guards if provided (tighter than the defaults).
                 if config.target_kl_max is not None and kl_max > config.target_kl_max:
                     logger.warning(
-                        "--target-kl-max=%.3f exceeded: ppo/approx_kl_max=%.4f at update %d.",
+                        "--target-kl-max=%.3f exceeded: ppo/stop_reason_kl_max=%.4f at update %d.",
                         config.target_kl_max,
                         kl_max,
                         update_count,
                     )
                 if config.target_kl_p95 is not None and kl_p95 > config.target_kl_p95:
                     logger.warning(
-                        "--target-kl-p95=%.3f exceeded: ppo/approx_kl_p95=%.4f at update %d.",
+                        "--target-kl-p95=%.3f exceeded: ppo/stop_reason_kl_p95=%.4f at update %d.",
                         config.target_kl_p95,
                         kl_p95,
                         update_count,

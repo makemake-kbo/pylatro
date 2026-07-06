@@ -72,7 +72,7 @@ def legal_consumable_subset_mask(hand_size: int, min_size: int, max_size: int) -
     """
     if hand_size <= 0 or max_size <= 0 or min_size > max_size:
         return np.zeros(NUM_CONSUMABLE_HAND_SUBSETS, dtype=bool)
-    present_bits = (1 << hand_size) - 1
+    present_bits = present_hand_bitmask(hand_size)
     all_bits = (1 << MAX_HAND_SIZE) - 1
     missing_bits = np.uint16(all_bits ^ present_bits)
     size_ok = (min_size <= CONSUMABLE_HAND_SUBSET_SIZES) & (
@@ -83,17 +83,28 @@ def legal_consumable_subset_mask(hand_size: int, min_size: int, max_size: int) -
 
 
 def present_hand_bitmask(hand_size: int) -> int:
-    """Return the bitmask for contiguous live hand slots [0, hand_size)."""
+    """Return the bitmask for contiguous live hand slots [0, hand_size).
+
+    Hands larger than MAX_HAND_SIZE (possible via hand-size jokers/vouchers)
+    are truncated: slots >= MAX_HAND_SIZE are not addressable by any subset
+    action, matching the observation encoding.
+    """
     if hand_size <= 0:
         return 0
-    return (1 << hand_size) - 1
+    return (1 << min(hand_size, MAX_HAND_SIZE)) - 1
 
 
 def forced_hand_bitmask(forced_slots: set[int] | tuple[int, ...] | list[int]) -> int:
-    """Return the bitmask covering forced-selection hand slots."""
+    """Return the bitmask covering forced-selection hand slots.
+
+    Forced slots beyond MAX_HAND_SIZE are dropped: they cannot be selected
+    by any subset action, and requiring them would mask off every play.
+    """
     bitmask = 0
     for slot in forced_slots:
-        bitmask |= 1 << int(slot)
+        slot = int(slot)
+        if 0 <= slot < MAX_HAND_SIZE:
+            bitmask |= 1 << slot
     return bitmask
 
 

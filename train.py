@@ -522,6 +522,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--reset-best-eval",
+        action="store_true",
+        help=(
+            "With --resume: discard the checkpoint's best_eval_win_rate so "
+            "ppo_best_eval.pt selection restarts from scratch. Use when the eval "
+            "task changes (e.g. a --win-ante bump), otherwise no best-eval "
+            "checkpoint is written until the harder task beats the old record."
+        ),
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -668,6 +678,7 @@ def main():
                 hand_ar_mixture_eps=ppo_eps,
                 critic_warmup_updates=args.critic_warmup_updates,
                 reinit_value_head=args.reinit_value_head,
+                reset_best_eval=args.reset_best_eval,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.

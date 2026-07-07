@@ -532,6 +532,42 @@ def main():
         ),
     )
     parser.add_argument(
+        "--sil-coeff",
+        type=float,
+        default=0.0,
+        help=(
+            "Self-imitation coefficient: behavior-clone the agent's own winning "
+            "episodes from a FIFO buffer alongside PPO. Densifies the sparse win "
+            "signal at high --win-ante targets without touching the reward "
+            "function (only genuine wins enter the buffer). 0 disables. The "
+            "buffer is in-memory only and refills after a resume."
+        ),
+    )
+    parser.add_argument(
+        "--sil-buffer-episodes",
+        type=int,
+        default=64,
+        help="Max winning episodes kept in the SIL buffer (FIFO).",
+    )
+    parser.add_argument(
+        "--sil-batch-size",
+        type=int,
+        default=128,
+        help="Transitions per SIL minibatch.",
+    )
+    parser.add_argument(
+        "--sil-minibatches",
+        type=int,
+        default=8,
+        help="SIL minibatches per PPO update.",
+    )
+    parser.add_argument(
+        "--sil-min-episodes",
+        type=int,
+        default=8,
+        help="Skip the SIL pass until the buffer holds this many wins.",
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -679,6 +715,11 @@ def main():
                 critic_warmup_updates=args.critic_warmup_updates,
                 reinit_value_head=args.reinit_value_head,
                 reset_best_eval=args.reset_best_eval,
+                sil_coeff=args.sil_coeff,
+                sil_buffer_episodes=args.sil_buffer_episodes,
+                sil_batch_size=args.sil_batch_size,
+                sil_minibatches=args.sil_minibatches,
+                sil_min_episodes=args.sil_min_episodes,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.

@@ -23,6 +23,7 @@ from ..reward import _COMPONENT_GROUP, REWARD_INFO_KEYS, RewardConfig
 from ..survival import compute_ante_survival_targets
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
+from .sil import SILEpisodeTracker, WinEpisodeBuffer
 
 logger = logging.getLogger(__name__)
 _MISSING = object()
@@ -392,6 +393,18 @@ class PPOConfig:
     # (e.g. a --win-ante bump), otherwise no best-eval checkpoint is ever
     # written until the harder task beats the old task's record.
     reset_best_eval: bool = False
+    # Self-imitation (SIL-as-BC) on the agent's own winning episodes. Wins at
+    # high win-ante targets are too sparse for on-policy PPO (a handful per
+    # update); replaying complete winning trajectories as a behavior-cloning
+    # term multiplies the win-signal density without touching the reward
+    # function — only genuine wins enter the buffer, so there is nothing to
+    # farm. 0.0 disables. The buffer is in-memory only; it refills over the
+    # first ~buffer/wins-per-update updates after a resume.
+    sil_coeff: float = 0.0
+    sil_buffer_episodes: int = 64  # FIFO capacity (~50MB at typical episode lengths)
+    sil_batch_size: int = 128  # transitions per SIL minibatch
+    sil_minibatches: int = 8  # SIL minibatches per PPO update
+    sil_min_episodes: int = 8  # skip SIL until the buffer holds this many wins
 
 
 @dataclass
@@ -533,6 +546,16 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("dagger_bc_coeff must be non-negative")
     if config.dagger_bc_lr_mult <= 0.0:
         raise ValueError("dagger_bc_lr_mult must be positive")
+    if config.sil_coeff < 0.0:
+        raise ValueError("sil_coeff must be non-negative")
+    if config.sil_buffer_episodes <= 0:
+        raise ValueError("sil_buffer_episodes must be positive")
+    if config.sil_batch_size <= 0:
+        raise ValueError("sil_batch_size must be positive")
+    if config.sil_minibatches <= 0:
+        raise ValueError("sil_minibatches must be positive")
+    if config.sil_min_episodes <= 0:
+        raise ValueError("sil_min_episodes must be positive")
     if config.adaptive_entropy:
         if config.entropy_coeff <= 0.0:
             raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
@@ -999,6 +1022,50 @@ def _run_dagger_bc_update(
             group["lr"] = lr
 
     return losses, teacher_matches
+
+
+def _run_sil_update(
+    model: nn.Module,
+    optimizer: Adam,
+    sil_buffer: "WinEpisodeBuffer | None",
+    config: PPOConfig,
+    device: torch.device,
+) -> list[float]:
+    """Behavior-clone minibatches sampled from the win-episode buffer.
+
+    Runs after the PPO (and DAgger) passes each update. Loss is the NLL of
+    the stored winning actions under the current masked grammar
+    distribution, scaled by sil_coeff. Non-finite log-probs (candidate-hand
+    support drift, same failure mode the teacher reachability mask guards)
+    are dropped from the mean rather than poisoning the gradient.
+    """
+    if sil_buffer is None or config.sil_coeff <= 0.0:
+        return []
+    if sil_buffer.num_episodes < config.sil_min_episodes:
+        return []
+
+    model.eval()
+    losses: list[float] = []
+    for _ in range(config.sil_minibatches):
+        batch = sil_buffer.sample(config.sil_batch_size, device)
+        optimizer.zero_grad()
+        dist, _value_dict = _grammar_distribution(
+            model,
+            batch,
+            temperature=config.rollout_temperature,
+        )
+        log_probs = dist.log_prob(batch["actions"])
+        finite = (log_probs > -1e7).float()
+        denom = finite.sum()
+        if denom.item() <= 0:
+            continue
+        sil_loss = -(log_probs * finite).sum() / denom
+        (config.sil_coeff * sil_loss).backward()
+        nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+        optimizer.step()
+        optimizer.zero_grad()
+        losses.append(sil_loss.item())
+    return losses
 
 
 def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float:
@@ -1874,6 +1941,14 @@ def train_ppo(
             resume_state.get("best_eval_win_rate"),
             resume_state.get("best_eval_update"),
         )
+    # Self-imitation: FIFO buffer of complete winning episodes plus a per-env
+    # tracker that assembles them across rollout boundaries (episodes are
+    # ~100 steps and routinely outlive a single rollout).
+    sil_buffer: WinEpisodeBuffer | None = None
+    sil_tracker: SILEpisodeTracker | None = None
+    if config.sil_coeff > 0.0:
+        sil_buffer = WinEpisodeBuffer(config.sil_buffer_episodes)
+        sil_tracker = SILEpisodeTracker(config.num_envs)
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
@@ -1990,6 +2065,11 @@ def train_ppo(
                     distill_weights=distill_weights_np,
                     teacher_forced=use_teacher_np,
                 )
+                if sil_tracker is not None:
+                    # Same pre-step obs the rollout buffer stores; the tracker
+                    # copies compactly so the shared _ObsBuffer arrays are safe
+                    # to overwrite next step.
+                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np)
 
                 # Track per-env episode stats
                 env_ep_reward += rewards
@@ -2060,6 +2140,10 @@ def train_ppo(
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)
                     episode_antes.append(ep_ante)
+                    if sil_tracker is not None and sil_buffer is not None:
+                        sil_tracker.finish_episode(
+                            int(i), won=ep_won and not ep_stalled, buffer=sil_buffer
+                        )
                     # Fill ante-survival targets for every step in this episode.
                     # Truncated-by-stall episodes have no conclusive outcome on
                     # their final ante, so leave mask=0 and skip the fill.
@@ -2209,6 +2293,19 @@ def train_ppo(
                 device=device,
                 use_pin_memory=use_pin_memory,
             )
+
+            # Self-imitation pass over buffered winning episodes. Skipped
+            # during critic warmup for the same reason the policy loss is
+            # zeroed there: the policy must stay frozen.
+            sil_losses: list[float] = []
+            if not in_critic_warmup:
+                sil_losses = _run_sil_update(
+                    model=model,
+                    optimizer=optimizer,
+                    sil_buffer=sil_buffer,
+                    config=config,
+                    device=device,
+                )
             update_policy_losses = update_stats.policy_losses
             update_value_losses = update_stats.value_losses
             update_survival_losses = update_stats.survival_losses
@@ -2255,6 +2352,14 @@ def train_ppo(
             writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
             writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
             writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
+            if sil_buffer is not None:
+                writer.add_scalar("sil/buffer_episodes", float(sil_buffer.num_episodes), update_count)
+                writer.add_scalar("sil/buffer_transitions", float(sil_buffer.num_transitions), update_count)
+                writer.add_scalar(
+                    "sil/episodes_added_total", float(sil_buffer.episodes_added_total), update_count
+                )
+                if sil_losses:
+                    writer.add_scalar("sil/loss", float(np.mean(sil_losses)), update_count)
             if update_stats.distill_losses_weighted:
                 writer.add_scalar(
                     "ppo/distill_loss_weighted",

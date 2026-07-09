@@ -398,12 +398,16 @@ class PPOConfig:
     # update); replaying complete winning trajectories as a behavior-cloning
     # term multiplies the win-signal density without touching the reward
     # function — only genuine wins enter the buffer, so there is nothing to
-    # farm. 0.0 disables. The buffer is in-memory only; it refills over the
-    # first ~buffer/wins-per-update updates after a resume.
+    # farm. The NLL term is added to the PPO minibatch objective (single
+    # backward per minibatch) so the coefficient trades off directly against
+    # the policy/entropy/distill terms; a separate optimizer pass would let
+    # Adam's gradient renormalization largely cancel the coefficient. Riding
+    # inside the PPO loop also puts SIL movement under the target-kl guard.
+    # 0.0 disables. The buffer is in-memory only; it refills over the first
+    # ~buffer/wins-per-update updates after a resume.
     sil_coeff: float = 0.0
     sil_buffer_episodes: int = 64  # FIFO capacity (~50MB at typical episode lengths)
-    sil_batch_size: int = 128  # transitions per SIL minibatch
-    sil_minibatches: int = 8  # SIL minibatches per PPO update
+    sil_batch_size: int = 64  # transitions sampled per PPO micro-batch
     sil_min_episodes: int = 8  # skip SIL until the buffer holds this many wins
 
 
@@ -442,6 +446,7 @@ class _UpdateStats:
     on_policy_positive_advantage_fractions: list[float] = field(default_factory=list)
     on_policy_return_means: list[float] = field(default_factory=list)
     ppo_minibatches_processed: list[int] = field(default_factory=list)
+    sil_losses: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -552,8 +557,6 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("sil_buffer_episodes must be positive")
     if config.sil_batch_size <= 0:
         raise ValueError("sil_batch_size must be positive")
-    if config.sil_minibatches <= 0:
-        raise ValueError("sil_minibatches must be positive")
     if config.sil_min_episodes <= 0:
         raise ValueError("sil_min_episodes must be positive")
     if config.adaptive_entropy:
@@ -695,6 +698,7 @@ def _run_ppo_update(
     device: torch.device,
     use_pin_memory: bool,
     policy_loss_scale: float = 1.0,
+    sil_buffer: "WinEpisodeBuffer | None" = None,
 ) -> _UpdateStats:
     """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
 
@@ -851,6 +855,15 @@ def _run_ppo_update(
                 * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
                 + distill_coeff * distill_loss
             )
+            # Self-imitation term: NLL of the agent's own buffered winning
+            # actions, sharing this micro-batch's backward and the target-kl
+            # guard. Skipped while the policy is frozen (critic warmup).
+            sil_loss = None
+            if policy_loss_scale > 0.0:
+                sil_loss = _sample_sil_loss(model, sil_buffer, config, device)
+            if sil_loss is not None:
+                policy_objective_loss = policy_objective_loss + config.sil_coeff * sil_loss
+                stats.sil_losses.append(sil_loss.item())
             # Phase 3.2: during critic warmup, freeze the policy (scale=0) so
             # only the critic (+survival head) trains on the new reward's GAE.
             policy_objective_loss = policy_objective_loss * policy_loss_scale
@@ -1024,48 +1037,38 @@ def _run_dagger_bc_update(
     return losses, teacher_matches
 
 
-def _run_sil_update(
+def _sample_sil_loss(
     model: nn.Module,
-    optimizer: Adam,
     sil_buffer: "WinEpisodeBuffer | None",
     config: PPOConfig,
     device: torch.device,
-) -> list[float]:
-    """Behavior-clone minibatches sampled from the win-episode buffer.
+) -> "torch.Tensor | None":
+    """NLL of buffered winning actions under the current policy, or None.
 
-    Runs after the PPO (and DAgger) passes each update. Loss is the NLL of
-    the stored winning actions under the current masked grammar
-    distribution, scaled by sil_coeff. Non-finite log-probs (candidate-hand
-    support drift, same failure mode the teacher reachability mask guards)
-    are dropped from the mean rather than poisoning the gradient.
+    Sampled fresh per PPO micro-batch and added to the combined objective
+    there — a separate backward/step would let Adam's gradient
+    renormalization largely cancel sil_coeff. Non-finite log-probs
+    (candidate-hand support drift, same failure mode the teacher
+    reachability mask guards) are dropped from the mean rather than
+    poisoning the gradient. Returns None when SIL is disabled, the buffer
+    is short of sil_min_episodes, or no sampled row is reachable.
     """
     if sil_buffer is None or config.sil_coeff <= 0.0:
-        return []
+        return None
     if sil_buffer.num_episodes < config.sil_min_episodes:
-        return []
-
-    model.eval()
-    losses: list[float] = []
-    for _ in range(config.sil_minibatches):
-        batch = sil_buffer.sample(config.sil_batch_size, device)
-        optimizer.zero_grad()
-        dist, _value_dict = _grammar_distribution(
-            model,
-            batch,
-            temperature=config.rollout_temperature,
-        )
-        log_probs = dist.log_prob(batch["actions"])
-        finite = (log_probs > -1e7).float()
-        denom = finite.sum()
-        if denom.item() <= 0:
-            continue
-        sil_loss = -(log_probs * finite).sum() / denom
-        (config.sil_coeff * sil_loss).backward()
-        nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-        optimizer.step()
-        optimizer.zero_grad()
-        losses.append(sil_loss.item())
-    return losses
+        return None
+    batch = sil_buffer.sample(config.sil_batch_size, device)
+    dist, _value_dict = _grammar_distribution(
+        model,
+        batch,
+        temperature=config.rollout_temperature,
+    )
+    log_probs = dist.log_prob(batch["actions"])
+    finite = (log_probs > -1e7).float()
+    denom = finite.sum()
+    if denom.item() <= 0:
+        return None
+    return -(log_probs * finite).sum() / denom
 
 
 def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float:
@@ -2280,6 +2283,7 @@ def train_ppo(
                 device=device,
                 use_pin_memory=use_pin_memory,
                 policy_loss_scale=0.0 if in_critic_warmup else 1.0,
+                sil_buffer=sil_buffer,
             )
 
             dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
@@ -2294,18 +2298,6 @@ def train_ppo(
                 use_pin_memory=use_pin_memory,
             )
 
-            # Self-imitation pass over buffered winning episodes. Skipped
-            # during critic warmup for the same reason the policy loss is
-            # zeroed there: the policy must stay frozen.
-            sil_losses: list[float] = []
-            if not in_critic_warmup:
-                sil_losses = _run_sil_update(
-                    model=model,
-                    optimizer=optimizer,
-                    sil_buffer=sil_buffer,
-                    config=config,
-                    device=device,
-                )
             update_policy_losses = update_stats.policy_losses
             update_value_losses = update_stats.value_losses
             update_survival_losses = update_stats.survival_losses
@@ -2358,8 +2350,8 @@ def train_ppo(
                 writer.add_scalar(
                     "sil/episodes_added_total", float(sil_buffer.episodes_added_total), update_count
                 )
-                if sil_losses:
-                    writer.add_scalar("sil/loss", float(np.mean(sil_losses)), update_count)
+                if update_stats.sil_losses:
+                    writer.add_scalar("sil/loss", float(np.mean(update_stats.sil_losses)), update_count)
             if update_stats.distill_losses_weighted:
                 writer.add_scalar(
                     "ppo/distill_loss_weighted",

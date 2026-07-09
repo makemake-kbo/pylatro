@@ -449,6 +449,15 @@ def sell_joker(state: RunState, index: int) -> JokerInstance:
     joker = state.jokers[index]
     name = state.data.centers[joker.center_key]["name"]
 
+    # Verdant Leaf: all cards stay debuffed until 1 Joker is sold; upstream
+    # disables the blind on any joker sale. Debuffs are only recomputed at
+    # round start, so lift them here (blind_disabled forces them all False).
+    blind = state.round_resets.blind or {}
+    if str(blind.get("name", "")) == "Verdant Leaf" and not state.blind_disabled:
+        state.blind_disabled = True
+        for card in state.deck_cards:
+            card.debuff = False
+
     invis_duplicate = None
     if name == "Luchador" and bool((state.round_resets.blind or {}).get("boss")):
         state.blind_disabled = True

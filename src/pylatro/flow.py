@@ -225,8 +225,8 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
     elif blind_name == "The Mouth":
         state.mouth_only_hand = False
     elif blind_name == "Amber Acorn" and state.jokers:
-        for joker in state.jokers:
-            joker.debuff = True
+        # Upstream flips the jokers face-down and shuffles them; they keep
+        # scoring. The flip is visual-only, so this port only shuffles.
         if len(state.jokers) > 1:
             state.jokers = state.pseudorandom.pseudoshuffle(
                 list(state.jokers),
@@ -242,8 +242,7 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
         card.face_down = False
         _debuff_card(state, card)
     for joker in state.jokers:
-        if blind_name != "Amber Acorn":
-            joker.debuff = False
+        joker.debuff = False
 
     _reset_round_cards(state)
 

@@ -5,6 +5,11 @@ from typing import Any
 from ._helpers import _as_dict, _calculate_cost, _has_showman, _mark_center_used
 from .models import RunState, ShopCard
 
+# Finisher (showdown) bosses appear every 8 antes in the real game, where
+# win_ante is fixed at 8. Kept independent of state.win_ante so curriculum
+# overrides (win_ante < 8) don't change the boss rotation.
+SHOWDOWN_ANTE_INTERVAL = 8
+
 
 def get_current_pool(
     state: RunState,
@@ -115,6 +120,11 @@ def get_new_boss(state: RunState) -> str:
     eligible: dict[str, int | bool] = {}
     ante = max(1, state.round_resets.ante)
 
+    # Upstream gates showdown bosses on ante % win_ante, which is always 8 in
+    # the real game. Our win_ante can be lowered as a training curriculum
+    # (e.g. 5), and that must not pull the finisher pool to earlier antes:
+    # showdown bosses only ever appear on antes 8, 16, 24, ... and are the
+    # only bosses eligible there.
     for key, blind in state.data.blinds.items():
         boss = blind.get("boss")
         if not boss:
@@ -122,8 +132,12 @@ def get_new_boss(state: RunState) -> str:
         if (
             not boss.get("showdown")
             and boss["min"] <= ante
-            and (ante % state.win_ante != 0 or state.round_resets.ante < 2)
-        ) or (boss.get("showdown") and ante % state.win_ante == 0 and state.round_resets.ante >= 2):
+            and (ante % SHOWDOWN_ANTE_INTERVAL != 0 or state.round_resets.ante < 2)
+        ) or (
+            boss.get("showdown")
+            and ante % SHOWDOWN_ANTE_INTERVAL == 0
+            and state.round_resets.ante >= 2
+        ):
             eligible[key] = True
 
     for key in list(eligible):

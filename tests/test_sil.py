@@ -144,6 +144,23 @@ def test_config_validation() -> None:
     with pytest.raises(ValueError):
         _validate_ppo_config(PPOConfig(sil_batch_size=0))
     with pytest.raises(ValueError):
-        _validate_ppo_config(PPOConfig(sil_minibatches=0))
-    with pytest.raises(ValueError):
         _validate_ppo_config(PPOConfig(sil_min_episodes=0))
+
+
+def test_sample_sil_loss_gating() -> None:
+    """_sample_sil_loss returns None when disabled or under-filled (no forward runs)."""
+    from pylatro_agent.training.ppo import PPOConfig, _sample_sil_loss
+
+    rng = np.random.default_rng(5)
+    buffer = WinEpisodeBuffer(capacity_episodes=4, seed=0)
+    tracker = SILEpisodeTracker(num_envs=1)
+    _run_episode(tracker, buffer, env_idx=0, steps=1, won=True, rng=rng, num_envs=1)
+
+    # The gating paths return before any model call, so no model is needed.
+    device = torch.device("cpu")
+    off = PPOConfig(sil_coeff=0.0, sil_min_episodes=1)
+    assert _sample_sil_loss(None, None, off, device) is None
+    assert _sample_sil_loss(None, buffer, off, device) is None
+
+    underfilled = PPOConfig(sil_coeff=0.2, sil_min_episodes=2)
+    assert _sample_sil_loss(None, buffer, underfilled, device) is None

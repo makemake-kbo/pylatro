@@ -537,7 +537,9 @@ def main():
         default=0.0,
         help=(
             "Self-imitation coefficient: behavior-clone the agent's own winning "
-            "episodes from a FIFO buffer alongside PPO. Densifies the sparse win "
+            "episodes from a FIFO buffer. The NLL term is added to the PPO "
+            "minibatch objective, so it trades off directly against the policy "
+            "loss and rides under the target-kl guard. Densifies the sparse win "
             "signal at high --win-ante targets without touching the reward "
             "function (only genuine wins enter the buffer). 0 disables. The "
             "buffer is in-memory only and refills after a resume."
@@ -552,14 +554,8 @@ def main():
     parser.add_argument(
         "--sil-batch-size",
         type=int,
-        default=128,
-        help="Transitions per SIL minibatch.",
-    )
-    parser.add_argument(
-        "--sil-minibatches",
-        type=int,
-        default=8,
-        help="SIL minibatches per PPO update.",
+        default=64,
+        help="SIL transitions sampled per PPO micro-batch.",
     )
     parser.add_argument(
         "--sil-min-episodes",
@@ -718,7 +714,6 @@ def main():
                 sil_coeff=args.sil_coeff,
                 sil_buffer_episodes=args.sil_buffer_episodes,
                 sil_batch_size=args.sil_batch_size,
-                sil_minibatches=args.sil_minibatches,
                 sil_min_episodes=args.sil_min_episodes,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs

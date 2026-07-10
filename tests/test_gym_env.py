@@ -98,6 +98,24 @@ def test_env_step_marks_exact_teacher_action_match(game_data, vocab):
     assert step_info["teacher_action_match"] is True
 
 
+def test_env_enable_teacher_false_emits_sentinels(game_data, vocab):
+    """With the teacher disabled, every teacher field is the -1 sentinel and
+    no HeuristicAgent is ever constructed (it is per-step overhead when no
+    training objective consumes the labels)."""
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100, enable_teacher=False)
+    obs, info = env.reset()
+
+    assert env._teacher is None
+    assert info["teacher_action"] == -1
+
+    action = int(np.flatnonzero(obs["action_mask"])[0])
+    _next_obs, _reward, _terminated, _truncated, step_info = env.step(action)
+
+    assert step_info["teacher_action"] == -1
+    assert step_info["next_teacher_action"] == -1
+    assert not step_info["teacher_action_match"]
+
+
 def test_env_reset_returns_current_teacher_action_in_info(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100)
     obs, info = env.reset()

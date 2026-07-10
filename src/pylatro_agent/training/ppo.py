@@ -198,6 +198,7 @@ def _make_env(
     max_no_progress_steps: int,
     win_ante: int | None,
     reward_config: RewardConfig | None = None,
+    enable_teacher: bool = True,
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
     def _thunk():
@@ -209,6 +210,7 @@ def _make_env(
             max_steps=max_no_progress_steps,
             win_ante=win_ante,
             reward_config=reward_config,
+            enable_teacher=enable_teacher,
         )
     return _thunk
 
@@ -223,12 +225,16 @@ def _make_vectorized_envs(
     win_ante: int | None = None,
     reward_config: RewardConfig | None = None,
     env_seed_base: int = 0,
+    enable_teacher: bool = True,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
 
     env_fns = [
-        _make_env(env_seed_base + i, stake, data, vocab, max_no_progress_steps, win_ante, reward_config)
+        _make_env(
+            env_seed_base + i, stake, data, vocab, max_no_progress_steps,
+            win_ante, reward_config, enable_teacher=enable_teacher,
+        )
         for i in range(num_envs)
     ]
 
@@ -394,6 +400,12 @@ class PPOConfig:
     # (e.g. a --win-ante bump), otherwise no best-eval checkpoint is ever
     # written until the harder task beats the old task's record.
     reset_best_eval: bool = False
+    # Re-anchor the fraction-of-training anneal schedules (heuristic distill,
+    # teacher-rollout prob) to THIS leg's recomputed total_timesteps instead of
+    # the horizon persisted in the checkpoint. Without this flag, resumed runs
+    # keep the original horizon so an already-decayed coefficient can never
+    # climb back when num_envs or the update target grows.
+    reset_schedules: bool = False
     # Self-imitation (SIL-as-BC) on the agent's own winning episodes. Wins at
     # high win-ante targets are too sparse for on-policy PPO (a handful per
     # update); replaying complete winning trajectories as a behavior-cloning
@@ -514,6 +526,29 @@ def _value_head_parameters(model: nn.Module) -> list[nn.Parameter]:
     return [param for param in value_head.parameters() if param.requires_grad]
 
 
+def _accumulate_critic_grads_into_value_head(
+    critic_loss: torch.Tensor, value_params: list[nn.Parameter]
+) -> None:
+    """Backprop ``critic_loss`` onto the value-head parameters only.
+
+    Uses ``torch.autograd.grad`` instead of ``backward`` so trunk/policy
+    parameters never receive a ``.grad`` tensor — Adam skips grad-None params
+    entirely, leaving both their weights and their optimizer moments untouched.
+    """
+    critic_grads = torch.autograd.grad(
+        critic_loss,
+        value_params,
+        allow_unused=True,
+    )
+    for param, grad in zip(value_params, critic_grads, strict=True):
+        if grad is None:
+            continue
+        if param.grad is None:
+            param.grad = grad.detach()
+        else:
+            param.grad.add_(grad.detach())
+
+
 def _validate_ppo_config(config: PPOConfig) -> None:
     """Raise ValueError for invalid combinations; warn on risky ones."""
     if config.log_interval <= 0:
@@ -581,7 +616,11 @@ def _validate_ppo_config(config: PPOConfig) -> None:
             )
 
 
-def resolve_distill_coeff(config: "PPOConfig", total_steps: int) -> float:
+def resolve_distill_coeff(
+    config: "PPOConfig",
+    total_steps: int,
+    schedule_total_steps: int | None = None,
+) -> float:
     """Return the heuristic-teacher distillation coefficient at ``total_steps``.
 
     Semantics:
@@ -596,6 +635,13 @@ def resolve_distill_coeff(config: "PPOConfig", total_steps: int) -> float:
       so a misconfigured floor that exceeds the start value cannot silently pin
       distillation above the requested starting coefficient; a warning is logged
       the first time that condition is seen.
+    * ``schedule_total_steps`` pins the anneal horizon independently of
+      ``config.total_timesteps``. Resume recomputes ``total_timesteps`` from the
+      current ``num_envs``/update target, so annealing against it rewinds an
+      already-decayed coefficient whenever those grow (a resumed 8->32-env run
+      revived a fully-decayed teacher at coeff ~0.164). The train loop passes
+      the horizon captured at the original run's start; ``None`` preserves the
+      legacy behavior for callers without a pinned horizon.
     """
     if config.heuristic_distill_coeff <= 0.0:
         return 0.0
@@ -619,7 +665,12 @@ def resolve_distill_coeff(config: "PPOConfig", total_steps: int) -> float:
         if config.distill_decay_fraction is not None
         else 1.0
     )
-    decay_steps = max(1, int(config.total_timesteps * decay_fraction))
+    horizon = (
+        schedule_total_steps
+        if schedule_total_steps is not None
+        else config.total_timesteps
+    )
+    decay_steps = max(1, int(horizon * decay_fraction))
     progress = min(1.0, total_steps / decay_steps)
 
     return max(
@@ -627,6 +678,51 @@ def resolve_distill_coeff(config: "PPOConfig", total_steps: int) -> float:
         config.heuristic_distill_coeff
         - (config.heuristic_distill_coeff - floor) * progress,
     )
+
+
+def _resolve_schedule_total_steps(
+    config: "PPOConfig", resume_state: dict | None
+) -> int:
+    """Return the anneal horizon (in env steps) for fraction-of-training schedules.
+
+    Fresh runs anchor to the run's own ``total_timesteps``. Resumed runs restore
+    the horizon persisted in the checkpoint so schedules continue exactly where
+    they left off — resume recomputes ``config.total_timesteps`` from the current
+    ``num_envs``/update target, and annealing against the recomputed value moves
+    already-decayed coefficients backward. ``reset_schedules`` opts back into
+    re-anchoring; checkpoints from before this field existed re-anchor with a
+    loud warning because the original horizon is unknowable.
+    """
+    if resume_state is None:
+        return config.total_timesteps
+    if config.reset_schedules:
+        logger.warning(
+            "reset_schedules: re-anchoring anneal schedules (distill coeff, "
+            "teacher-rollout prob) to this leg's horizon of %d steps. Already-"
+            "decayed coefficients will climb back toward their start values.",
+            config.total_timesteps,
+        )
+        return config.total_timesteps
+    saved = resume_state.get("schedule_total_steps")
+    if saved is not None:
+        if int(saved) != config.total_timesteps:
+            logger.info(
+                "Anneal schedules pinned to the original horizon of %d steps "
+                "(this leg's recomputed total_timesteps is %d). Pass "
+                "--reset-schedules to re-anchor intentionally.",
+                int(saved),
+                config.total_timesteps,
+            )
+        return int(saved)
+    logger.warning(
+        "Checkpoint predates schedule_total_steps; anneal schedules re-derive "
+        "from this leg's total_timesteps=%d. If num_envs or the update target "
+        "grew, previously-decayed coefficients (heuristic distill, teacher-"
+        "rollout prob) will REWIND — pass --heuristic-distill-coeff 0.0 unless "
+        "teacher re-anchoring is intended.",
+        config.total_timesteps,
+    )
+    return config.total_timesteps
 
 
 def _teacher_reachability_mask(
@@ -771,6 +867,8 @@ def _run_ppo_update(
             )
             survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
 
+            policy_frozen = policy_loss_scale <= 0.0
+
             # Heuristic distillation: NLL of the teacher action under the
             # current structured distribution. Replaces the frozen-reference
             # KL anchor; per-state supervision rather than a snapshot
@@ -784,113 +882,145 @@ def _run_ppo_update(
             # distill_loss values in the 17M-21M range that dominated PPO.
             # We drop those rows from the loss and log the skipped fraction
             # so the silent-label-drop is visible in TensorBoard.
-            teacher = batch["teacher_actions"]
-            teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
-            teacher_lp = dist.log_prob(teacher_safe)
-            reachable = _teacher_reachability_mask(
-                teacher, teacher_lp, batch["action_mask"]
-            )
-            reachable_count = reachable.sum().clamp(min=1.0)
-            distill_weights = batch["distill_weights"]
-            # Per-step weighting: regret signals (out-of-candidates,
-            # mismatched planet use) up-weight teacher NLL on those steps
-            # so distillation pressure concentrates where the policy
-            # diverged from the heuristic on a high-stakes decision.
-            distill_loss, _ = _safe_distill_loss(teacher_lp, reachable, distill_weights)
-            with torch.no_grad():
-                policy_choice = dist.mode() if hasattr(dist, "mode") else batch["actions"]
-                teacher_match = (
-                    ((policy_choice == teacher_safe).float() * reachable).sum()
-                    / reachable_count
-                ).item()
-                distill_weight_mean = (
-                    (distill_weights * reachable).sum() / reachable_count
-                ).item()
-
-                # Diagnostics: how often did the teacher produce a label
-                # at all, how often was it reachable, and what was the
-                # mean reachable log-prob. The unreachable fraction is the
-                # key metric for spotting -1e8 floor contamination.
-                teacher_present_bool = teacher >= 0
-                teacher_present = teacher_present_bool.float()
-                teacher_present_count = teacher_present.sum().clamp(min=1.0)
-                # "label present" = fraction of ALL steps with a teacher label.
-                teacher_label_present_fraction = (
-                    teacher_present.sum() / max(1.0, float(teacher.numel()))
-                ).item()
-                # "action mask valid" = of the present labels, how many are
-                # legal under the current step's action_mask.
-                teacher_safe_t = teacher.clamp(0, NUM_ACTIONS - 1)
-                teacher_mask_valid = teacher_present_bool & batch["action_mask"].gather(
-                    1, teacher_safe_t.unsqueeze(-1)
-                ).squeeze(-1).bool()
-                teacher_action_mask_valid_fraction = (
-                    teacher_mask_valid.float().sum() / teacher_present_count
-                ).item()
-                teacher_reachable_fraction = (
-                    reachable.sum() / teacher_present_count
-                ).item()
-                teacher_unreachable_fraction = 1.0 - teacher_reachable_fraction
-                teacher_lp_mean_reachable = (
-                    (teacher_lp * reachable).sum() / reachable_count
-                ).item()
-                # Break the *unreachable* (present-but-not-reachable) labels
-                # down by action family so distillation diagnostics can tell
-                # hand-subset mismatches from shop/pack/blind unreachability.
-                unreachable_mask = teacher_present_bool & (~reachable.bool())
-                unreachable_denom = unreachable_mask.float().sum().clamp(min=1.0)
-                family_ids = _ACTION_ID_TO_FAMILY.to(device=teacher.device)[teacher_safe_t]
-                unreachable_family_fracs: dict[str, float] = {}
-                for fam_idx, fam_name in enumerate(_ACTION_FAMILY_NAMES):
-                    unreachable_family_fracs[fam_name] = (
-                        (unreachable_mask & (family_ids == fam_idx)).float().sum()
-                        / unreachable_denom
-                    ).item()
-                distill_loss_weighted_value = (
-                    float(distill_loss.item()) * distill_coeff
+            #
+            # The teacher log_prob is a full second grammar evaluation per
+            # minibatch, so it only runs when distillation can actually
+            # contribute to this update's objective.
+            distill_loss: torch.Tensor | None = None
+            teacher_match = 0.0
+            distill_weight_mean = 0.0
+            teacher_label_present_fraction = 0.0
+            teacher_action_mask_valid_fraction = 0.0
+            teacher_reachable_fraction = 0.0
+            teacher_unreachable_fraction = 0.0
+            teacher_lp_mean_reachable = 0.0
+            unreachable_family_fracs: dict[str, float] = {
+                fam_name: 0.0 for fam_name in _ACTION_FAMILY_NAMES
+            }
+            distill_loss_weighted_value = 0.0
+            if distill_coeff > 0.0 and not policy_frozen:
+                teacher = batch["teacher_actions"]
+                teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
+                teacher_lp = dist.log_prob(teacher_safe)
+                reachable = _teacher_reachability_mask(
+                    teacher, teacher_lp, batch["action_mask"]
                 )
+                reachable_count = reachable.sum().clamp(min=1.0)
+                distill_weights = batch["distill_weights"]
+                # Per-step weighting: regret signals (out-of-candidates,
+                # mismatched planet use) up-weight teacher NLL on those steps
+                # so distillation pressure concentrates where the policy
+                # diverged from the heuristic on a high-stakes decision.
+                distill_loss, _ = _safe_distill_loss(teacher_lp, reachable, distill_weights)
+                with torch.no_grad():
+                    policy_choice = dist.mode() if hasattr(dist, "mode") else batch["actions"]
+                    teacher_match = (
+                        ((policy_choice == teacher_safe).float() * reachable).sum()
+                        / reachable_count
+                    ).item()
+                    distill_weight_mean = (
+                        (distill_weights * reachable).sum() / reachable_count
+                    ).item()
 
-            policy_objective_loss = (
-                policy_loss
-                - entropy_coeff
-                * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
-                + distill_coeff * distill_loss
-            )
-            # Self-imitation term: NLL of the agent's own buffered winning
-            # actions, sharing this micro-batch's backward and the target-kl
-            # guard. Skipped while the policy is frozen (critic warmup).
-            sil_loss = None
-            if policy_loss_scale > 0.0:
-                sil_loss = _sample_sil_loss(model, sil_buffer, config, device)
-            if sil_loss is not None:
-                policy_objective_loss = policy_objective_loss + config.sil_coeff * sil_loss
-                stats.sil_losses.append(sil_loss.item())
-            # Phase 3.2: during critic warmup, freeze the policy (scale=0) so
-            # only the critic (+survival head) trains on the new reward's GAE.
-            policy_objective_loss = policy_objective_loss * policy_loss_scale
+                    # Diagnostics: how often did the teacher produce a label
+                    # at all, how often was it reachable, and what was the
+                    # mean reachable log-prob. The unreachable fraction is the
+                    # key metric for spotting -1e8 floor contamination.
+                    teacher_present_bool = teacher >= 0
+                    teacher_present = teacher_present_bool.float()
+                    teacher_present_count = teacher_present.sum().clamp(min=1.0)
+                    # "label present" = fraction of ALL steps with a teacher label.
+                    teacher_label_present_fraction = (
+                        teacher_present.sum() / max(1.0, float(teacher.numel()))
+                    ).item()
+                    # "action mask valid" = of the present labels, how many are
+                    # legal under the current step's action_mask.
+                    teacher_safe_t = teacher.clamp(0, NUM_ACTIONS - 1)
+                    teacher_mask_valid = teacher_present_bool & batch["action_mask"].gather(
+                        1, teacher_safe_t.unsqueeze(-1)
+                    ).squeeze(-1).bool()
+                    teacher_action_mask_valid_fraction = (
+                        teacher_mask_valid.float().sum() / teacher_present_count
+                    ).item()
+                    teacher_reachable_fraction = (
+                        reachable.sum() / teacher_present_count
+                    ).item()
+                    teacher_unreachable_fraction = 1.0 - teacher_reachable_fraction
+                    teacher_lp_mean_reachable = (
+                        (teacher_lp * reachable).sum() / reachable_count
+                    ).item()
+                    # Break the *unreachable* (present-but-not-reachable) labels
+                    # down by action family so distillation diagnostics can tell
+                    # hand-subset mismatches from shop/pack/blind unreachability.
+                    unreachable_mask = teacher_present_bool & (~reachable.bool())
+                    unreachable_denom = unreachable_mask.float().sum().clamp(min=1.0)
+                    family_ids = _ACTION_ID_TO_FAMILY.to(device=teacher.device)[teacher_safe_t]
+                    for fam_idx, fam_name in enumerate(_ACTION_FAMILY_NAMES):
+                        unreachable_family_fracs[fam_name] = (
+                            (unreachable_mask & (family_ids == fam_idx)).float().sum()
+                            / unreachable_denom
+                        ).item()
+                    distill_loss_weighted_value = (
+                        float(distill_loss.item()) * distill_coeff
+                    )
+
             critic_loss = config.value_loss_coeff * value_loss + config.survival_loss_coeff * survival_loss
 
-            if config.critic_updates_trunk:
-                total_loss = (
-                    policy_objective_loss + critic_loss
-                ).div(accum_steps)
-                total_loss.backward()
-            else:
+            if policy_frozen:
+                # Phase 3.2 critic warmup: a TRUE policy freeze. Never backward
+                # the policy objective — a zero-scaled backward still leaves
+                # zero-valued (not None) grads on policy params, and Adam then
+                # moves them with its restored momentum. The critic loss IS
+                # backwarded through the full graph because that is what frees
+                # the trunk's saved activations each micro-batch: computing
+                # value-head grads with autograd.grad leaves the previous
+                # minibatch's attention buffers (tens of GiB at batch 512)
+                # alive into the next forward and OOMs MPS. Every gradient it
+                # writes outside the value head is dropped before the optimizer
+                # step, so policy params keep grad=None and Adam skips them
+                # (critic_updates_trunk is deliberately ignored while frozen:
+                # trunk updates from the value loss drift the policy logits).
                 value_params = _value_head_parameters(model)
-                policy_objective_loss.div(accum_steps).backward(retain_graph=bool(value_params))
-                if value_params:
-                    critic_grads = torch.autograd.grad(
-                        critic_loss.div(accum_steps),
-                        value_params,
-                        allow_unused=True,
+                critic_loss.div(accum_steps).backward()
+                value_param_ids = {id(param) for param in value_params}
+                for param in model.parameters():
+                    if id(param) not in value_param_ids:
+                        param.grad = None
+                if not value_params and not getattr(_run_ppo_update, "_frozen_no_value_head_warned", False):
+                    logger.warning(
+                        "Critic warmup with no value_head module: nothing trains "
+                        "while the policy is frozen."
                     )
-                    for param, grad in zip(value_params, critic_grads, strict=True):
-                        if grad is None:
-                            continue
-                        if param.grad is None:
-                            param.grad = grad.detach()
-                        else:
-                            param.grad.add_(grad.detach())
+                    _run_ppo_update._frozen_no_value_head_warned = True  # type: ignore[attr-defined]
+            else:
+                policy_objective_loss = (
+                    policy_loss
+                    - entropy_coeff
+                    * (normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy)
+                )
+                if distill_loss is not None:
+                    policy_objective_loss = policy_objective_loss + distill_coeff * distill_loss
+                # Self-imitation term: NLL of the agent's own buffered winning
+                # actions, sharing this micro-batch's backward and the target-kl
+                # guard.
+                sil_loss = _sample_sil_loss(model, sil_buffer, config, device)
+                if sil_loss is not None:
+                    policy_objective_loss = policy_objective_loss + config.sil_coeff * sil_loss
+                    stats.sil_losses.append(sil_loss.item())
+                policy_objective_loss = policy_objective_loss * policy_loss_scale
+
+                if config.critic_updates_trunk:
+                    total_loss = (
+                        policy_objective_loss + critic_loss
+                    ).div(accum_steps)
+                    total_loss.backward()
+                else:
+                    value_params = _value_head_parameters(model)
+                    policy_objective_loss.div(accum_steps).backward(retain_graph=bool(value_params))
+                    if value_params:
+                        _accumulate_critic_grads_into_value_head(
+                            critic_loss.div(accum_steps), value_params
+                        )
 
             # Step every accum_steps micro-batches (or on last batch)
             if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
@@ -935,7 +1065,7 @@ def _run_ppo_update(
             stats.approx_kls.append(approx_kl)
             stats.valid_action_counts.append(valid_action_count_mean)
             stats.valid_action_type_counts.append(valid_action_type_count_mean)
-            stats.distill_losses.append(distill_loss.item())
+            stats.distill_losses.append(0.0 if distill_loss is None else distill_loss.item())
             stats.distill_losses_weighted.append(distill_loss_weighted_value)
             stats.teacher_match_fractions.append(teacher_match)
             stats.distill_weight_means.append(distill_weight_mean)
@@ -1761,6 +1891,20 @@ def train_ppo(
     if resume_state is not None:
         env_seed_base = int(resume_state.get("update_count", 0)) * 1_000_003
         logger.info("Env seed base for this leg: %d", env_seed_base)
+    # The heuristic teacher runs twice per env step; skip it entirely when no
+    # training objective consumes its labels (distillation, DAgger BC, or
+    # teacher-forced rollouts). Envs then emit the -1 "no teacher" sentinel.
+    teacher_needed = (
+        config.heuristic_distill_coeff > 0.0
+        or (config.dagger_bc_epochs > 0 and config.dagger_bc_coeff > 0.0)
+        or config.teacher_rollout_prob > 0.0
+        or (config.teacher_rollout_final_prob or 0.0) > 0.0
+    )
+    if not teacher_needed:
+        logger.info(
+            "Heuristic teacher disabled in training envs (no distill/DAgger/"
+            "teacher-forcing consumers); teacher metrics will read 0/-1."
+        )
     vec_env = _make_vectorized_envs(
         config.num_envs, data, vocab,
         stake=config.stake,
@@ -1769,6 +1913,7 @@ def train_ppo(
         win_ante=config.win_ante,
         reward_config=config.reward_config,
         env_seed_base=env_seed_base,
+        enable_teacher=teacher_needed,
     )
     obs_dict, reset_info = vec_env.reset()
     # Pre-allocate obs tensors for batched inference
@@ -1927,6 +2072,11 @@ def train_ppo(
                 update_count,
                 planned_updates,
             )
+    # Anneal horizon for fraction-of-training schedules (distill coeff,
+    # teacher-rollout prob). Resolved AFTER the resume block finalizes
+    # total_timesteps, persisted in every checkpoint so later legs keep the
+    # original horizon regardless of num_envs/update-target changes.
+    schedule_total_steps = _resolve_schedule_total_steps(config, resume_state)
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
@@ -1988,7 +2138,7 @@ def train_ppo(
             )
             env_episode_start_step[:] = 0
             rm = _RolloutMetrics()
-            rollout_progress = total_steps / max(1, config.total_timesteps)
+            rollout_progress = total_steps / max(1, schedule_total_steps)
             teacher_rollout_prob_now = _scheduled_teacher_rollout_prob(config, rollout_progress)
 
             # === Collect rollouts (vectorized) ===
@@ -2286,7 +2436,9 @@ def train_ppo(
             # schedule semantics (zero-disables, floor clamp, decay window) are
             # consistent across the train loop, the test suite, and any future
             # call sites. See resolve_distill_coeff for the full contract.
-            distill_coeff_now = resolve_distill_coeff(config, total_steps)
+            distill_coeff_now = resolve_distill_coeff(
+                config, total_steps, schedule_total_steps=schedule_total_steps
+            )
 
             update_stats = _run_ppo_update(
                 model=model,
@@ -2308,7 +2460,9 @@ def train_ppo(
                 model=model,
                 optimizer=optimizer,
                 buffer=buffer,
-                coeff=config.dagger_bc_coeff,
+                # DAgger BC trains the policy, so it must respect the critic
+                # warmup freeze or the "frozen" policy drifts anyway.
+                coeff=0.0 if in_critic_warmup else config.dagger_bc_coeff,
                 config=config,
                 accum_steps=accum_steps,
                 effective_batch_size=effective_batch_size,
@@ -2618,6 +2772,7 @@ def train_ppo(
                     extra={
                         "best_eval_win_rate": best_eval_win_rate,
                         "best_eval_update": best_eval_update,
+                        "schedule_total_steps": schedule_total_steps,
                     },
                 )
                 # Always mirror the latest checkpoint so resume/eval always has
@@ -2699,6 +2854,7 @@ def train_ppo(
                         extra={
                             "best_eval_win_rate": best_eval_win_rate,
                             "best_eval_update": best_eval_update,
+                            "schedule_total_steps": schedule_total_steps,
                         },
                     )
                     logger.info(
@@ -3037,6 +3193,9 @@ def evaluate_model(
                 stake=stake,
                 max_steps=max_no_progress_steps,
                 win_ante=win_ante,
+                # Greedy eval never reads teacher labels; the heuristic teacher
+                # would otherwise run twice per step of every eval game.
+                enable_teacher=False,
             )
             obs, _ = env.reset()
             done = False

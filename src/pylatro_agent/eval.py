@@ -124,6 +124,9 @@ def evaluate_on_seeds(
                 stake=stake,
                 max_steps=max_no_progress_steps,
                 win_ante=win_ante,
+                # Greedy eval never reads teacher labels; the heuristic teacher
+                # would otherwise run twice per step of every eval game.
+                enable_teacher=False,
             )
             obs, _ = env.reset()
             done = False

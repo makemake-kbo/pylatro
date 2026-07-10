@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import pytest
 
-from pylatro_agent.training.ppo import PPOConfig, resolve_distill_coeff
+from pylatro_agent.training.ppo import (
+    PPOConfig,
+    _resolve_schedule_total_steps,
+    resolve_distill_coeff,
+)
 
 
 def _config(
@@ -92,3 +96,75 @@ def test_distill_decay_fraction_shortens_decay_window() -> None:
     # decay_fraction=0.5 means full decay completes at step 5_000.
     assert resolve_distill_coeff(cfg, total_steps=5_000) == pytest.approx(0.0)
     assert resolve_distill_coeff(cfg, total_steps=10_000) == pytest.approx(0.0)
+
+
+# --- Schedule pinning across resume -----------------------------------------
+#
+# Resume recomputes config.total_timesteps as planned_updates * steps_per_update
+# with the CURRENT num_envs, so growing 8->32 envs stretches the anneal horizon
+# and moves an already-decayed coefficient backward. These tests lock in the
+# fix: the horizon captured at the original run's start (schedule_total_steps)
+# is persisted in checkpoints and pins the schedule on resume.
+
+
+def test_pinned_horizon_prevents_resume_rewind_live_run_numbers() -> None:
+    """Reproduce the u3000 8->32-env resume: 0.0 must not climb back to ~0.164."""
+    cfg = _config(coeff=0.3, floor=0.0, decay_fraction=0.5, total_timesteps=6_144_000)
+    original_horizon = cfg.total_timesteps
+    # End of the original 8-env leg (update 3000): fully decayed.
+    assert resolve_distill_coeff(cfg, total_steps=6_144_000) == pytest.approx(0.0)
+
+    # Resume with 32 envs and +316 updates: total_timesteps becomes 3316 * 8192.
+    cfg.total_timesteps = 3_316 * 32 * 256
+    # Legacy behavior (no pinned horizon) rewinds the schedule to ~0.164.
+    assert resolve_distill_coeff(cfg, total_steps=6_144_000) == pytest.approx(0.164, abs=1e-3)
+    # Pinned horizon keeps the coefficient at its decayed value.
+    assert (
+        resolve_distill_coeff(cfg, 6_144_000, schedule_total_steps=original_horizon)
+        == pytest.approx(0.0)
+    )
+
+
+def test_pinned_horizon_is_monotonic_and_continuous_across_resume() -> None:
+    cfg = _config(coeff=0.3, floor=0.0, decay_fraction=0.5, total_timesteps=1_000_000)
+    original_horizon = cfg.total_timesteps
+    resume_step = 300_000
+    coeff_at_resume = resolve_distill_coeff(cfg, total_steps=resume_step)
+
+    # Simulate a resume that quadruples the env count / update target.
+    cfg.total_timesteps = 4_000_000
+    prev = coeff_at_resume
+    for step in range(resume_step, 1_200_000, 50_000):
+        now = resolve_distill_coeff(cfg, step, schedule_total_steps=original_horizon)
+        assert now <= prev + 1e-12, f"coefficient increased at step {step}"
+        prev = now
+    # Continuity at the resume boundary: same step, same coefficient.
+    assert (
+        resolve_distill_coeff(cfg, resume_step, schedule_total_steps=original_horizon)
+        == pytest.approx(coeff_at_resume)
+    )
+
+
+def test_resolve_schedule_total_steps_fresh_run_uses_config() -> None:
+    cfg = _config(coeff=0.3, floor=0.0, total_timesteps=123_456)
+    assert _resolve_schedule_total_steps(cfg, resume_state=None) == 123_456
+
+
+def test_resolve_schedule_total_steps_resume_restores_saved_horizon() -> None:
+    cfg = _config(coeff=0.3, floor=0.0, total_timesteps=27_164_672)
+    resume_state = {"schedule_total_steps": 6_144_000}
+    assert _resolve_schedule_total_steps(cfg, resume_state) == 6_144_000
+
+
+def test_resolve_schedule_total_steps_reset_flag_reanchors() -> None:
+    cfg = _config(coeff=0.3, floor=0.0, total_timesteps=27_164_672)
+    cfg.reset_schedules = True
+    resume_state = {"schedule_total_steps": 6_144_000}
+    assert _resolve_schedule_total_steps(cfg, resume_state) == 27_164_672
+
+
+def test_resolve_schedule_total_steps_legacy_checkpoint_warns_and_reanchors(caplog) -> None:
+    cfg = _config(coeff=0.3, floor=0.0, total_timesteps=27_164_672)
+    caplog.set_level("WARNING", logger="pylatro_agent.training.ppo")
+    assert _resolve_schedule_total_steps(cfg, resume_state={}) == 27_164_672
+    assert any("REWIND" in record.getMessage() for record in caplog.records)

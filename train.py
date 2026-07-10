@@ -112,6 +112,16 @@ def main():
             "fine-tuning of a fixed length, or with --resume to set the total target instead of --additional-updates."
         ),
     )
+    parser.add_argument(
+        "--reset-schedules",
+        action="store_true",
+        help=(
+            "With --resume: re-anchor the fraction-of-training anneal schedules (heuristic "
+            "distill coeff, teacher-rollout prob) to this leg's recomputed horizon instead of "
+            "the horizon saved in the checkpoint. Already-decayed coefficients will climb back "
+            "toward their start values. Default: keep the original horizon so schedules never rewind."
+        ),
+    )
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
     parser.add_argument("--lr", type=float, default=5e-5, help="PPO learning rate (default: 5e-5)")
     parser.add_argument(
@@ -658,6 +668,8 @@ def main():
             parser.error("Pass either --pretrained or --resume, not both.")
         if args.additional_updates is not None and not args.resume:
             parser.error("--additional-updates requires --resume PATH.")
+        if args.reset_schedules and not args.resume:
+            parser.error("--reset-schedules requires --resume PATH.")
         if args.resume and args.updates is not None and args.additional_updates is not None:
             parser.error(
                 "--updates and --additional-updates are mutually exclusive with --resume "
@@ -707,6 +719,7 @@ def main():
                 async_envs=not args.sync_envs,
                 heuristic_distill_coeff=args.heuristic_distill_coeff,
                 heuristic_distill_min=args.heuristic_distill_min,
+                reset_schedules=args.reset_schedules,
                 teacher_rollout_prob=args.teacher_rollout_prob,
                 teacher_rollout_final_prob=args.teacher_rollout_final_prob,
                 teacher_rollout_warmup_fraction=args.teacher_rollout_warmup_fraction,

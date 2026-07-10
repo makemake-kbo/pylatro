@@ -397,9 +397,13 @@ def test_dagger_bc_update_increases_teacher_action_probability() -> None:
     assert optimizer.param_groups[0]["lr"] == pytest.approx(0.1)
 
 
-def test_ppo_value_loss_updates_value_head_not_shared_trunk() -> None:
+def test_critic_updates_trunk_false_routes_value_loss_to_value_head_only() -> None:
     action = int(ActionRange.SHOP_LEAVE)
     model = _TinyDecoupledCriticModel()
+    # Nonzero value head so a critic backward through the trunk would leave a
+    # visible gradient — with the zero init the trunk assertion holds vacuously
+    # under any critic_updates_trunk setting.
+    torch.nn.init.constant_(model.value_head.weight, 0.5)
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
     buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0], teacher_actions=[-1, -1])
     buffer.returns[:2] = 10.0
@@ -412,6 +416,7 @@ def test_ppo_value_loss_updates_value_head_not_shared_trunk() -> None:
         survival_loss_coeff=0.0,
         target_kl=None,
         rollout_temperature=1.0,
+        critic_updates_trunk=False,
     )
 
     trunk_before = model.trunk.weight.detach().clone()
@@ -430,7 +435,7 @@ def test_ppo_value_loss_updates_value_head_not_shared_trunk() -> None:
         use_pin_memory=False,
     )
 
-    assert torch.allclose(model.trunk.weight.detach(), trunk_before)
+    assert torch.equal(model.trunk.weight.detach(), trunk_before)
     assert not torch.allclose(model.value_head.weight.detach(), value_before)
 
 
@@ -759,3 +764,158 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
     assert stats.on_policy_return_means
     assert stats.on_policy_fractions[0] == 1.0
     assert stats.on_policy_positive_advantage_fractions[0] == pytest.approx(0.5)
+
+
+def _freeze_test_config(**overrides) -> PPOConfig:
+    base = dict(
+        ppo_epochs=1,
+        mini_batch_size=2,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=1.0,
+        survival_loss_coeff=0.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+    base.update(overrides)
+    return PPOConfig(**base)
+
+
+def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
+    """policy_loss_scale=0 must be a TRUE freeze.
+
+    Two historical leaks: (1) with critic_updates_trunk=True the critic loss
+    backpropagated through the shared trunk and drifted the policy logits;
+    (2) the zero-scaled policy backward left zero-valued grads on policy
+    params, so restored Adam momentum kept moving them. Both must be dead:
+    policy-producing params stay bit-identical and their Adam state untouched,
+    while the value head still trains.
+    """
+    action = int(ActionRange.SHOP_LEAVE)
+    model = _TinyDecoupledCriticModel()
+    # Non-zero value head so the critic loss reaches the trunk if leaked.
+    torch.nn.init.constant_(model.value_head.weight, 0.5)
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    config = _freeze_test_config(critic_updates_trunk=True)
+
+    # 1) Unfrozen update with signal: builds Adam momentum on policy params.
+    warm_buffer = _make_signal_buffer(
+        actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[-1, -1]
+    )
+    warm_buffer.returns[:2] = 5.0
+    _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=warm_buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+        policy_loss_scale=1.0,
+    )
+    policy_state = optimizer.state.get(model.policy_head.weight)
+    assert policy_state, "warm update should create Adam state on policy params"
+    steps_before = int(policy_state["step"])
+    exp_avg_before = policy_state["exp_avg"].clone()
+    trunk_before = model.trunk.weight.detach().clone()
+    policy_before = model.policy_head.weight.detach().clone()
+    value_before = model.value_head.weight.detach().clone()
+
+    # 2) Frozen update with a large value error that would move the trunk if
+    #    the critic loss leaked past the value head.
+    frozen_buffer = _make_signal_buffer(
+        actions=[action, action], advantages=[1.0, -1.0], teacher_actions=[-1, -1]
+    )
+    frozen_buffer.returns[:2] = 10.0
+    _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=frozen_buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+        policy_loss_scale=0.0,
+    )
+
+    assert torch.equal(model.policy_head.weight.detach(), policy_before)
+    assert torch.equal(model.trunk.weight.detach(), trunk_before)
+    assert not torch.allclose(model.value_head.weight.detach(), value_before)
+    policy_state_after = optimizer.state[model.policy_head.weight]
+    assert int(policy_state_after["step"]) == steps_before
+    assert torch.equal(policy_state_after["exp_avg"], exp_avg_before)
+
+
+def test_frozen_update_skips_teacher_pass_and_reports_zero_distill_stats() -> None:
+    """During critic warmup the teacher log_prob pass is skipped entirely, so
+    distillation stats read as zeros even when labels are present and the
+    coefficient is nonzero (e.g. a resumed run mid-anneal)."""
+    action = int(ActionRange.SHOP_LEAVE)
+    teacher = int(ActionRange.SHOP_REROLL)
+    model = _TinyDecoupledCriticModel()
+    torch.nn.init.constant_(model.value_head.weight, 0.5)
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    config = _freeze_test_config(heuristic_distill_coeff=0.5)
+    buffer = _make_signal_buffer(
+        actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher]
+    )
+    buffer.returns[:2] = 10.0
+
+    policy_before = model.policy_head.weight.detach().clone()
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.5,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+        policy_loss_scale=0.0,
+    )
+
+    assert torch.equal(model.policy_head.weight.detach(), policy_before)
+    assert stats.distill_losses and all(v == 0.0 for v in stats.distill_losses)
+    assert all(v == 0.0 for v in stats.teacher_label_present_fractions)
+
+
+def test_disabled_distillation_skips_teacher_diagnostics() -> None:
+    """With distill_coeff=0 the (expensive) teacher log_prob pass is skipped;
+    diagnostics report zeros instead of scanning labels that cannot
+    contribute to the objective."""
+    action = int(ActionRange.SHOP_LEAVE)
+    teacher = int(ActionRange.SHOP_REROLL)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    config = _freeze_test_config(value_loss_coeff=0.0, heuristic_distill_coeff=0.0)
+    buffer = _make_signal_buffer(
+        actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher]
+    )
+
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert all(v == 0.0 for v in stats.distill_losses)
+    assert all(v == 0.0 for v in stats.teacher_label_present_fractions)

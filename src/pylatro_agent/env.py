@@ -50,6 +50,7 @@ class BalatroEnv(gymnasium.Env):
         data: GameData | None = None,
         vocab: Vocab | None = None,
         win_ante: int | None = None,
+        enable_teacher: bool = True,
     ):
         super().__init__()
         self._data = data or load_game_data()
@@ -87,8 +88,11 @@ class BalatroEnv(gymnasium.Env):
 
         # Heuristic teacher for distillation. One instance per env (process)
         #, the cache is per-instance and keyed on hand+joker signature, so
-        # parallel envs are isolated naturally.
-        self._teacher = HeuristicAgent()
+        # parallel envs are isolated naturally. When nothing consumes teacher
+        # labels (no distillation, DAgger, or teacher-forced rollouts) the
+        # caller disables it: the teacher runs twice per step and is pure
+        # overhead, and every teacher_action field becomes the -1 sentinel.
+        self._teacher = HeuristicAgent() if enable_teacher else None
 
         # Gymnasium spaces
         self.observation_space = spaces.Dict({
@@ -152,20 +156,23 @@ class BalatroEnv(gymnasium.Env):
 
         # Query the heuristic teacher with the pre-action mask + state.
         # Used by PPO for distillation; -1 sentinel means "no valid teacher".
-        try:
-            pre_mask = self.action_masks()
-            teacher_action = int(
-                self._teacher.select_action(
-                    self._controller.state,
-                    self._sub_phase,
-                    pre_mask,
-                    round_score=self._controller.round_score,
-                )
-            )
-            if teacher_action < 0 or teacher_action >= NUM_ACTIONS or not pre_mask[teacher_action]:
-                teacher_action = -1
-        except Exception:
+        if self._teacher is None:
             teacher_action = -1
+        else:
+            try:
+                pre_mask = self.action_masks()
+                teacher_action = int(
+                    self._teacher.select_action(
+                        self._controller.state,
+                        self._sub_phase,
+                        pre_mask,
+                        round_score=self._controller.round_score,
+                    )
+                )
+                if teacher_action < 0 or teacher_action >= NUM_ACTIONS or not pre_mask[teacher_action]:
+                    teacher_action = -1
+            except Exception:
+                teacher_action = -1
 
         decoded = decode_action(action)
         action_diagnostics = self._action_diagnostics(decoded)
@@ -251,6 +258,8 @@ class BalatroEnv(gymnasium.Env):
 
     def _current_teacher_action(self) -> int:
         """Return the heuristic action for the current state, or -1 if unavailable."""
+        if self._teacher is None:
+            return -1
         if self._controller is None or self._controller.state is None:
             return -1
         try:

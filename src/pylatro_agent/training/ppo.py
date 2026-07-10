@@ -222,12 +222,13 @@ def _make_vectorized_envs(
     use_async: bool = True,
     win_ante: int | None = None,
     reward_config: RewardConfig | None = None,
+    env_seed_base: int = 0,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
 
     env_fns = [
-        _make_env(i, stake, data, vocab, max_no_progress_steps, win_ante, reward_config)
+        _make_env(env_seed_base + i, stake, data, vocab, max_no_progress_steps, win_ante, reward_config)
         for i in range(num_envs)
     ]
 
@@ -1749,7 +1750,17 @@ def train_ppo(
     if config.reward_config is not None:
         config.reward_config.gamma = config.gamma
 
-    # Create vectorized environments
+    # Create vectorized environments. Each env replays a deterministic
+    # game-seed stream from its constructor seed, so resuming with plain
+    # 0..N-1 seeds replays the same opening game library every leg and the
+    # critic overfits to it (novel seeds then produce systematically noisy
+    # advantages — the env-count-change collapse). Offset the seeds by the
+    # resumed update counter so every leg trains on fresh streams; fresh
+    # runs keep base 0 and are byte-identical to prior behavior.
+    env_seed_base = 0
+    if resume_state is not None:
+        env_seed_base = int(resume_state.get("update_count", 0)) * 1_000_003
+        logger.info("Env seed base for this leg: %d", env_seed_base)
     vec_env = _make_vectorized_envs(
         config.num_envs, data, vocab,
         stake=config.stake,
@@ -1757,6 +1768,7 @@ def train_ppo(
         use_async=config.async_envs,
         win_ante=config.win_ante,
         reward_config=config.reward_config,
+        env_seed_base=env_seed_base,
     )
     obs_dict, reset_info = vec_env.reset()
     # Pre-allocate obs tensors for batched inference
@@ -1925,6 +1937,11 @@ def train_ppo(
     # Phase 3.2: latch set once explained variance clears critic_warmup_min_ev;
     # the policy stays frozen until then (metric-gated unfreeze, not count-gated).
     _critic_warmup_ev_cleared = False
+    # Warmup windows are relative to the start of THIS leg: update_count
+    # resumes at the checkpoint's absolute counter, and comparing it against
+    # critic_warmup_updates directly would instantly trip the 4x give-up cap
+    # on any resumed run, silently disabling the warmup.
+    _leg_start_update = update_count
     # Phase 6: rolling win_rate/ep_reward history for the correlation acceptance
     # criterion (corr > 0.5). Currently ~0/negative because dense shaping is
     # farmable independent of winning.
@@ -2234,15 +2251,16 @@ def train_ppo(
             # warmup is purely count-based.
             in_critic_warmup = False
             if config.critic_warmup_updates > 0 and not _critic_warmup_ev_cleared:
+                leg_update = update_count - _leg_start_update
                 if config.critic_warmup_min_ev <= 0.0:
-                    in_critic_warmup = update_count < config.critic_warmup_updates
+                    in_critic_warmup = leg_update < config.critic_warmup_updates
                 elif (
-                    update_count > 0
+                    leg_update > 0
                     and np.isfinite(explained_variance)
                     and explained_variance >= config.critic_warmup_min_ev
                 ):
                     _critic_warmup_ev_cleared = True
-                elif update_count >= 4 * config.critic_warmup_updates:
+                elif leg_update >= 4 * config.critic_warmup_updates:
                     _critic_warmup_ev_cleared = True
                     logger.warning(
                         "Critic warmup EV gate (%.2f) not reached after %d updates "

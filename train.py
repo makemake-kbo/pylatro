@@ -513,6 +513,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--critic-warmup-min-ev",
+        type=float,
+        default=0.7,
+        help=(
+            "Explained-variance gate for unfreezing the policy after critic warmup. "
+            "The policy stays frozen until rollout EV clears this (capped at 4x "
+            "--critic-warmup-updates). Pass 0 for a purely count-based warmup. "
+            "Default: 0.7."
+        ),
+    )
+    parser.add_argument(
         "--reinit-value-head",
         action="store_true",
         help=(
@@ -709,6 +720,7 @@ def main():
                 eval_device=args.eval_device,
                 hand_ar_mixture_eps=ppo_eps,
                 critic_warmup_updates=args.critic_warmup_updates,
+                critic_warmup_min_ev=args.critic_warmup_min_ev,
                 reinit_value_head=args.reinit_value_head,
                 reset_best_eval=args.reset_best_eval,
                 sil_coeff=args.sil_coeff,

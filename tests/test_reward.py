@@ -561,7 +561,9 @@ def test_planet_unmatched_penalty_weighted_by_play_share() -> None:
 
 def test_planet_unmatched_penalty_discounted_early_for_pivots() -> None:
     """Early unplayed-hand claims are pivot planning, not farming: the penalty
-    ramps with ante progress toward win_ante and is free at ante 1."""
+    ramps with ante progress toward win_ante, floored so it is never free."""
+    from pylatro_agent.reward import PLANET_UNMATCHED_MIN_PROGRESS
+
     state = _dummy_state(win_ante=4)
     prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
     base_curr = {
@@ -583,13 +585,92 @@ def test_planet_unmatched_penalty_discounted_early_for_pivots() -> None:
         )
         return components["planet_unmatched_claim_penalty"]
 
-    # Ante 1: leveling into an unplayed hand is free (pivot planning).
-    assert penalty_at(1) == pytest.approx(0.0)
-    # Ante 2 of win_ante 4: one third of the way there.
+    # Ante 1: discounted to the floor, not free — a free window gets farmed.
+    assert penalty_at(1) == pytest.approx(-0.2 * PLANET_UNMATCHED_MIN_PROGRESS * REWARD_SCALE)
+    # Ante 2 of win_ante 4: one third of the way there (above the floor).
     assert penalty_at(2) == pytest.approx(-0.2 * (1 / 3) * REWARD_SCALE)
     # At (or past) win_ante the never-played hand pays in full.
     assert penalty_at(4) == pytest.approx(-0.2 * REWARD_SCALE)
     assert penalty_at(6) == pytest.approx(-0.2 * REWARD_SCALE)
+
+
+def test_planet_unmatched_claim_exempt_when_best_available() -> None:
+    """Claiming the best planet a matchless pack offers is not penalized:
+    the pack is paid for and skipping wastes it."""
+    state = _dummy_state()
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_claim",
+        "planet_claim_observed": True,
+        "planet_claim_main_hand_match": False,
+        "planet_claim_played_hand": False,
+        "planet_claim_play_share": 0.0,
+        "planet_claim_best_available": True,
+        "ante": 1,
+    }
+    config = RewardConfig(planet_unmatched_claim_penalty_coeff=0.4)
+    components = default_reward_components(
+        state, prev_info, curr_info, terminated=False, won=False, config=config
+    )
+    assert components["planet_unmatched_claim_penalty"] == pytest.approx(0.0)
+
+
+def test_planet_unmatched_claim_full_penalty_when_better_option_existed() -> None:
+    """A better-aligned planet in the pack removes the pivot excuse: the claim
+    pays the full share-weighted penalty at any ante (no early discount)."""
+    state = _dummy_state(win_ante=4)
+    prev_info = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_claim",
+        "planet_claim_observed": True,
+        "planet_claim_main_hand_match": False,
+        "planet_claim_played_hand": False,
+        "planet_claim_play_share": 0.0,
+        "planet_claim_best_available": False,
+        "ante": 1,
+    }
+    config = RewardConfig(planet_unmatched_claim_penalty_coeff=0.4)
+    components = default_reward_components(
+        state, prev_info, curr_info, terminated=False, won=False, config=config
+    )
+    assert components["planet_unmatched_claim_penalty"] == pytest.approx(-0.4 * REWARD_SCALE)
+
+
+def test_planet_unmatched_claim_best_available_still_penalized_with_protected_fool() -> None:
+    """Best-available claims lose the exemption when a held Fool stores a
+    protected target the claim would overwrite; skipping the pack is the
+    free move in that spot (_should_penalize_planet_skip waives it)."""
+    state = _dummy_state()
+    prev_info = {
+        "ante": 1,
+        "round_score": 0,
+        "blind_target": 300,
+        "consumable_keys": ("c_fool",),
+        "last_tarot_planet": "c_hermit",
+    }
+    curr_info = {
+        "round_score": 0,
+        "blind_target": 300,
+        "progress_made": True,
+        "action_type": "pack_claim",
+        "planet_claim_observed": True,
+        "planet_claim_main_hand_match": False,
+        "planet_claim_played_hand": False,
+        "planet_claim_play_share": 0.0,
+        "planet_claim_best_available": True,
+        "ante": 1,
+    }
+    config = RewardConfig(planet_unmatched_claim_penalty_coeff=0.4)
+    components = default_reward_components(
+        state, prev_info, curr_info, terminated=False, won=False, config=config
+    )
+    assert components["planet_unmatched_claim_penalty"] == pytest.approx(-0.4 * REWARD_SCALE)
 
 
 def test_progression_reward_scale_scales_progress_components() -> None:

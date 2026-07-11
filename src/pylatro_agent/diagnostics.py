@@ -46,6 +46,45 @@ def _main_hand_proxy(state) -> str:
     return rows[0][3]
 
 
+def _planet_alignment_rank(
+    state, center_key: str, main_hand: str, max_played: int
+) -> tuple[int, float]:
+    """How well a planet fits the run: (matches main hand, hand play share)."""
+    hand_type = _planet_hand_type(state, center_key)
+    played = (
+        int(state.hands.get(hand_type, {}).get("played", 0) or 0) if hand_type else 0
+    )
+    share = (played / max_played) if max_played > 0 else 0.0
+    return (1 if hand_type and hand_type == main_hand else 0, share)
+
+
+def _is_best_planet_in_pack(state, chosen_index: int) -> bool:
+    """True when no other planet in the open pack better fits the run.
+
+    Claiming the best planet a matchless pack offers (even Pluto) is
+    legitimate — the pack is already paid for and skipping wastes it — so
+    the unmatched-claim penalty exempts these claims. Only planet cards
+    compete in the ranking; ties keep the claim exempt.
+    """
+    main_hand = _main_hand_proxy(state)
+    max_played = max(
+        (int(hand.get("played", 0) or 0) for hand in state.hands.values()),
+        default=0,
+    )
+    chosen_rank = _planet_alignment_rank(
+        state, _center_key(state.pack.cards[chosen_index]), main_hand, max_played
+    )
+    for index, card in enumerate(state.pack.cards):
+        if index == chosen_index:
+            continue
+        other_key = _center_key(card)
+        if _center_set(state, other_key) != "Planet":
+            continue
+        if _planet_alignment_rank(state, other_key, main_hand, max_played) > chosen_rank:
+            return False
+    return True
+
+
 def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any]:
     hand_type = _planet_hand_type(state, center_key)
     main_hand = _main_hand_proxy(state)
@@ -126,7 +165,11 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
         center_key = _center_key(state.pack.cards[decoded.index])
         if _center_set(state, center_key) != "Planet":
             return {}
-        return _planet_diagnostics(state, center_key, prefix="planet_claim")
+        diagnostics = _planet_diagnostics(state, center_key, prefix="planet_claim")
+        diagnostics["planet_claim_best_available"] = _is_best_planet_in_pack(
+            state, decoded.index
+        )
+        return diagnostics
 
     if decoded.action_type == ActionType.PACK_SKIP and state.pack is not None:
         return {

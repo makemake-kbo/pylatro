@@ -585,6 +585,28 @@ def main():
         help="Skip the SIL pass until the buffer holds this many wins.",
     )
     parser.add_argument(
+        "--no-sil-advantage-gating",
+        action="store_true",
+        help=(
+            "Disable SIL advantage gating and imitate buffered wins uniformly "
+            "(the pre-gating behavior). Gated SIL weights each transition's "
+            "NLL by min((R - V)+ / clip, 1), so transitions the critic already "
+            "values correctly contribute nothing and the term self-decays as "
+            "wins become routine; ungated SIL at abundant win rates collapses "
+            "into near-on-policy self-cloning of the average recent win."
+        ),
+    )
+    parser.add_argument(
+        "--sil-advantage-clip",
+        type=float,
+        default=3.0,
+        help=(
+            "Return shortfall (R - V, reward units) at which a SIL transition "
+            "reaches full behavior-cloning weight; smaller values saturate the "
+            "gate sooner (default: 3.0)."
+        ),
+    )
+    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -740,6 +762,8 @@ def main():
                 sil_buffer_episodes=args.sil_buffer_episodes,
                 sil_batch_size=args.sil_batch_size,
                 sil_min_episodes=args.sil_min_episodes,
+                sil_advantage_gating=not args.no_sil_advantage_gating,
+                sil_advantage_clip=args.sil_advantage_clip,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.

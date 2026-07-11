@@ -271,6 +271,12 @@ HAND_TOP1_BONUS = 0.35
 HAND_TOP3_BONUS = 0.12
 PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
+# Floor on the ante-progress discount applied to unmatched planet penalties.
+# The pre-floor discount made unmatched claims/uses literally free before
+# ante 2, and the sil2/env32 leg farmed exactly that seam: ~70% of planet
+# engagement unmatched, Pluto ~1/3 of claims vs <1% High Card played. Early
+# leniency for pivot stockpiling survives, but nothing is ever free.
+PLANET_UNMATCHED_MIN_PROGRESS = 0.25
 
 REWARD_COMPONENT_NAMES = (
     "terminal",
@@ -750,6 +756,7 @@ def _apply_strategic_shop_rewards(
 
 
 def _apply_planet_match_rewards(
+    prev_info: dict,
     curr_info: dict,
     config: RewardConfig,
     components: dict[str, float],
@@ -758,7 +765,9 @@ def _apply_planet_match_rewards(
     """Add planet-alignment bonuses/penalties for this step into ``components``.
 
     Shared by the legacy dense path and the v2 potential-shaping path (where
-    ``planet_match_shaping`` re-enables just this component).
+    ``planet_match_shaping`` re-enables just this component). ``prev_info``
+    carries the pre-action consumable inventory for the Fool-protection check
+    on claim exemptions.
     """
     effective_win_ante = max(
         int(win_ante if win_ante is not None else config.potential_win_ante), 2
@@ -784,25 +793,46 @@ def _apply_planet_match_rewards(
             share_weight = 1.0 - float(curr_info.get(f"{prefix}_play_share", 0.0) or 0.0)
             # Play share is backward-looking and cannot see a planned pivot
             # (leveling Flush Five while still playing Bloodstone flushes), so
-            # discount by ante progress: unplayed-hand claims are free early,
+            # discount by ante progress: unplayed-hand claims are cheap early,
             # when stockpiling levels for a pivot is legitimate planning, and
             # pay in full near win_ante, when a still-never-played hand is
-            # farming. Missing ante (older infos/tests) keeps full weight.
+            # farming. Floored — a fully free window gets farmed (the
+            # sil2/env32 leg claimed ~70% unmatched through it). Missing ante
+            # (older infos/tests) keeps full weight.
             ante_raw = curr_info.get("ante")
             progress = (
                 1.0
                 if ante_raw is None
-                else _clip((int(ante_raw) - 1) / (effective_win_ante - 1), 0.0, 1.0)
+                else max(
+                    _clip((int(ante_raw) - 1) / (effective_win_ante - 1), 0.0, 1.0),
+                    PLANET_UNMATCHED_MIN_PROGRESS,
+                )
             )
-            weight = share_weight * progress
-            if prefix == "planet_use" and config.planet_unmatched_use_penalty_coeff > 0.0:
-                components["planet_unmatched_use_penalty"] -= (
-                    config.planet_unmatched_use_penalty_coeff * weight
-                )
-            elif prefix == "planet_claim" and config.planet_unmatched_claim_penalty_coeff > 0.0:
-                components["planet_unmatched_claim_penalty"] -= (
-                    config.planet_unmatched_claim_penalty_coeff * weight
-                )
+            if prefix == "planet_use":
+                coeff = config.planet_unmatched_use_penalty_coeff
+                component = "planet_unmatched_use_penalty"
+                weight = share_weight * progress
+            else:
+                coeff = config.planet_unmatched_claim_penalty_coeff
+                component = "planet_unmatched_claim_penalty"
+                best_available = curr_info.get("planet_claim_best_available")
+                if best_available is None:
+                    # Older infos/tests without pack-ranking diagnostics.
+                    weight = share_weight * progress
+                elif best_available and not _has_protected_fool(prev_info):
+                    # Best planet a matchless pack offered: the pack is paid
+                    # for and skipping wastes it, so taking even Pluto is
+                    # fine — unless a held Fool stores a protected target the
+                    # claim would overwrite (then skipping is the free,
+                    # unpenalized move via _should_penalize_planet_skip).
+                    weight = 0.0
+                else:
+                    # A better-aligned planet was available (or a protected
+                    # Fool gets clobbered): no pivot excuse at any ante, pay
+                    # the full share-weighted penalty.
+                    weight = share_weight
+            if coeff > 0.0 and weight > 0.0:
+                components[component] -= coeff * weight
 
 
 def _build_curve_weight(joker: dict, ante: int) -> float:
@@ -958,7 +988,9 @@ def default_reward_components(
         # cannot credit-assign which planet to level. Bounded per-event, scaled
         # by dense_scale below like idle_penalty.
         if config.enable_planet_match_rewards:
-            _apply_planet_match_rewards(curr_info, config, components, win_ante=win_ante)
+            _apply_planet_match_rewards(
+                prev_info, curr_info, config, components, win_ante=win_ante
+            )
 
         # Build-curve shaping: same rationale, which joker profile to buy at
         # which ante is invisible to the sparse win signal. Bounded per
@@ -1044,6 +1076,7 @@ def default_reward_components(
     # (default coeff 0.0 so they are off unless explicitly enabled).
     if config.enable_planet_match_rewards:
         _apply_planet_match_rewards(
+            prev_info,
             curr_info,
             config,
             components,

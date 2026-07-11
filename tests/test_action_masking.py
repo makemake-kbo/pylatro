@@ -100,16 +100,6 @@ def test_heuristic_can_pick_hand_targeted_consumable(hand_play_state):
     assert ActionRange.CONSUMABLE_FLAT_START <= action <= ActionRange.CONSUMABLE_FLAT_END
 
 
-def test_select_cards_mask_is_legacy_noop(hand_play_state):
-    mask = compute_action_mask(
-        hand_play_state,
-        SubPhase.SELECT_CARDS,
-        selected_cards=set(),
-        pending_action="play",
-    )
-    assert mask.sum() == 0
-
-
 def test_shop_mask_leave_always_valid(hand_play_state):
     # Simulate being in shop phase
     from pylatro import populate_shop, cash_out

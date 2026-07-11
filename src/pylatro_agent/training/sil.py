@@ -7,6 +7,13 @@ with a behavior-cloning loss alongside PPO, multiplying the effective
 density of the win signal without touching the reward function: nothing
 enters the buffer except a genuine win, so there is no shaping to farm.
 
+Each transition also stores its discounted return-to-go so the loss can be
+advantage-gated (Oh et al. 2018): weighting the NLL by (R - V)+ makes SIL
+imitate only transitions the critic still undervalues. Without the gate,
+abundant wins (32 envs at ~30% win rate churn a 64-episode FIFO every ~2
+updates) turn SIL into near-on-policy self-cloning of the average recent
+win, which suppresses the exploration needed to convert marginal losses.
+
 Episodes routinely span rollout boundaries (episode length ~100 steps vs
 rollout_length per env), so transitions are accumulated per env in
 ``SILEpisodeTracker`` across updates rather than sliced out of the
@@ -81,6 +88,9 @@ class WinEpisodeBuffer:
         packed = np.stack([self._episodes[e]["action_mask_packed"][t] for e, t in picks])
         action_mask = np.unpackbits(packed, axis=1, count=NUM_ACTIONS).astype(np.float32)
         actions = np.asarray([self._episodes[e]["actions"][t] for e, t in picks], dtype=np.int64)
+        returns = np.asarray(
+            [self._episodes[e]["returns"][t] for e, t in picks], dtype=np.float32
+        )
 
         return {
             "tokens": torch.as_tensor(tokens.astype(np.int64), device=device),
@@ -89,6 +99,7 @@ class WinEpisodeBuffer:
             "attention_mask": torch.as_tensor(attention_mask.astype(np.int64), device=device),
             "action_mask": torch.as_tensor(action_mask, device=device),
             "actions": torch.as_tensor(actions, device=device),
+            "returns": torch.as_tensor(returns, device=device),
         }
 
 
@@ -96,18 +107,23 @@ class SILEpisodeTracker:
     """Accumulate per-env transitions across rollouts; emit complete wins.
 
     ``record_step`` must be called once per vector-env step with the
-    pre-step observations (the same arrays handed to the rollout buffer);
-    ``finish_episode`` at each done. Episodes longer than
-    ``max_episode_steps`` are dropped rather than growing unbounded.
+    pre-step observations (the same arrays handed to the rollout buffer)
+    and the post-step rewards; ``finish_episode`` at each done. Episodes
+    longer than ``max_episode_steps`` are dropped rather than growing
+    unbounded. ``gamma`` must match the PPO discount so the stored
+    return-to-go is comparable to the critic's value predictions.
     """
 
-    def __init__(self, num_envs: int, max_episode_steps: int = 2048) -> None:
+    def __init__(self, num_envs: int, max_episode_steps: int = 2048, gamma: float = 1.0) -> None:
         self.num_envs = num_envs
         self.max_episode_steps = max_episode_steps
+        self.gamma = float(gamma)
         self._steps: list[list[tuple]] = [[] for _ in range(num_envs)]
         self._overflowed = [False] * num_envs
 
-    def record_step(self, obs: dict[str, np.ndarray], actions: np.ndarray) -> None:
+    def record_step(
+        self, obs: dict[str, np.ndarray], actions: np.ndarray, rewards: np.ndarray
+    ) -> None:
         for i in range(self.num_envs):
             if self._overflowed[i]:
                 continue
@@ -123,6 +139,7 @@ class SILEpisodeTracker:
                     obs["attention_mask"][i].astype(np.int8),
                     np.packbits(obs["action_mask"][i] > 0.5),
                     int(actions[i]),
+                    float(rewards[i]),
                 )
             )
 
@@ -133,6 +150,12 @@ class SILEpisodeTracker:
         self._overflowed[env_idx] = False
         if not won or overflowed or not steps:
             return
+        # Discounted return-to-go; wins are terminal so no bootstrap is needed.
+        returns = np.empty(len(steps), dtype=np.float32)
+        acc = 0.0
+        for t in range(len(steps) - 1, -1, -1):
+            acc = steps[t][6] + self.gamma * acc
+            returns[t] = acc
         buffer.add_episode(
             {
                 "tokens": np.stack([s[0] for s in steps]),
@@ -141,5 +164,6 @@ class SILEpisodeTracker:
                 "attention_mask": np.stack([s[3] for s in steps]),
                 "action_mask_packed": np.stack([s[4] for s in steps]),
                 "actions": np.asarray([s[5] for s in steps], dtype=np.int64),
+                "returns": returns,
             }
         )

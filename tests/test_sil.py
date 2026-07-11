@@ -33,7 +33,8 @@ def _run_episode(
     for _ in range(steps):
         obs = _make_obs(num_envs, rng)
         actions = rng.integers(0, NUM_ACTIONS, size=num_envs)
-        tracker.record_step(obs, actions)
+        rewards = rng.random(num_envs).astype(np.float32)
+        tracker.record_step(obs, actions, rewards)
         recorded.append((obs, int(actions[env_idx])))
     tracker.finish_episode(env_idx, won=won, buffer=buffer)
     return recorded
@@ -68,13 +69,17 @@ def test_tracker_separates_envs_across_shared_steps() -> None:
     tracker = SILEpisodeTracker(num_envs=2)
 
     for _ in range(4):
-        tracker.record_step(_make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2))
+        tracker.record_step(
+            _make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2), rng.random(2).astype(np.float32)
+        )
     tracker.finish_episode(0, won=True, buffer=buffer)
     assert buffer.num_episodes == 1
     assert buffer.num_transitions == 4
 
     for _ in range(2):
-        tracker.record_step(_make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2))
+        tracker.record_step(
+            _make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2), rng.random(2).astype(np.float32)
+        )
     tracker.finish_episode(1, won=True, buffer=buffer)
     assert buffer.num_episodes == 2
     assert buffer.num_transitions == 4 + 6
@@ -125,6 +130,25 @@ def test_buffer_sample_batch_shapes_and_dtypes() -> None:
     assert set(batch["action_mask"].unique().tolist()) <= {0.0, 1.0}
     assert batch["actions"].shape == (8,)
     assert batch["actions"].dtype == torch.int64
+    assert batch["returns"].shape == (8,)
+    assert batch["returns"].dtype == torch.float32
+
+
+def test_finish_episode_computes_discounted_returns() -> None:
+    rng = np.random.default_rng(6)
+    buffer = WinEpisodeBuffer(capacity_episodes=2)
+    tracker = SILEpisodeTracker(num_envs=1, gamma=0.5)
+
+    for reward in (1.0, 0.0, 2.0):
+        tracker.record_step(
+            _make_obs(1, rng),
+            rng.integers(0, NUM_ACTIONS, size=1),
+            np.asarray([reward], dtype=np.float32),
+        )
+    tracker.finish_episode(0, won=True, buffer=buffer)
+
+    # Return-to-go at gamma 0.5: [1 + 0.5*(0 + 0.5*2), 0 + 0.5*2, 2].
+    np.testing.assert_allclose(buffer._episodes[0]["returns"], [1.5, 1.0, 2.0])
 
 
 def test_buffer_sample_empty_raises() -> None:
@@ -164,3 +188,61 @@ def test_sample_sil_loss_gating() -> None:
 
     underfilled = PPOConfig(sil_coeff=0.2, sil_min_episodes=2)
     assert _sample_sil_loss(None, buffer, underfilled, device) is None
+
+
+def test_sample_sil_loss_advantage_gating(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The NLL weight is min((R - V)+ / clip, 1): zero when the critic already
+    predicts the buffered return, full at a shortfall of sil_advantage_clip."""
+    from pylatro_agent.training import ppo as ppo_module
+    from pylatro_agent.training.ppo import PPOConfig, _sample_sil_loss
+
+    rng = np.random.default_rng(7)
+    buffer = WinEpisodeBuffer(capacity_episodes=4, seed=0)
+    tracker = SILEpisodeTracker(num_envs=1, gamma=1.0)
+    _run_episode(tracker, buffer, env_idx=0, steps=4, won=True, rng=rng, num_envs=1)
+
+    class _ConstDist:
+        """log_prob is a constant -1.0, so the ungated NLL mean is exactly 1.0."""
+
+        def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+            return torch.full((actions.shape[0],), -1.0)
+
+    shortfall = {"value": 0.0}
+
+    def fake_grammar(model, batch, temperature):
+        values = batch["returns"] - shortfall["value"]
+        return _ConstDist(), {"expected_score": values}
+
+    monkeypatch.setattr(ppo_module, "_grammar_distribution", fake_grammar)
+    device = torch.device("cpu")
+    config = PPOConfig(sil_coeff=0.2, sil_min_episodes=1, sil_advantage_clip=3.0)
+
+    # Critic already predicts every buffered return: the gate closes fully.
+    loss, advantage_mean, gate_mean = _sample_sil_loss(None, buffer, config, device)
+    assert loss.item() == pytest.approx(0.0)
+    assert advantage_mean == pytest.approx(0.0)
+    assert gate_mean == pytest.approx(0.0)
+
+    # Shortfall of exactly the clip: full behavior-cloning weight.
+    shortfall["value"] = 3.0
+    loss, advantage_mean, gate_mean = _sample_sil_loss(None, buffer, config, device)
+    assert loss.item() == pytest.approx(1.0)
+    assert advantage_mean == pytest.approx(3.0)
+    assert gate_mean == pytest.approx(1.0)
+
+    # Half the clip: half weight.
+    shortfall["value"] = 1.5
+    loss, advantage_mean, gate_mean = _sample_sil_loss(None, buffer, config, device)
+    assert loss.item() == pytest.approx(0.5)
+    assert advantage_mean == pytest.approx(1.5)
+    assert gate_mean == pytest.approx(0.5)
+
+    # Gating disabled: plain NLL regardless of the critic, no metrics.
+    ungated = PPOConfig(
+        sil_coeff=0.2, sil_min_episodes=1, sil_advantage_gating=False
+    )
+    shortfall["value"] = 0.0
+    loss, advantage_mean, gate_mean = _sample_sil_loss(None, buffer, ungated, device)
+    assert loss.item() == pytest.approx(1.0)
+    assert advantage_mean is None
+    assert gate_mean is None

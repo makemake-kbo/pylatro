@@ -422,6 +422,17 @@ class PPOConfig:
     sil_buffer_episodes: int = 64  # FIFO capacity (~50MB at typical episode lengths)
     sil_batch_size: int = 64  # transitions sampled per PPO micro-batch
     sil_min_episodes: int = 8  # skip SIL until the buffer holds this many wins
+    # Advantage gating (Oh et al. 2018): weight each sampled transition's NLL
+    # by min((R - V)+ / sil_advantage_clip, 1) instead of imitating uniformly.
+    # Transitions the critic already values correctly contribute nothing, so
+    # the term self-decays as wins become routine; without it, abundant wins
+    # (32 envs at ~30% win rate churn the FIFO every ~2 updates) turn SIL into
+    # near-on-policy self-cloning that entrenches the current mode.
+    # sil_advantage_clip is the return shortfall (in reward units) at which a
+    # transition reaches full BC weight, so sil_coeff keeps its ungated meaning
+    # as the maximum per-transition pull.
+    sil_advantage_gating: bool = True
+    sil_advantage_clip: float = 3.0
 
 
 @dataclass
@@ -460,6 +471,8 @@ class _UpdateStats:
     on_policy_return_means: list[float] = field(default_factory=list)
     ppo_minibatches_processed: list[int] = field(default_factory=list)
     sil_losses: list[float] = field(default_factory=list)
+    sil_advantage_means: list[float] = field(default_factory=list)
+    sil_gate_means: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -595,6 +608,8 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("sil_batch_size must be positive")
     if config.sil_min_episodes <= 0:
         raise ValueError("sil_min_episodes must be positive")
+    if config.sil_advantage_clip <= 0.0:
+        raise ValueError("sil_advantage_clip must be positive")
     if config.adaptive_entropy:
         if config.entropy_coeff <= 0.0:
             raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
@@ -1000,13 +1015,18 @@ def _run_ppo_update(
                 )
                 if distill_loss is not None:
                     policy_objective_loss = policy_objective_loss + distill_coeff * distill_loss
-                # Self-imitation term: NLL of the agent's own buffered winning
-                # actions, sharing this micro-batch's backward and the target-kl
-                # guard.
-                sil_loss = _sample_sil_loss(model, sil_buffer, config, device)
-                if sil_loss is not None:
+                # Self-imitation term: advantage-gated NLL of the agent's own
+                # buffered winning actions, sharing this micro-batch's backward
+                # and the target-kl guard.
+                sil_result = _sample_sil_loss(model, sil_buffer, config, device)
+                if sil_result is not None:
+                    sil_loss, sil_advantage_mean, sil_gate_mean = sil_result
                     policy_objective_loss = policy_objective_loss + config.sil_coeff * sil_loss
                     stats.sil_losses.append(sil_loss.item())
+                    if sil_advantage_mean is not None:
+                        stats.sil_advantage_means.append(sil_advantage_mean)
+                    if sil_gate_mean is not None:
+                        stats.sil_gate_means.append(sil_gate_mean)
                 policy_objective_loss = policy_objective_loss * policy_loss_scale
 
                 if config.critic_updates_trunk:
@@ -1173,23 +1193,31 @@ def _sample_sil_loss(
     sil_buffer: "WinEpisodeBuffer | None",
     config: PPOConfig,
     device: torch.device,
-) -> "torch.Tensor | None":
-    """NLL of buffered winning actions under the current policy, or None.
+) -> "tuple[torch.Tensor, float | None, float | None] | None":
+    """Advantage-gated NLL of buffered winning actions, or None.
 
-    Sampled fresh per PPO micro-batch and added to the combined objective
-    there — a separate backward/step would let Adam's gradient
-    renormalization largely cancel sil_coeff. Non-finite log-probs
+    Returns ``(loss, advantage_mean, gate_mean)``; the metrics are None when
+    gating is disabled. Sampled fresh per PPO micro-batch and added to the
+    combined objective there — a separate backward/step would let Adam's
+    gradient renormalization largely cancel sil_coeff. Non-finite log-probs
     (candidate-hand support drift, same failure mode the teacher
     reachability mask guards) are dropped from the mean rather than
     poisoning the gradient. Returns None when SIL is disabled, the buffer
     is short of sil_min_episodes, or no sampled row is reachable.
+
+    With sil_advantage_gating each transition's NLL is weighted by
+    min((R - V)+ / sil_advantage_clip, 1): the critic's shortfall on the
+    stored return-to-go decides how hard to imitate, so well-predicted
+    (routine) wins contribute nothing and the term self-decays instead of
+    behavior-cloning the policy's average recent win. V is detached — the
+    gate must not train the critic toward pretending wins are expected.
     """
     if sil_buffer is None or config.sil_coeff <= 0.0:
         return None
     if sil_buffer.num_episodes < config.sil_min_episodes:
         return None
     batch = sil_buffer.sample(config.sil_batch_size, device)
-    dist, _value_dict = _grammar_distribution(
+    dist, value_dict = _grammar_distribution(
         model,
         batch,
         temperature=config.rollout_temperature,
@@ -1199,7 +1227,14 @@ def _sample_sil_loss(
     denom = finite.sum()
     if denom.item() <= 0:
         return None
-    return -(log_probs * finite).sum() / denom
+    if not config.sil_advantage_gating:
+        return -(log_probs * finite).sum() / denom, None, None
+    advantage = (batch["returns"] - value_dict["expected_score"].detach()).clamp_min(0.0)
+    gate = (advantage / config.sil_advantage_clip).clamp_max(1.0)
+    loss = -(log_probs * gate * finite).sum() / denom
+    advantage_mean = ((advantage * finite).sum() / denom).item()
+    gate_mean = ((gate * finite).sum() / denom).item()
+    return loss, advantage_mean, gate_mean
 
 
 def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float:
@@ -2118,7 +2153,7 @@ def train_ppo(
     sil_tracker: SILEpisodeTracker | None = None
     if config.sil_coeff > 0.0:
         sil_buffer = WinEpisodeBuffer(config.sil_buffer_episodes)
-        sil_tracker = SILEpisodeTracker(config.num_envs)
+        sil_tracker = SILEpisodeTracker(config.num_envs, gamma=config.gamma)
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
@@ -2238,8 +2273,9 @@ def train_ppo(
                 if sil_tracker is not None:
                     # Same pre-step obs the rollout buffer stores; the tracker
                     # copies compactly so the shared _ObsBuffer arrays are safe
-                    # to overwrite next step.
-                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np)
+                    # to overwrite next step. Rewards feed the return-to-go
+                    # used for SIL advantage gating.
+                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np, rewards)
 
                 # Track per-env episode stats
                 env_ep_reward += rewards
@@ -2524,6 +2560,18 @@ def train_ppo(
                 )
                 if update_stats.sil_losses:
                     writer.add_scalar("sil/loss", float(np.mean(update_stats.sil_losses)), update_count)
+                if update_stats.sil_advantage_means:
+                    writer.add_scalar(
+                        "sil/advantage_mean",
+                        float(np.mean(update_stats.sil_advantage_means)),
+                        update_count,
+                    )
+                if update_stats.sil_gate_means:
+                    writer.add_scalar(
+                        "sil/gate_mean",
+                        float(np.mean(update_stats.sil_gate_means)),
+                        update_count,
+                    )
             if update_stats.distill_losses_weighted:
                 writer.add_scalar(
                     "ppo/distill_loss_weighted",

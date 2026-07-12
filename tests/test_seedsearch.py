@@ -187,7 +187,7 @@ def test_known_perkeo_seed(data):
         {"ante1": {"big": {"skip": {"pack": "mega arcana", "contains": ["perkeo"]}}}},
         data,
     )
-    match = check_seed(spec, "9LB4Q6CE", data)
+    match = check_seed(spec, "NNPGBJML", data)
     assert match is not None
     assert any("j_perkeo" in note for note in match.notes)
 
@@ -195,10 +195,10 @@ def test_known_perkeo_seed(data):
 def test_soul_alone_means_any_legendary(data):
     # "soul" = the pack contains The Soul, whatever legendary it becomes.
     spec = parse_spec({"ante1": {"big": {"skip": {"pack": "mega arcana", "contains": ["soul"]}}}}, data)
-    assert check_seed(spec, "9LB4Q6CE", data) is not None
+    assert check_seed(spec, "NNPGBJML", data) is not None
     # A specific different legendary must not match.
     other = parse_spec({"ante1": {"big": {"skip": {"pack": "mega arcana", "contains": ["yorick"]}}}}, data)
-    assert check_seed(other, "9LB4Q6CE", data) is None
+    assert check_seed(other, "NNPGBJML", data) is None
 
 
 def test_nickname_aliases(data):
@@ -221,7 +221,7 @@ def test_full_example_spec_known_seed(data):
         },
         data,
     )
-    match = check_seed(spec, "47XZSXLH", data)
+    match = check_seed(spec, "JGWVFG84", data)
     assert match is not None
     notes = " ".join(match.notes)
     assert "v_overstock_norm" in notes

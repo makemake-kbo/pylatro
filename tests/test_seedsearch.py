@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import random
+import textwrap
 
 import pytest
 
@@ -255,3 +257,62 @@ def test_random_seed_alphabet():
         seed = random_seed(rng)
         assert len(seed) == 8
         assert "O" not in seed and "0" not in seed
+
+
+# ---------------------------------------------------------------------------
+# Spec file loading (jsonc tolerance: comments + trailing commas)
+#
+
+
+def _strip(raw: str) -> str:
+    from pylatro_cli.seedsearch import _strip_jsonc
+
+    return _strip_jsonc(raw)
+
+
+def test_strip_plain_json_unchanged():
+    raw = '{"ante1": {"voucher": "overstock"}}'
+    assert _strip(raw) == raw
+
+
+def test_strip_full_line_comments():
+    raw = '// a photochad run\n{"ante1": {\n# voucher here\n"voucher": "overstock"\n}}'
+    assert json.loads(_strip(raw)) == {"ante1": {"voucher": "overstock"}}
+
+
+def test_strip_inline_comments():
+    raw = '{"ante1": {"voucher": "overstock", "boss": "the wall"}} // nice'
+    assert json.loads(_strip(raw)) == {"ante1": {"voucher": "overstock", "boss": "the wall"}}
+
+
+def test_strip_trailing_commas():
+    raw = '{"ante1": {"voucher": "overstock",}, "ante2": [1, 2,],}'
+    assert json.loads(_strip(raw)) == {"ante1": {"voucher": "overstock"}, "ante2": [1, 2]}
+
+
+def test_strip_leaves_string_contents_alone():
+    # "//", "#", and "," inside a quoted value must be preserved verbatim.
+    raw = '{"note": "a // not a comment, # nor this", "x": 1}'
+    assert json.loads(_strip(raw))["note"] == "a // not a comment, # nor this"
+
+
+def test_strip_realistic_jsonc_spec():
+    raw = textwrap.dedent(
+        """\
+        {
+            "ante1": {
+                "small": {
+                    "shop": {
+                        "contains": ["photo", "chad"],   // both in the initial shop
+                        "packs": [
+                            {"pack": "buffoon", "contains": ["credit card"]},
+                        ]
+                    },
+                }
+            }
+        }
+        """
+    )
+    parsed = json.loads(_strip(raw))
+    assert parsed["ante1"]["small"]["shop"]["contains"] == ["photo", "chad"]
+    assert parsed["ante1"]["small"]["shop"]["packs"][0]["contains"] == ["credit card"]

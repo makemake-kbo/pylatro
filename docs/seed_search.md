@@ -22,7 +22,8 @@ Exit codes: `0` match found, `1` no match, `2` invalid spec.
 
 ## Spec format
 
-Full-line `#` / `//` comments are allowed. Names are fuzzy: `"overstock"`,
+Spec files are parsed as jsonc: full-line or trailing `#` / `//` comments and
+trailing commas are all allowed. Names are fuzzy: `"overstock"`,
 `"v_overstock_norm"`, and `"Overstock"` all work; `"hermit"` means The Hermit;
 joker nicknames like "photo" for photograph, "chad" for the hanging chad, and
 "useless" for loyalty card are all accepted.
@@ -115,10 +116,10 @@ Found seed: `5W7A7UGZ`.
 ```
 
 ```
-$ pylatro seed-search spec.json --check 5W7A7UGZ
-  ante1.small: buffoon pack contains [j_trousers, j_credit_card]
-  ante1.small: j_photograph in shop on roll 1/1
-  ante1.small: j_hanging_chad in shop on roll 1/1
+pylatro seed-search spec.json --check 5W7A7UGZ
+ante1.small: buffoon pack contains [j_trousers, j_credit_card]
+ante1.small: j_photograph in shop on roll 1/1
+ante1.small: j_hanging_chad in shop on roll 1/1
 ```
 
 ## Python API

@@ -1,0 +1,17 @@
+{
+    "ante1": {
+        "small": {
+            "shop": {
+                "contains": ["photo", "chad"],
+                "packs": [
+                    {"pack": "buffoon", "contains": ["credit card"]}
+                ]
+            }
+        },
+        "big": {
+            "shop": {
+                "within_2": ["blueprint"],
+            },
+        }
+    }
+}

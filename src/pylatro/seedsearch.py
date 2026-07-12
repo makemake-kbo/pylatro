@@ -778,7 +778,7 @@ def _check_batch(seeds: list[str]) -> list[SeedMatch]:
     return [match for match in results if match is not None]
 
 
-_BATCH_SIZE = 500
+_BATCH_SIZE = 1000
 
 
 def _search_parallel(

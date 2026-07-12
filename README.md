@@ -31,6 +31,14 @@ The current implementation includes:
 - joker instance tracking with preserved in-run order for copy and position-sensitive effects
 - differential and behavior tests over the deterministic core
 
+## Seed search
+
+`pylatro seed-search spec.json` finds run seeds whose vouchers, shops, blinds,
+and skips match a JSON spec (e.g. "Charm tag on the ante-1 big blind whose Mega
+Arcana pack contains The Soul → Perkeo, then Blueprint within 2 shop rolls in
+ante 2"). Specs are validated against game rules before searching. See
+[`docs/seed_search.md`](docs/seed_search.md).
+
 ---
 
 ## Pylatro Agent

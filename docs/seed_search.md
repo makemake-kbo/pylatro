@@ -91,6 +91,36 @@ The spec is rejected up front when it breaks game rules, e.g.:
   legendary in the shop, a jumbo pack from a skip tag);
 - unknown or ambiguous names (with "did you mean" suggestions).
 
+## Examples
+
+### Photochad in the first shop, Credit Card in its Buffoon pack
+
+The first shop (after beating ante 1's small blind) sells both Photograph and
+Hanging Chad, and the Buffoon pack it always stocks contains a Credit Card.
+Found seed: `5W7A7UGZ`.
+
+```jsonc
+{
+    "ante1": {
+        "small": {
+            "shop": {
+                "contains": ["photo", "chad"],          // both in the initial shop
+                "packs": [
+                    {"pack": "buffoon", "contains": ["credit card"]}
+                ]
+            }
+        }
+    }
+}
+```
+
+```
+$ pylatro seed-search spec.json --check 5W7A7UGZ
+  ante1.small: buffoon pack contains [j_trousers, j_credit_card]
+  ante1.small: j_photograph in shop on roll 1/1
+  ante1.small: j_hanging_chad in shop on roll 1/1
+```
+
 ## Python API
 
 ```python

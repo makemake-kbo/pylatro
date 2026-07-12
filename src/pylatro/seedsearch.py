@@ -15,8 +15,10 @@ shop is rerolled only as far as the deepest ``within_N`` constraint requires
 
 from __future__ import annotations
 
+import multiprocessing
 import random
 import re
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from copy import deepcopy
 from dataclasses import dataclass, field
 from difflib import get_close_matches
@@ -758,6 +760,86 @@ def random_seed(rng: random.Random) -> str:
     return "".join(rng.choice(SEED_ALPHABET) for _ in range(SEED_LENGTH))
 
 
+# Per-worker state, set once by _worker_init so batches don't re-pickle the
+# spec and (unlocked) game data on every task.
+_worker_spec: SearchSpec | None = None
+_worker_data: GameData | None = None
+
+
+def _worker_init(spec: SearchSpec, data: GameData) -> None:
+    global _worker_spec, _worker_data
+    _worker_spec = spec
+    _worker_data = data
+
+
+def _check_batch(seeds: list[str]) -> list[SeedMatch]:
+    assert _worker_spec is not None and _worker_data is not None
+    results = (check_seed(_worker_spec, seed, _worker_data, _data_prepared=True) for seed in seeds)
+    return [match for match in results if match is not None]
+
+
+_BATCH_SIZE = 500
+
+
+def _search_parallel(
+    spec: SearchSpec,
+    data: GameData,
+    rng: random.Random,
+    max_seeds: int,
+    matches: int,
+    workers: int,
+    progress: Callable[[int, int], None] | None,
+) -> list[SeedMatch]:
+    """Fan seed batches out to worker processes, stopping early on enough matches.
+
+    Seeds are drawn from `rng` in the parent, so a fixed rng still tries the
+    same seed set at any worker count (which seeds get *checked* before the
+    early stop, and thus which matches are reported, may vary with timing).
+    """
+    found: list[SeedMatch] = []
+    checked = 0
+    submitted = 0
+    pending: set[Future[list[SeedMatch]]] = set()
+    sizes: dict[Future[list[SeedMatch]], int] = {}
+    # fork keeps startup cheap (no re-import of the Cython modules, no pickling
+    # of the unlocked GameData per worker); spawn/forkserver would also break
+    # REPL / stdin callers, which have no importable __main__.
+    methods = multiprocessing.get_all_start_methods()
+    ctx = multiprocessing.get_context("fork" if "fork" in methods else None)
+    with ProcessPoolExecutor(
+        max_workers=workers, mp_context=ctx, initializer=_worker_init, initargs=(spec, data)
+    ) as pool:
+
+        def submit_one() -> None:
+            nonlocal submitted
+            count = min(_BATCH_SIZE, max_seeds - submitted)
+            if count <= 0:
+                return
+            seeds = [random_seed(rng) for _ in range(count)]
+            future = pool.submit(_check_batch, seeds)
+            sizes[future] = count
+            pending.add(future)
+            submitted += count
+
+        # Keep a bounded window of in-flight batches so an early stop doesn't
+        # leave the whole search queued behind it.
+        for _ in range(workers * 2):
+            submit_one()
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                checked += sizes.pop(future)
+                found.extend(future.result())
+            if progress:
+                progress(checked, len(found))
+            if len(found) >= matches:
+                pool.shutdown(wait=False, cancel_futures=True)
+                break
+            for _ in done:
+                submit_one()
+    return found[:matches] if len(found) > matches else found
+
+
 def search_seeds(
     spec: SearchSpec,
     *,
@@ -766,12 +848,19 @@ def search_seeds(
     rng: random.Random | None = None,
     data: GameData | None = None,
     progress: Callable[[int, int], None] | None = None,
+    workers: int = 1,
 ) -> list[SeedMatch]:
-    """Try random seeds until `matches` seeds satisfy the spec or `max_seeds` is reached."""
+    """Try random seeds until `matches` seeds satisfy the spec or `max_seeds` is reached.
+
+    `workers` > 1 checks seeds across that many processes; the parent draws all
+    seeds from `rng`, so searches stay reproducible for a fixed rng.
+    """
     data = data or load_game_data()
     if spec.unlock_all:
         data = unlock_data(data)
     rng = rng or random.Random()
+    if workers > 1:
+        return _search_parallel(spec, data, rng, max_seeds, matches, workers, progress)
     found: list[SeedMatch] = []
     for attempt in range(1, max_seeds + 1):
         result = check_seed(spec, random_seed(rng), data, _data_prepared=True)

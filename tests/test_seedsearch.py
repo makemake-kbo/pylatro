@@ -151,6 +151,26 @@ def test_search_finds_voucher_and_engine_agrees(data):
         assert state.current_voucher == "v_overstock_norm"
 
 
+def test_search_parallel_matches_and_engine_agrees(data):
+    spec = parse_spec({"ante1": {"voucher": "overstock"}}, data)
+    found = search_seeds(spec, max_seeds=2000, matches=2, rng=random.Random(42), data=data, workers=2)
+    assert found, "expected a match within 2000 seeds (~6% hit rate)"
+    unlocked = unlock_data(data)
+    for match in found:
+        state = create_run_state(match.seed, data=unlocked)
+        assert state.current_voucher == "v_overstock_norm"
+
+
+def test_search_parallel_respects_max_seeds(data):
+    # An impossible-in-budget spec must terminate after ~max_seeds attempts.
+    spec = parse_spec(
+        {"ante1": {"voucher": "overstock"}, "ante2": {"voucher": "overstock plus"}},
+        data,
+    )
+    found = search_seeds(spec, max_seeds=100, matches=1, rng=random.Random(0), data=data, workers=2)
+    assert found == []
+
+
 def test_search_voucher_tier_chain(data):
     spec = parse_spec(
         {"ante1": {"voucher": "overstock"}, "ante2": {"voucher": "overstock plus"}},

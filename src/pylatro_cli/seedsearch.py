@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import sys
@@ -42,6 +43,12 @@ def main(argv: list[str] | None = None) -> int:
         "--matches", type=int, default=1, help="stop after this many matching seeds (default: %(default)s)"
     )
     parser.add_argument("--rng-seed", type=int, help="seed for the seed generator itself, for reproducible searches")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="worker processes to check seeds in parallel (default: all CPUs, %(default)s)",
+    )
     parser.add_argument("--json", action="store_true", help="print results as JSON")
     args = parser.parse_args(argv)
 
@@ -76,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         rng=rng,
         data=data,
         progress=progress if sys.stderr.isatty() else None,
+        workers=max(args.workers, 1),
     )
     if sys.stderr.isatty():
         print(file=sys.stderr)

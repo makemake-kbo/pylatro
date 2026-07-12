@@ -10,8 +10,13 @@ pylatro seed-search spec.json --matches 5     # collect 5 matching seeds
 pylatro seed-search spec.json --max-seeds 3000000
 pylatro seed-search spec.json --check ABCD1234  # verify one specific seed
 pylatro seed-search spec.json --rng-seed 7    # reproducible search order
+pylatro seed-search spec.json --workers 4     # parallel workers (default: all CPUs)
 pylatro seed-search spec.json --json          # machine-readable output
 ```
+
+Seeds are checked across all CPU cores by default; the parent process draws
+the seed stream, so `--rng-seed` tries the same seeds at any `--workers` count
+(though which match is found first can vary with worker timing).
 
 Exit codes: `0` match found, `1` no match, `2` invalid spec.
 

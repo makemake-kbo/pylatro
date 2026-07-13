@@ -29,9 +29,11 @@ pylatro = "pylatro_cli.__main__:main"
 dev = [
     "basedpyright>=1.22",
     "cython>=3.2.4",
+    "numpy>=1.26",
     "pytest>=8.3.5",
     "pytest-asyncio>=1.0",
     "ruff>=0.9",
+    "setuptools>=80",
     "textual-dev>=1.0",
 ]
 

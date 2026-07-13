@@ -17,6 +17,7 @@ src/pylatro/pylatro/
 .venv
 
 # Data / artifacts
+seedwalk_*.json
 checkpoints/
 logs/
 runs/

@@ -5,12 +5,20 @@ recurrences. They look arbitrary because they are, the only requirement is that
 they reproduce Balatro's generator exactly, otherwise a given run seed produces a
 different card/shop/boss sequence than the real game. Do not "clean up" or round
 these numbers.
+
+Balatro runs on LuaJIT, so ``math.randomseed``/``math.random`` are LuaJIT's
+TW223 Tausworthe generator (four 64-bit LFSRs, ``lj_math_random_step`` in
+``lib_math.c``), not Lua 5.1's C ``rand()`` and not Python's Mersenne Twister.
+``_LuaRandom`` below reproduces it bit-exactly, including the seeding path
+(bit pattern of ``d*pi+e`` per LFSR plus 10 warm-up steps) and the single-step
+integer draw ``floor(d*(max-min+1))+min``.
 """
 
 from __future__ import annotations
 
-import random as _random_mod
+import struct as _struct
 from dataclasses import dataclass, field
+from math import floor as _floor
 from math import pi
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -31,8 +39,57 @@ VT = TypeVar("VT")
 # native C doubles when compiled.
 _PI = cython.declare(cython.double, pi)
 
+_M64 = 0xFFFFFFFFFFFFFFFF
+# (k, q, s) per LFSR, from LuaJIT's TW223_GEN invocations.
+_TW223 = ((63, 31, 18), (58, 19, 28), (55, 24, 7), (47, 21, 8))
+
+
+class _LuaRandom:
+    """Bit-exact LuaJIT ``math.randomseed``/``math.random`` (TW223 Tausworthe)."""
+
+    __slots__ = ("gen",)
+
+    def __init__(self) -> None:
+        self.gen = [0, 0, 0, 0]
+
+    def seed(self, d: float) -> None:
+        # LuaJIT random_init: each LFSR state is the IEEE-754 bit pattern of
+        # d = d*pi + e, nudged so the top k bits are non-zero, then 10 warm-ups.
+        r = 0x11090601
+        gen = self.gen
+        for i in range(4):
+            m = 1 << (r & 255)
+            r >>= 8
+            d = d * 3.14159265358979323846 + 2.7182818284590452354
+            u = _struct.unpack("<Q", _struct.pack("<d", d))[0]
+            if u < m:
+                u += m
+            gen[i] = u
+        for _ in range(10):
+            self._step()
+
+    def _step(self) -> int:
+        r = 0
+        gen = self.gen
+        for i in range(4):
+            k, q, s = _TW223[i]
+            z = gen[i]
+            z = ((((z << q) & _M64) ^ z) >> (k - s)) ^ (((z & ((_M64 << (64 - k)) & _M64)) << s) & _M64)
+            r ^= z
+            gen[i] = z
+        return r
+
+    def random(self) -> float:
+        # LuaJIT builds a double in [1,2) from the low 52 bits and subtracts 1;
+        # mantissa * 2^-52 is the identical value without bit-casting.
+        return (self._step() & 0x000FFFFFFFFFFFFF) * 2.220446049250313e-16
+
+    def randint(self, minimum: int, maximum: int) -> int:
+        return int(_floor(self.random() * (maximum - minimum + 1))) + minimum
+
+
 # Module-level reusable RNG instance (re-seeded before every draw).
-_rng = _random_mod.Random()
+_rng = _LuaRandom()
 
 
 def _seeded_random(seed: float, minimum: int | None = None, maximum: int | None = None) -> float | int:

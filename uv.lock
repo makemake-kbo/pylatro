@@ -1194,9 +1194,11 @@ cli = [
 dev = [
     { name = "basedpyright" },
     { name = "cython" },
+    { name = "numpy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "setuptools" },
     { name = "textual-dev" },
 ]
 
@@ -1215,9 +1217,11 @@ provides-extras = ["cli", "agent"]
 dev = [
     { name = "basedpyright", specifier = ">=1.22" },
     { name = "cython", specifier = ">=3.2.4" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "ruff", specifier = ">=0.9" },
+    { name = "setuptools", specifier = ">=80" },
     { name = "textual-dev", specifier = ">=1.0" },
 ]
 

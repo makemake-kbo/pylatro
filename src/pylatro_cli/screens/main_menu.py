@@ -147,6 +147,7 @@ class MainMenuScreen(Screen):
         with Center(), Vertical(id="menu-box"):
             yield Static(TITLE_ART, classes="menu-title")
             yield Button("Play", id="play-btn", variant="primary")
+            yield Button("Seed Walk", id="seedwalk-btn", variant="success")
             yield Button("Settings", id="settings-btn", variant="default")
             yield Button("Quit", id="quit-btn", variant="error")
 
@@ -154,6 +155,10 @@ class MainMenuScreen(Screen):
         match event.button.id:
             case "play-btn":
                 self.app.push_screen(NewRunModal())
+            case "seedwalk-btn":
+                from .seedwalk import SeedWalkSetupModal
+
+                self.app.push_screen(SeedWalkSetupModal())
             case "settings-btn":
                 from .settings_screen import SettingsScreen
 

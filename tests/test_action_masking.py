@@ -221,3 +221,102 @@ def test_shop_mask_negative_joker_buyable_at_full_slots(game_data):
                     assert mask[ActionRange.SHOP_BUY_START + i] == 0, (
                         "Non-negative joker should be masked at full slots"
                     )
+
+
+# ── Debuff-aware play masking ────────────────────────────────────────────────
+
+
+def _boss_choose_state(game_data, boss_key: str):
+    state = create_run_state("test_seed", 1, "b_red", data=game_data)
+    state.round_resets.blind_choices["Boss"] = boss_key
+    state.blind_on_deck = "Boss"
+    select_blind(state, "Boss")
+    start_blind(state, "Boss")
+    return state
+
+
+def _play_legal_indices(mask):
+    play = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
+    return np.where(play)[0]
+
+
+def test_psychic_masks_provably_zero_small_plays(game_data):
+    from pylatro_agent.subset_actions import subset_indices
+
+    state = _boss_choose_state(game_data, "bl_psychic")
+    mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+
+    legal = _play_legal_indices(mask)
+    assert legal.size > 0
+    # Every remaining play satisfies the must-play-5 debuff
+    assert {len(subset_indices(int(i))) for i in legal} == {5}
+    # Discards are untouched — single-card discards stay legal
+    disc = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
+    disc_sizes = {len(subset_indices(int(i))) for i in np.where(disc)[0]}
+    assert 1 in disc_sizes
+
+
+def test_psychic_keeps_plays_legal_when_every_play_would_zero(game_data):
+    state = _boss_choose_state(game_data, "bl_psychic")
+    del state.hand_cards[4:]  # <5 cards: every play scores 0 but one is owed
+
+    mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+
+    assert _play_legal_indices(mask).size > 0
+
+
+def test_eye_masks_already_played_hand_types(game_data):
+    from pylatro.scoring import get_poker_hand_info
+    from pylatro_agent.subset_actions import subset_indices
+
+    state = _boss_choose_state(game_data, "bl_eye")
+    aces = [c for c in state.deck_cards if c.rank == "A"][:2]
+    others = [next(c for c in state.deck_cards if c.rank == r) for r in ("2", "7", "9")]
+    state.hand_cards = aces + others
+    state.eye_hands = {"High Card": True}
+
+    mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+
+    legal = _play_legal_indices(mask)
+    assert legal.size > 0  # the Pair (and Pair-topped supersets) stay legal
+    for i in legal:
+        cards = [state.hand_cards[j] for j in subset_indices(int(i))]
+        hand_name, _, _, _ = get_poker_hand_info(state, cards)
+        assert hand_name != "High Card"
+
+
+def test_mouth_masks_other_hand_types_after_first_play(game_data):
+    from pylatro.scoring import get_poker_hand_info
+    from pylatro_agent.subset_actions import subset_indices
+
+    state = _boss_choose_state(game_data, "bl_mouth")
+    aces = [c for c in state.deck_cards if c.rank == "A"][:2]
+    others = [next(c for c in state.deck_cards if c.rank == r) for r in ("2", "7", "9")]
+    state.hand_cards = aces + others
+    state.mouth_only_hand = "Pair"
+
+    mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+
+    legal = _play_legal_indices(mask)
+    assert legal.size > 0
+    for i in legal:
+        cards = [state.hand_cards[j] for j in subset_indices(int(i))]
+        hand_name, _, _, _ = get_poker_hand_info(state, cards)
+        assert hand_name == "Pair"
+
+
+def test_debuff_mask_probes_preserve_blind_triggered(game_data):
+    state = _boss_choose_state(game_data, "bl_eye")
+    state.blind_triggered = True
+
+    compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+
+    assert state.blind_triggered is True
+
+
+def test_small_blind_plays_are_not_debuff_masked(hand_play_state):
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+
+    play = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
+    disc = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
+    assert np.array_equal(play, disc)

@@ -2117,6 +2117,10 @@ def train_ppo(
     episode_wins: list[bool] = []
     episode_stalls: list[bool] = []
     episode_antes: list[int] = []
+    # Boss on deck + blind being fought when the episode ended (loss diagnosis:
+    # The Hook alone caused 59% of greedy ante-1 deaths pre-surcharge).
+    episode_end_bosses: list[str] = []
+    episode_end_blinds: list[str] = []
     # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
     _low_minibatch_streak = 0
     # Phase 3.2: latch set once explained variance clears critic_warmup_min_ev;
@@ -2346,6 +2350,12 @@ def train_ppo(
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)
                     episode_antes.append(ep_ante)
+                    episode_end_bosses.append(
+                        str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
+                    )
+                    episode_end_blinds.append(
+                        str(_extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or "")
+                    )
                     if sil_tracker is not None and sil_buffer is not None:
                         sil_tracker.finish_episode(
                             int(i), won=ep_won and not ep_stalled, buffer=sil_buffer
@@ -2775,6 +2785,35 @@ def train_ppo(
                             float(np.mean([a == bucket for a in loss_antes])),
                             update_count,
                         )
+                # Boss-aware death diagnostics: ante-1 death rate, The Hook's
+                # share of those deaths, and Hook boss-blind lethality overall
+                # (the early-death surcharge targets exactly these).
+                recent_losses = [
+                    (a, boss, blind)
+                    for a, w, boss, blind in zip(
+                        recent_antes,
+                        recent_wins,
+                        episode_end_bosses[-100:],
+                        episode_end_blinds[-100:],
+                    )
+                    if not w
+                ]
+                ante1_losses = [x for x in recent_losses if x[0] <= 1]
+                writer.add_scalar(
+                    "rollout/ante1_death_rate", len(ante1_losses) / len(recent_wins), update_count
+                )
+                if ante1_losses:
+                    writer.add_scalar(
+                        "rollout/ante1_hook_death_share",
+                        float(np.mean([boss == "bl_hook" for _, boss, _ in ante1_losses])),
+                        update_count,
+                    )
+                hook_boss_deaths = sum(
+                    1 for _, boss, blind in recent_losses if boss == "bl_hook" and blind == "Boss"
+                )
+                writer.add_scalar(
+                    "rollout/hook_boss_death_rate", hook_boss_deaths / len(recent_wins), update_count
+                )
                 recent_reward_mean = float(np.mean(recent))
                 recent_length_mean = float(np.mean(episode_lengths[-100:]))
                 recent_win_rate = float(np.mean(recent_wins))

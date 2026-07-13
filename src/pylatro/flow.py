@@ -532,18 +532,26 @@ def _debuff_hand(state: RunState, cards: list[PlayingCard], hand_name: str, poke
         if debuff.get("h_size_le") and len(cards) > int(debuff["h_size_le"]):
             state.blind_triggered = True
             return True
-        if blind_name == "The Eye":
-            if state.eye_hands.get(hand_name):
-                state.blind_triggered = True
-                return True
-            if not check:
-                state.eye_hands[hand_name] = True
-        if blind_name == "The Mouth":
-            if state.mouth_only_hand and state.mouth_only_hand != hand_name:
-                state.blind_triggered = True
-                return True
-            if not check:
-                state.mouth_only_hand = hand_name
+
+    # The Eye/Mouth sit outside the `if debuff:` gate like The Arm/Ox: their
+    # debuff table is empty upstream (Lua `{}` is truthy, Python's isn't), so
+    # gating them on `debuff` silently disabled both bosses. The gate must
+    # stay narrow regardless — _press_play has already set blind_triggered for
+    # The Hook/Tooth this play, and Matador reads it during scoring.
+    if blind_name == "The Eye":
+        state.blind_triggered = False
+        if state.eye_hands.get(hand_name):
+            state.blind_triggered = True
+            return True
+        if not check:
+            state.eye_hands[hand_name] = True
+    if blind_name == "The Mouth":
+        state.blind_triggered = False
+        if state.mouth_only_hand and state.mouth_only_hand != hand_name:
+            state.blind_triggered = True
+            return True
+        if not check:
+            state.mouth_only_hand = hand_name
 
     if blind_name == "The Arm":
         state.blind_triggered = False

@@ -102,7 +102,11 @@ class RewardConfig:
     # discouraged outright (the planet-penalty experiment showed penalties
     # suppress engagement instead of redirecting it).
     enable_build_curve_rewards: bool = False
-    build_curve_coeff: float = 0.25
+    # 0.25 -> 0.35: death analysis at win_ante 6 showed the build signal was too
+    # weak to redirect purchases toward the xmult engine (only ~15% of ante-5/6
+    # deaths had xmult). Combined with the 2.0 xmult weight in _build_curve_weight,
+    # acquiring an xmult joker now nets +0.70 vs +0.35 for another additive joker.
+    build_curve_coeff: float = 0.35
 
     # ── Potential-based shaping (Phase 2) ──
     # When enabled, replaces all killed heuristic-agreement shaping with a
@@ -214,6 +218,12 @@ V2_WIN_VALUE = 10.0
 V2_LOSS_BASE = -5.0
 V2_ANTE_PROGRESS_VALUE = 0.5
 V2_STALL_EXTRA_PENALTY = 1.0
+# The flat 0.5/ante loss slope makes early deaths disproportionately cheap
+# (ante-1 death -4.5 vs ante-5 -2.5 spans just 2.0 on the 15-point win/loss
+# scale), leaving a thin gradient against ante-1 wipes such as playing into
+# The Hook junk-first. Steepen the bottom of the curve: deaths before ante 3
+# pay an extra surcharge (ante 1: -6.5 total, ante 2: -5.0, ante 3+: unchanged).
+V2_EARLY_DEATH_PENALTIES = {1: 2.0, 2: 1.0}
 
 # Blind index mapping for the macro-progress potential.
 _BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
@@ -455,6 +465,7 @@ def v2_outcome_value(
 
     capped_ante = min(max(int(ante), 1), max(int(win_ante), 1))
     value = V2_LOSS_BASE + V2_ANTE_PROGRESS_VALUE * capped_ante
+    value -= V2_EARLY_DEATH_PENALTIES.get(capped_ante, 0.0)
     if stalled:
         value -= V2_STALL_EXTRA_PENALTY
     return value
@@ -836,23 +847,30 @@ def _apply_planet_match_rewards(
 
 
 def _build_curve_weight(joker: dict, ante: int) -> float:
-    """Ante-phase fit of a joker's scoring profile, in [0, 1].
+    """Ante-phase fit of a joker's scoring profile, in [0, 2].
 
     Desired curve: chip scaling carries antes 1-3, additive mult is online by
     ante 4, xmult is the ante-6+ engine that is welcome at any earlier point.
     A joker with several profiles takes the best one (chips+mult is good early
     via chips AND good late via mult). Economy/utility jokers score 0, this
     component only shapes the scoring curve.
+
+    Multiplicative engines (xmult, retriggers) score 2.0 — strictly above the
+    1.0 ceiling for additive mult/chips. Death analysis at win_ante 6 showed a
+    systematic ~0.75 score/target deficit driven by additive-only builds (only
+    ~15% of ante-5/6 deaths had any xmult): additive mult scales linearly while
+    blind targets scale exponentially, so the reward must prefer the xmult
+    engine over another +mult joker, not merely tie it.
     """
     key = str(joker.get("key", ""))
     weights = [0.0]
     x_mult = float(joker.get("x_mult", 1.0) or 1.0)
     if x_mult > 1.0 or joker.get("is_scaling_xmult", False) or key in _XMULT_PROFILE_JOKER_KEYS:
-        weights.append(1.0)
-    # Retriggers amplify whatever the build already scores, phase-neutral,
-    # full weight at any ante (they are top-priority pickups).
+        weights.append(2.0)
+    # Retriggers amplify whatever the build already scores (they multiply the
+    # engine), phase-neutral, top-priority pickups: same 2.0 as xmult.
     if joker.get("is_retrigger", False) or key in _RETRIGGER_JOKER_KEYS:
-        weights.append(1.0)
+        weights.append(2.0)
     if float(joker.get("t_chips", 0) or 0) > 0.0 or key in _CHIPS_PROFILE_JOKER_KEYS:
         weights.append(1.0 if ante <= 3 else (0.5 if ante <= 5 else 0.25))
     if (
@@ -902,7 +920,7 @@ def _apply_build_curve_rewards(
     build change: buy→sell→rebuy nets one bonus, not three. The acquisition-only
     version was churn-farmable, sell_joker_fraction rose ~35% over updates
     1200..1600. Upgrades stay rewarded (sell 0.25-weight chip joker for a
-    1.0-weight xmult at ante 6 nets +0.75). Both infos must carry joker_details;
+    2.0-weight xmult at ante 6 nets a large positive delta). Both infos must carry joker_details;
     the terminal path returns before this so deaths never pay a removal bill.
     """
     if "joker_details" not in prev_info or "joker_details" not in curr_info:

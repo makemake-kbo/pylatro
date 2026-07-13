@@ -34,6 +34,7 @@ from ..constants import (
     ActionRange,
     SubPhase,
 )
+from ..masks import _mask_debuffed_plays
 from ..subset_actions import (
     consumable_subset_indices,
     legal_consumable_subset_mask,
@@ -340,11 +341,12 @@ def _mask_action(m, state, AR):
     legal_subsets = legal_subset_mask(hand_size, forced_slots)
     n_subsets = len(legal_subsets)
     if state.current_round.hands_left > 0 and hand_size > 0:
+        play_subsets = _mask_debuffed_plays(state, legal_subsets)
         if cython.compiled:
             for i in range(n_subsets):
-                m[_play_start + i] = 1 if legal_subsets[i] else 0
+                m[_play_start + i] = 1 if play_subsets[i] else 0
         else:
-            m[_play_start : _play_start + n_subsets] = legal_subsets
+            m[_play_start : _play_start + n_subsets] = play_subsets
     if state.current_round.discards_left > 0 and hand_size > 0:
         if cython.compiled:
             for i in range(n_subsets):

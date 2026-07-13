@@ -1392,9 +1392,10 @@ def test_v2_build_curve_shaping_rewards_phase_fit_jokers():
     # Mult: half weight before ante 4, full weight from ante 4.
     assert acquire(mult_joker, 2)["build_curve_bonus"] == pytest.approx(0.5 * coeff * REWARD_SCALE)
     assert acquire(mult_joker, 4)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
-    # Xmult: full weight at any ante (earlier is better, never discounted).
-    assert acquire(xmult_joker, 1)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
-    assert acquire(xmult_joker, 7)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
+    # Xmult: engine weight 2.0 at any ante (strictly above additive mult/chips;
+    # earlier is better, never discounted).
+    assert acquire(xmult_joker, 1)["build_curve_bonus"] == pytest.approx(2.0 * coeff * REWARD_SCALE)
+    assert acquire(xmult_joker, 7)["build_curve_bonus"] == pytest.approx(2.0 * coeff * REWARD_SCALE)
     # Economy/utility jokers earn nothing from this component.
     assert acquire(econ_joker, 2)["build_curve_bonus"] == pytest.approx(0.0)
 
@@ -1443,7 +1444,7 @@ def test_v2_build_curve_sell_subtracts_and_churn_telescopes():
     assert step([chip_joker], []) == pytest.approx(-0.25 * coeff * REWARD_SCALE)
     assert step([], [chip_joker]) + step([chip_joker], []) == pytest.approx(0.0)
     # Upgrading stays net positive: sell the faded chip joker, buy an xmult.
-    assert step([chip_joker], [xmult_joker]) == pytest.approx((1.0 - 0.25) * coeff * REWARD_SCALE)
+    assert step([chip_joker], [xmult_joker]) == pytest.approx((2.0 - 0.25) * coeff * REWARD_SCALE)
     # Missing joker_details on either side (e.g. sparse infos) is a no-op, not
     # a mass removal event.
     prev = {"ante": 6, "round_score": 0, "blind_target": 400, "joker_details": (xmult_joker,)}
@@ -1498,6 +1499,38 @@ def test_v2_reward_terminal_dominates_return():
     # The potential shaping on a terminal step should also be present (the
     # final F(s, terminal) transition).
     assert "potential_shaping" in result
+
+
+def test_v2_early_death_surcharge_steepens_bottom_of_loss_curve():
+    from pylatro_agent.reward import v2_outcome_value
+
+    a1 = v2_outcome_value(won=False, ante=1, win_ante=5)
+    a2 = v2_outcome_value(won=False, ante=2, win_ante=5)
+    a3 = v2_outcome_value(won=False, ante=3, win_ante=5)
+    a5 = v2_outcome_value(won=False, ante=5, win_ante=5)
+
+    assert a1 == pytest.approx(-6.5)  # -5 + 0.5*1 - 2.0
+    assert a2 == pytest.approx(-5.0)  # -5 + 0.5*2 - 1.0
+    assert a3 == pytest.approx(-3.5)  # ante 3+ unchanged
+    assert a5 == pytest.approx(-2.5)
+    # Still strictly increasing in ante: no inversion from the surcharge.
+    assert a1 < a2 < a3 < a5
+    # Wins and stall ordering untouched.
+    assert v2_outcome_value(won=True, ante=1, win_ante=5) == pytest.approx(10.0)
+    assert v2_outcome_value(won=False, ante=1, win_ante=5, stalled=True) < a1
+
+
+def test_v2_early_death_surcharge_flows_through_terminal_component():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, v2_outcome_value
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=5)
+    state = _dummy_state(ante=1, win_ante=5)
+    prev = {"ante": 1, "round_score": 0, "blind_target": 300}
+    curr = {"ante": 1, "round_score": 100, "blind_target": 300}
+
+    result = default_reward_components(state, prev, curr, terminated=True, won=False, config=cfg)
+    assert result["terminal"] == pytest.approx(v2_outcome_value(won=False, ante=1, win_ante=5))
+    assert result["terminal"] == pytest.approx(-6.5)
 
 
 def test_v2_reward_no_prescriptive_components_on_dense_step():

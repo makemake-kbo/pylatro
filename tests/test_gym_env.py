@@ -383,3 +383,14 @@ def test_async_vector_env_reset_matches_declared_selected_card_shape(game_data, 
         assert obs["selected_cards"].shape == (2, MAX_HAND_SIZE)
     finally:
         vec_env.close()
+
+
+def test_env_step_info_carries_boss_key(game_data, vocab):
+    """Episode-end death diagnostics group losses by info["boss_key"]."""
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=100)
+    obs, _ = env.reset()
+    valid = np.where(obs["action_mask"] == 1)[0]
+    _obs, _r, _t, _tr, info = env.step(int(valid[0]))
+
+    assert info["boss_key"].startswith("bl_")
+    assert info["boss_key"] in game_data.blinds

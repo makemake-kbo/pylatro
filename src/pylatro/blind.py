@@ -105,7 +105,7 @@ def reroll_boss(state: RunState, from_tag: bool = False) -> str:
 
 def reset_blinds(state: RunState) -> None:
     if state.round_resets.blind_states["Boss"] == "Defeated":
-        state.round_resets.blind_states = {"Small": "Upcoming", "Big": "Upcoming", "Boss": "Upcoming"}
+        state.round_resets.blind_states = {"Small": "Select", "Big": "Upcoming", "Boss": "Upcoming"}
         state.blind_on_deck = "Small"
         state.round_resets.blind_choices["Boss"] = get_new_boss(state)
         state.round_resets.boss_rerolled = False

@@ -156,6 +156,24 @@ class TestFullAnteLoop:
 
         assert ctrl.state.round_resets.ante == initial_ante + 1
 
+    def test_new_ante_makes_small_blind_selectable(self, ctrl):
+        ctrl.new_run("ANTE2")
+        ctrl.state.round_resets.blind_states = {
+            "Small": "Defeated",
+            "Big": "Defeated",
+            "Boss": "Current",
+        }
+
+        ctrl.cash_out()
+
+        assert ctrl.state.round_resets.ante == 2
+        assert ctrl.state.blind_on_deck == "Small"
+        assert ctrl.state.round_resets.blind_states == {
+            "Small": "Select",
+            "Big": "Upcoming",
+            "Boss": "Upcoming",
+        }
+
 
 class TestDisplayHelpers:
     def test_card_display_info(self, ctrl):

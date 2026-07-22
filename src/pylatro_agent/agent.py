@@ -33,6 +33,16 @@ class AgentConfig:
     # support over every legal hand play (Phase 1). Set per phase: 0.5 during
     # supervised BC (dense cheap labels train the AR head), 0.1 during PPO.
     hand_ar_mixture_eps: float = 0.0
+    # HL-Gauss categorical value head. 0 keeps the legacy scalar-MSE head
+    # (and lets every pre-existing checkpoint load unchanged); >0 switches
+    # expected_score to a histogram over this many return atoms spanning
+    # [value_v_min, value_v_max], trained with cross-entropy in PPO. The
+    # range must cover the reward config's achievable lambda-returns: with
+    # V2 terminals (+10 win, -6.5 worst death) plus bounded shaping,
+    # [-8, 12] leaves ~1.5 reward units of margin on each side.
+    value_bins: int = 0
+    value_v_min: float = -8.0
+    value_v_max: float = 12.0
 
 
 class BalatroAgent(nn.Module):
@@ -59,7 +69,12 @@ class BalatroAgent(nn.Module):
         self.action_grammar_head = ActionGrammarHead(d)
 
         # Value head
-        self.value_head = ValueHead(d)
+        self.value_head = ValueHead(
+            d,
+            value_bins=config.value_bins,
+            value_v_min=config.value_v_min,
+            value_v_max=config.value_v_max,
+        )
 
     def forward(
         self,

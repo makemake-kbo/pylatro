@@ -51,11 +51,18 @@ def play_model(
 ) -> None:
     data = load_game_data()
     vocab = build_vocab(data)
-    config = AgentConfig(d_model=d_model, n_layers=n_layers, d_ff=d_ff)
 
     dev = torch.device(device)
-    model = BalatroAgent(config, vocab).to(dev)
     payload = load_checkpoint_payload(checkpoint, dev)
+    saved_config = payload.get("agent_config")
+    if isinstance(saved_config, dict):
+        # PPO checkpoints persist their architecture (incl. value_bins for the
+        # HL-Gauss head); trust it over CLI flags so any checkpoint replays
+        # without the caller knowing its layer count or head shape.
+        config = AgentConfig(**saved_config)
+    else:
+        config = AgentConfig(d_model=d_model, n_layers=n_layers, d_ff=d_ff)
+    model = BalatroAgent(config, vocab).to(dev)
     model.load_state_dict(payload["state_dict"])
     model.eval()
     logger.info(f"Loaded checkpoint: {checkpoint} ({model.count_parameters():,} params)")

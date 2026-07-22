@@ -29,3 +29,6 @@ cache/
 
 # Proprietary vendor code (never commit)
 vendor/balatro_lua/
+
+# Local ablation experiment output (checkpoints, logs, results)
+ablations/

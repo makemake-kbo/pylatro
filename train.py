@@ -123,6 +123,15 @@ def main():
         ),
     )
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda (default: auto-detect)")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help=(
+            "Training seed for model initialization, policy sampling, SIL replay, "
+            "and environment seed streams (default: 0)."
+        ),
+    )
     parser.add_argument("--lr", type=float, default=5e-5, help="PPO learning rate (default: 5e-5)")
     parser.add_argument(
         "--clip-eps",
@@ -543,6 +552,29 @@ def main():
         ),
     )
     parser.add_argument(
+        "--hl-gauss",
+        action="store_true",
+        help=(
+            "Use the HL-Gauss categorical value head (51 return atoms over "
+            "[-8, 12], cross-entropy loss) instead of the scalar MSE head. "
+            "Bounded critic gradients on near-terminal coin-flip states and a "
+            "distributional representation of bimodal win/loss returns. The "
+            "head shape differs from scalar checkpoints, so initialize from one "
+            "with --pretrained and --reinit-value-head rather than --resume. Pair "
+            "it with --critic-warmup-updates 15 --critic-warmup-min-ev 0."
+        ),
+    )
+    parser.add_argument(
+        "--advantage-clip-sigma",
+        type=float,
+        default=4.0,
+        help=(
+            "Clamp globally-normalized advantages to this many standard "
+            "deviations (0 disables). Caps the heavy near-terminal advantage "
+            "tail that otherwise dominates the policy gradient. Default: 4.0."
+        ),
+    )
+    parser.add_argument(
         "--reset-best-eval",
         action="store_true",
         help=(
@@ -557,53 +589,133 @@ def main():
         type=float,
         default=0.0,
         help=(
-            "Self-imitation coefficient: behavior-clone the agent's own winning "
-            "episodes from a FIFO buffer. The NLL term is added to the PPO "
-            "minibatch objective, so it trades off directly against the policy "
-            "loss and rides under the target-kl guard. Densifies the sparse win "
-            "signal at high --win-ante targets without touching the reward "
-            "function (only genuine wins enter the buffer). 0 disables. The "
-            "buffer is in-memory only and refills after a resume."
+            "Self-imitation auxiliary actor coefficient (experimental, ~0.01). "
+            "A small, bounded, critic-gated SIL loss on the agent's own "
+            "completed episodes (wins and ordinary losses), trained alongside "
+            "PPO in the same backward/optimizer step. Decays to --sil-coeff-final "
+            "over --sil-decay-fraction of training. 0 disables (the default) and "
+            "preserves the exact no-SIL PPO path. The buffer is in-memory only "
+            "and refills after a resume."
         ),
     )
     parser.add_argument(
         "--sil-buffer-episodes",
         type=int,
-        default=64,
-        help="Max winning episodes kept in the SIL buffer (FIFO).",
+        default=256,
+        help=(
+            "Max completed episodes kept in the SIL replay buffer (FIFO). Wins "
+            "and ordinary losses are both stored now, so the default is larger "
+            "than the historical win-only 64 (default: 256)."
+        ),
     )
     parser.add_argument(
         "--sil-batch-size",
         type=int,
         default=64,
-        help="SIL transitions sampled per PPO micro-batch.",
+        help="SIL transitions sampled per attempted logical optimizer group.",
     )
     parser.add_argument(
         "--sil-min-episodes",
         type=int,
         default=8,
-        help="Skip the SIL pass until the buffer holds this many wins.",
+        help="Skip the SIL pass until the replay buffer holds this many episodes.",
     )
     parser.add_argument(
-        "--no-sil-advantage-gating",
-        action="store_true",
+        "--sil-objective",
+        choices=("advantage", "winning_bc"),
+        default=None,
         help=(
-            "Disable SIL advantage gating and imitate buffered wins uniformly "
-            "(the pre-gating behavior). Gated SIL weights each transition's "
-            "NLL by min((R - V)+ / clip, 1), so transitions the critic already "
-            "values correctly contribute nothing and the term self-decays as "
-            "wins become routine; ungated SIL at abundant win rates collapses "
-            "into near-on-policy self-cloning of the average recent win."
+            "SIL objective. 'advantage' samples all valid completed episodes "
+            "(wins and losses), computes a current-critic MC advantage, and "
+            "applies the percentile gate. 'winning_bc' samples only winning "
+            "episodes with a unit gate (plain behavior cloning of wins), a "
+            "matched control. --sil-coeff 0 remains the exact no-SIL switch "
+            "(default: advantage)."
         ),
     )
     parser.add_argument(
-        "--sil-advantage-clip",
+        "--sil-advantage-floor",
         type=float,
-        default=3.0,
+        default=0.25,
         help=(
-            "Return shortfall (R - V, reward units) at which a SIL transition "
-            "reaches full behavior-cloning weight; smaller values saturate the "
-            "gate sooner (default: 3.0)."
+            "Absolute advantage floor (raw reward units). Sub-floor positive "
+            "advantages receive zero gate weight, and the percentile gate only "
+            "opens when the open percentile exceeds this floor (default: 0.25)."
+        ),
+    )
+    parser.add_argument(
+        "--sil-gate-open-percentile",
+        type=float,
+        default=80.0,
+        help="Percentile of eligible advantages at which the gate opens (default: 80).",
+    )
+    parser.add_argument(
+        "--sil-gate-saturation-percentile",
+        type=float,
+        default=95.0,
+        help="Percentile of eligible advantages at which the gate saturates (default: 95).",
+    )
+    parser.add_argument(
+        "--sil-samples-per-episode",
+        type=int,
+        default=8,
+        help=(
+            "Maximum transitions one episode may contribute to a SIL / "
+            "calibration batch (default: 8)."
+        ),
+    )
+    parser.add_argument(
+        "--sil-logical-minibatches-per-update",
+        type=int,
+        default=1,
+        choices=(1, 2),
+        help=(
+            "Logical PPO optimizer minibatches per update that may attempt SIL "
+            "(one accumulated optimizer step == one logical group). The budget "
+            "is per update, not per PPO epoch (default: 1)."
+        ),
+    )
+    parser.add_argument(
+        "--sil-include-teacher-forced",
+        action="store_true",
+        help=(
+            "Include teacher-forced transitions in the SIL actor loss. By "
+            "default the episode stays in replay but teacher-forced rows are "
+            "excluded from the loss and from gate calibration."
+        ),
+    )
+    parser.add_argument(
+        "--sil-coeff-final",
+        type=float,
+        default=0.0,
+        help="SIL coefficient decays linearly to this value (default: 0.0).",
+    )
+    parser.add_argument(
+        "--sil-decay-fraction",
+        type=float,
+        default=1.0,
+        help=(
+            "Fraction of the schedule horizon over which the SIL coefficient "
+            "decays to --sil-coeff-final (default: 1.0, the full run)."
+        ),
+    )
+    parser.add_argument(
+        "--sil-grad-diagnostics-interval",
+        type=int,
+        default=10,
+        help=(
+            "Interval (updates) at which the weighted SIL / PPO actor-gradient "
+            "ratio and cosine are logged. Diagnostic only (default: 10)."
+        ),
+    )
+    parser.add_argument(
+        "--no-sil-advantage-gating",
+        action=argparse.BooleanOptionalAction,  # type: ignore[attr-defined]
+        default=None,
+        help=(
+            "Deprecated alias for --sil-objective winning_bc. Retained for "
+            "backwards compatibility; passing it selects winning-BC and rejects "
+            "combinations with an explicit --sil-objective."
         ),
     )
     parser.add_argument(
@@ -644,6 +756,19 @@ def main():
     )
     args = parser.parse_args()
 
+    # Reconcile the deprecated --no-sil-advantage-gating flag with --sil-objective
+    # via the shared helper (see resolve_sil_objective for the full contract).
+    from pylatro_agent.training.ppo import resolve_sil_objective
+    try:
+        sil_objective = resolve_sil_objective(args.sil_objective, args.no_sil_advantage_gating)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.no_sil_advantage_gating is not None:
+        logging.info(
+            "--no-sil-advantage-gating is deprecated; using --sil-objective %s.",
+            sil_objective,
+        )
+
     device = args.device
     if device is None:
         import torch
@@ -656,7 +781,16 @@ def main():
     logging.info(f"Using device: {device}")
 
     from pylatro_agent.agent import AgentConfig
-    agent_config = AgentConfig(d_model=args.d_model, n_layers=args.n_layers, n_heads=args.n_heads, d_ff=args.d_ff)
+    agent_config = AgentConfig(
+        d_model=args.d_model,
+        n_layers=args.n_layers,
+        n_heads=args.n_heads,
+        d_ff=args.d_ff,
+        # 0 keeps the legacy scalar head; 51 atoms over [-8, 12] otherwise.
+        # In supervised mode a categorical head still trains (MSE through the
+        # histogram mean); the HL-Gauss cross-entropy loss is PPO-only.
+        value_bins=51 if args.hl_gauss else 0,
+    )
 
     checkpoint_dir = args.checkpoint_dir
     log_dir = args.log_dir
@@ -710,6 +844,7 @@ def main():
         ppo_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.1
         train_ppo(
             PPOConfig(
+                seed=args.seed,
                 num_envs=args.envs,
                 rollout_length=args.rollout_length,
                 total_timesteps=args.steps,
@@ -762,8 +897,17 @@ def main():
                 sil_buffer_episodes=args.sil_buffer_episodes,
                 sil_batch_size=args.sil_batch_size,
                 sil_min_episodes=args.sil_min_episodes,
-                sil_advantage_gating=not args.no_sil_advantage_gating,
-                sil_advantage_clip=args.sil_advantage_clip,
+                sil_objective=sil_objective,
+                sil_advantage_floor=args.sil_advantage_floor,
+                sil_gate_open_percentile=args.sil_gate_open_percentile,
+                sil_gate_saturation_percentile=args.sil_gate_saturation_percentile,
+                sil_samples_per_episode=args.sil_samples_per_episode,
+                sil_logical_minibatches_per_update=args.sil_logical_minibatches_per_update,
+                sil_include_teacher_forced=args.sil_include_teacher_forced,
+                sil_coeff_final=args.sil_coeff_final,
+                sil_decay_fraction=args.sil_decay_fraction,
+                sil_grad_diagnostics_interval=args.sil_grad_diagnostics_interval,
+                advantage_clip_sigma=args.advantage_clip_sigma,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.

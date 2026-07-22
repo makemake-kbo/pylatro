@@ -173,7 +173,7 @@ class RolloutBuffer:
 
             self.returns[start:end] = self.advantages[start:end] + env_values[:n]
 
-    def normalize_advantages(self, eps: float = 1e-8) -> None:
+    def normalize_advantages(self, eps: float = 1e-8, clip_sigma: float = 0.0) -> None:
         """Normalize advantages across the full rollout (not per mini-batch).
 
         Per-mini-batch normalization lets rare high-magnitude transitions
@@ -182,6 +182,13 @@ class RolloutBuffer:
         noise blown up to unit variance. Normalizing once over all valid
         transitions keeps the relative scale of wins/losses vs shaping
         consistent across every mini-batch.
+
+        ``clip_sigma`` > 0 clamps the normalized advantages to that many
+        standard deviations. Near-terminal coin-flip states carry mostly
+        aleatoric outcome noise in their advantages (measured: the top 1%
+        of |adv| states, median 4 steps from terminal, carried ~20% of
+        sum(adv^2) at 4.8 excess kurtosis); the clamp caps their gradient
+        share without touching the bulk of the distribution.
         """
         valid: list[np.ndarray] = []
         for env_idx in range(self.num_envs):
@@ -199,7 +206,10 @@ class RolloutBuffer:
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            self.advantages[start:start + n] = (self.advantages[start:start + n] - mean) * scale
+            normalized = (self.advantages[start:start + n] - mean) * scale
+            if clip_sigma > 0.0:
+                np.clip(normalized, -clip_sigma, clip_sigma, out=normalized)
+            self.advantages[start:start + n] = normalized
 
     def get_batches(
         self,

@@ -2,6 +2,7 @@
 
 import logging
 import math
+import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,9 +22,14 @@ from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from ..env import BalatroEnv
 from ..reward import _COMPONENT_GROUP, REWARD_INFO_KEYS, RewardConfig
 from ..survival import compute_ante_survival_targets
+from ..value_head import hl_gauss_projection
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
-from .sil import SILEpisodeTracker, WinEpisodeBuffer
+from .sil import (
+    EpisodeReplayBuffer,
+    SILEpisodeTracker,
+    sil_percentile_gate,
+)
 
 logger = logging.getLogger(__name__)
 _MISSING = object()
@@ -247,6 +253,7 @@ def _make_vectorized_envs(
 @dataclass
 class PPOConfig:
     num_envs: int = 32
+    seed: int = 0
     rollout_length: int = 256
     total_timesteps: int = 1_000_000
     # When set, overrides total_timesteps: the run trains for exactly this many
@@ -419,26 +426,76 @@ class PPOConfig:
     # 0.0 disables. The buffer is in-memory only; it refills over the first
     # ~buffer/wins-per-update updates after a resume.
     sil_coeff: float = 0.0
-    sil_buffer_episodes: int = 64  # FIFO capacity (~50MB at typical episode lengths)
+    sil_buffer_episodes: int = 256  # FIFO capacity. Wins + ordinary losses are
+    # both stored now (32 envs * rollout 256 / ~100-step episodes churn ~80
+    # completed episodes per update), so 256 keeps roughly three updates of
+    # history while staying bounded.
     sil_batch_size: int = 64  # transitions sampled per PPO micro-batch
-    sil_min_episodes: int = 8  # skip SIL until the buffer holds this many wins
-    # Advantage gating (Oh et al. 2018): weight each sampled transition's NLL
-    # by min((R - V)+ / sil_advantage_clip, 1) instead of imitating uniformly.
-    # Transitions the critic already values correctly contribute nothing, so
-    # the term self-decays as wins become routine; without it, abundant wins
-    # (32 envs at ~30% win rate churn the FIFO every ~2 updates) turn SIL into
-    # near-on-policy self-cloning that entrenches the current mode.
-    # sil_advantage_clip is the return shortfall (in reward units) at which a
-    # transition reaches full BC weight, so sil_coeff keeps its ungated meaning
-    # as the maximum per-transition pull.
-    sil_advantage_gating: bool = True
-    sil_advantage_clip: float = 3.0
+    # Skip SIL until the replay buffer holds this many completed episodes. Wins
+    # and ordinary (non-stalled) losses both count: the buffer stores both now,
+    # and it is the advantage gate below — not this threshold — that keeps an
+    # early, win-poor buffer from driving the actor. Under "winning_bc" the
+    # win-only sampler simply returns nothing until wins accumulate, so SIL is
+    # still a no-op until then even though this counts all episodes.
+    sil_min_episodes: int = 8
+    # Clamp on globally-normalized advantages, in standard deviations. The
+    # advantage distribution is heavy-tailed (kurtosis ~4.8 measured at
+    # win_ante=5): near-terminal coin-flip states reach 6 sigma and the top 1%
+    # of states carry ~20% of sum(adv^2), so a handful of aleatoric outcomes
+    # dominate each update's policy gradient without registering in mean KL.
+    # 0 disables.
+    advantage_clip_sigma: float = 4.0
+    # --- SIL redesign ---
+    # SIL objective. "advantage" samples all valid completed episodes (wins and
+    # losses), computes a current-critic MC advantage, and applies the robust
+    # percentile gate below. "winning_bc" samples only winning episodes and
+    # uses a unit gate (plain behavior cloning of wins), serving as a matched
+    # control against advantage SIL. ``--sil-coeff 0`` remains the exact no-SIL
+    # switch regardless of objective.
+    sil_objective: str = "advantage"
+    # Absolute advantage floor (raw reward units). Sub-floor positive advantages
+    # receive zero gate weight, and the percentile gate only opens when the
+    # open-percentile exceeds this floor.
+    sil_advantage_floor: float = 0.25
+    # Percentiles of the eligible raw-advantage distribution at which the gate
+    # opens (80th) and saturates (95th).
+    sil_gate_open_percentile: float = 80.0
+    sil_gate_saturation_percentile: float = 95.0
+    # Maximum transitions one episode may contribute to a SIL / calibration
+    # batch. Episode-uniform sampling plus this cap means a long episode is not
+    # privileged over a short one.
+    sil_samples_per_episode: int = 8
+    # Number of logical PPO optimizer minibatches (accumulated optimizer steps)
+    # per update that may attempt SIL. 1 or 2. The budget is per update, not per
+    # PPO epoch, and attempted groups count even when their gate is empty so
+    # training does not keep resampling for a favorable batch.
+    sil_logical_minibatches_per_update: int = 1
+    # Whether teacher-forced transitions contribute to the SIL actor loss. False
+    # by default: the episode stays in replay but teacher-forced rows are
+    # excluded from the loss and from gate-percentile calibration. Distinct from
+    # PPO's own teacher masking and heuristic distillation.
+    sil_include_teacher_forced: bool = False
+    # Resume-safe linear decay for the SIL coefficient. Decays monotonically
+    # from ``sil_coeff`` to ``sil_coeff_final`` over ``sil_decay_fraction`` of
+    # the pinned schedule horizon; never rewinds on resume.
+    sil_coeff_final: float = 0.0
+    sil_decay_fraction: float = 1.0
+    # Interval (in updates) at which weighted SIL / PPO actor-gradient ratio and
+    # cosine similarity are logged. Diagnostic only; no adaptive control.
+    sil_grad_diagnostics_interval: int = 10
 
 
 @dataclass
 class _UpdateStats:
     policy_losses: list[float]
     value_losses: list[float]
+    # MSE between the scalar value and the return target, in whatever units the
+    # target is in (raw returns, or normalized when normalize_returns is on),
+    # logged in both head modes. Under the HL-Gauss head value_losses holds
+    # cross-entropy (nats), so value_mse is the MSE proxy that stays comparable
+    # to historical MSE runs — and it is genuinely raw-scale there, since
+    # normalize_returns is incompatible with the HL-Gauss head.
+    value_mses: list[float]
     survival_losses: list[float]
     entropies: list[float]
     normalized_entropies: list[float]
@@ -471,8 +528,32 @@ class _UpdateStats:
     on_policy_return_means: list[float] = field(default_factory=list)
     ppo_minibatches_processed: list[int] = field(default_factory=list)
     sil_losses: list[float] = field(default_factory=list)
+    sil_losses_weighted: list[float] = field(default_factory=list)
     sil_advantage_means: list[float] = field(default_factory=list)
     sil_gate_means: list[float] = field(default_factory=list)
+    sil_gate_saturation_fractions: list[float] = field(default_factory=list)
+    sil_advantage_p50s: list[float] = field(default_factory=list)
+    sil_advantage_p95s: list[float] = field(default_factory=list)
+    sil_advantage_p99s: list[float] = field(default_factory=list)
+    sil_advantage_p80s: list[float] = field(default_factory=list)
+    sil_gate_open_thresholds: list[float] = field(default_factory=list)
+    sil_gate_saturation_thresholds: list[float] = field(default_factory=list)
+    sil_gate_positive_fractions: list[float] = field(default_factory=list)
+    sil_noise_floor_rejected_fractions: list[float] = field(default_factory=list)
+    sil_gate_weight_from_wins_fractions: list[float] = field(default_factory=list)
+    sil_samples_counts: list[int] = field(default_factory=list)
+    sil_unique_episodes_sampleds: list[int] = field(default_factory=list)
+    sil_max_samples_from_one_episodes: list[int] = field(default_factory=list)
+    sil_sample_win_fractions: list[float] = field(default_factory=list)
+    sil_replay_teacher_forced_fractions: list[float] = field(default_factory=list)
+    sil_teacher_forced_filtered_fractions: list[float] = field(default_factory=list)
+    sil_logical_minibatches_attempted: int = 0
+    sil_logical_minibatches_applied: int = 0
+    sil_grad_actor_norm_weighted: float | None = None
+    sil_grad_ppo_actor_norm: float | None = None
+    sil_grad_ppo_actor_norm_ratio: float | None = None
+    sil_grad_ppo_actor_grad_cosine: float | None = None
+    sil_grad_diagnostic_valid: bool = False
 
 
 @dataclass
@@ -562,8 +643,19 @@ def _accumulate_critic_grads_into_value_head(
             param.grad.add_(grad.detach())
 
 
+def _seed_training_rngs(seed: int) -> None:
+    """Seed process RNGs used by model initialization and PPO sampling."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 def _validate_ppo_config(config: PPOConfig) -> None:
     """Raise ValueError for invalid combinations; warn on risky ones."""
+    if not 0 <= config.seed <= 2**32 - 1:
+        raise ValueError("seed must be between 0 and 2**32 - 1")
     if config.log_interval <= 0:
         raise ValueError("log_interval must be positive")
     if config.checkpoint_interval <= 0:
@@ -608,8 +700,32 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("sil_batch_size must be positive")
     if config.sil_min_episodes <= 0:
         raise ValueError("sil_min_episodes must be positive")
-    if config.sil_advantage_clip <= 0.0:
-        raise ValueError("sil_advantage_clip must be positive")
+    if config.sil_objective not in ("advantage", "winning_bc"):
+        raise ValueError(
+            f"sil_objective must be 'advantage' or 'winning_bc', got {config.sil_objective!r}"
+        )
+    if config.sil_advantage_floor < 0.0:
+        raise ValueError("sil_advantage_floor must be non-negative")
+    if not 0.0 <= config.sil_gate_open_percentile <= 100.0:
+        raise ValueError("sil_gate_open_percentile must be between 0 and 100")
+    if not 0.0 <= config.sil_gate_saturation_percentile <= 100.0:
+        raise ValueError("sil_gate_saturation_percentile must be between 0 and 100")
+    if config.sil_gate_saturation_percentile < config.sil_gate_open_percentile:
+        raise ValueError(
+            "sil_gate_saturation_percentile must be >= sil_gate_open_percentile"
+        )
+    if config.sil_samples_per_episode <= 0:
+        raise ValueError("sil_samples_per_episode must be positive")
+    if config.sil_logical_minibatches_per_update not in (1, 2):
+        raise ValueError("sil_logical_minibatches_per_update must be 1 or 2")
+    if config.sil_coeff_final < 0.0:
+        raise ValueError("sil_coeff_final must be non-negative")
+    if not 0.0 <= config.sil_decay_fraction <= 1.0:
+        raise ValueError("sil_decay_fraction must be between 0 and 1")
+    if config.sil_grad_diagnostics_interval <= 0:
+        raise ValueError("sil_grad_diagnostics_interval must be positive")
+    if config.advantage_clip_sigma < 0.0:
+        raise ValueError("advantage_clip_sigma must be non-negative (0 disables)")
     if config.adaptive_entropy:
         if config.entropy_coeff <= 0.0:
             raise ValueError("entropy_coeff must be positive when adaptive entropy is enabled")
@@ -693,6 +809,65 @@ def resolve_distill_coeff(
         config.heuristic_distill_coeff
         - (config.heuristic_distill_coeff - floor) * progress,
     )
+
+
+def resolve_sil_coeff(
+    config: "PPOConfig",
+    total_steps: int,
+    schedule_total_steps: int | None = None,
+) -> float:
+    """Return the runtime SIL coefficient at ``total_steps``.
+
+    Mirrors the distillation schedule semantics so the two stay consistent:
+
+    * ``sil_coeff <= 0`` -> SIL is fully disabled (returns 0.0). This is the
+      exact no-SIL switch.
+    * Otherwise the coefficient linearly decays from ``sil_coeff`` toward
+      ``sil_coeff_final`` (clamped to not exceed ``sil_coeff``) over
+      ``sil_decay_fraction`` of the pinned schedule horizon, then stays at the
+      final value.
+    * ``schedule_total_steps`` pins the anneal horizon independently of
+      ``config.total_timesteps`` so resume with a different env count does not
+      rewind an already-decayed coefficient. The train loop passes the same
+      pinned horizon used by ``resolve_distill_coeff``.
+    """
+    if config.sil_coeff <= 0.0:
+        return 0.0
+    final = min(float(config.sil_coeff_final), float(config.sil_coeff))
+    decay_fraction = min(max(float(config.sil_decay_fraction), 0.0), 1.0)
+    horizon = (
+        schedule_total_steps
+        if schedule_total_steps is not None
+        else config.total_timesteps
+    )
+    decay_steps = max(1, int(horizon * decay_fraction))
+    progress = min(1.0, total_steps / decay_steps)
+    return max(final, config.sil_coeff - (config.sil_coeff - final) * progress)
+
+
+def resolve_sil_objective(
+    sil_objective: str | None,
+    no_sil_advantage_gating: bool | None,
+) -> str:
+    """Resolve the SIL objective, honoring the deprecated gating flag.
+
+    The public ``--sil-objective`` is the canonical switch. The deprecated
+    ``--no-sil-advantage-gating`` flag is retained as an alias: its negative
+    form (``True``) selects ``winning_bc`` (ungated BC of wins, the old
+    behavior) and its positive form (``False``) selects ``advantage``. An
+    explicit ``sil_objective`` that contradicts the deprecated flag raises
+    ``ValueError`` so the intended gate is unambiguous. ``None`` for both
+    yields the default ``"advantage"``.
+    """
+    if no_sil_advantage_gating is not None:
+        requested = "winning_bc" if no_sil_advantage_gating else "advantage"
+        if sil_objective is not None and sil_objective != requested:
+            raise ValueError(
+                "--no-sil-advantage-gating is deprecated and conflicts with "
+                f"--sil-objective {sil_objective!r}. Use one or the other."
+            )
+        return requested
+    return sil_objective or "advantage"
 
 
 def _resolve_schedule_total_steps(
@@ -810,23 +985,53 @@ def _run_ppo_update(
     device: torch.device,
     use_pin_memory: bool,
     policy_loss_scale: float = 1.0,
-    sil_buffer: "WinEpisodeBuffer | None" = None,
+    sil_buffer: "EpisodeReplayBuffer | None" = None,
+    sil_coeff_now: float = 0.0,
+    grad_diagnostics_due: bool = False,
 ) -> _UpdateStats:
     """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
 
     Keeps dropout disabled so the PPO ratio compares the same policy function
     that collected `old_log_probs`. Caller is responsible for the entropy-alpha
     step and logging.
+
+    SIL is folded into the *same* backward/optimizer step as PPO. It is
+    attempted on at most ``config.sil_logical_minibatches_per_update`` logical
+    optimizer groups per update (one accumulated optimizer step == one logical
+    group, regardless of gradient accumulation). One SIL batch is sampled per
+    attempted group and contributes exactly one aggregate gradient via a
+    separate full-weight backward at the group start; PPO and SIL then share
+    the subsequent clip + ``optimizer.step()``. KL early stopping always halts
+    at a logical-group boundary so a pending accumulation group is never
+    abandoned halfway through.
     """
     model.eval()
+    policy_frozen = policy_loss_scale <= 0.0
     stats = _UpdateStats(
-        policy_losses=[], value_losses=[], survival_losses=[],
+        policy_losses=[], value_losses=[], value_mses=[], survival_losses=[],
         entropies=[], normalized_entropies=[], action_type_entropies=[],
         clip_fracs=[], approx_kls=[],
         valid_action_counts=[], valid_action_type_counts=[],
         distill_losses=[], teacher_match_fractions=[], distill_weight_means=[],
         on_policy_fractions=[],
     )
+
+    # SIL logical-group budget. Per update (not per epoch). Attempted groups
+    # count even when their gate is empty, so training does not keep resampling
+    # until it finds a favorable replay batch. Critic warmup (policy_frozen)
+    # produces no SIL actor gradient.
+    sil_budget = (
+        config.sil_logical_minibatches_per_update
+        if (sil_coeff_now > 0.0 and not policy_frozen)
+        else 0
+    )
+    sil_attempted_groups = 0
+    sil_applied_groups = 0
+    # Gradient diagnostics: captured once, on the first group where SIL is
+    # applied, by snapshotting actor .grad right after the SIL backward and
+    # again before the group's global clip. PPO actor grad = total - SIL.
+    grad_diag_attempted = False
+    sil_grad_snapshot: list[torch.Tensor | None] | None = None
 
     stop_update = False
     minibatches_processed = 0
@@ -836,6 +1041,64 @@ def _run_ppo_update(
         batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
         optimizer.zero_grad()
         for i, batch in enumerate(batches):
+            is_group_start = (i % accum_steps == 0)
+            is_step_boundary = ((i + 1) % accum_steps == 0) or ((i + 1) == len(batches))
+
+            # --- SIL auxiliary loss (one batch per attempted logical group) ---
+            # Sampled and backwarded at the group start so the whole group
+            # receives exactly one aggregate SIL contribution; the coefficient
+            # is the runtime decayed value, not the static config field.
+            if (
+                is_group_start
+                and sil_attempted_groups < sil_budget
+                and sil_buffer is not None
+            ):
+                sil_attempted_groups += 1
+                sil_result = _compute_sil_group_loss(
+                    model, sil_buffer, config, device, return_rms
+                )
+                stats.sil_logical_minibatches_attempted = sil_attempted_groups
+                if sil_result.loss is not None:
+                    capture_grads = (
+                        grad_diagnostics_due
+                        and not grad_diag_attempted
+                        and sil_applied_groups == 0
+                    )
+                    grad_diag_attempted = capture_grads or grad_diag_attempted
+                    (sil_coeff_now * sil_result.loss).backward()
+                    sil_applied_groups += 1
+                    stats.sil_logical_minibatches_applied = sil_applied_groups
+                    stats.sil_losses.append(sil_result.loss.item())
+                    stats.sil_losses_weighted.append(
+                        sil_coeff_now * sil_result.loss.item()
+                    )
+                    for key, stat_list in (
+                        ("advantage_mean", stats.sil_advantage_means),
+                        ("gate_mean", stats.sil_gate_means),
+                        ("gate_saturation_fraction", stats.sil_gate_saturation_fractions),
+                        ("advantage_p50", stats.sil_advantage_p50s),
+                        ("advantage_p80", stats.sil_advantage_p80s),
+                        ("advantage_p95", stats.sil_advantage_p95s),
+                        ("gate_open_threshold", stats.sil_gate_open_thresholds),
+                        ("gate_saturation_threshold", stats.sil_gate_saturation_thresholds),
+                        ("gate_positive_fraction", stats.sil_gate_positive_fractions),
+                        ("noise_floor_rejected_fraction", stats.sil_noise_floor_rejected_fractions),
+                        ("gate_weight_from_wins_fraction", stats.sil_gate_weight_from_wins_fractions),
+                        ("samples", stats.sil_samples_counts),
+                        ("unique_episodes_sampled", stats.sil_unique_episodes_sampleds),
+                        ("max_samples_from_one_episode", stats.sil_max_samples_from_one_episodes),
+                        ("sample_win_fraction", stats.sil_sample_win_fractions),
+                        ("replay_teacher_forced_fraction", stats.sil_replay_teacher_forced_fractions),
+                        ("teacher_forced_filtered_fraction", stats.sil_teacher_forced_filtered_fractions),
+                    ):
+                        if key in sil_result.diagnostics:
+                            value = sil_result.diagnostics[key]
+                            stat_list.append(value if isinstance(value, int) else float(value))
+                    if "advantage_p99" in sil_result.diagnostics:
+                        stats.sil_advantage_p99s.append(sil_result.diagnostics["advantage_p99"])
+                    if capture_grads:
+                        sil_grad_snapshot = _snapshot_actor_grads(model)
+
             dist, value_dict = _grammar_distribution(
                 model, batch, temperature=config.rollout_temperature
             )
@@ -871,7 +1134,22 @@ def _run_ppo_update(
             returns_target = batch["returns"]
             if return_rms is not None:
                 returns_target = (returns_target - return_rms.mean) / return_rms.std
-            value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
+            value_logits = value_dict.get("expected_score_logits")
+            if value_logits is not None:
+                # HL-Gauss categorical head: cross-entropy against the
+                # Gaussian-smeared projection of the scalar target. Bounded
+                # per-bin gradients where MSE against bimodal near-terminal
+                # returns produces large alternating-sign errors.
+                value_head = _unwrap_model(model).value_head
+                with torch.no_grad():
+                    target_probs = hl_gauss_projection(
+                        returns_target, value_head.bin_edges, value_head.hl_gauss_sigma
+                    )
+                value_loss = -(target_probs * F.log_softmax(value_logits, dim=-1)).sum(dim=-1).mean()
+            else:
+                value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
+            with torch.no_grad():
+                value_mse = F.mse_loss(value_dict["expected_score"], returns_target)
 
             # Ante-survival aux loss (BCE masked by observed antes).
             surv_mask = batch["ante_survival_mask"]
@@ -881,8 +1159,6 @@ def _run_ppo_update(
                 reduction="none",
             )
             survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
-
-            policy_frozen = policy_loss_scale <= 0.0
 
             # Heuristic distillation: NLL of the teacher action under the
             # current structured distribution. Replaces the frozen-reference
@@ -1015,18 +1291,11 @@ def _run_ppo_update(
                 )
                 if distill_loss is not None:
                     policy_objective_loss = policy_objective_loss + distill_coeff * distill_loss
-                # Self-imitation term: advantage-gated NLL of the agent's own
-                # buffered winning actions, sharing this micro-batch's backward
-                # and the target-kl guard.
-                sil_result = _sample_sil_loss(model, sil_buffer, config, device)
-                if sil_result is not None:
-                    sil_loss, sil_advantage_mean, sil_gate_mean = sil_result
-                    policy_objective_loss = policy_objective_loss + config.sil_coeff * sil_loss
-                    stats.sil_losses.append(sil_loss.item())
-                    if sil_advantage_mean is not None:
-                        stats.sil_advantage_means.append(sil_advantage_mean)
-                    if sil_gate_mean is not None:
-                        stats.sil_gate_means.append(sil_gate_mean)
+                # SIL is no longer folded into per-microbatch policy_objective_loss:
+                # it is sampled once per attempted logical group (see the group
+                # start block above) and backwarded there with full weight, so
+                # one logical group receives exactly one aggregate SIL
+                # contribution while sharing this microbatch's clip + step.
                 policy_objective_loss = policy_objective_loss * policy_loss_scale
 
                 if config.critic_updates_trunk:
@@ -1042,8 +1311,22 @@ def _run_ppo_update(
                             critic_loss.div(accum_steps), value_params
                         )
 
-            # Step every accum_steps micro-batches (or on last batch)
-            if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
+            # Step every accum_steps micro-batches (or on last batch). This is
+            # a logical optimizer-group boundary: PPO and SIL share this single
+            # clip + optimizer.step().
+            if is_step_boundary:
+                if sil_grad_snapshot is not None:
+                    # Gradient diagnostics from the same logical group: PPO
+                    # actor grad = total (PPO + SIL) - SIL snapshot, measured
+                    # before global clipping and without mutating .grad.
+                    total_snapshot = _snapshot_actor_grads(model)
+                    diag = _sil_grad_diagnostics(sil_grad_snapshot, total_snapshot)
+                    stats.sil_grad_actor_norm_weighted = diag["actor_grad_norm_weighted"]
+                    stats.sil_grad_ppo_actor_norm = diag["ppo_actor_grad_norm"]
+                    stats.sil_grad_ppo_actor_norm_ratio = diag["ppo_actor_grad_norm_ratio"]
+                    stats.sil_grad_ppo_actor_grad_cosine = diag["ppo_actor_grad_cosine"]
+                    stats.sil_grad_diagnostic_valid = bool(diag["grad_diagnostic_valid"])
+                    sil_grad_snapshot = None
                 nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
                 optimizer.step()
                 optimizer.zero_grad()
@@ -1077,6 +1360,7 @@ def _run_ppo_update(
                     stats.on_policy_return_means.append(0.0)
             stats.policy_losses.append(policy_loss.item())
             stats.value_losses.append(value_loss.item())
+            stats.value_mses.append(value_mse.item())
             stats.survival_losses.append(survival_loss.item())
             stats.entropies.append(entropy.item())
             stats.normalized_entropies.append(normalized_entropy.item())
@@ -1106,6 +1390,11 @@ def _run_ppo_update(
                     config.target_kl,
                 )
                 stop_update = True
+            # KL early stopping happens at a logical optimizer-group boundary:
+            # finish the pending accumulation group (step above), then stop. Do
+            # not abandon a group halfway through, and do not run more groups or
+            # a standalone SIL pass afterwards.
+            if stop_update and is_step_boundary:
                 break
 
     stats.ppo_minibatches_processed.append(minibatches_processed)
@@ -1188,53 +1477,225 @@ def _run_dagger_bc_update(
     return losses, teacher_matches
 
 
-def _sample_sil_loss(
+def _value_in_raw_units(values: torch.Tensor, return_rms: "RunningMeanStd | None") -> torch.Tensor:
+    """Convert a critic prediction back to raw reward units when returns are normalized."""
+    if return_rms is None:
+        return values.detach()
+    mean = torch.as_tensor(return_rms.mean, dtype=values.dtype, device=values.device)
+    std = torch.as_tensor(return_rms.std, dtype=values.dtype, device=values.device)
+    return (values.detach() * std + mean).detach()
+
+
+@dataclass
+class _SILGroupResult:
+    """Outcome of one SIL logical-group loss computation."""
+
+    loss: torch.Tensor | None
+    diagnostics: dict[str, float]
+
+
+def _compute_sil_group_loss(
     model: nn.Module,
-    sil_buffer: "WinEpisodeBuffer | None",
+    sil_buffer: "EpisodeReplayBuffer | None",
     config: PPOConfig,
     device: torch.device,
-) -> "tuple[torch.Tensor, float | None, float | None] | None":
-    """Advantage-gated NLL of buffered winning actions, or None.
+    return_rms: "RunningMeanStd | None",
+) -> _SILGroupResult:
+    """Sample one episode-uniform SIL batch and compute the gated actor loss.
 
-    Returns ``(loss, advantage_mean, gate_mean)``; the metrics are None when
-    gating is disabled. Sampled fresh per PPO micro-batch and added to the
-    combined objective there — a separate backward/step would let Adam's
-    gradient renormalization largely cancel sil_coeff. Non-finite log-probs
-    (candidate-hand support drift, same failure mode the teacher
-    reachability mask guards) are dropped from the mean rather than
-    poisoning the gradient. Returns None when SIL is disabled, the buffer
-    is short of sil_min_episodes, or no sampled row is reachable.
+    Used once per attempted logical optimizer group (not per physical
+    microbatch). The loss is the gate-weighted NLL of the buffered actions; the
+    coefficient is applied by the caller when folding it into the combined
+    backward. SIL stays actor-only: the critic value enters only as a detached
+    gate, so this never adds a value term.
 
-    With sil_advantage_gating each transition's NLL is weighted by
-    min((R - V)+ / sil_advantage_clip, 1): the critic's shortfall on the
-    stored return-to-go decides how hard to imitate, so well-predicted
-    (routine) wins contribute nothing and the term self-decays instead of
-    behavior-cloning the policy's average recent win. V is detached — the
-    gate must not train the critic toward pretending wins are expected.
+    For ``sil_objective == "advantage"`` the gate is the shared percentile gate
+    (:func:`sil_percentile_gate`) over current-critic MC advantages; for
+    ``"winning_bc"`` the gate is 1 for every otherwise-valid winning row (plain
+    behavior cloning), serving as a matched control.
+
+    The loss reduction denominator is ALL otherwise-valid sampled rows
+    (finite log-prob + teacher filter), including valid zero-gate rows, so gate
+    sparsity reduces total SIL pressure rather than concentrating it.
+
+    Returns a result whose ``loss`` is None when SIL is disabled, the buffer is
+    short of ``sil_min_episodes``, sampling yields no eligible row, or no row is
+    reachable. ``diagnostics`` always carries buffer counters for logging.
     """
-    if sil_buffer is None or config.sil_coeff <= 0.0:
-        return None
+    diagnostics: dict[str, float] = {
+        "buffer_episodes": float(sil_buffer.num_episodes if sil_buffer else 0),
+        "buffer_transitions": float(sil_buffer.num_transitions if sil_buffer else 0),
+        "buffer_win_fraction": float(sil_buffer.win_fraction if sil_buffer else 0.0),
+        "episodes_added_total": float(sil_buffer.episodes_added_total if sil_buffer else 0),
+        "stalled_episodes_dropped_total": float(
+            sil_buffer.stalled_episodes_dropped_total if sil_buffer else 0
+        ),
+        "overflow_episodes_dropped_total": float(
+            sil_buffer.overflow_episodes_dropped_total if sil_buffer else 0
+        ),
+    }
+    empty = _SILGroupResult(loss=None, diagnostics=diagnostics)
+    # The caller (_run_ppo_update) gates on the runtime decayed coefficient
+    # (sil_coeff_now) before attempting SIL; this helper never reads the static
+    # initial coefficient so the runtime value is the sole authority.
+    if sil_buffer is None:
+        return empty
     if sil_buffer.num_episodes < config.sil_min_episodes:
-        return None
-    batch = sil_buffer.sample(config.sil_batch_size, device)
-    dist, value_dict = _grammar_distribution(
-        model,
-        batch,
-        temperature=config.rollout_temperature,
+        return empty
+
+    winning_bc = config.sil_objective == "winning_bc"
+    sampled = sil_buffer.sample(
+        config.sil_batch_size,
+        device,
+        samples_per_episode=config.sil_samples_per_episode,
+        only_wins=winning_bc,
+        include_teacher_forced=config.sil_include_teacher_forced,
     )
-    log_probs = dist.log_prob(batch["actions"])
+    if sampled is None:
+        return empty
+
+    n_sampled = int(sampled["actions"].shape[0])
+    teacher_flags = sampled.get("teacher_forced_flags")
+    n_teacher_forced_in_batch = (
+        int((teacher_flags > 0.5).sum().item()) if teacher_flags is not None else 0
+    )
+    diagnostics["samples"] = float(n_sampled)
+    if "episode_ids" in sampled:
+        episode_ids_np = sampled["episode_ids"].detach().cpu().numpy()
+        unique_ids, counts = np.unique(episode_ids_np, return_counts=True)
+        diagnostics["unique_episodes_sampled"] = float(len(unique_ids))
+        diagnostics["max_samples_from_one_episode"] = float(int(counts.max()) if counts.size else 0)
+    if teacher_flags is not None:
+        diagnostics["replay_teacher_forced_fraction"] = float(
+            n_teacher_forced_in_batch / max(1, n_sampled)
+        )
+    outcomes = sampled.get("episode_outcomes")
+    if outcomes is not None:
+        diagnostics["sample_win_fraction"] = float(outcomes.mean().item())
+
+    dist, value_dict = _grammar_distribution(
+        model, sampled, temperature=config.rollout_temperature
+    )
+    log_probs = dist.log_prob(sampled["actions"])
     finite = (log_probs > -1e7).float()
+
+    # Raw advantages in reward units. The stored returns are raw shaped MC
+    # return-to-go; convert the current critic prediction back to raw units
+    # when return normalization is enabled so the subtraction is consistent.
+    v_raw = _value_in_raw_units(value_dict["expected_score"], return_rms)
+    raw_advantage = sampled["returns"] - v_raw
+
+    if winning_bc:
+        gate = finite.clone()
+        advantage_for_stats = raw_advantage
+    else:
+        finite_mask = finite.bool()
+        eligible_adv = raw_advantage[finite_mask].detach().float().cpu().numpy()
+        gate_np, gate_info = sil_percentile_gate(
+            eligible_adv,
+            open_percentile=config.sil_gate_open_percentile,
+            saturation_percentile=config.sil_gate_saturation_percentile,
+            advantage_floor=config.sil_advantage_floor,
+        )
+        gate = torch.zeros_like(finite)
+        gate[finite_mask] = torch.as_tensor(gate_np, dtype=gate.dtype, device=device)
+        advantage_for_stats = raw_advantage
+        diagnostics["gate_open_threshold"] = float(gate_info["open_threshold"])
+        diagnostics["gate_saturation_threshold"] = float(gate_info["saturation_threshold"])
+
     denom = finite.sum()
     if denom.item() <= 0:
-        return None
-    if not config.sil_advantage_gating:
-        return -(log_probs * finite).sum() / denom, None, None
-    advantage = (batch["returns"] - value_dict["expected_score"].detach()).clamp_min(0.0)
-    gate = (advantage / config.sil_advantage_clip).clamp_max(1.0)
+        return empty
     loss = -(log_probs * gate * finite).sum() / denom
-    advantage_mean = ((advantage * finite).sum() / denom).item()
-    gate_mean = ((gate * finite).sum() / denom).item()
-    return loss, advantage_mean, gate_mean
+
+    with torch.no_grad():
+        finite_mask = finite.bool()
+        adv_np = advantage_for_stats[finite_mask].detach().float().cpu().numpy()
+        gate_np = gate[finite_mask].detach().float().cpu().numpy()
+        diagnostics["advantage_mean"] = float(np.mean(adv_np)) if adv_np.size else 0.0
+        diagnostics["gate_mean"] = float(np.mean(gate_np)) if gate_np.size else 0.0
+        if adv_np.size:
+            diagnostics["advantage_p50"] = float(np.percentile(adv_np, 50.0))
+            diagnostics["advantage_p80"] = float(np.percentile(adv_np, 80.0))
+            diagnostics["advantage_p95"] = float(np.percentile(adv_np, 95.0))
+        if gate_np.size:
+            diagnostics["gate_positive_fraction"] = float(np.mean(gate_np > 0.0))
+            diagnostics["gate_saturation_fraction"] = float(np.mean(gate_np >= 1.0))
+            diagnostics["noise_floor_rejected_fraction"] = float(np.mean(gate_np == 0.0))
+        if outcomes is not None and gate_np.size:
+            win_flags = outcomes[finite_mask].detach().float().cpu().numpy()
+            gate_mass = float(gate_np.sum())
+            if gate_mass > 0.0:
+                diagnostics["gate_weight_from_wins_fraction"] = float(
+                    (gate_np * win_flags).sum() / gate_mass
+                )
+            else:
+                diagnostics["gate_weight_from_wins_fraction"] = 0.0
+        if teacher_flags is not None and n_sampled > 0:
+            # Fraction of sampled rows filtered out by the teacher-forced rule.
+            tf_np = teacher_flags.detach().float().cpu().numpy()
+            filtered = float((tf_np > 0.5).sum()) if not config.sil_include_teacher_forced else 0.0
+            diagnostics["teacher_forced_filtered_fraction"] = filtered / n_sampled
+
+    return _SILGroupResult(loss=loss, diagnostics=diagnostics)
+
+
+def _snapshot_actor_grads(model: nn.Module) -> list[torch.Tensor | None]:
+    """Clone current ``.grad`` for actor parameters (None preserved)."""
+    snapshot: list[torch.Tensor | None] = []
+    for name, param in model.named_parameters():
+        if name.startswith(("value_head.", "module.value_head.")):
+            continue
+        snapshot.append(param.grad.detach().clone() if param.grad is not None else None)
+    return snapshot
+
+
+def _sil_grad_diagnostics(
+    sil_grads: list[torch.Tensor | None], total_grads: list[torch.Tensor | None]
+) -> dict[str, float]:
+    """Weighted SIL vs PPO actor-gradient norms, ratio, and cosine similarity.
+
+    ``sil_grads`` is the snapshot taken right after the SIL backward;
+    ``total_grads`` is the snapshot taken after the group's PPO backwards but
+    before global clipping. PPO actor gradient = total - SIL. Handles zero and
+    non-finite norms safely: a zero component norm yields ratio/cosine 0.0
+    rather than infinity or a misleading value.
+    """
+    sil_sq = 0.0
+    ppo_sq = 0.0
+    dot = 0.0
+    for sg, tg in zip(sil_grads, total_grads, strict=True):
+        if sg is None and tg is None:
+            continue
+        if sg is not None:
+            s = sg.detach().float().reshape(-1)
+            sil_sq += float(s.pow(2).sum().item())
+            p = (tg.detach().float().reshape(-1) - s) if tg is not None else -s
+            ppo_sq += float(p.pow(2).sum().item())
+            dot += float((s * p).sum().item())
+        else:
+            p = tg.detach().float().reshape(-1)
+            ppo_sq += float(p.pow(2).sum().item())
+    eps = 1e-12
+    sil_norm = math.sqrt(sil_sq)
+    ppo_norm = math.sqrt(ppo_sq)
+    ratio = 0.0 if ppo_norm <= eps else sil_norm / ppo_norm
+    cosine = 0.0 if (sil_norm <= eps or ppo_norm <= eps) else dot / (sil_norm * ppo_norm)
+    if not (math.isfinite(sil_norm) and math.isfinite(ppo_norm)):
+        return {
+            "actor_grad_norm_weighted": 0.0,
+            "ppo_actor_grad_norm": 0.0,
+            "ppo_actor_grad_norm_ratio": 0.0,
+            "ppo_actor_grad_cosine": 0.0,
+            "grad_diagnostic_valid": 0.0,
+        }
+    return {
+        "actor_grad_norm_weighted": sil_norm,
+        "ppo_actor_grad_norm": ppo_norm,
+        "ppo_actor_grad_norm_ratio": ratio,
+        "ppo_actor_grad_cosine": cosine,
+        "grad_diagnostic_valid": 1.0,
+    }
 
 
 def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float:
@@ -1429,7 +1890,7 @@ def _save_checkpoint(
     config_fields: dict[str, object] = {}
     if config is not None:
         for key in (
-            "ppo_epochs", "mini_batch_size", "clip_epsilon", "gae_lambda",
+            "seed", "ppo_epochs", "mini_batch_size", "clip_epsilon", "gae_lambda",
             "rollout_temperature", "action_type_entropy_scale", "gamma",
             "target_entropy", "entropy_ema_beta", "adaptive_entropy",
         ):
@@ -1797,6 +2258,8 @@ def train_ppo(
     * ``additional_updates``: only meaningful with ``resume_path``. Runs that
       many more updates *after* the checkpoint's saved update count.
     """
+    _validate_ppo_config(config)
+    _seed_training_rngs(config.seed)
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
@@ -1811,7 +2274,12 @@ def train_ppo(
     use_pin_memory = device.type == "cuda"
     model = BalatroAgent(agent_config, vocab).to(device)
 
-    _validate_ppo_config(config)
+    if config.normalize_returns and agent_config.value_bins > 0:
+        raise ValueError(
+            "normalize_returns is incompatible with the HL-Gauss value head: "
+            "the bin grid spans raw return units, so unit-variance targets "
+            "would collapse onto a few central bins. Disable one of the two."
+        )
 
     if resume_path and pretrained_path:
         raise ValueError(
@@ -1846,6 +2314,49 @@ def train_ppo(
             )
         else:
             logger.info(f"Loaded pretrained model from {pretrained_path}")
+    if resume_path or pretrained_path:
+        # Crossing scalar/categorical head shapes cannot preserve the critic.
+        # A strict resume is also unsafe because Adam restores its tensor state
+        # by parameter position and those tensors have incompatible shapes.
+        loaded_bins = 0
+        loaded_cfg: dict = {}
+        if resume_state is not None:
+            loaded_cfg = resume_state.get("agent_config") or {}
+        else:
+            from ..checkpoint import load_checkpoint_payload
+            loaded_cfg = load_checkpoint_payload(pretrained_path, "cpu").get("agent_config") or {}
+        loaded_bins = int(loaded_cfg.get("value_bins", 0) or 0)
+        if resume_path and loaded_bins != agent_config.value_bins:
+            raise ValueError(
+                "Cannot --resume across value-head architectures "
+                f"(checkpoint value_bins={loaded_bins}, model value_bins={agent_config.value_bins}): "
+                "the saved Adam state is shape-incompatible. Use --pretrained "
+                "--reinit-value-head with critic warmup instead."
+            )
+        # Same bin count but a shifted atom grid silently rescales the value
+        # head: bin_centers/bin_edges are non-persistent buffers rebuilt from
+        # config on load, while the position-matched Adam state and logits are
+        # restored as-is. Refuse the resume rather than corrupt the value scale.
+        if resume_path and loaded_bins > 0 and loaded_bins == agent_config.value_bins:
+            loaded_v_min = float(loaded_cfg.get("value_v_min", agent_config.value_v_min))
+            loaded_v_max = float(loaded_cfg.get("value_v_max", agent_config.value_v_max))
+            if (loaded_v_min != agent_config.value_v_min) or (loaded_v_max != agent_config.value_v_max):
+                raise ValueError(
+                    "Cannot --resume across value-head atom ranges "
+                    f"(checkpoint [{loaded_v_min}, {loaded_v_max}], "
+                    f"model [{agent_config.value_v_min}, {agent_config.value_v_max}]): "
+                    "the bin grid is rebuilt from config so the restored logits "
+                    "and Adam state would map onto a different value scale. Match "
+                    "value_v_min/value_v_max, or use --pretrained --reinit-value-head."
+                )
+        if loaded_bins != agent_config.value_bins and config.critic_warmup_updates <= 0:
+            raise ValueError(
+                "The value head is freshly initialized (checkpoint has "
+                f"value_bins={loaded_bins}, model has {agent_config.value_bins}) "
+                "but critic warmup is disabled. Pass --critic-warmup-updates 15 "
+                "--critic-warmup-min-ev 0 so the random head converges before "
+                "the policy trains on its advantages."
+            )
     if config.heuristic_distill_coeff > 0.0:
         floor = min(config.heuristic_distill_min, config.heuristic_distill_coeff)
         logger.info(
@@ -1920,12 +2431,13 @@ def train_ppo(
     # 0..N-1 seeds replays the same opening game library every leg and the
     # critic overfits to it (novel seeds then produce systematically noisy
     # advantages — the env-count-change collapse). Offset the seeds by the
-    # resumed update counter so every leg trains on fresh streams; fresh
-    # runs keep base 0 and are byte-identical to prior behavior.
-    env_seed_base = 0
+    # resumed update counter so every leg trains on fresh streams. A large
+    # config-seed stride keeps neighboring experiment seeds from sharing all
+    # but one environment stream. Seed 0 preserves the historical stream.
+    env_seed_base = config.seed * 10_000_019
     if resume_state is not None:
-        env_seed_base = int(resume_state.get("update_count", 0)) * 1_000_003
-        logger.info("Env seed base for this leg: %d", env_seed_base)
+        env_seed_base += int(resume_state.get("update_count", 0)) * 1_000_003
+    logger.info("Env seed base for this leg: %d", env_seed_base)
     # The heuristic teacher runs twice per env step; skip it entirely when no
     # training objective consumes its labels (distillation, DAgger BC, or
     # teacher-forced rollouts). Envs then emit the -1 "no teacher" sentinel.
@@ -2150,13 +2662,16 @@ def train_ppo(
             resume_state.get("best_eval_win_rate"),
             resume_state.get("best_eval_update"),
         )
-    # Self-imitation: FIFO buffer of complete winning episodes plus a per-env
-    # tracker that assembles them across rollout boundaries (episodes are
-    # ~100 steps and routinely outlive a single rollout).
-    sil_buffer: WinEpisodeBuffer | None = None
+    # Self-imitation: bounded replay of all completed non-stalled episodes
+    # (wins and ordinary losses) plus a per-env tracker that assembles them
+    # across rollout boundaries (episodes are ~100 steps and routinely outlive
+    # a single rollout). Only created when SIL is enabled (sil_coeff > 0); the
+    # runtime decayed coefficient (resolve_sil_coeff) may still hit zero near
+    # the end of training, in which case _run_ppo_update skips replay work.
+    sil_buffer: EpisodeReplayBuffer | None = None
     sil_tracker: SILEpisodeTracker | None = None
     if config.sil_coeff > 0.0:
-        sil_buffer = WinEpisodeBuffer(config.sil_buffer_episodes)
+        sil_buffer = EpisodeReplayBuffer(config.sil_buffer_episodes, seed=config.seed)
         sil_tracker = SILEpisodeTracker(config.num_envs, gamma=config.gamma)
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
@@ -2278,8 +2793,12 @@ def train_ppo(
                     # Same pre-step obs the rollout buffer stores; the tracker
                     # copies compactly so the shared _ObsBuffer arrays are safe
                     # to overwrite next step. Rewards feed the return-to-go
-                    # used for SIL advantage gating.
-                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np, rewards)
+                    # used for SIL advantage gating. The teacher-forced mask is
+                    # recorded so SIL can exclude those rows from the actor loss
+                    # by default (distinct from PPO's own teacher masking).
+                    sil_tracker.record_step(
+                        obs_buf.as_numpy_dict(), actions_np, rewards, use_teacher_np
+                    )
 
                 # Track per-env episode stats
                 env_ep_reward += rewards
@@ -2357,8 +2876,16 @@ def train_ppo(
                         str(_extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or "")
                     )
                     if sil_tracker is not None and sil_buffer is not None:
+                        # Insert wins and ordinary completed losses; drop only
+                        # episodes the environment itself flags as
+                        # infrastructure/no-progress stalls (a legal
+                        # policy-caused loss is kept).
                         sil_tracker.finish_episode(
-                            int(i), won=ep_won and not ep_stalled, buffer=sil_buffer
+                            int(i),
+                            won=ep_won,
+                            stalled=ep_stalled,
+                            final_ante=ep_ante,
+                            buffer=sil_buffer,
                         )
                     # Fill ante-survival targets for every step in this episode.
                     # Truncated-by-stall episodes have no conclusive outcome on
@@ -2419,7 +2946,7 @@ def train_ppo(
                     last_values = return_rms.denormalize(last_values)
 
             buffer.compute_returns_and_advantages(last_values=last_values)
-            buffer.normalize_advantages()
+            buffer.normalize_advantages(clip_sigma=config.advantage_clip_sigma)
             if return_rms is not None:
                 return_rms.update(buffer._flat_returns)
 
@@ -2485,6 +3012,21 @@ def train_ppo(
             distill_coeff_now = resolve_distill_coeff(
                 config, total_steps, schedule_total_steps=schedule_total_steps
             )
+            # SIL coefficient uses the same pinned schedule horizon so it decays
+            # monotonically to sil_coeff_final without rewinding on resume.
+            sil_coeff_now = resolve_sil_coeff(
+                config, total_steps, schedule_total_steps=schedule_total_steps
+            )
+            # Critic warmup must produce no SIL actor gradient; force the
+            # runtime coefficient to zero while the policy is frozen regardless
+            # of the schedule.
+            if in_critic_warmup:
+                sil_coeff_now = 0.0
+            sil_grad_diagnostics_due = (
+                sil_coeff_now > 0.0
+                and config.sil_grad_diagnostics_interval > 0
+                and (update_count + 1) % config.sil_grad_diagnostics_interval == 0
+            )
 
             update_stats = _run_ppo_update(
                 model=model,
@@ -2500,6 +3042,8 @@ def train_ppo(
                 use_pin_memory=use_pin_memory,
                 policy_loss_scale=0.0 if in_critic_warmup else 1.0,
                 sil_buffer=sil_buffer,
+                sil_coeff_now=sil_coeff_now,
+                grad_diagnostics_due=sil_grad_diagnostics_due,
             )
 
             dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
@@ -2554,6 +3098,10 @@ def train_ppo(
             mean_entropy = float(np.mean(update_entropies))
             writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
             writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
+            # Return-unit MSE regardless of head mode (raw under HL-Gauss, where
+            # returns are never normalized); under HL-Gauss value_loss is
+            # cross-entropy so this is the run-over-run comparable series.
+            writer.add_scalar("ppo/value_mse", np.mean(update_stats.value_mses), update_count)
             writer.add_scalar("ppo/survival_loss", np.mean(update_survival_losses), update_count)
             writer.add_scalar("ppo/entropy", mean_entropy, update_count)
             writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
@@ -2564,16 +3112,74 @@ def train_ppo(
             writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
             if sil_buffer is not None:
                 writer.add_scalar("sil/buffer_episodes", float(sil_buffer.num_episodes), update_count)
-                writer.add_scalar("sil/buffer_transitions", float(sil_buffer.num_transitions), update_count)
                 writer.add_scalar(
-                    "sil/episodes_added_total", float(sil_buffer.episodes_added_total), update_count
+                    "sil/buffer_transitions", float(sil_buffer.num_transitions), update_count
+                )
+                writer.add_scalar("sil/buffer_win_fraction", float(sil_buffer.win_fraction), update_count)
+                writer.add_scalar(
+                    "sil/episodes_added_total",
+                    float(sil_buffer.episodes_added_total),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "sil/stalled_episodes_dropped_total",
+                    float(sil_buffer.stalled_episodes_dropped_total),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "sil/overflow_episodes_dropped_total",
+                    float(sil_buffer.overflow_episodes_dropped_total),
+                    update_count,
+                )
+                writer.add_scalar("sil/coeff", float(sil_coeff_now), update_count)
+                writer.add_scalar(
+                    "sil/logical_minibatches_attempted",
+                    float(update_stats.sil_logical_minibatches_attempted),
+                    update_count,
+                )
+                writer.add_scalar(
+                    "sil/logical_minibatches_applied",
+                    float(update_stats.sil_logical_minibatches_applied),
+                    update_count,
                 )
                 if update_stats.sil_losses:
-                    writer.add_scalar("sil/loss", float(np.mean(update_stats.sil_losses)), update_count)
+                    writer.add_scalar(
+                        "sil/loss", float(np.mean(update_stats.sil_losses)), update_count
+                    )
+                if update_stats.sil_losses_weighted:
+                    writer.add_scalar(
+                        "sil/loss_weighted",
+                        float(np.mean(update_stats.sil_losses_weighted)),
+                        update_count,
+                    )
                 if update_stats.sil_advantage_means:
                     writer.add_scalar(
                         "sil/advantage_mean",
                         float(np.mean(update_stats.sil_advantage_means)),
+                        update_count,
+                    )
+                if update_stats.sil_advantage_p50s:
+                    writer.add_scalar(
+                        "sil/advantage_p50",
+                        float(np.mean(update_stats.sil_advantage_p50s)),
+                        update_count,
+                    )
+                if update_stats.sil_advantage_p80s:
+                    writer.add_scalar(
+                        "sil/advantage_p80",
+                        float(np.mean(update_stats.sil_advantage_p80s)),
+                        update_count,
+                    )
+                if update_stats.sil_advantage_p95s:
+                    writer.add_scalar(
+                        "sil/advantage_p95",
+                        float(np.mean(update_stats.sil_advantage_p95s)),
+                        update_count,
+                    )
+                if update_stats.sil_advantage_p99s:
+                    writer.add_scalar(
+                        "sil/advantage_p99",
+                        float(np.mean(update_stats.sil_advantage_p99s)),
                         update_count,
                     )
                 if update_stats.sil_gate_means:
@@ -2582,6 +3188,104 @@ def train_ppo(
                         float(np.mean(update_stats.sil_gate_means)),
                         update_count,
                     )
+                if update_stats.sil_gate_open_thresholds:
+                    writer.add_scalar(
+                        "sil/gate_open_threshold",
+                        float(np.mean(update_stats.sil_gate_open_thresholds)),
+                        update_count,
+                    )
+                if update_stats.sil_gate_saturation_thresholds:
+                    writer.add_scalar(
+                        "sil/gate_saturation_threshold",
+                        float(np.mean(update_stats.sil_gate_saturation_thresholds)),
+                        update_count,
+                    )
+                if update_stats.sil_gate_positive_fractions:
+                    writer.add_scalar(
+                        "sil/gate_positive_fraction",
+                        float(np.mean(update_stats.sil_gate_positive_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_gate_saturation_fractions:
+                    writer.add_scalar(
+                        "sil/gate_saturation_fraction",
+                        float(np.mean(update_stats.sil_gate_saturation_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_noise_floor_rejected_fractions:
+                    writer.add_scalar(
+                        "sil/noise_floor_rejected_fraction",
+                        float(np.mean(update_stats.sil_noise_floor_rejected_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_gate_weight_from_wins_fractions:
+                    writer.add_scalar(
+                        "sil/gate_weight_from_wins_fraction",
+                        float(np.mean(update_stats.sil_gate_weight_from_wins_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_samples_counts:
+                    writer.add_scalar(
+                        "sil/samples",
+                        float(np.mean(update_stats.sil_samples_counts)),
+                        update_count,
+                    )
+                if update_stats.sil_unique_episodes_sampleds:
+                    writer.add_scalar(
+                        "sil/unique_episodes_sampled",
+                        float(np.mean(update_stats.sil_unique_episodes_sampleds)),
+                        update_count,
+                    )
+                if update_stats.sil_max_samples_from_one_episodes:
+                    writer.add_scalar(
+                        "sil/max_samples_from_one_episode",
+                        float(np.mean(update_stats.sil_max_samples_from_one_episodes)),
+                        update_count,
+                    )
+                if update_stats.sil_sample_win_fractions:
+                    writer.add_scalar(
+                        "sil/sample_win_fraction",
+                        float(np.mean(update_stats.sil_sample_win_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_replay_teacher_forced_fractions:
+                    writer.add_scalar(
+                        "sil/replay_teacher_forced_fraction",
+                        float(np.mean(update_stats.sil_replay_teacher_forced_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_teacher_forced_filtered_fractions:
+                    writer.add_scalar(
+                        "sil/teacher_forced_filtered_fraction",
+                        float(np.mean(update_stats.sil_teacher_forced_filtered_fractions)),
+                        update_count,
+                    )
+                if update_stats.sil_grad_diagnostic_valid:
+                    writer.add_scalar(
+                        "sil/actor_grad_norm_weighted",
+                        float(update_stats.sil_grad_actor_norm_weighted),
+                        update_count,
+                    )
+                    writer.add_scalar(
+                        "sil/ppo_actor_grad_norm",
+                        float(update_stats.sil_grad_ppo_actor_norm),
+                        update_count,
+                    )
+                    writer.add_scalar(
+                        "sil/ppo_actor_grad_norm_ratio",
+                        float(update_stats.sil_grad_ppo_actor_norm_ratio),
+                        update_count,
+                    )
+                    writer.add_scalar(
+                        "sil/ppo_actor_grad_cosine",
+                        float(update_stats.sil_grad_ppo_actor_grad_cosine),
+                        update_count,
+                    )
+                writer.add_scalar(
+                    "sil/grad_diagnostic_valid",
+                    1.0 if update_stats.sil_grad_diagnostic_valid else 0.0,
+                    update_count,
+                )
             if update_stats.distill_losses_weighted:
                 writer.add_scalar(
                     "ppo/distill_loss_weighted",

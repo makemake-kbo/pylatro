@@ -154,7 +154,21 @@ def claim_pack_card(state: RunState, index: int) -> ShopCard:
         )
         add_playing_cards(state, [created], area="draw")
     elif center.get("consumeable"):
-        add_consumable(state, card.center_key, edition=card.edition)
+        # A consumable chosen from a booster pack is used immediately in
+        # Balatro, not banked. Planets (and every other consumable that needs
+        # no target selection: Black Hole, The Hermit, Judgement, ...) apply on
+        # claim. Target-requiring tarots/spectrals can't be targeted from the
+        # pack flow, and negative-edition cards are held rather than used, so
+        # those fall back to the consumable inventory to be used later.
+        from .consumables import can_use_consumable, use_consumable
+        from .instances import create_consumable_instance
+
+        negative = bool(card.edition and "negative" in card.edition)
+        instance = create_consumable_instance(state, card.center_key, edition=card.edition)
+        if not negative and can_use_consumable(state, instance):
+            use_consumable(state, instance)
+        else:
+            add_consumable(state, card.center_key, edition=card.edition)
     else:
         add_joker(
             state,

@@ -32,6 +32,8 @@ class BalatroApp(App):
         self.game_data: GameData | None = None
         self.controller: GameController | None = None
         self.walk: SeedWalk | None = None
+        # Persisted UI preference: sort the played hand by "rank" or "suit".
+        self.sort_mode: str = "rank"
 
     def on_mount(self) -> None:
         self.game_data = load_game_data()

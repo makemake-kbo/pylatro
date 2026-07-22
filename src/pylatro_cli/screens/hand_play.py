@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import Static
+from textual.widgets import Button, Static
 
 from ..controller import GameController, GamePhase
 from ..widgets.action_buttons import ActionButtons
@@ -86,6 +86,9 @@ class HandPlayScreen(Screen):
         if state is None:
             return
 
+        # Re-apply the user's chosen sort so playing/drawing never overrides it.
+        self._apply_sort(state)
+
         # Update card row
         card_row = self.query_one("#card-row", CardRow)
         card_row.update_cards(state.hand_cards)
@@ -137,6 +140,9 @@ class HandPlayScreen(Screen):
             can_discard=state.current_round.discards_left > 0,
             has_selection=len(card_row.selected_indices) > 0,
         )
+
+        # Reflect the active sort mode on the Sort button.
+        self.query_one("#btn-sort", Button).label = f"Sort ({self.app.sort_mode})"
 
     def _update_hand_preview(self) -> None:
         ctrl = self._ctrl()
@@ -224,14 +230,25 @@ class HandPlayScreen(Screen):
         ctrl.discard_selected(indices)
         self._refresh_display()
 
+    def _apply_sort(self, state) -> None:
+        """Order ``state.hand_cards`` by the persisted UI sort mode."""
+        rank_order = {"2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8,
+                      "9": 9, "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14}
+        if self.app.sort_mode == "suit":
+            # Group by suit, low rank first within each suit.
+            state.hand_cards.sort(key=lambda c: (c.suit, rank_order.get(c.rank, 0)))
+        else:
+            # High rank first, matching the engine's default ordering.
+            state.hand_cards.sort(key=lambda c: rank_order.get(c.rank, 0), reverse=True)
+
     def action_sort_hand(self) -> None:
         ctrl = self._ctrl()
         state = ctrl.state
         if state is None:
             return
-        # Sort by suit then rank
-        rank_order = {"2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14}
-        state.hand_cards.sort(key=lambda c: (c.suit, rank_order.get(c.rank, 0)))
+        # Toggle between the two modes; the refresh re-applies the sort.
+        self.app.sort_mode = "suit" if self.app.sort_mode == "rank" else "rank"
+        self.notify(f"Sorting by {self.app.sort_mode}")
         self._refresh_display()
 
     def action_run_info(self) -> None:

@@ -11,14 +11,18 @@ from textual.containers import Center, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Input, Label, Static
 
-TITLE_ART = r"""
+_TITLE_LINES = r"""
              _       _
  _ __  _   _| | __ _| |_ _ __ ___
 | '_ \| | | | |/ _` | __| '__/ _ \
 | |_) | |_| | | (_| | |_| | | (_) |
 | .__/ \__, |_|\__,_|\__|_|  \___/
 |_|    |___/
-"""
+""".strip("\n").split("\n")
+# Pad to a uniform width so the widget's text-align:center doesn't shift
+# each line independently (which scrambled the figlet art).
+_ART_WIDTH = max(len(line) for line in _TITLE_LINES)
+TITLE_ART = "\n".join(line.ljust(_ART_WIDTH) for line in _TITLE_LINES)
 
 
 STAKE_NAMES = [

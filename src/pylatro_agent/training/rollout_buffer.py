@@ -21,8 +21,8 @@ class RolloutBuffer:
         self,
         num_envs: int,
         rollout_length: int,
-        gamma: float = 0.99,
-        gae_lambda: float = 0.95,
+        gamma: float = 0.997,
+        gae_lambda: float = 0.97,
     ) -> None:
         self.num_envs = num_envs
         self.rollout_length = rollout_length

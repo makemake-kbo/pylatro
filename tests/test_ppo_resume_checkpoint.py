@@ -5,11 +5,13 @@ import pytest
 import torch
 
 from pylatro_agent import checkpoint as ckpt
+from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
     _ACTION_FAMILY_NAMES,
     PPOConfig,
     RunningMeanStd,
     _apply_lr_override,
+    _load_checkpoint_compatible,
     _make_policy_optimizer,
     _optimizer_to,
 )
@@ -43,12 +45,17 @@ def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
         entropy_signal_ema=0.13,
         lr=3e-4,
         return_rms=rms,
+        reward_config=RewardConfig(),
         ppo_config_fields={"rollout_temperature": 0.85},
         extra={"best_eval_win_rate": 0.21, "best_eval_update": 40},
     )
 
     assert ckpt.is_ppo_full_checkpoint(path, "cpu")
-    blob = ckpt.load_ppo_resume_payload(path, "cpu")
+    blob = ckpt.load_ppo_resume_payload(
+        path,
+        "cpu",
+        active_reward_config=RewardConfig(),
+    )
     assert blob["checkpoint_format"] == ckpt.PPO_CHECKPOINT_FORMAT
     assert blob["update_count"] == 42
     assert blob["total_steps"] == 42 * 16 * 256
@@ -59,6 +66,9 @@ def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
     assert blob["best_eval_win_rate"] == pytest.approx(0.21)
     assert blob["best_eval_update"] == 40
     assert blob["ppo_config_fields"]["rollout_temperature"] == 0.85
+    assert blob["reward_config"]["gamma"] == pytest.approx(0.997)
+    assert blob["reward_model_version"] >= 1
+    assert len(blob["reward_fingerprint"]) == 64
     assert "optimizer_state_dict" in blob
     # RNG states present.
     assert "python" in blob["rng_states"]
@@ -85,11 +95,16 @@ def test_resume_payload_restores_optimizer_and_rng(tmp_path) -> None:
         entropy_coeff=0.001,
         entropy_signal_ema=0.2,
         lr=1e-3,
+        reward_config=RewardConfig(),
     )
 
     # Perturb RNG state so we can confirm restoration.
     torch.manual_seed(12345)
-    blob = ckpt.load_ppo_resume_payload(path, "cpu")
+    blob = ckpt.load_ppo_resume_payload(
+        path,
+        "cpu",
+        active_reward_config=RewardConfig(),
+    )
     ckpt.restore_rng_states(blob["rng_states"])
     restored_state = torch.get_rng_state()
     # The restored CPU RNG state matches the captured one (byte-for-byte).
@@ -106,7 +121,159 @@ def test_weights_only_checkpoint_rejected_for_resume(tmp_path) -> None:
 
     assert not ckpt.is_ppo_full_checkpoint(path, "cpu")
     with pytest.raises(RuntimeError, match="weights-only checkpoint"):
-        ckpt.load_ppo_resume_payload(path, "cpu")
+        ckpt.load_ppo_resume_payload(
+            path,
+            "cpu",
+            active_reward_config=RewardConfig(),
+        )
+
+
+def test_strict_resume_rejects_reward_fingerprint_mismatch(tmp_path) -> None:
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=1e-3)
+    path = tmp_path / "reward_mismatch.pt"
+    ckpt.save_ppo_checkpoint(
+        model,
+        path,
+        optimizer=optimizer,
+        update_count=1,
+        total_steps=1,
+        planned_updates=2,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=1e-3,
+        reward_config=RewardConfig(dense_reward_scale=0.5),
+    )
+
+    with pytest.raises(RuntimeError, match="reward fingerprint mismatch") as exc_info:
+        ckpt.load_ppo_resume_payload(
+            path,
+            "cpu",
+            active_reward_config=RewardConfig(dense_reward_scale=1.0),
+        )
+    message = str(exc_info.value)
+    assert "--pretrained" in message
+    assert "--reinit-value-head" in message
+    assert "--critic-warmup-updates 15" in message
+
+
+def test_pretrained_rejects_stale_reward_value_head_without_reinit(tmp_path) -> None:
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=1e-3)
+    path = tmp_path / "stale_reward.pt"
+    ckpt.save_ppo_checkpoint(
+        model,
+        path,
+        optimizer=optimizer,
+        update_count=1,
+        total_steps=1,
+        planned_updates=2,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=1e-3,
+        reward_config=RewardConfig(dense_reward_scale=0.5),
+    )
+
+    with pytest.raises(RuntimeError, match="different reward fingerprint"):
+        _load_checkpoint_compatible(
+            model,
+            str(path),
+            torch.device("cpu"),
+            active_reward_config=RewardConfig(dense_reward_scale=1.0),
+        )
+
+    _load_checkpoint_compatible(
+        model,
+        str(path),
+        torch.device("cpu"),
+        active_reward_config=RewardConfig(dense_reward_scale=1.0),
+        reinit_value_head=True,
+    )
+
+
+def test_pretrained_legacy_checkpoint_requires_value_head_reinit(tmp_path) -> None:
+    model = _tiny_model()
+    path = tmp_path / "legacy_weights.pt"
+    ckpt.save_checkpoint(model, path)
+
+    with pytest.raises(RuntimeError, match="has no reward fingerprint"):
+        _load_checkpoint_compatible(
+            model,
+            str(path),
+            torch.device("cpu"),
+            active_reward_config=RewardConfig(),
+        )
+
+    _load_checkpoint_compatible(
+        model,
+        str(path),
+        torch.device("cpu"),
+        active_reward_config=RewardConfig(),
+        reinit_value_head=True,
+    )
+
+
+def test_strict_resume_rejects_win_ante_mismatch(tmp_path) -> None:
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=1e-3)
+    path = tmp_path / "win_ante_mismatch.pt"
+    ckpt.save_ppo_checkpoint(
+        model,
+        path,
+        optimizer=optimizer,
+        update_count=1,
+        total_steps=1,
+        planned_updates=2,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=1e-3,
+        reward_config=RewardConfig(),
+        ppo_config_fields={"win_ante": 5},
+    )
+
+    with pytest.raises(RuntimeError, match="win_ante mismatch"):
+        ckpt.load_ppo_resume_payload(
+            path,
+            "cpu",
+            active_reward_config=RewardConfig(),
+            active_win_ante=8,
+        )
+
+
+def test_strict_resume_rejects_legacy_full_checkpoint_without_reward_fingerprint(
+    tmp_path,
+) -> None:
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=1e-3)
+    path = tmp_path / "legacy_full.pt"
+    ckpt.save_ppo_checkpoint(
+        model,
+        path,
+        optimizer=optimizer,
+        update_count=1,
+        total_steps=1,
+        planned_updates=2,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=1e-3,
+        reward_config=RewardConfig(),
+    )
+    blob = torch.load(path, map_location="cpu", weights_only=False)
+    blob.pop("reward_fingerprint")
+    blob.pop("reward_model_version")
+    blob.pop("reward_config")
+    torch.save(blob, path)
+
+    with pytest.raises(RuntimeError, match="has no reward fingerprint"):
+        ckpt.load_ppo_resume_payload(
+            path,
+            "cpu",
+            active_reward_config=RewardConfig(),
+        )
+
+    # The weights-only/pretrained loader intentionally ignores resume metadata.
+    weights_payload = ckpt.load_checkpoint_payload(path, "cpu")
+    assert "state_dict" in weights_payload
 
 
 def test_optimizer_to_moves_state_tensors_to_device() -> None:
@@ -140,9 +307,124 @@ def test_apply_lr_override_silent_when_lr_unchanged(caplog) -> None:
     assert not any("Overriding optimizer LR" in msg for msg in caplog.messages)
 
 
+def test_ppo_config_long_horizon_defaults() -> None:
+    config = PPOConfig()
+    assert config.gamma == pytest.approx(0.997)
+    assert config.gae_lambda == pytest.approx(0.97)
+
+
 def test_ppo_config_total_updates_field_exists() -> None:
     config = PPOConfig(total_updates=50)
     assert config.total_updates == 50
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "expected_build_potential"),
+    [
+        ([], False),
+        (["--reward-v2"], False),
+        (["--reward-v2", "--build-curve-shaping"], True),
+        (["--reward-v2", "--score-build-potential"], True),
+        (
+            [
+                "--reward-v2",
+                "--score-build-potential",
+                "--disable-score-build-potential",
+            ],
+            False,
+        ),
+    ],
+)
+def test_train_cli_long_horizon_defaults_and_build_potential_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    extra_args: list[str],
+    expected_build_potential: bool,
+) -> None:
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    import pylatro_agent.training.ppo as ppo_module
+
+    train_path = Path(__file__).resolve().parents[1] / "train.py"
+    spec = importlib.util.spec_from_file_location("pylatro_train_entrypoint", train_path)
+    assert spec is not None and spec.loader is not None
+    train_entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(train_entrypoint)
+
+    captured: dict[str, object] = {}
+
+    def fake_train_ppo(config, **_kwargs):
+        captured["config"] = config
+        return None
+
+    monkeypatch.setattr(ppo_module, "train_ppo", fake_train_ppo)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["train.py", "ppo", "--device", "cpu", *extra_args],
+    )
+
+    train_entrypoint.main()
+
+    config = captured["config"]
+    assert isinstance(config, PPOConfig)
+    assert config.gamma == pytest.approx(0.997)
+    assert config.gae_lambda == pytest.approx(0.97)
+    assert config.reward_config is not None
+    assert config.reward_config.gamma == pytest.approx(config.gamma)
+    assert config.reward_config.enable_build_curve_rewards is expected_build_potential
+
+
+def test_train_cli_v2_passes_applicable_reward_scales(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    import pylatro_agent.training.ppo as ppo_module
+
+    train_path = Path(__file__).resolve().parents[1] / "train.py"
+    spec = importlib.util.spec_from_file_location("pylatro_train_scale_entrypoint", train_path)
+    assert spec is not None and spec.loader is not None
+    train_entrypoint = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(train_entrypoint)
+
+    captured: dict[str, object] = {}
+
+    def fake_train_ppo(config, **_kwargs):
+        captured["config"] = config
+        return None
+
+    monkeypatch.setattr(ppo_module, "train_ppo", fake_train_ppo)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "ppo",
+            "--device",
+            "cpu",
+            "--reward-v2",
+            "--planet-match-shaping",
+            "--dense-reward-scale",
+            "0.5",
+            "--progression-reward-scale",
+            "0.25",
+            "--consumable-reward-scale",
+            "0.2",
+        ],
+    )
+
+    train_entrypoint.main()
+
+    config = captured["config"]
+    assert isinstance(config, PPOConfig)
+    assert config.reward_config is not None
+    assert config.reward_config.dense_reward_scale == pytest.approx(0.5)
+    assert config.reward_config.progression_reward_scale == pytest.approx(0.25)
+    assert config.reward_config.consumable_reward_scale == pytest.approx(0.2)
 
 
 def test_action_family_constants_are_exhaustive() -> None:

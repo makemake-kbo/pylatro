@@ -1,3 +1,5 @@
+import pytest
+
 from pylatro import (
     add_consumable,
     add_joker,
@@ -5,6 +7,8 @@ from pylatro import (
     finish_shop,
     sell_owned_joker,
 )
+from pylatro.models import PlayingCard
+from pylatro.runtime import apply_playing_card_added
 
 
 def test_finish_shop_and_sell_hooks_apply_inventory_side_effects() -> None:
@@ -28,3 +32,15 @@ def test_finish_shop_and_sell_hooks_apply_inventory_side_effects() -> None:
     sell_owned_joker(state, 0)
     assert state.tags == ["tag_double"]
     assert state.dollars == 7
+
+
+def test_hologram_scales_per_added_card_unless_debuffed() -> None:
+    state = create_run_state("AAAAAAAA")
+    hologram = add_joker(state, "j_hologram")
+    added = PlayingCard(front_key="H_2", suit="Hearts", rank="2")
+
+    apply_playing_card_added(state, [added])
+    assert hologram.x_mult == pytest.approx(1.25)
+    hologram.debuff = True
+    apply_playing_card_added(state, [added])
+    assert hologram.x_mult == pytest.approx(1.25)

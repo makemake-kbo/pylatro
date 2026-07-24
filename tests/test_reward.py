@@ -16,21 +16,25 @@ from pylatro_agent.reward import (
     PLANET_MATCH_BONUS,
     PLANET_PLAYED_HAND_BONUS,
     PLANET_SKIP_PENALTY,
+    PPO_SPARSE_CONFIG,
     PRESSURE_PROGRESS_SCALE,
     PRETRAIN_STALL_EXTRA_PENALTY,
     PRETRAIN_WIN_VALUE,
-    PPO_SPARSE_CONFIG,
+    REWARD_MODEL_VERSION,
     REWARD_SCALE,
-    RewardConfig,
     SCORE_PROGRESS_SCALE,
     SHOP_REROLL_REWARD,
     SHOP_SELL_PENALTY,
     STANDARD_OVERFULL_CARD_BASE_PENALTY,
     STANDARD_OVERFULL_CARD_EXPONENT,
     TAROT_SKIP_FIXING_PENALTY,
+    RewardConfig,
     default_reward,
     default_reward_components,
     pretraining_outcome_value,
+    reward_checkpoint_metadata,
+    reward_config_fingerprint,
+    reward_config_snapshot,
 )
 
 
@@ -66,6 +70,46 @@ def _pack_detail(
         "seal": seal,
         "edition": edition or {},
     }
+
+
+def test_reward_config_long_horizon_defaults() -> None:
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    assert RewardConfig().gamma == pytest.approx(0.997)
+    assert PPO_V2_REWARD_CONFIG().gamma == pytest.approx(0.997)
+
+
+def test_reward_config_fingerprint_is_canonical_and_stable() -> None:
+    config = RewardConfig(enable_build_curve_rewards=True, dense_reward_scale=0.5)
+    snapshot = reward_config_snapshot(config)
+    reordered = dict(reversed(list(snapshot.items())))
+
+    assert reward_config_fingerprint(config) == reward_config_fingerprint(snapshot)
+    assert reward_config_fingerprint(snapshot) == reward_config_fingerprint(reordered)
+    assert len(reward_config_fingerprint(config)) == 64
+
+
+def test_reward_config_fingerprint_changes_with_config_or_model_version() -> None:
+    baseline = RewardConfig()
+    changed = RewardConfig(dense_reward_scale=0.5)
+
+    assert reward_config_fingerprint(baseline) != reward_config_fingerprint(changed)
+    assert reward_config_fingerprint(
+        baseline,
+        reward_model_version=REWARD_MODEL_VERSION,
+    ) != reward_config_fingerprint(
+        baseline,
+        reward_model_version=REWARD_MODEL_VERSION + 1,
+    )
+
+
+def test_reward_checkpoint_metadata_contains_full_snapshot_version_and_fingerprint() -> None:
+    config = RewardConfig(enable_build_curve_rewards=True, gamma=0.997)
+    metadata = reward_checkpoint_metadata(config)
+
+    assert metadata["reward_config"] == reward_config_snapshot(config)
+    assert metadata["reward_model_version"] == REWARD_MODEL_VERSION
+    assert metadata["reward_fingerprint"] == reward_config_fingerprint(config)
 
 
 def test_default_reward_rewards_round_score_progress() -> None:
@@ -555,7 +599,9 @@ def test_planet_unmatched_penalty_weighted_by_play_share() -> None:
     assert components["planet_unmatched_claim_penalty"] == pytest.approx(-0.2 * REWARD_SCALE)
 
     # Missing play_share key (older infos): original flat penalty.
-    components = default_reward_components(state, prev_info, dict(base_curr), terminated=False, won=False, config=config)
+    components = default_reward_components(
+        state, prev_info, dict(base_curr), terminated=False, won=False, config=config
+    )
     assert components["planet_unmatched_claim_penalty"] == pytest.approx(-0.2 * REWARD_SCALE)
 
 
@@ -1355,102 +1401,300 @@ def test_v2_default_keeps_planet_match_shaping_off():
     assert cfg.planet_unmatched_claim_penalty_coeff == 0.0
 
 
-def test_v2_build_curve_shaping_rewards_phase_fit_jokers():
-    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+def _v2_joker(key: str, **overrides) -> dict:
+    joker = {
+        "key": key,
+        "name": key,
+        "effect": "",
+        "type": "",
+        "config": {},
+        "mult": 0.0,
+        "t_mult": 0.0,
+        "t_chips": 0.0,
+        "x_mult": 1.0,
+        "extra": None,
+        "edition": {},
+        "debuffed": False,
+        "perishable": False,
+        "perish_tally": None,
+        "is_scaling": False,
+        "is_scaling_xmult": False,
+    }
+    joker.update(overrides)
+    return joker
 
-    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
-    assert cfg.enable_build_curve_rewards is True
-    # Everything else stays killed; potential shaping stays on.
-    assert cfg.enable_potential_shaping is True
-    assert cfg.enable_shop_strategy_rewards is False
-    assert cfg.enable_joker_context_rewards is False
 
-    coeff = cfg.build_curve_coeff
-
-    def acquire(joker, ante):
-        state = _dummy_state(ante=ante, win_ante=8)
-        prev = {"ante": ante, "round_score": 0, "blind_target": 400, "joker_details": ()}
-        curr = {
-            "ante": ante,
-            "round_score": 0,
-            "blind_target": 400,
-            "progress_made": True,
-            "action_type": "shop_buy",
-            "joker_details": (joker,),
+def _v2_build_info(*, ante: int = 2, jokers=(), blind_target: int = 300, round_score: int = 0) -> dict:
+    cards = tuple(
+        {
+            "rank": "8",
+            "suit": "Clubs",
+            "enhancement": "",
+            "seal": "",
+            "edition": "",
         }
-        return default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+        for _ in range(52)
+    )
+    return {
+        "ante": ante,
+        "round_score": round_score,
+        "blind_target": blind_target,
+        "blind_on_deck": "small",
+        "hands_available": 4,
+        "hand_size": 8,
+        "hand_details": {
+            "Pair": {"chips": 10, "mult": 2, "level": 1, "played": 8},
+            "High Card": {"chips": 5, "mult": 1, "level": 1, "played": 1},
+        },
+        "hand_play_counts": {"Pair": 8, "High Card": 1},
+        "hand_levels": {"Pair": 1, "High Card": 1},
+        "deck_stats": {
+            "size": len(cards),
+            "cards": cards,
+            "rank_counts": {"8": len(cards)},
+            "suit_counts": {"Clubs": len(cards)},
+            "enhancement_counts": {},
+        },
+        "joker_details": tuple(jokers),
+    }
 
-    chip_joker = {"key": "j_chip", "t_chips": 30.0, "mult": 0.0, "t_mult": 0.0, "x_mult": 1.0}
-    mult_joker = {"key": "j_mult", "t_chips": 0.0, "mult": 4.0, "t_mult": 0.0, "x_mult": 1.0}
-    xmult_joker = {"key": "j_x", "t_chips": 0.0, "mult": 0.0, "t_mult": 0.0, "x_mult": 3.0}
-    econ_joker = {"key": "j_econ", "t_chips": 0.0, "mult": 0.0, "t_mult": 0.0, "x_mult": 1.0}
 
-    # Chips: full weight early (antes 1-3), fading afterwards.
-    assert acquire(chip_joker, 2)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
-    assert acquire(chip_joker, 5)["build_curve_bonus"] == pytest.approx(0.5 * coeff * REWARD_SCALE)
-    assert acquire(chip_joker, 7)["build_curve_bonus"] == pytest.approx(0.25 * coeff * REWARD_SCALE)
-    # Mult: half weight before ante 4, full weight from ante 4.
-    assert acquire(mult_joker, 2)["build_curve_bonus"] == pytest.approx(0.5 * coeff * REWARD_SCALE)
-    assert acquire(mult_joker, 4)["build_curve_bonus"] == pytest.approx(coeff * REWARD_SCALE)
-    # Xmult: engine weight 2.0 at any ante (strictly above additive mult/chips;
-    # earlier is better, never discounted).
-    assert acquire(xmult_joker, 1)["build_curve_bonus"] == pytest.approx(2.0 * coeff * REWARD_SCALE)
-    assert acquire(xmult_joker, 7)["build_curve_bonus"] == pytest.approx(2.0 * coeff * REWARD_SCALE)
-    # Economy/utility jokers earn nothing from this component.
-    assert acquire(econ_joker, 2)["build_curve_bonus"] == pytest.approx(0.0)
+def test_v2_build_curve_compatibility_switch_enables_build_potential():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, state_potential_breakdown
+
+    info = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.75),))
+    disabled = state_potential_breakdown(
+        info,
+        PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=False),
+    )
+    enabled = state_potential_breakdown(
+        info,
+        PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True),
+    )
+
+    assert disabled["realized_build_quality"] == pytest.approx(0.0)
+    assert disabled["scaling_option_value"] == pytest.approx(0.0)
+    assert disabled["readiness"] == pytest.approx(0.0)
+    assert enabled["realized_build_quality"] > 0.0
+    assert enabled["scaling_option_value"] > 0.0
+    assert enabled["readiness"] > 0.0
 
 
-def test_v2_build_curve_off_by_default_and_requires_acquisition():
-    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
-
-    cfg_off = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8)
-    assert cfg_off.enable_build_curve_rewards is False
-
-    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+def test_legacy_contextual_build_delta_applies_to_pack_claims():
     state = _dummy_state(ante=2, win_ante=8)
-    joker = {"key": "j_x", "x_mult": 3.0}
-    # Same joker on both sides of the step: no acquisition, no bonus.
-    prev = {"ante": 2, "round_score": 0, "blind_target": 400, "joker_details": (joker,)}
-    curr = dict(prev, progress_made=True, action_type="play_subset")
-    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
-    assert result["build_curve_bonus"] == pytest.approx(0.0)
+    prev = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.0),))
+    curr = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.5),))
+    curr.update({"action_type": "pack_claim", "progress_made": True})
+
+    result = default_reward_components(
+        state,
+        prev,
+        curr,
+        terminated=False,
+        won=False,
+        config=RewardConfig(),
+    )
+
+    assert result["shop_engine_delta"] > 0.0
+    assert result["shop_purchase_value"] == 0.0
 
 
-def test_v2_build_curve_sell_subtracts_and_churn_telescopes():
-    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+def test_legacy_build_curve_flag_keeps_static_component_behavior():
+    config = RewardConfig(enable_build_curve_rewards=True)
+    state = _dummy_state(ante=2, win_ante=8)
+    chip_joker = {"key": "j_pair_chips", "t_chips": 30.0, "x_mult": 1.0}
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400, "joker_details": ()}
+    curr = {
+        "ante": 2,
+        "round_score": 0,
+        "blind_target": 400,
+        "joker_details": (chip_joker,),
+        "progress_made": True,
+    }
+
+    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=config)
+    assert result["build_curve_bonus"] == pytest.approx(config.build_curve_coeff * REWARD_SCALE)
+
+
+def test_v2_build_potential_breakdown_is_bounded():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, state_potential_breakdown
 
     cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
-    state = _dummy_state(ante=6, win_ante=8)
-    coeff = cfg.build_curve_coeff
-    chip_joker = {"key": "j_chip", "t_chips": 30.0, "x_mult": 1.0}
-    xmult_joker = {"key": "j_x", "x_mult": 3.0}
+    info = _v2_build_info(
+        ante=2,
+        blind_target=100,
+        round_score=100,
+        jokers=(_v2_joker("j_hologram", name="Hologram", x_mult=100.0),),
+    )
+    breakdown = state_potential_breakdown(info, cfg)
+    build_total = (
+        breakdown["realized_build_quality"]
+        + breakdown["scaling_option_value"]
+        + breakdown["readiness"]
+    )
 
-    def step(prev_jokers, curr_jokers):
-        prev = {"ante": 6, "round_score": 0, "blind_target": 400, "joker_details": tuple(prev_jokers)}
-        curr = {
-            "ante": 6,
-            "round_score": 0,
-            "blind_target": 400,
-            "progress_made": True,
-            "action_type": "shop_sell_joker",
-            "joker_details": tuple(curr_jokers),
-        }
-        result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
-        return result["build_curve_bonus"]
+    assert set(breakdown) == {
+        "blind_progress",
+        "ante_progress",
+        "realized_build_quality",
+        "scaling_option_value",
+        "readiness",
+        "total",
+    }
+    assert all(value >= 0.0 for value in breakdown.values())
+    assert build_total <= cfg.potential_build_cap + 1e-9
+    assert breakdown["scaling_option_value"] <= cfg.potential_w_scaling_option + 1e-9
+    assert breakdown["total"] <= (
+        cfg.potential_w_blind + cfg.potential_w_ante + cfg.potential_build_cap + 1e-9
+    )
 
-    # Selling subtracts the joker's weight at the CURRENT ante (chips at ante 6
-    # is only 0.25), so a buy→sell round trip nets zero instead of farming the
-    # acquisition bonus via churn.
-    assert step([chip_joker], []) == pytest.approx(-0.25 * coeff * REWARD_SCALE)
-    assert step([], [chip_joker]) + step([chip_joker], []) == pytest.approx(0.0)
-    # Upgrading stays net positive: sell the faded chip joker, buy an xmult.
-    assert step([chip_joker], [xmult_joker]) == pytest.approx((2.0 - 0.25) * coeff * REWARD_SCALE)
-    # Missing joker_details on either side (e.g. sparse infos) is a no-op, not
-    # a mass removal event.
-    prev = {"ante": 6, "round_score": 0, "blind_target": 400, "joker_details": (xmult_joker,)}
-    curr = {"ante": 6, "round_score": 0, "blind_target": 400, "progress_made": True}
-    result = default_reward_components(state, prev, curr, terminated=False, won=False, config=cfg)
+
+def test_v2_hologram_option_acquisition_and_live_scaling_raise_potential():
+    from pylatro_agent.reward import (
+        PPO_V2_REWARD_CONFIG,
+        potential_shaping_reward,
+        state_potential_breakdown,
+    )
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    empty = _v2_build_info()
+    fresh = _v2_build_info(jokers=(_v2_joker("j_hologram", name="Hologram", x_mult=1.0),))
+    scaled = _v2_build_info(jokers=(_v2_joker("j_hologram", name="Hologram", x_mult=1.25),))
+    visible_standard = dict(
+        fresh,
+        shop_cards=({"key": "p_standard_normal_1", "name": "Standard Pack", "set": "Booster"},),
+    )
+
+    empty_breakdown = state_potential_breakdown(empty, cfg)
+    fresh_breakdown = state_potential_breakdown(fresh, cfg)
+    scaled_breakdown = state_potential_breakdown(scaled, cfg)
+    visible_breakdown = state_potential_breakdown(visible_standard, cfg)
+
+    assert fresh_breakdown["scaling_option_value"] > 0.0
+    assert visible_breakdown["scaling_option_value"] > fresh_breakdown["scaling_option_value"]
+    assert fresh_breakdown["realized_build_quality"] == pytest.approx(
+        empty_breakdown["realized_build_quality"]
+    )
+    assert potential_shaping_reward(empty, fresh, cfg) > 0.0
+    assert scaled_breakdown["realized_build_quality"] > fresh_breakdown["realized_build_quality"]
+    assert scaled_breakdown["readiness"] > fresh_breakdown["readiness"]
+    assert potential_shaping_reward(fresh, scaled, cfg) > 0.0
+
+    state = _dummy_state(ante=2, win_ante=8)
+    result = default_reward_components(state, empty, fresh, terminated=False, won=False, config=cfg)
     assert result["build_curve_bonus"] == pytest.approx(0.0)
+    assert result["potential_shaping"] > 0.0
+
+
+def test_v2_early_chip_curve_boundaries_and_ante_fade():
+    from pylatro_agent.reward import (
+        PPO_V2_REWARD_CONFIG,
+        _early_chip_marginal_multiplier,
+        state_potential_breakdown,
+    )
+
+    assert _early_chip_marginal_multiplier(1.0, 2) == pytest.approx(1.0)
+    assert _early_chip_marginal_multiplier(1.25, 2) == pytest.approx(1.5)
+    assert _early_chip_marginal_multiplier(1.5, 2) == pytest.approx(2.0)
+    assert _early_chip_marginal_multiplier(2.0, 3) == pytest.approx(2.0)
+    assert _early_chip_marginal_multiplier(2.0, 4) == pytest.approx(1.5)
+    assert _early_chip_marginal_multiplier(2.0, 5) == pytest.approx(1.0)
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    chip_joker = _v2_joker("j_pair_chips", type="Pair", t_chips=50.0)
+    early = state_potential_breakdown(_v2_build_info(ante=2, jokers=(chip_joker,)), cfg)
+    ante4 = state_potential_breakdown(_v2_build_info(ante=4, jokers=(chip_joker,)), cfg)
+    late = state_potential_breakdown(_v2_build_info(ante=5, jokers=(chip_joker,)), cfg)
+    assert early["realized_build_quality"] > ante4["realized_build_quality"]
+    assert ante4["realized_build_quality"] > late["realized_build_quality"]
+
+
+def test_v2_same_state_has_gamma_correct_noop_cost():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, potential_shaping_reward, state_potential
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    info = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.25),))
+    phi = state_potential(info, cfg)
+    reward = potential_shaping_reward(info, info, cfg)
+
+    assert phi > 0.0
+    assert reward == pytest.approx((cfg.gamma - 1.0) * phi)
+    assert reward < 0.0
+
+
+def test_v2_hologram_sell_and_reset_reverse_build_value():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, potential_shaping_reward
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    scaled = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.75),))
+    fresh = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.0),))
+    sold = _v2_build_info()
+
+    assert potential_shaping_reward(scaled, fresh, cfg) < 0.0
+    assert potential_shaping_reward(scaled, sold, cfg) < 0.0
+
+
+def test_v2_terminal_transition_repays_full_potential():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, potential_shaping_reward, state_potential
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    prev = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.75),))
+    terminal = dict(_v2_build_info(round_score=300), _potential_terminal=True)
+
+    assert potential_shaping_reward(prev, terminal, cfg) == pytest.approx(-state_potential(prev, cfg))
+
+
+def test_v2_terminal_win_ante_override_preserves_build_config_fields():
+    import dataclasses
+
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, state_potential
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    cfg = dataclasses.replace(cfg, potential_w_build_quality=0.31, potential_w_scaling_option=0.17)
+    state = _dummy_state(ante=2, win_ante=5)
+    prev = _v2_build_info(ante=2, jokers=(_v2_joker("j_hologram", x_mult=1.75),))
+    curr = _v2_build_info(ante=2)
+
+    result = default_reward_components(state, prev, curr, terminated=True, won=False, config=cfg)
+    effective = dataclasses.replace(cfg, potential_win_ante=state.win_ante)
+    assert result["potential_shaping"] == pytest.approx(-state_potential(prev, effective))
+
+
+def test_v2_discounted_buy_sell_cycle_cannot_farm_build_potential():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, potential_shaping_reward, state_potential
+
+    gamma = 0.99
+    cfg = PPO_V2_REWARD_CONFIG(gamma=gamma, win_ante=8, build_curve_shaping=True)
+    empty = _v2_build_info()
+    owned = _v2_build_info(jokers=(_v2_joker("j_hologram", x_mult=1.0),))
+
+    buy = potential_shaping_reward(empty, owned, cfg)
+    sell = potential_shaping_reward(owned, empty, cfg)
+    discounted_cycle = buy + gamma * sell
+
+    assert discounted_cycle == pytest.approx((gamma**2 - 1.0) * state_potential(empty, cfg))
+    assert discounted_cycle < 0.0
+
+
+def test_v2_missing_build_context_falls_back_to_progress_only():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, state_potential_breakdown
+
+    cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=8, build_curve_shaping=True)
+    sparse = {
+        "ante": 2,
+        "round_score": 100,
+        "blind_target": 400,
+        "blind_on_deck": "big",
+        "joker_details": (_v2_joker("j_hologram", x_mult=2.0),),
+    }
+    breakdown = state_potential_breakdown(sparse, cfg)
+
+    assert breakdown["realized_build_quality"] == pytest.approx(0.0)
+    assert breakdown["scaling_option_value"] == pytest.approx(0.0)
+    assert breakdown["readiness"] == pytest.approx(0.0)
+    assert breakdown["total"] == pytest.approx(
+        breakdown["blind_progress"] + breakdown["ante_progress"]
+    )
 
 
 def test_v2_planet_played_hand_bonus_scales_with_play_share():
@@ -1485,7 +1729,7 @@ def test_v2_planet_played_hand_bonus_scales_with_play_share():
 
 
 def test_v2_reward_terminal_dominates_return():
-    from pylatro_agent.reward import V2_WIN_VALUE, PPO_V2_REWARD_CONFIG
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, V2_WIN_VALUE
 
     cfg = PPO_V2_REWARD_CONFIG(gamma=0.99, win_ante=4)
     state = _dummy_state(ante=2, win_ante=4)
@@ -1559,6 +1803,53 @@ def test_v2_reward_no_prescriptive_components_on_dense_step():
     assert result["blind_clear"] == 0.0
     # Potential shaping must be the only dense signal (plus possibly idle_penalty).
     assert abs(result["potential_shaping"]) > 0 or abs(result["idle_penalty"]) > 0
+
+
+def test_v2_applies_dense_and_group_scales_only_to_idle_and_planet_shaping():
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    state = _dummy_state(ante=2, win_ante=4)
+    prev = {"ante": 2, "round_score": 0, "blind_target": 400, "blind_on_deck": "small"}
+    curr = {
+        "ante": 2,
+        "round_score": 0,
+        "blind_target": 400,
+        "blind_on_deck": "small",
+        "progress_made": False,
+        "steps_since_progress": 1,
+        "planet_use_observed": True,
+        "planet_use_main_hand_match": True,
+    }
+    base = PPO_V2_REWARD_CONFIG(
+        gamma=0.99,
+        win_ante=4,
+        planet_match_shaping=True,
+    )
+    scaled = PPO_V2_REWARD_CONFIG(
+        gamma=0.99,
+        win_ante=4,
+        planet_match_shaping=True,
+        dense_reward_scale=0.5,
+        progression_reward_scale=0.25,
+        consumable_reward_scale=0.2,
+    )
+
+    base_result = default_reward_components(
+        state, prev, curr, terminated=False, won=False, config=base
+    )
+    scaled_result = default_reward_components(
+        state, prev, curr, terminated=False, won=False, config=scaled
+    )
+
+    assert scaled_result["potential_shaping"] == pytest.approx(
+        base_result["potential_shaping"]
+    )
+    assert scaled_result["idle_penalty"] == pytest.approx(
+        base_result["idle_penalty"] * 0.5 * 0.25
+    )
+    assert scaled_result["planet_match_bonus"] == pytest.approx(
+        base_result["planet_match_bonus"] * 0.5 * 0.2
+    )
 
 
 def test_v2_potential_shaping_invariant_to_dense_reward_scale():

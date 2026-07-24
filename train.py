@@ -146,8 +146,8 @@ def main():
     parser.add_argument(
         "--gae-lambda",
         type=float,
-        default=0.95,
-        help="GAE lambda for advantage estimation (default: 0.95).",
+        default=0.97,
+        help="GAE lambda for advantage estimation (default: 0.97).",
     )
     parser.add_argument(
         "--value-loss-coeff",
@@ -326,8 +326,8 @@ def main():
     parser.add_argument(
         "--gamma",
         type=float,
-        default=0.99,
-        help="PPO discount factor (default: 0.99)",
+        default=0.997,
+        help="PPO discount factor for returns and reward potential shaping (default: 0.997)",
     )
     parser.add_argument(
         "--heuristic-distill-coeff",
@@ -509,16 +509,28 @@ def main():
         ),
     )
     parser.add_argument(
+        "--score-build-potential",
         "--build-curve-shaping",
+        dest="score_build_potential",
         action="store_true",
         help=(
-            "With --reward-v2: re-enable the joker build-curve shaping component — "
-            "a positive-only bonus for acquiring jokers whose scoring profile fits "
-            "the ante phase (chip scaling in antes 1-3, additive mult by ante 4, "
-            "xmult from ante 6 or any earlier point). Which joker profile to buy "
-            "when is invisible to the sparse win signal. No effect without --reward-v2."
+            "With --reward-v2, enable contextual score/build potential shaping. "
+            "It values representative score, blind readiness, early chip marginal "
+            "value, and capped recognized-scaler option value. "
+            "--build-curve-shaping is retained as a compatibility alias. "
+            "Default: disabled for compatibility with existing runs."
         ),
     )
+    parser.add_argument(
+        "--disable-score-build-potential",
+        dest="score_build_potential",
+        action="store_false",
+        help=(
+            "Explicitly disable contextual score/build potential shaping under "
+            "--reward-v2. This is the default and is useful for ablation scripts."
+        ),
+    )
+    parser.set_defaults(score_build_potential=False)
     parser.add_argument(
         "--critic-warmup-updates",
         type=int,
@@ -706,6 +718,16 @@ def main():
         help=(
             "Interval (updates) at which the weighted SIL / PPO actor-gradient "
             "ratio and cosine are logged. Diagnostic only (default: 10)."
+        ),
+    )
+    parser.add_argument(
+        "--counterfactual-diagnostic-interval",
+        type=int,
+        default=0,
+        help=(
+            "Replay one copied pre-play state with a focal joker removed every Nth "
+            "actual play to validate analytic joker marginals. 0 disables (default). "
+            "The copied-state replay has measurable many-env throughput cost."
         ),
     )
     parser.add_argument(
@@ -908,6 +930,7 @@ def main():
                 sil_decay_fraction=args.sil_decay_fraction,
                 sil_grad_diagnostics_interval=args.sil_grad_diagnostics_interval,
                 advantage_clip_sigma=args.advantage_clip_sigma,
+                counterfactual_diagnostic_interval=args.counterfactual_diagnostic_interval,
                 # A RewardConfig with all scales 1.0 and strategic rewards on is
                 # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
                 # without these flags keep their exact prior shaping behavior.
@@ -919,7 +942,10 @@ def main():
                         planet_match_shaping=args.planet_match_shaping,
                         planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
                         planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-                        build_curve_shaping=args.build_curve_shaping,
+                        build_curve_shaping=args.score_build_potential,
+                        dense_reward_scale=args.dense_reward_scale,
+                        progression_reward_scale=args.progression_reward_scale,
+                        consumable_reward_scale=args.consumable_reward_scale,
                     )
                     if args.reward_v2
                     else RewardConfig(

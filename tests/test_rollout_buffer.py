@@ -18,6 +18,12 @@ def _dummy_obs(num_envs: int) -> dict[str, np.ndarray]:
     }
 
 
+def test_rollout_buffer_long_horizon_defaults() -> None:
+    buffer = RolloutBuffer(num_envs=1, rollout_length=1)
+    assert buffer.gamma == 0.997
+    assert buffer.gae_lambda == 0.97
+
+
 def test_rollout_buffer_bootstraps_across_truncation() -> None:
     buffer = RolloutBuffer(num_envs=1, rollout_length=1, gamma=0.99, gae_lambda=0.95)
     buffer.add_batch(

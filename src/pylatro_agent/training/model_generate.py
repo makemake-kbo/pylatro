@@ -42,7 +42,7 @@ class ModelGenerateConfig:
     num_games: int = 1000
     num_envs: int = 16
     min_ante: int = 5
-    gamma: float = 0.995
+    gamma: float = 0.997
     sample_temperature: float = 1.0
     max_no_progress_steps: int = 2000
     device: str = "cpu"

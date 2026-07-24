@@ -33,6 +33,8 @@ def test_clean_extensions_removes_legacy_nested_artifacts(tmp_path, monkeypatch)
     module = _load_compile_cython_module()
     src = tmp_path / "src" / "pylatro"
     src.mkdir(parents=True)
+    src_agent = tmp_path / "src" / "pylatro_agent"
+    src_agent.mkdir(parents=True)
     legacy_src = src / "pylatro"
     legacy_src.mkdir()
 
@@ -44,6 +46,7 @@ def test_clean_extensions_removes_legacy_nested_artifacts(tmp_path, monkeypatch)
 
     monkeypatch.setattr(module, "ROOT", tmp_path)
     monkeypatch.setattr(module, "SRC", src)
+    monkeypatch.setattr(module, "SRC_AGENT", src_agent)
 
     module.clean_extensions()
 

@@ -36,7 +36,7 @@ _ACTION_ID_TO_TYPE = tuple(decode_action(action_id).action_type.value for action
 class SupervisedConfig:
     num_games: int = 10000
     batch_size: int = 256
-    gamma: float = 0.99  # Phase 5.3: must match the PPO gamma of the next phase so value targets are calibrated
+    gamma: float = 0.997  # Must match the PPO gamma of the next phase so value targets are calibrated
     lr: float = 3e-4
     weight_decay: float = 0.01
     warmup_steps: int = 1000

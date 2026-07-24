@@ -138,6 +138,7 @@ def save_ppo_checkpoint(
     alpha_optimizer: torch.optim.Optimizer | None = None,
     return_rms: Any = None,
     agent_config: Any = None,
+    reward_config: Any = None,
     ppo_config_fields: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
 ) -> Path:
@@ -148,6 +149,11 @@ def save_ppo_checkpoint(
     marked ``checkpoint_format == "ppo_full"`` so :func:`load_ppo_resume_payload`
     can distinguish it from weights-only checkpoints.
     """
+    from .reward import RewardConfig, reward_checkpoint_metadata
+
+    if not isinstance(reward_config, RewardConfig):
+        raise ValueError("save_ppo_checkpoint requires the active RewardConfig")
+
     path = Path(path)
     payload: dict[str, Any] = {
         "tokenizer_version": TOKENIZER_VERSION,
@@ -183,6 +189,9 @@ def save_ppo_checkpoint(
         payload["ppo_config_fields"] = ppo_config_fields
     if extra:
         payload.update(extra)
+    # Reserved reward metadata is always derived from the active configuration;
+    # callers cannot override it through ``extra``.
+    payload.update(reward_checkpoint_metadata(reward_config))
     torch.save(payload, path)
     return path
 
@@ -201,11 +210,15 @@ def is_ppo_full_checkpoint(path: str | Path, device: torch.device | str) -> bool
 def load_ppo_resume_payload(
     path: str | Path,
     device: torch.device | str,
+    *,
+    active_reward_config: Any,
+    active_win_ante: int | None = None,
 ) -> dict[str, Any]:
     """Load a full PPO checkpoint, raising clearly for weights-only files.
 
     Raises ``RuntimeError`` if the checkpoint lacks the optimizer/counter state
-    required for a strict resume (i.e. it is a weights-only checkpoint).
+    required for a strict resume, or if its reward fingerprint does not match
+    the active RewardConfig and reward-model version.
 
     Loaded with ``weights_only=False`` because full PPO checkpoints carry
     optimizer state, NumPy/Python RNG state, and config snapshots. These files
@@ -225,4 +238,39 @@ def load_ppo_resume_payload(
             f"{TOKENIZER_VERSION}. Observation format has changed; "
             "retrain or pin the tokenizer version."
         )
+
+    from .reward import REWARD_MODEL_VERSION, reward_config_fingerprint
+
+    saved_fingerprint = blob.get("reward_fingerprint")
+    if not saved_fingerprint:
+        raise RuntimeError(
+            f"Checkpoint {path} has no reward fingerprint, so strict --resume cannot "
+            "verify that its critic targets match the active reward model. Load it "
+            "through --pretrained instead, with --reinit-value-head "
+            "--critic-warmup-updates 15 --critic-warmup-min-ev 0."
+        )
+    active_fingerprint = reward_config_fingerprint(active_reward_config)
+    if saved_fingerprint != active_fingerprint:
+        raise RuntimeError(
+            f"Checkpoint {path} reward fingerprint mismatch "
+            f"(saved={str(saved_fingerprint)[:12]}, active={active_fingerprint[:12]}, "
+            f"saved_version={blob.get('reward_model_version')!r}, "
+            f"active_version={REWARD_MODEL_VERSION}). Strict --resume would restore "
+            "a critic and Adam state trained on different return targets. Use "
+            "--pretrained instead, with --reinit-value-head "
+            "--critic-warmup-updates 15 --critic-warmup-min-ev 0."
+        )
+
+    saved_fields = blob.get("ppo_config_fields") or {}
+    if "win_ante" in saved_fields:
+        saved_win_ante = int(saved_fields.get("win_ante") or 8)
+        effective_active_win_ante = int(active_win_ante or 8)
+        if saved_win_ante != effective_active_win_ante:
+            raise RuntimeError(
+                f"Checkpoint {path} win_ante mismatch "
+                f"(saved={saved_win_ante}, active={effective_active_win_ante}). "
+                "Strict --resume would restore critic and optimizer state from a "
+                "different terminal task. Use --pretrained --reinit-value-head "
+                "--critic-warmup-updates 15 --critic-warmup-min-ev 0 instead."
+            )
     return blob

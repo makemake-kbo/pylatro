@@ -7,6 +7,7 @@ import pytest
 from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import add_consumable, add_joker, load_game_data, populate_shop
+from pylatro.models import PackState, ShopCard
 from pylatro_agent.constants import MAX_HAND_SIZE, NUM_ACTIONS, TOKEN_DIM, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.training.ppo import _make_vectorized_envs
@@ -292,6 +293,35 @@ def test_env_play_subset_reports_progress(game_data, vocab):
     assert not info["stalled"]
     assert info["hand_play_observed"]
     assert info.get("hand_play_in_candidates") or info.get("hand_play_not_in_candidates")
+    assert "counterfactual_call" not in info
+
+
+def test_default_legacy_play_skips_detailed_build_diagnostics_hot_path(
+    game_data, vocab, monkeypatch
+):
+    import pylatro_agent.env as env_module
+
+    calls = 0
+    original = env_module.build_step_diagnostics
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(env_module, "build_step_diagnostics", counted)
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, enable_teacher=False)
+    env.reset()
+    env.step(ActionRange.BLIND_PLAY)
+    play_action = _first_valid(
+        env.action_masks(),
+        ActionRange.PLAY_SUBSET_START,
+        ActionRange.PLAY_SUBSET_END,
+    )
+    _, _, _, _, info = env.step(play_action)
+
+    assert calls == 0
+    assert "build_diagnostics_observed" not in info
 
 
 def test_env_atomic_consumable_use_commits_in_one_step(game_data, vocab):
@@ -350,6 +380,126 @@ def test_env_pack_skip_counts_as_progress_and_triggers_red_card(game_data, vocab
     assert env.state.jokers[0].mult == 3
 
 
+def test_env_sell_joker_exposes_build_event_and_potential_diagnostics(game_data, vocab):
+    from pylatro_agent.action import ActionType, encode_action
+
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, enable_teacher=False)
+    env.reset()
+    assert env.state is not None
+    add_joker(env.state, "j_joker")
+    env._controller.phase = GamePhase.SHOP
+    env._sub_phase = SubPhase.SHOP
+
+    action = encode_action(ActionType.SHOP_SELL_JOKER, 0)
+    _, _, terminated, truncated, info = env.step(action)
+
+    assert not terminated
+    assert not truncated
+    assert info["shop_sold_joker_id"] == "j_joker"
+    assert info["joker_removed_count"] == 1
+    assert info["joker_removed_0_id"] == "j_joker"
+    assert info["joker_churn_count"] == 1
+    assert info["build_diagnostics_observed"] is True
+    assert info["build_pre_estimated_score"] >= info["build_post_estimated_score"]
+    assert info["build_pre_required_score"] >= 0.0
+    assert info["build_post_readiness"] >= 0.0
+    assert "potential_pre_total" in info
+    assert "potential_post_total" in info
+    assert "potential_delta_total" in info
+
+
+def test_env_counterfactual_replays_one_copied_play_without_mutating_live_state_twice(
+    game_data, vocab, monkeypatch
+):
+    from pylatro_agent import diagnostics as diagnostics_module
+    from pylatro_agent.action import ActionType, decode_action
+
+    copy_calls = 0
+    replay_calls = 0
+    original_deepcopy = diagnostics_module.deepcopy
+    original_play_cards = diagnostics_module.play_cards
+
+    def counted_deepcopy(*args, **kwargs):
+        nonlocal copy_calls
+        copy_calls += 1
+        return original_deepcopy(*args, **kwargs)
+
+    def counted_play_cards(*args, **kwargs):
+        nonlocal replay_calls
+        replay_calls += 1
+        return original_play_cards(*args, **kwargs)
+
+    monkeypatch.setattr(diagnostics_module, "deepcopy", counted_deepcopy)
+    monkeypatch.setattr(diagnostics_module, "play_cards", counted_play_cards)
+
+    env = BalatroEnv(
+        seed=42,
+        data=game_data,
+        vocab=vocab,
+        enable_teacher=False,
+        counterfactual_diagnostic_interval=1,
+    )
+    env.reset()
+    env.step(ActionRange.BLIND_PLAY)
+    assert env.state is not None
+    add_joker(env.state, "j_joker")
+    hands_before = env.state.current_round.hands_left
+    play_action = next(
+        int(action)
+        for action in np.flatnonzero(env.action_masks())
+        if decode_action(int(action)).action_type == ActionType.PLAY_SUBSET
+    )
+
+    _, _, _, _, info = env.step(play_action)
+
+    assert info["counterfactual_call"] is True
+    assert info["counterfactual_focal_joker_id"] == "j_joker"
+    assert info["counterfactual_failure"] is False
+    assert info["counterfactual_realized_score_with"] >= 0.0
+    assert info["counterfactual_realized_score_without"] >= 0.0
+    assert info["counterfactual_representative_vs_realized_abs_log_ratio_gap"] >= 0.0
+    assert copy_calls == 1
+    assert replay_calls == 1
+    assert env.state.current_round.hands_left == hands_before - 1
+
+
+def test_env_hologram_scaling_reports_xmult_and_build_delta(game_data, vocab):
+    from pylatro_agent.action import ActionType, encode_action
+
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, enable_teacher=False)
+    env.reset()
+    assert env.state is not None
+    hologram = add_joker(env.state, "j_hologram")
+    before_x_mult = hologram.x_mult
+    env.state.pack = PackState(
+        booster_key="p_standard_normal_1",
+        state_name="STANDARD_PACK",
+        choices_remaining=1,
+        cards=[
+            ShopCard(
+                center_key="c_base",
+                card_type="Default",
+                cost=0,
+                base_cost=0,
+                front_key="S_A",
+            )
+        ],
+    )
+    env._controller.phase = GamePhase.BOOSTER_PACK
+    env._sub_phase = SubPhase.BOOSTER_PACK
+
+    action = encode_action(ActionType.PACK_CLAIM, 0)
+    _, _, terminated, truncated, info = env.step(action)
+
+    assert not terminated
+    assert not truncated
+    assert info["hologram_scaling_count"] == 1
+    assert info["hologram_x_mult_prev"] == pytest.approx(before_x_mult)
+    assert info["hologram_x_mult_current"] == pytest.approx(hologram.x_mult)
+    assert info["hologram_x_mult_delta"] > 0.0
+    assert info["hologram_build_score_delta"] > 0.0
+
+
 def _first_valid(mask: np.ndarray, start: int, end: int) -> int:
     valid = np.where(mask[start:end + 1] == 1)[0]
     assert len(valid) > 0
@@ -361,6 +511,35 @@ def test_vector_env_uses_same_step_autoreset(game_data, vocab):
 
     try:
         assert vec_env.metadata["autoreset_mode"] == AutoresetMode.SAME_STEP
+    finally:
+        vec_env.close()
+
+
+def test_vector_env_carries_numeric_build_diagnostics_when_build_potential_enabled(game_data, vocab):
+    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+
+    vec_env = _make_vectorized_envs(
+        1,
+        game_data,
+        vocab,
+        use_async=False,
+        enable_teacher=False,
+        reward_config=PPO_V2_REWARD_CONFIG(build_curve_shaping=True),
+    )
+
+    try:
+        vec_env.reset()
+        obs, _, _, _, _ = vec_env.step(np.array([ActionRange.BLIND_PLAY]))
+        play_action = _first_valid(
+            obs["action_mask"][0],
+            ActionRange.PLAY_SUBSET_START,
+            ActionRange.PLAY_SUBSET_END,
+        )
+        _, _, _, _, infos = vec_env.step(np.array([play_action]))
+
+        assert bool(infos["build_diagnostics_observed"][0])
+        assert np.issubdtype(infos["build_post_estimated_score"].dtype, np.number)
+        assert np.issubdtype(infos["potential_post_total"].dtype, np.number)
     finally:
         vec_env.close()
 

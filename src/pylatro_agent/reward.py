@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections import Counter
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, replace
+from typing import TYPE_CHECKING, Any, Protocol
 
+from .build_value import BuildValueEstimate, estimate_build_value
 from .heuristic import (
     _CHIPS_PROFILE_JOKER_KEYS,
     _MULT_PROFILE_JOKER_KEYS,
     _RETRIGGER_JOKER_KEYS,
+    _SCALING_JOKER_KEYS,
     _XMULT_PROFILE_JOKER_KEYS,
 )
 from .shop_eval import (
@@ -93,19 +98,11 @@ class RewardConfig:
     planet_unmatched_use_penalty_coeff: float = 0.0
     planet_unmatched_claim_penalty_coeff: float = 0.0
 
-    # ── Build-curve shaping (joker scaling profile vs ante phase) ──
-    # Bonus for acquiring jokers whose scoring profile fits the desired build
-    # curve: chip scaling carries the early game (antes 1-3), additive mult
-    # must be online by ante 4, and xmult is the late-game engine (ante 6+)
-    # that is welcome at any earlier point. Positive-only: a mistimed profile
-    # earns a reduced bonus, never a penalty, so acquiring jokers is never
-    # discouraged outright (the planet-penalty experiment showed penalties
-    # suppress engagement instead of redirecting it).
+    # ── Build-curve shaping ──
+    # In the legacy reward this keeps the static acquisition/removal component.
+    # In V2 it is a compatibility switch for the contextual build potential below;
+    # the static component stays zero so build changes are paid exactly once.
     enable_build_curve_rewards: bool = False
-    # 0.25 -> 0.35: death analysis at win_ante 6 showed the build signal was too
-    # weak to redirect purchases toward the xmult engine (only ~15% of ante-5/6
-    # deaths had xmult). Combined with the 2.0 xmult weight in _build_curve_weight,
-    # acquiring an xmult joker now nets +0.70 vs +0.35 for another additive joker.
     build_curve_coeff: float = 0.35
 
     # ── Potential-based shaping (Phase 2) ──
@@ -115,14 +112,60 @@ class RewardConfig:
     # 1999). Gamma is plumbed from PPOConfig so the telescope matches the
     # return the value function regresses.
     enable_potential_shaping: bool = False
-    gamma: float = 0.99
-    # Potential weights. Bounded so terminal reward (~+10) dominates return.
+    gamma: float = 0.997
+    # Potential weights. Progress is bounded by w_blind + w_ante. Contextual
+    # build/readiness terms share a separate 1.5-unit cap.
     potential_w_blind: float = 0.5
     potential_w_ante: float = 2.0
     potential_win_ante: int = 8
-    # Terminal rescale for the v2 reward. Halves the supervised ±20/-10 scale so
-    # terminal is ~2/3 of achievable return magnitude alongside the potential.
-    v2_terminal_scale: float = 0.5
+    potential_w_build_quality: float = 0.88
+    potential_w_readiness: float = 0.40
+    potential_w_scaling_option: float = 0.22
+    potential_build_cap: float = 1.5
+    potential_readiness_saturation: float = 1.5
+
+
+# Increment this whenever reward semantics change without a corresponding
+# RewardConfig field change. The version participates in the fingerprint, so a
+# strict PPO resume cannot silently restore a critic trained on older targets.
+REWARD_MODEL_VERSION = 2
+
+
+def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
+    """Return the complete plain-data RewardConfig snapshot used in checkpoints."""
+    if isinstance(config, RewardConfig):
+        return asdict(config)
+    return dict(config)
+
+
+def reward_config_fingerprint(
+    config: RewardConfig | Mapping[str, Any],
+    *,
+    reward_model_version: int | None = None,
+) -> str:
+    """Return the canonical SHA-256 fingerprint for reward code and configuration."""
+    version = REWARD_MODEL_VERSION if reward_model_version is None else reward_model_version
+    payload = {
+        "reward_config": reward_config_snapshot(config),
+        "reward_model_version": int(version),
+    }
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def reward_checkpoint_metadata(config: RewardConfig) -> dict[str, Any]:
+    """Build the reward metadata persisted in every full PPO checkpoint."""
+    return {
+        "reward_config": reward_config_snapshot(config),
+        "reward_model_version": REWARD_MODEL_VERSION,
+        "reward_fingerprint": reward_config_fingerprint(config),
+    }
 
 
 DEFAULT_REWARD_CONFIG = RewardConfig()
@@ -143,12 +186,15 @@ PPO_SPARSE_CONFIG = RewardConfig(
 
 def PPO_V2_REWARD_CONFIG(
     *,
-    gamma: float = 0.99,
+    gamma: float = 0.997,
     win_ante: int = 8,
     planet_match_shaping: bool = False,
     planet_unmatched_use_penalty_coeff: float = 0.0,
     planet_unmatched_claim_penalty_coeff: float = 0.0,
     build_curve_shaping: bool = False,
+    dense_reward_scale: float = 1.0,
+    progression_reward_scale: float = 1.0,
+    consumable_reward_scale: float = 1.0,
 ) -> RewardConfig:
     """Phase 2 reward config: potential-based shaping + terminal-dominated return.
 
@@ -165,10 +211,10 @@ def PPO_V2_REWARD_CONFIG(
     played-hand) and optional unmatched-use/claim penalties stay small relative
     to the ~10 terminal reward.
 
-    ``build_curve_shaping`` re-enables the joker build-curve component: a
-    positive-only bonus for acquiring jokers whose scoring profile fits the
-    ante phase (chips early, mult by ante 4, xmult late, or earlier). Like
-    planet choice, joker-profile timing is invisible to the sparse win signal.
+    ``build_curve_shaping`` is the compatibility switch for contextual build
+    potential. It values realized representative score, readiness, early chip
+    marginals, and a capped option value for active recognized scalers. V2 does
+    not emit the legacy static acquisition/removal bonus.
     """
     return RewardConfig(
         # Kill all prescriptive shaping (planet matching optionally retained ,
@@ -178,6 +224,9 @@ def PPO_V2_REWARD_CONFIG(
         planet_unmatched_use_penalty_coeff=planet_unmatched_use_penalty_coeff,
         planet_unmatched_claim_penalty_coeff=planet_unmatched_claim_penalty_coeff,
         enable_build_curve_rewards=build_curve_shaping,
+        dense_reward_scale=dense_reward_scale,
+        progression_reward_scale=progression_reward_scale,
+        consumable_reward_scale=consumable_reward_scale,
         enable_shop_reroll_reward=False,
         enable_consumable_targeted_reward=False,
         enable_shop_strategy_rewards=False,
@@ -189,7 +238,11 @@ def PPO_V2_REWARD_CONFIG(
         potential_w_blind=0.5,
         potential_w_ante=2.0,
         potential_win_ante=win_ante,
-        v2_terminal_scale=0.5,
+        potential_w_build_quality=0.88,
+        potential_w_readiness=0.40,
+        potential_w_scaling_option=0.22,
+        potential_build_cap=1.5,
+        potential_readiness_saturation=1.5,
     )
 
 
@@ -471,32 +524,203 @@ def v2_outcome_value(
     return value
 
 
-def state_potential(info: dict, config: RewardConfig) -> float:
-    """Bounded, monotone progress potential Phi(s) for potential-based shaping.
+def _build_value_estimate(info: Mapping[str, Any]) -> BuildValueEstimate | None:
+    """Return a captured estimate or build one from a complete snapshot."""
+    for key in ("build_value_estimate", "_build_value_estimate"):
+        captured = info.get(key)
+        if isinstance(captured, BuildValueEstimate):
+            return captured
 
-    Phi(s) = w_blind * min(round_score / blind_target, 1)        # within-blind, [0, w_blind]
-           + w_ante * macro_progress                              # [0, w_ante]
+    hand_details = info.get("hand_details")
+    deck_stats = info.get("deck_stats")
+    if "joker_details" not in info or not isinstance(hand_details, Mapping):
+        return None
+    if not isinstance(deck_stats, Mapping):
+        return None
+    cards = deck_stats.get("cards") or deck_stats.get("card_descriptors")
+    if not isinstance(cards, Sequence) or isinstance(cards, (str, bytes)) or not cards:
+        return None
+    if float(info.get("blind_target", 0) or 0) <= 0.0:
+        return None
+    if info.get("hands_available") is None and info.get("hands_left") is None:
+        return None
 
-    where macro_progress = (ante - 1 + blind_index/3) / (win_ante - 1), and
-    blind_index in {0,1,2} for small/big/boss. Phi is bounded in
-    [0, w_blind + w_ante] and monotone in progress, so the telescoping
-    property F(s,s') = gamma*Phi(s') - Phi(s) holds and cannot be farmed.
-    """
-    w_blind = config.potential_w_blind
-    w_ante = config.potential_w_ante
+    try:
+        return estimate_build_value(info)
+    except (OverflowError, TypeError, ValueError):
+        return None
+
+
+def _early_chip_marginal_multiplier(score_ratio: float, ante: int) -> float:
+    """Early-game multiplier for a chip joker's leave-one-out score gain."""
+    marginal_strength = max(0.0, min((score_ratio - 1.0) / 0.5, 1.0))
+    if ante <= 3:
+        phase_strength = 1.0
+    elif ante == 4:
+        phase_strength = 0.5
+    else:
+        phase_strength = 0.0
+    return 1.0 + phase_strength * marginal_strength
+
+
+def _is_active_scaler(joker: Mapping[str, Any]) -> bool:
+    key = str(joker.get("key") or "")
+    if key not in _SCALING_JOKER_KEYS or joker.get("debuffed"):
+        return False
+    if joker.get("perishable") and joker.get("perish_tally") is not None:
+        return int(joker.get("perish_tally") or 0) > 0
+    return True
+
+
+def _visible_scaling_opportunity(
+    info: Mapping[str, Any],
+    joker: Mapping[str, Any],
+    estimate: BuildValueEstimate,
+) -> float:
+    """Observable near-term trigger support for a recognized scaling joker."""
+    key = str(joker.get("key") or "")
+    shop_cards = tuple(card for card in (info.get("shop_cards") or ()) if isinstance(card, Mapping))
+    consumables = tuple(
+        card for card in (info.get("consumable_details") or ()) if isinstance(card, Mapping)
+    )
+    pack_name = str(info.get("pack_state_name") or info.get("pack_booster_key") or "").lower()
+
+    if key == "j_hologram":
+        visible_standard = "standard" in pack_name or any(
+            "standard"
+            in " ".join(
+                str(card.get(field) or "")
+                for field in ("key", "name", "pack_state_name", "pack_booster_key")
+            ).lower()
+            for card in shop_cards
+        )
+        return 1.0 if visible_standard else 0.0
+
+    if key == "j_constellation":
+        planet_count = sum(card.get("set") == "Planet" for card in (*shop_cards, *consumables))
+        if "planet" in pack_name or "celestial" in pack_name:
+            planet_count += 1
+        return min(planet_count / 2.0, 1.0)
+
+    if key == "j_campfire":
+        sellable = len(consumables) + sum(card.get("set") in {"Tarot", "Planet"} for card in shop_cards)
+        return min(sellable / 3.0, 1.0)
+
+    deck = info.get("deck_stats")
+    deck = deck if isinstance(deck, Mapping) else {}
+    deck_size = max(int(deck.get("size", 0) or 0), 1)
+    if key == "j_vampire":
+        enhanced = sum(int(value or 0) for value in (deck.get("enhancement_counts") or {}).values())
+        return min(2.0 * enhanced / deck_size, 1.0)
+    if key == "j_steel_joker":
+        return min(3.0 * int(deck.get("steel_count", 0) or 0) / deck_size, 1.0)
+    if key == "j_glass":
+        return min(3.0 * int(deck.get("glass_count", 0) or 0) / deck_size, 1.0)
+    if key == "j_wee":
+        rank_counts = deck.get("rank_counts") or {}
+        return min(4.0 * int(rank_counts.get("2", 0) or 0) / deck_size, 1.0)
+    if key == "j_castle":
+        target = info.get("castle_card") or {}
+        suit = str(target.get("suit") or "") if isinstance(target, Mapping) else ""
+        suit_counts = deck.get("suit_counts") or {}
+        return min(2.0 * int(suit_counts.get(suit, 0) or 0) / deck_size, 1.0) if suit else 0.0
+    if key == "j_runner":
+        return 1.0 if estimate.representative_hand_type in {"Straight", "Straight Flush"} else 0.0
+    if key == "j_square":
+        return 1.0 if estimate.representative_hand_type in {"Four of a Kind", "Two Pair"} else 0.0
+    if key in {"j_green_joker", "j_ride_the_bus", "j_supernova"}:
+        hands = int(info.get("hands_available") or info.get("hands_left") or 0)
+        return min(hands / 4.0, 1.0)
+    return 0.0
+
+
+def _build_potential_components(
+    info: Mapping[str, Any],
+    config: RewardConfig,
+) -> tuple[float, float, float]:
+    if not config.enable_build_curve_rewards:
+        return 0.0, 0.0, 0.0
+    estimate = _build_value_estimate(info)
+    if estimate is None:
+        return 0.0, 0.0, 0.0
+
+    ante = max(int(info.get("ante", 1) or 1), 1)
+    baseline = max(float(estimate.no_joker_baseline_score), 1.0)
+    score = max(float(estimate.representative_score_per_hand), 0.0)
+    score_gain = max(math.log(max(score / baseline, 1.0)), 0.0)
+
+    chip_extra_gain = 0.0
+    for marginal in estimate.joker_marginals:
+        ratio = max(float(marginal.score_ratio), 1.0)
+        if marginal.channels.chips <= 0.0 or ratio <= 1.0:
+            continue
+        multiplier = _early_chip_marginal_multiplier(ratio, ante)
+        chip_extra_gain += math.log(ratio) * (multiplier - 1.0)
+
+    readiness_ratio = max(float(estimate.readiness_ratio), 0.0)
+    readiness_gate = min(readiness_ratio, 1.0)
+    quality_fraction = (1.0 - math.exp(-(score_gain + chip_extra_gain))) * readiness_gate
+    realized_quality = max(config.potential_w_build_quality, 0.0) * quality_fraction
+
+    saturation = max(config.potential_readiness_saturation, 1e-6)
+    readiness_fraction = min(readiness_ratio / saturation, 1.0)
+    readiness = max(config.potential_w_readiness, 0.0) * readiness_fraction
+
+    win_ante = max(int(config.potential_win_ante), 2)
+    remaining_antes = max(win_ante - ante, 0)
+    runway = min(remaining_antes / max(win_ante - 1, 1), 1.0)
+    option_units = 0.0
+    jokers = tuple(joker for joker in (info.get("joker_details") or ()) if isinstance(joker, Mapping))
+    if runway > 0.0:
+        for joker in jokers:
+            if not _is_active_scaler(joker):
+                continue
+            opportunity = _visible_scaling_opportunity(info, joker, estimate)
+            option_units += runway * (0.25 + 0.75 * opportunity)
+    option_value = max(config.potential_w_scaling_option, 0.0) * min(option_units, 1.0)
+
+    build_sum = realized_quality + option_value + readiness
+    build_cap = max(config.potential_build_cap, 0.0)
+    if build_sum > build_cap and build_sum > 0.0:
+        scale = build_cap / build_sum
+        realized_quality *= scale
+        option_value *= scale
+        readiness *= scale
+    return realized_quality, option_value, readiness
+
+
+def state_potential_breakdown(info: dict, config: RewardConfig) -> dict[str, float]:
+    """Return the bounded components of the V2 state potential."""
+    w_blind = max(config.potential_w_blind, 0.0)
+    w_ante = max(config.potential_w_ante, 0.0)
     win_ante = max(config.potential_win_ante, 2)
 
-    blind_target = max(float(info.get("blind_target", 0)), 1.0)
-    round_score = float(info.get("round_score", 0))
-    within_blind = w_blind * min(round_score / blind_target, 1.0)
+    blind_target = max(float(info.get("blind_target", 0) or 0), 1.0)
+    round_score = max(float(info.get("round_score", 0) or 0), 0.0)
+    blind_progress = w_blind * min(round_score / blind_target, 1.0)
 
-    ante = max(int(info.get("ante", 1)), 1)
+    ante = max(int(info.get("ante", 1) or 1), 1)
     blind_on_deck = str(info.get("blind_on_deck", "small")).lower()
     blind_index = _BLIND_INDEX.get(blind_on_deck, 0)
     macro_denom = max(win_ante - 1, 1)
-    macro_progress = w_ante * (ante - 1 + blind_index / 3.0) / macro_denom
+    macro_fraction = max(0.0, min((ante - 1 + blind_index / 3.0) / macro_denom, 1.0))
+    ante_progress = w_ante * macro_fraction
 
-    return within_blind + macro_progress
+    realized_quality, option_value, readiness = _build_potential_components(info, config)
+    total = blind_progress + ante_progress + realized_quality + option_value + readiness
+    return {
+        "blind_progress": blind_progress,
+        "ante_progress": ante_progress,
+        "realized_build_quality": realized_quality,
+        "scaling_option_value": option_value,
+        "readiness": readiness,
+        "total": total,
+    }
+
+
+def state_potential(info: dict, config: RewardConfig) -> float:
+    """Bounded progress and build potential Phi(s)."""
+    return state_potential_breakdown(info, config)["total"]
 
 
 def potential_shaping_reward(prev_info: dict, curr_info: dict, config: RewardConfig) -> float:
@@ -717,6 +941,42 @@ def _reward_economy(
             components["economy_overspend_penalty"] -= config.economy_overspend_penalty_coeff * lost
 
 
+def _apply_contextual_build_delta(
+    prev_info: dict,
+    curr_info: dict,
+    config: RewardConfig,
+    components: dict[str, float],
+) -> tuple[BuildEval, BuildEval]:
+    """Apply the pure pre/post build-power delta for any build-mutating action."""
+    prev_build = evaluate_build(prev_info)
+    curr_build = evaluate_build(curr_info)
+    delta = curr_build.total - prev_build.total
+    if abs(delta) > 1e-6:
+        components["shop_engine_delta"] += config.shop_engine_delta_coeff * _clip(
+            delta, -1.0, 1.0
+        )
+    return prev_build, curr_build
+
+
+def _clamp_strategic_components(
+    config: RewardConfig,
+    components: dict[str, float],
+) -> None:
+    """Clamp aggregate contextual contributions while preserving component logs."""
+    pos = sum(max(0.0, components[k]) for k in _STRATEGIC_SHOP_COMPONENTS)
+    neg = -sum(min(0.0, components[k]) for k in _STRATEGIC_SHOP_COMPONENTS)
+    if pos > config.max_single_shop_reward and pos > 0:
+        factor = config.max_single_shop_reward / pos
+        for key in _STRATEGIC_SHOP_COMPONENTS:
+            if components[key] > 0:
+                components[key] *= factor
+    if neg > config.max_single_shop_penalty and neg > 0:
+        factor = config.max_single_shop_penalty / neg
+        for key in _STRATEGIC_SHOP_COMPONENTS:
+            if components[key] < 0:
+                components[key] *= factor
+
+
 def _apply_strategic_shop_rewards(
     prev_info: dict,
     curr_info: dict,
@@ -730,13 +990,9 @@ def _apply_strategic_shop_rewards(
     Caps the aggregate strategic contribution so a single shop step cannot
     dominate the terminal win/loss reward.
     """
-    prev_build = evaluate_build(prev_info)
-    curr_build = evaluate_build(curr_info)
-
-    # Build-power delta from any in-shop action (buy/sell/pack claim).
-    delta = curr_build.total - prev_build.total
-    if abs(delta) > 1e-6:
-        components["shop_engine_delta"] += config.shop_engine_delta_coeff * _clip(delta, -1.0, 1.0)
+    prev_build, curr_build = _apply_contextual_build_delta(
+        prev_info, curr_info, config, components
+    )
 
     if action_type == "shop_buy":
         _reward_shop_buy(prev_info, curr_info, prev_build, curr_build, config, components)
@@ -750,20 +1006,7 @@ def _apply_strategic_shop_rewards(
     if config.enable_economy_strategy_rewards:
         _reward_economy(prev_info, curr_info, prev_build, curr_build, config, components)
 
-    # Clamp the aggregate strategic contribution (positives and negatives
-    # independently so logging stays interpretable).
-    pos = sum(max(0.0, components[k]) for k in _STRATEGIC_SHOP_COMPONENTS)
-    neg = -sum(min(0.0, components[k]) for k in _STRATEGIC_SHOP_COMPONENTS)
-    if pos > config.max_single_shop_reward and pos > 0:
-        factor = config.max_single_shop_reward / pos
-        for k in _STRATEGIC_SHOP_COMPONENTS:
-            if components[k] > 0:
-                components[k] *= factor
-    if neg > config.max_single_shop_penalty and neg > 0:
-        factor = config.max_single_shop_penalty / neg
-        for k in _STRATEGIC_SHOP_COMPONENTS:
-            if components[k] < 0:
-                components[k] *= factor
+    _clamp_strategic_components(config, components)
 
 
 def _apply_planet_match_rewards(
@@ -954,14 +1197,9 @@ def default_reward_components(
         # component, leaving the terminal value at its supervised scale.
         if config.enable_potential_shaping:
             outcome_fn = v2_outcome_value
-            # Use the env's win_ante for the potential normalization.
-            pot_config = RewardConfig(
-                enable_potential_shaping=True,
-                gamma=config.gamma,
-                potential_w_blind=config.potential_w_blind,
-                potential_w_ante=config.potential_w_ante,
-                potential_win_ante=win_ante,
-            )
+            # Use the env's win_ante for potential normalization without
+            # dropping any reward fields added to the live config.
+            pot_config = replace(config, potential_win_ante=win_ante)
             # Terminal potential Phi(s') = 0; pay the final shaping transition.
             curr_info_terminal = dict(curr_info)
             curr_info_terminal["_potential_terminal"] = True
@@ -992,13 +1230,7 @@ def default_reward_components(
     # small idle_penalty. Every prescriptive component is skipped.
     if config.enable_potential_shaping:
         win_ante = int(getattr(state, "win_ante", config.potential_win_ante) or config.potential_win_ante)
-        pot_config = RewardConfig(
-            enable_potential_shaping=True,
-            gamma=config.gamma,
-            potential_w_blind=config.potential_w_blind,
-            potential_w_ante=config.potential_w_ante,
-            potential_win_ante=win_ante,
-        )
+        pot_config = replace(config, potential_win_ante=win_ante)
         components["potential_shaping"] += potential_shaping_reward(prev_info, curr_info, pot_config)
 
         # Planet-alignment shaping is the one prescriptive component that can be
@@ -1009,12 +1241,6 @@ def default_reward_components(
             _apply_planet_match_rewards(
                 prev_info, curr_info, config, components, win_ante=win_ante
             )
-
-        # Build-curve shaping: same rationale, which joker profile to buy at
-        # which ante is invisible to the sparse win signal. Bounded per
-        # acquisition, scaled by dense_scale below like idle_penalty.
-        if config.enable_build_curve_rewards:
-            _apply_build_curve_rewards(prev_info, curr_info, config, components)
 
         if not curr_info.get("progress_made", False):
             idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
@@ -1028,8 +1254,16 @@ def default_reward_components(
         # would leave a per-step residual that breaks the policy-invariance
         # guarantee (the entire point of potential-based shaping).
         dense_scale = REWARD_SCALE * config.dense_reward_scale
+        group_scales = {
+            "progression": config.progression_reward_scale,
+            "consumable": config.consumable_reward_scale,
+        }
         for key in components:
-            components[key] *= REWARD_SCALE if key == "potential_shaping" else dense_scale
+            if key == "potential_shaping":
+                components[key] *= REWARD_SCALE
+            else:
+                group = _COMPONENT_GROUP.get(key, "progression")
+                components[key] *= dense_scale * group_scales.get(group, 1.0)
         components["total"] = sum(components.values())
         return components
 
@@ -1115,6 +1349,14 @@ def default_reward_components(
     )
     if strategic and action_type in ("shop_buy", "shop_reroll", "shop_leave", "shop_sell_joker"):
         _apply_strategic_shop_rewards(prev_info, curr_info, action_type, config, components)
+    elif strategic and action_type in (
+        "pack_claim",
+        "use_consumable_no_target",
+        "use_consumable_hand_subset",
+        "use_consumable_joker",
+    ):
+        _apply_contextual_build_delta(prev_info, curr_info, config, components)
+        _clamp_strategic_components(config, components)
     elif strategic and prev_info.get("in_shop") and config.enable_economy_strategy_rewards:
         # Interest accrual / overspend on shop steps without a dedicated handler.
         _apply_strategic_shop_rewards(prev_info, curr_info, action_type, config, components)

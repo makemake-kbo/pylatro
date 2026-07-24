@@ -5,9 +5,11 @@ import pytest
 import torch
 
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, TOKENIZER_VERSION, ActionRange
+from pylatro_agent.reward import RewardConfig
 from pylatro_agent.survival import DEFAULT_MAX_ANTES
 from pylatro_agent.training.ppo import (
     PPOConfig,
+    _effective_reward_config,
     _entropy_alpha_loss,
     _extract_step_info_value,
     _load_checkpoint_compatible,
@@ -17,6 +19,7 @@ from pylatro_agent.training.ppo import (
     _mean_normalized_action_type_entropy,
     _mean_normalized_entropy,
     _mean_valid_action_type_count,
+    _ppo_terminal_flags,
     _record_action_diagnostics,
     _RolloutMetrics,
     _run_dagger_bc_update,
@@ -24,6 +27,7 @@ from pylatro_agent.training.ppo import (
     _scheduled_teacher_rollout_prob,
     _smoothed_entropy_signal,
     _validate_ppo_config,
+    _write_rollout_scalars,
 )
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
 
@@ -489,6 +493,11 @@ def test_teacher_rollout_schedule_warms_up_then_decays() -> None:
     assert _scheduled_teacher_rollout_prob(config, 0.9) == pytest.approx(0.25)
 
 
+def test_ppo_config_rejects_negative_counterfactual_interval() -> None:
+    with pytest.raises(ValueError, match="counterfactual_diagnostic_interval"):
+        _validate_ppo_config(PPOConfig(counterfactual_diagnostic_interval=-1))
+
+
 def test_ppo_config_rejects_nonpositive_dagger_lr_multiplier() -> None:
     with pytest.raises(ValueError, match="dagger_bc_lr_mult"):
         _validate_ppo_config(PPOConfig(dagger_bc_lr_mult=0.0))
@@ -591,6 +600,59 @@ def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:
     assert _extract_step_info_value(infos, "reward_total", 1, done=True) == pytest.approx(0.5)
 
 
+def test_effective_reward_config_pins_potential_gamma_without_mutating_input() -> None:
+    original = RewardConfig(gamma=0.9, enable_potential_shaping=True)
+    effective = _effective_reward_config(PPOConfig(gamma=0.997, reward_config=original))
+
+    assert effective.gamma == pytest.approx(0.997)
+    assert original.gamma == pytest.approx(0.9)
+
+
+def test_stall_is_absorbing_but_ordinary_truncation_bootstraps_from_final_value() -> None:
+    terminated = np.array([False, False])
+    truncated = np.array([True, True])
+    infos = {
+        # SAME_STEP live info belongs to the reset observations.
+        "stalled": np.array([False, False]),
+        "_stalled": np.array([True, True]),
+        # The completed episodes' flags live under final_info.
+        "final_info": {
+            "stalled": np.array([True, False]),
+            "_stalled": np.array([True, True]),
+        },
+    }
+
+    ppo_terminated, ppo_truncated, stalled = _ppo_terminal_flags(
+        terminated,
+        truncated,
+        infos,
+    )
+
+    np.testing.assert_array_equal(stalled, [True, False])
+    np.testing.assert_array_equal(ppo_terminated, [True, False])
+    np.testing.assert_array_equal(ppo_truncated, [False, True])
+    # The environment-facing Gymnasium flags remain truncations for both.
+    np.testing.assert_array_equal(terminated, [False, False])
+    np.testing.assert_array_equal(truncated, [True, True])
+
+    buffer = RolloutBuffer(num_envs=2, rollout_length=1, gamma=0.997, gae_lambda=0.97)
+    buffer.add_batch(
+        step=0,
+        obs=_dummy_obs(num_envs=2),
+        actions=np.array([ActionRange.SHOP_LEAVE, ActionRange.SHOP_LEAVE], dtype=np.int64),
+        rewards=np.array([1.0, 1.0], dtype=np.float32),
+        values=np.array([2.0, 2.0], dtype=np.float32),
+        log_probs=np.array([0.0, 0.0], dtype=np.float32),
+        terminated=ppo_terminated,
+        truncated=ppo_truncated,
+        bootstrap_values=np.array([10.0, 10.0], dtype=np.float32),
+    )
+    buffer.compute_returns_and_advantages(last_values=np.array([99.0, 99.0]))
+
+    assert buffer.returns[0] == pytest.approx(1.0)
+    assert buffer.returns[1] == pytest.approx(1.0 + 0.997 * 10.0)
+
+
 def test_extract_step_info_value_uses_live_info_for_nonterminal_steps() -> None:
     infos = {
         "progress_made": np.array([True, False]),
@@ -639,6 +701,137 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     assert rm.planet_use_played_hand == [1.0]
     assert rm.planet_use_main_hand_match == [0.0]
     assert rm.planet_use_key_counts["c_pluto"] == 1
+
+
+def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_signals() -> None:
+    rm = _RolloutMetrics()
+    infos = {
+        "shop_joker_offer_observed": np.array([True]),
+        "shop_offered_joker_emitted_count": np.array([1]),
+        "shop_offered_joker_0_id": np.array(["j_hologram"], dtype=object),
+        "shop_bought_joker_id": np.array(["j_hologram"], dtype=object),
+        "shop_sold_joker_id": np.array(["j_joker"], dtype=object),
+        "joker_roster_changed": np.array([True]),
+        "joker_acquired_count": np.array([1]),
+        "joker_removed_count": np.array([1]),
+        "joker_turnover_count": np.array([2]),
+        "joker_churn_count": np.array([1]),
+        "joker_replacement_event": np.array([True]),
+        "joker_acquired_emitted_count": np.array([1]),
+        "joker_acquired_0_id": np.array(["j_hologram"], dtype=object),
+        "joker_removed_emitted_count": np.array([1]),
+        "joker_removed_0_id": np.array(["j_joker"], dtype=object),
+        "build_diagnostics_observed": np.array([True]),
+        "build_pre_estimated_score": np.array([100.0]),
+        "build_post_estimated_score": np.array([150.0]),
+        "build_pre_required_score": np.array([120.0]),
+        "build_post_required_score": np.array([120.0]),
+        "build_pre_readiness": np.array([0.8]),
+        "build_post_readiness": np.array([1.25]),
+        "build_pre_score_gain_ratio": np.array([1.5]),
+        "build_post_score_gain_ratio": np.array([2.0]),
+        "build_pre_modeled_fraction": np.array([1.0]),
+        "build_post_modeled_fraction": np.array([1.0]),
+        "build_estimated_score_delta": np.array([50.0]),
+        "build_post_joker_emitted_count": np.array([1]),
+        "build_post_joker_0_id": np.array(["j_hologram"], dtype=object),
+        "build_post_joker_0_marginal_ratio": np.array([1.5]),
+        "build_post_joker_0_modeled_fraction": np.array([1.0]),
+        "potential_pre_total": np.array([0.4]),
+        "potential_post_total": np.array([0.6]),
+        "potential_delta_total": np.array([0.2]),
+        "hologram_scaling_count": np.array([1]),
+        "hologram_x_mult_delta": np.array([0.25]),
+        "hologram_build_score_delta": np.array([50.0]),
+        "counterfactual_call": np.array([True]),
+        "counterfactual_failure": np.array([False]),
+        "counterfactual_focal_joker_id": np.array(["j_hologram"], dtype=object),
+        "counterfactual_representative_vs_realized_abs_log_ratio_gap": np.array([0.1]),
+        "counterfactual_representative_vs_realized_log_ratio_gap": np.array([-0.1]),
+    }
+
+    _record_action_diagnostics(rm, infos, 0, done=False)
+
+    assert rm.shop_offered_joker_counts["j_hologram"] == 1
+    assert rm.shop_bought_joker_counts["j_hologram"] == 1
+    assert rm.shop_sold_joker_counts["j_joker"] == 1
+    assert rm.joker_acquired_id_counts["j_hologram"] == 1
+    assert rm.joker_removed_id_counts["j_joker"] == 1
+    assert rm.joker_churn_count == 1
+    assert rm.joker_marginal_ratios["j_hologram"] == pytest.approx([1.5])
+    assert rm.build_values["build_post_readiness"] == pytest.approx([1.25])
+    assert rm.potential_values["post_total"] == pytest.approx([0.6])
+    assert rm.hologram_x_mult_deltas == pytest.approx([0.25])
+    assert rm.counterfactual_calls == 1
+    assert rm.counterfactual_failures == 0
+    assert rm.counterfactual_representative_realized_abs_gaps == pytest.approx([0.1])
+
+
+def test_write_rollout_scalars_emits_actionable_joker_diagnostic_tags() -> None:
+    class Writer:
+        def __init__(self) -> None:
+            self.values: dict[str, float] = {}
+
+        def add_scalar(self, tag: str, value: float, _step: int) -> None:
+            self.values[tag] = float(value)
+
+    rm = _RolloutMetrics()
+    rm.done_flags = [1.0]
+    rm.shop_offered_joker_counts["j_hologram"] = 2
+    rm.shop_bought_joker_counts["j_hologram"] = 1
+    rm.shop_sold_joker_counts["j_joker"] = 1
+    rm.joker_marginal_ratios["j_hologram"].append(1.5)
+    rm.joker_modeled_fractions["j_hologram"].append(1.0)
+    rm.build_values["build_post_estimated_score"].append(150.0)
+    rm.build_values["build_post_required_score"].append(120.0)
+    rm.build_values["build_post_readiness"].append(1.25)
+    rm.build_values["build_post_score_gain_ratio"].append(2.0)
+    rm.build_values["build_post_modeled_fraction"].append(1.0)
+    rm.potential_values["post_total"].append(0.6)
+    rm.potential_values["delta_total"].append(0.2)
+    rm.joker_churn_count = 1
+    rm.hologram_scaling_counts.append(1.0)
+    rm.hologram_x_mult_deltas.append(0.25)
+    rm.hologram_build_score_deltas.append(50.0)
+    rm.counterfactual_calls = 1
+    rm.counterfactual_representative_realized_abs_gaps.append(0.1)
+
+    writer = Writer()
+    _write_rollout_scalars(writer, 7, rm)
+
+    assert writer.values["shop/offered_joker/j_hologram_count"] == 2.0
+    assert writer.values["shop/bought_joker/j_hologram_count"] == 1.0
+    assert writer.values["shop/sold_joker/j_joker_count"] == 1.0
+    assert writer.values["joker/marginal_ratio/j_hologram_mean"] == pytest.approx(1.5)
+    assert writer.values["build/estimated_score_mean"] == pytest.approx(150.0)
+    assert writer.values["build/readiness_mean"] == pytest.approx(1.25)
+    assert writer.values["potential/post_total_mean"] == pytest.approx(0.6)
+    assert writer.values["joker/churn_per_episode"] == pytest.approx(1.0)
+    assert writer.values["joker/hologram_x_mult_delta_mean"] == pytest.approx(0.25)
+    assert writer.values["counterfactual/calls"] == 1.0
+    assert writer.values["counterfactual/representative_vs_realized_abs_log_ratio_gap_mean"] == pytest.approx(0.1)
+
+
+def test_terminal_fraction_uses_dense_difference_before_absolute_sums() -> None:
+    class Writer:
+        def __init__(self) -> None:
+            self.values: dict[str, float] = {}
+
+        def add_scalar(self, tag: str, value: float, _step: int) -> None:
+            self.values[tag] = float(value)
+
+    rm = _RolloutMetrics()
+    rm.reward_component_values["reward_total"] = [6.0, -6.0]
+    rm.reward_component_values["reward_terminal"] = [10.0, -10.0]
+    writer = Writer()
+
+    _write_rollout_scalars(writer, 1, rm)
+
+    assert writer.values["reward/terminal_abs_sum"] == pytest.approx(20.0)
+    assert writer.values["reward/dense_abs_sum"] == pytest.approx(8.0)
+    assert writer.values["reward/terminal_signed_sum"] == pytest.approx(0.0)
+    assert writer.values["reward/dense_signed_sum"] == pytest.approx(0.0)
+    assert writer.values["reward/terminal_fraction_of_return"] == pytest.approx(20.0 / 28.0)
 
 
 def test_dagger_before_ppo_inflates_kl_beyond_target() -> None:

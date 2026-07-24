@@ -13,7 +13,15 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
 from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
-from .diagnostics import action_diagnostics as _shared_action_diagnostics
+from .diagnostics import (
+    action_diagnostics as _shared_action_diagnostics,
+)
+from .diagnostics import (
+    build_step_diagnostics,
+    finish_exact_play_counterfactual,
+    prepare_exact_play_counterfactual,
+    step_event_diagnostics,
+)
 from .heuristic import HeuristicAgent
 from .masks import compute_action_mask
 from .reward import (
@@ -51,6 +59,7 @@ class BalatroEnv(gymnasium.Env):
         vocab: Vocab | None = None,
         win_ante: int | None = None,
         enable_teacher: bool = True,
+        counterfactual_diagnostic_interval: int = 0,
     ):
         super().__init__()
         self._data = data or load_game_data()
@@ -69,6 +78,10 @@ class BalatroEnv(gymnasium.Env):
         self._reward_config = reward_config or DEFAULT_REWARD_CONFIG
         self._seed = seed
         self._initial_seed_pending = seed is not None
+        if counterfactual_diagnostic_interval < 0:
+            raise ValueError("counterfactual_diagnostic_interval must be non-negative")
+        self._counterfactual_diagnostic_interval = int(counterfactual_diagnostic_interval)
+        self._play_diagnostic_count = 0
 
         self._controller: GameController | None = None
         self._sub_phase = SubPhase.BLIND_SELECT
@@ -137,6 +150,7 @@ class BalatroEnv(gymnasium.Env):
         self._pending_action = None
         self._round_score = 0
         self._blind_just_beaten = False
+        self._play_diagnostic_count = 0
         self._prev_info = self._capture_state_info()
 
         obs = self._build_obs()
@@ -176,11 +190,24 @@ class BalatroEnv(gymnasium.Env):
 
         decoded = decode_action(action)
         action_diagnostics = self._action_diagnostics(decoded)
+        counterfactual_probe = None
+        if decoded.action_type == ActionType.PLAY_SUBSET:
+            self._play_diagnostic_count += 1
+            interval = self._counterfactual_diagnostic_interval
+            if interval > 0 and self._play_diagnostic_count % interval == 0:
+                indices = tuple(subset_indices(decoded.index))
+                counterfactual_probe, counterfactual_diagnostics = prepare_exact_play_counterfactual(
+                    self._controller.state,
+                    indices,
+                    self._prev_info,
+                    sample_index=self._play_diagnostic_count // interval - 1,
+                )
+                action_diagnostics.update(counterfactual_diagnostics)
         terminated = False
         truncated = False
 
         try:
-            self._execute_action(decoded)
+            action_result = self._execute_action(decoded)
         except Exception as e:
             # Invalid action, log and give small penalty, but don't terminate.
             # Masking should prevent this; if it happens it's a bug to investigate.
@@ -193,6 +220,10 @@ class BalatroEnv(gymnasium.Env):
                 "error": str(e),
                 "teacher_action": teacher_action,
             }
+            if action_diagnostics.get("counterfactual_call"):
+                action_diagnostics["counterfactual_failure"] = True
+                action_diagnostics["counterfactual_failure_reason"] = "action_error"
+            info.update(action_diagnostics)
             return self._obs_to_dict(obs), reward, False, False, info
 
         # Check terminal conditions driven by the underlying game state.
@@ -207,6 +238,49 @@ class BalatroEnv(gymnasium.Env):
         curr_info["action_detail"] = decoded.detail
         curr_info["teacher_action"] = teacher_action
         curr_info["teacher_action_match"] = teacher_action >= 0 and int(action) == teacher_action
+
+        event_diagnostics = step_event_diagnostics(self._prev_info, curr_info, decoded)
+        action_diagnostics.update(event_diagnostics)
+        if counterfactual_probe is not None:
+            actual_score = float(action_result.score.total)
+            action_diagnostics.update(
+                finish_exact_play_counterfactual(
+                    counterfactual_probe,
+                    actual_score=actual_score,
+                )
+            )
+
+        # Detailed leave-one-out build diagnostics are expensive. When score-build
+        # potential is active they also provide the cache consumed by the reward,
+        # so compute them on every transition. Otherwise sample only actual build/
+        # shop events; ordinary hand plays in the default legacy reward stay off
+        # this hot path.
+        score_build_potential_enabled = (
+            self._reward_config.enable_potential_shaping
+            and self._reward_config.enable_build_curve_rewards
+        )
+        build_event_actions = {
+            ActionType.SHOP_BUY,
+            ActionType.SHOP_REROLL,
+            ActionType.SHOP_SELL_JOKER,
+            ActionType.SHOP_LEAVE,
+            ActionType.PACK_CLAIM,
+        }
+        if (
+            score_build_potential_enabled
+            or decoded.action_type in build_event_actions
+            or action_diagnostics.get("joker_roster_changed")
+            or action_diagnostics.get("shop_joker_offer_observed")
+        ):
+            action_diagnostics.update(
+                build_step_diagnostics(
+                    self._prev_info,
+                    curr_info,
+                    self._reward_config,
+                    win_ante=int(state.win_ante),
+                )
+            )
+
         progress_made = self._progress_signature(curr_info) != self._progress_signature(self._prev_info)
         curr_info["progress_made"] = progress_made
         if progress_made:
@@ -291,7 +365,7 @@ class BalatroEnv(gymnasium.Env):
             pending_action=self._pending_action,
         )
 
-    def _execute_action(self, decoded) -> None:
+    def _execute_action(self, decoded) -> Any:
         """Execute a decoded action, updating sub-phase and game state."""
         ctrl = self._controller
         state = ctrl.state
@@ -322,13 +396,12 @@ class BalatroEnv(gymnasium.Env):
                 self._blind_just_beaten = True
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
-                    return
+                    return result
                 ctrl.enter_shop()
                 self._sub_phase = SubPhase.SHOP
-            elif ctrl.phase == GamePhase.GAME_OVER:
-                return
-            else:
+            elif ctrl.phase != GamePhase.GAME_OVER:
                 self._sub_phase = SubPhase.CHOOSE_ACTION
+            return result
 
         elif at == ActionType.DISCARD_SUBSET:
             indices = subset_indices(decoded.index)

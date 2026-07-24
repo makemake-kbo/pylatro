@@ -30,6 +30,15 @@ HEALTH_TAGS = [
     "eval/win_rate",
     "planet/claim_main_hand_match_fraction",
     "planet/use_main_hand_match_fraction",
+    "build/readiness_mean",
+    "build/score_gain_ratio_mean",
+    "potential/post_total_mean",
+    "joker/churn_per_episode",
+    "joker/hologram_scaling_count_per_episode",
+    "joker/hologram_x_mult_delta_mean",
+    "counterfactual/calls",
+    "counterfactual/failure_fraction",
+    "counterfactual/representative_vs_realized_abs_log_ratio_gap_mean",
 ]
 
 

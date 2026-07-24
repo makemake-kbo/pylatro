@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from pylatro_agent.action import ActionType
-from pylatro_agent.diagnostics import action_diagnostics
+from pylatro_agent.diagnostics import action_diagnostics, step_event_diagnostics
 
 _CENTERS = {
     "c_pluto": {"set": "Planet", "config": {"hand_type": "High Card"}},
@@ -57,6 +57,37 @@ def test_pack_claim_best_available_ranks_matchless_pack_by_play_share() -> None:
 
     assert _claim(state, 0)["planet_claim_best_available"] is False
     assert _claim(state, 1)["planet_claim_best_available"] is True
+
+
+def test_step_event_diagnostics_exports_shop_and_roster_ids() -> None:
+    prev = {
+        "in_shop": False,
+        "joker_keys": ("j_joker", "j_joker"),
+        "joker_details": ({"key": "j_joker"}, {"key": "j_joker"}),
+        "shop_cards": (
+            {"key": "j_hologram", "set": "Joker"},
+            {"key": "c_pluto", "set": "Planet"},
+        ),
+    }
+    curr = {
+        "in_shop": True,
+        "joker_keys": ("j_joker", "j_hologram"),
+        "shop_cards": (
+            {"key": "j_hologram", "set": "Joker"},
+            {"key": "j_blueprint", "set": "Joker"},
+        ),
+    }
+    decoded = SimpleNamespace(action_type=ActionType.SHOP_SELL_JOKER, index=1)
+
+    diagnostics = step_event_diagnostics(prev, curr, decoded)
+
+    assert diagnostics["shop_sold_joker_id"] == "j_joker"
+    assert diagnostics["joker_acquired_0_id"] == "j_hologram"
+    assert diagnostics["joker_removed_0_id"] == "j_joker"
+    assert diagnostics["joker_replacement_event"] is True
+    assert diagnostics["shop_offered_joker_count"] == 2
+    assert diagnostics["shop_offered_joker_0_id"] == "j_hologram"
+    assert diagnostics["shop_offered_joker_1_id"] == "j_blueprint"
 
 
 def test_pack_claim_best_available_true_for_sole_planet_and_ties() -> None:

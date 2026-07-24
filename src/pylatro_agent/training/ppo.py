@@ -4,7 +4,7 @@ import logging
 import math
 import random
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -19,8 +19,13 @@ from pylatro import GameData, load_game_data
 from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
+from ..diagnostics import (
+    MAX_DIAGNOSTIC_EVENTS,
+    MAX_DIAGNOSTIC_JOKERS,
+    MAX_DIAGNOSTIC_SHOP_JOKERS,
+)
 from ..env import BalatroEnv
-from ..reward import _COMPONENT_GROUP, REWARD_INFO_KEYS, RewardConfig
+from ..reward import _COMPONENT_GROUP, DEFAULT_REWARD_CONFIG, REWARD_INFO_KEYS, RewardConfig
 from ..survival import compute_ante_survival_targets
 from ..value_head import hl_gauss_projection
 from ..vocab import Vocab, build_vocab
@@ -145,6 +150,7 @@ def _load_checkpoint_compatible(
     device: torch.device,
     *,
     reinit_value_head: bool = False,
+    active_reward_config: RewardConfig | None = None,
 ) -> None:
     """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift.
 
@@ -156,7 +162,28 @@ def _load_checkpoint_compatible(
     return from scratch rather than unlearning a stale mapping.
     """
     from ..checkpoint import load_checkpoint_payload
-    state_dict = load_checkpoint_payload(checkpoint_path, device)["state_dict"]
+    from ..reward import reward_config_fingerprint
+
+    payload = load_checkpoint_payload(checkpoint_path, device)
+    if active_reward_config is not None:
+        saved_fingerprint = payload.get("reward_fingerprint")
+        active_fingerprint = reward_config_fingerprint(active_reward_config)
+        if saved_fingerprint and saved_fingerprint != active_fingerprint and not reinit_value_head:
+            raise RuntimeError(
+                f"Checkpoint {checkpoint_path} was trained with a different reward "
+                "fingerprint. Loading its value head through --pretrained would restore "
+                "a stale critic. Pass --reinit-value-head --critic-warmup-updates 15 "
+                "--critic-warmup-min-ev 0."
+            )
+        if not saved_fingerprint and not reinit_value_head:
+            raise RuntimeError(
+                f"Checkpoint {checkpoint_path} has no reward fingerprint, so loading its "
+                "value head cannot verify that critic targets match the active reward model. "
+                "Pass --reinit-value-head --critic-warmup-updates 15 "
+                "--critic-warmup-min-ev 0."
+            )
+
+    state_dict = payload["state_dict"]
     if reinit_value_head:
         # Match both bare and DataParallel-prefixed keys, the module. prefix is
         # only stripped later, inside _load_state_dict_into_model.
@@ -205,6 +232,7 @@ def _make_env(
     win_ante: int | None,
     reward_config: RewardConfig | None = None,
     enable_teacher: bool = True,
+    counterfactual_diagnostic_interval: int = 0,
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
     def _thunk():
@@ -217,6 +245,7 @@ def _make_env(
             win_ante=win_ante,
             reward_config=reward_config,
             enable_teacher=enable_teacher,
+            counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
         )
     return _thunk
 
@@ -232,6 +261,7 @@ def _make_vectorized_envs(
     reward_config: RewardConfig | None = None,
     env_seed_base: int = 0,
     enable_teacher: bool = True,
+    counterfactual_diagnostic_interval: int = 0,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
@@ -239,7 +269,10 @@ def _make_vectorized_envs(
     env_fns = [
         _make_env(
             env_seed_base + i, stake, data, vocab, max_no_progress_steps,
-            win_ante, reward_config, enable_teacher=enable_teacher,
+            win_ante,
+            reward_config,
+            enable_teacher=enable_teacher,
+            counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
         )
         for i in range(num_envs)
     ]
@@ -262,8 +295,8 @@ class PPOConfig:
     total_updates: int | None = None
     ppo_epochs: int = 4
     mini_batch_size: int = 64
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
+    gamma: float = 0.997
+    gae_lambda: float = 0.97
     clip_epsilon: float = 0.1  # PPO clip range; tighter than the usual 0.2
     target_kl: float | None = 0.05  # Phase 4: raised from 0.03; chronic KL-stop means the step size is wrong, not the trust region
     # Optional trust-region diagnostic guards (do not stop training on their
@@ -377,6 +410,11 @@ class PPOConfig:
     # planet match, shop reroll, etc.) while keeping terminal and
     # progress signals. Defaults to None (DEFAULT_REWARD_CONFIG).
     reward_config: "RewardConfig | None" = None
+    # Sampled exact joker-marginal validation. 0 disables. A positive N copies
+    # one pre-play RunState and replays the same selected cards with one focal
+    # joker removed every Nth actual play. Disabled by default because the state
+    # copy is deliberately bounded but still material in many-env training.
+    counterfactual_diagnostic_interval: int = 0
     # Fixed, versioned seed list for the in-training eval pass. Passing a
     # stable list (pylatro_agent.eval.EVAL_SEEDS_V1) makes every checkpoint's
     # eval reproducible and pairable across runs via the McNemar / paired
@@ -591,6 +629,28 @@ class _RolloutMetrics:
     planet_claim_play_share: list[float] = field(default_factory=list)
     planet_claim_main_hand_match: list[float] = field(default_factory=list)
     planet_pack_skip: list[float] = field(default_factory=list)
+    shop_offered_joker_counts: Counter = field(default_factory=Counter)
+    shop_bought_joker_counts: Counter = field(default_factory=Counter)
+    shop_sold_joker_counts: Counter = field(default_factory=Counter)
+    joker_marginal_ratios: defaultdict = field(default_factory=lambda: defaultdict(list))
+    joker_modeled_fractions: defaultdict = field(default_factory=lambda: defaultdict(list))
+    build_values: defaultdict = field(default_factory=lambda: defaultdict(list))
+    potential_values: defaultdict = field(default_factory=lambda: defaultdict(list))
+    hologram_scaling_counts: list[float] = field(default_factory=list)
+    hologram_x_mult_deltas: list[float] = field(default_factory=list)
+    hologram_build_score_deltas: list[float] = field(default_factory=list)
+    joker_acquired_count: int = 0
+    joker_removed_count: int = 0
+    joker_turnover_count: int = 0
+    joker_churn_count: int = 0
+    joker_replacement_events: int = 0
+    joker_acquired_id_counts: Counter = field(default_factory=Counter)
+    joker_removed_id_counts: Counter = field(default_factory=Counter)
+    counterfactual_calls: int = 0
+    counterfactual_failures: int = 0
+    counterfactual_representative_realized_abs_gaps: list[float] = field(default_factory=list)
+    counterfactual_representative_realized_signed_gaps: list[float] = field(default_factory=list)
+    counterfactual_focal_counts: Counter = field(default_factory=Counter)
     play_subset_count: int = 0
     discard_subset_count: int = 0
 
@@ -668,6 +728,8 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("rollout_length must be positive")
     if config.max_no_progress_steps <= 0:
         raise ValueError("max_no_progress_steps must be positive")
+    if config.counterfactual_diagnostic_interval < 0:
+        raise ValueError("counterfactual_diagnostic_interval must be non-negative")
     if config.lr <= 0.0:
         raise ValueError("lr must be positive")
     if config.rollout_temperature <= 0.0:
@@ -1800,6 +1862,102 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
     writer.add_scalar("pack/planet_skip_fraction", _safe_mean(rm.planet_pack_skip), update_count)
     _write_counter_fractions(writer, "pack/skip_state", rm.pack_skip_state_counts, update_count)
 
+    episode_count = max(int(sum(rm.done_flags)), 1)
+    for prefix, counter in (
+        ("shop/offered_joker", rm.shop_offered_joker_counts),
+        ("shop/bought_joker", rm.shop_bought_joker_counts),
+        ("shop/sold_joker", rm.shop_sold_joker_counts),
+        ("joker/acquired", rm.joker_acquired_id_counts),
+        ("joker/removed", rm.joker_removed_id_counts),
+    ):
+        _write_counter_counts(writer, prefix, counter, update_count)
+        _write_counter_fractions(writer, prefix, counter, update_count)
+
+    for center, values in rm.joker_marginal_ratios.items():
+        writer.add_scalar(
+            f"joker/marginal_ratio/{_sanitize_tag_part(str(center))}_mean",
+            _safe_mean(values),
+            update_count,
+        )
+    for center, values in rm.joker_modeled_fractions.items():
+        writer.add_scalar(
+            f"joker/modeled_fraction/{_sanitize_tag_part(str(center))}_mean",
+            _safe_mean(values),
+            update_count,
+        )
+
+    for metric, values in rm.build_values.items():
+        writer.add_scalar(f"build/{metric}_mean", _safe_mean(values), update_count)
+    for metric in (
+        "estimated_score",
+        "required_score",
+        "readiness",
+        "score_gain_ratio",
+        "modeled_fraction",
+    ):
+        values = rm.build_values.get(f"build_post_{metric}")
+        if values:
+            writer.add_scalar(f"build/{metric}_mean", _safe_mean(values), update_count)
+    for metric, values in rm.potential_values.items():
+        writer.add_scalar(f"potential/{metric}_mean", _safe_mean(values), update_count)
+
+    writer.add_scalar("joker/acquired_count", float(rm.joker_acquired_count), update_count)
+    writer.add_scalar("joker/removed_count", float(rm.joker_removed_count), update_count)
+    writer.add_scalar("joker/turnover_count", float(rm.joker_turnover_count), update_count)
+    writer.add_scalar("joker/churn_count", float(rm.joker_churn_count), update_count)
+    writer.add_scalar(
+        "joker/churn_per_episode", float(rm.joker_churn_count) / episode_count, update_count
+    )
+    writer.add_scalar(
+        "joker/replacement_event_count", float(rm.joker_replacement_events), update_count
+    )
+    writer.add_scalar(
+        "joker/hologram_scaling_count",
+        float(np.sum(rm.hologram_scaling_counts)),
+        update_count,
+    )
+    writer.add_scalar(
+        "joker/hologram_scaling_count_per_episode",
+        float(np.sum(rm.hologram_scaling_counts)) / episode_count,
+        update_count,
+    )
+    writer.add_scalar(
+        "joker/hologram_x_mult_delta_mean",
+        _safe_mean(rm.hologram_x_mult_deltas) if rm.hologram_x_mult_deltas else 0.0,
+        update_count,
+    )
+    writer.add_scalar(
+        "joker/hologram_x_mult_delta_sum",
+        float(np.sum(rm.hologram_x_mult_deltas)),
+        update_count,
+    )
+    writer.add_scalar(
+        "joker/hologram_build_score_delta_mean",
+        _safe_mean(rm.hologram_build_score_deltas) if rm.hologram_build_score_deltas else 0.0,
+        update_count,
+    )
+
+    writer.add_scalar("counterfactual/calls", float(rm.counterfactual_calls), update_count)
+    writer.add_scalar("counterfactual/failures", float(rm.counterfactual_failures), update_count)
+    writer.add_scalar(
+        "counterfactual/failure_fraction",
+        rm.counterfactual_failures / rm.counterfactual_calls if rm.counterfactual_calls else 0.0,
+        update_count,
+    )
+    writer.add_scalar(
+        "counterfactual/representative_vs_realized_abs_log_ratio_gap_mean",
+        _safe_mean(rm.counterfactual_representative_realized_abs_gaps),
+        update_count,
+    )
+    writer.add_scalar(
+        "counterfactual/representative_vs_realized_log_ratio_gap_mean",
+        _safe_mean(rm.counterfactual_representative_realized_signed_gaps),
+        update_count,
+    )
+    _write_counter_counts(
+        writer, "counterfactual/focal_joker", rm.counterfactual_focal_counts, update_count
+    )
+
     for component_name, component_values in rm.reward_component_values.items():
         writer.add_scalar(
             f"reward/{component_name.removeprefix('reward_')}_mean",
@@ -1827,13 +1985,22 @@ def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> 
     # rewards fire on ~1 step while dense shaping fires on every step; the
     # episode-level magnitude ratio is the correct measure. ~0.13 in recover_v3.
     if total_vals and terminal_vals:
-        terminal_sum = float(np.sum(np.abs(terminal_vals)))
-        dense_sum = float(np.sum(np.abs(np.asarray(total_vals)))) - terminal_sum
-        denom = terminal_sum + dense_sum
+        total_arr = np.asarray(total_vals, dtype=np.float64)
+        terminal_arr = np.asarray(terminal_vals, dtype=np.float64)
+        dense_arr = total_arr - terminal_arr
+        terminal_signed_sum = float(np.sum(terminal_arr))
+        dense_signed_sum = float(np.sum(dense_arr))
+        terminal_abs_sum = float(np.sum(np.abs(terminal_arr)))
+        dense_abs_sum = float(np.sum(np.abs(dense_arr)))
+        writer.add_scalar("reward/terminal_signed_sum", terminal_signed_sum, update_count)
+        writer.add_scalar("reward/dense_signed_sum", dense_signed_sum, update_count)
+        writer.add_scalar("reward/terminal_abs_sum", terminal_abs_sum, update_count)
+        writer.add_scalar("reward/dense_abs_sum", dense_abs_sum, update_count)
+        denom = terminal_abs_sum + dense_abs_sum
         if denom > 1e-9:
             writer.add_scalar(
                 "reward/terminal_fraction_of_return",
-                terminal_sum / denom,
+                terminal_abs_sum / denom,
                 update_count,
             )
 
@@ -1859,6 +2026,13 @@ def _write_counter_fractions(writer, prefix: str, counter: Counter, update_count
         return
     for key, count in counter.items():
         writer.add_scalar(f"{prefix}/{_sanitize_tag_part(str(key))}_fraction", count / total, update_count)
+
+
+def _write_counter_counts(writer, prefix: str, counter: Counter, update_count: int) -> None:
+    for key, count in counter.items():
+        writer.add_scalar(
+            f"{prefix}/{_sanitize_tag_part(str(key))}_count", float(count), update_count
+        )
 
 
 def _save_checkpoint(
@@ -1891,10 +2065,11 @@ def _save_checkpoint(
     if config is not None:
         for key in (
             "seed", "ppo_epochs", "mini_batch_size", "clip_epsilon", "gae_lambda",
-            "rollout_temperature", "action_type_entropy_scale", "gamma",
+            "rollout_temperature", "action_type_entropy_scale", "gamma", "win_ante",
             "target_entropy", "entropy_ema_beta", "adaptive_entropy",
         ):
             config_fields[key] = getattr(config, key)
+    active_reward_config = _effective_reward_config(config) if config is not None else DEFAULT_REWARD_CONFIG
     save_ppo_checkpoint(
         _unwrap_model(model),
         checkpoint_path,
@@ -1909,6 +2084,7 @@ def _save_checkpoint(
         alpha_optimizer=alpha_optimizer,
         return_rms=return_rms,
         agent_config=agent_config,
+        reward_config=active_reward_config,
         ppo_config_fields=config_fields,
         extra=extra,
     )
@@ -2059,6 +2235,44 @@ def _extract_step_info_value(info_dict: dict, key: str, env_idx: int, *, done: b
     return default if value is _MISSING else value
 
 
+def _effective_reward_config(config: PPOConfig) -> RewardConfig:
+    """Return an isolated reward config whose potential discount matches PPO."""
+    base = config.reward_config if config.reward_config is not None else DEFAULT_REWARD_CONFIG
+    return replace(base, gamma=config.gamma)
+
+
+def _ppo_terminal_flags(
+    terminated: np.ndarray,
+    truncated: np.ndarray,
+    infos: dict,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Map external Gymnasium endings to PPO bootstrap semantics.
+
+    No-progress stalls stay ``truncated=True`` at the environment boundary, but
+    they carry a terminal loss reward and are absorbing for value targets. Other
+    truncations keep Gymnasium's bootstrap-from-final-observation behavior.
+    """
+    dones = terminated | truncated
+    stalled = np.asarray(
+        [
+            bool(
+                _extract_step_info_value(
+                    infos,
+                    "stalled",
+                    env_idx,
+                    done=bool(dones[env_idx]),
+                    default=False,
+                )
+            )
+            for env_idx in range(len(dones))
+        ],
+        dtype=np.bool_,
+    )
+    ppo_terminated = np.asarray(terminated, dtype=np.bool_) | stalled
+    ppo_truncated = np.asarray(truncated, dtype=np.bool_) & ~ppo_terminated
+    return ppo_terminated, ppo_truncated, stalled
+
+
 _REGRET_DISTILL_WEIGHT_MAX = 3.0
 
 
@@ -2205,6 +2419,215 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
         if pack_state_name:
             rm.pack_skip_state_counts[str(pack_state_name)] += 1
 
+    if _extract_step_info_value(
+        infos, "shop_joker_offer_observed", env_idx, done=done, default=False
+    ):
+        offered_count = int(
+            _extract_step_info_value(
+                infos,
+                "shop_offered_joker_emitted_count",
+                env_idx,
+                done=done,
+                default=0,
+            )
+        )
+        for index in range(min(offered_count, MAX_DIAGNOSTIC_SHOP_JOKERS)):
+            center = _extract_step_info_value(
+                infos,
+                f"shop_offered_joker_{index}_id",
+                env_idx,
+                done=done,
+                default="",
+            )
+            if center:
+                rm.shop_offered_joker_counts[str(center)] += 1
+
+    for info_key, counter in (
+        ("shop_bought_joker_id", rm.shop_bought_joker_counts),
+        ("shop_sold_joker_id", rm.shop_sold_joker_counts),
+    ):
+        center = _extract_step_info_value(infos, info_key, env_idx, done=done, default="")
+        if center:
+            counter[str(center)] += 1
+
+    if _extract_step_info_value(
+        infos, "joker_roster_changed", env_idx, done=done, default=False
+    ):
+        rm.joker_acquired_count += int(
+            _extract_step_info_value(infos, "joker_acquired_count", env_idx, done=done, default=0)
+        )
+        rm.joker_removed_count += int(
+            _extract_step_info_value(infos, "joker_removed_count", env_idx, done=done, default=0)
+        )
+        rm.joker_turnover_count += int(
+            _extract_step_info_value(infos, "joker_turnover_count", env_idx, done=done, default=0)
+        )
+        rm.joker_churn_count += int(
+            _extract_step_info_value(infos, "joker_churn_count", env_idx, done=done, default=0)
+        )
+        rm.joker_replacement_events += int(
+            bool(
+                _extract_step_info_value(
+                    infos, "joker_replacement_event", env_idx, done=done, default=False
+                )
+            )
+        )
+        for prefix, counter in (
+            ("joker_acquired", rm.joker_acquired_id_counts),
+            ("joker_removed", rm.joker_removed_id_counts),
+        ):
+            emitted = int(
+                _extract_step_info_value(
+                    infos, f"{prefix}_emitted_count", env_idx, done=done, default=0
+                )
+            )
+            for index in range(min(emitted, MAX_DIAGNOSTIC_EVENTS)):
+                center = _extract_step_info_value(
+                    infos,
+                    f"{prefix}_{index}_id",
+                    env_idx,
+                    done=done,
+                    default="",
+                )
+                if center:
+                    counter[str(center)] += 1
+
+    if _extract_step_info_value(
+        infos, "build_diagnostics_observed", env_idx, done=done, default=False
+    ):
+        for prefix in ("build_pre", "build_post"):
+            for metric in (
+                "estimated_score",
+                "required_score",
+                "readiness",
+                "score_gain_ratio",
+                "modeled_fraction",
+            ):
+                value = _extract_step_info_value(
+                    infos, f"{prefix}_{metric}", env_idx, done=done, default=None
+                )
+                if value is not None:
+                    rm.build_values[f"{prefix}_{metric}"].append(float(value))
+        score_delta = _extract_step_info_value(
+            infos, "build_estimated_score_delta", env_idx, done=done, default=None
+        )
+        if score_delta is not None:
+            rm.build_values["estimated_score_delta"].append(float(score_delta))
+
+        emitted = int(
+            _extract_step_info_value(
+                infos,
+                "build_post_joker_emitted_count",
+                env_idx,
+                done=done,
+                default=0,
+            )
+        )
+        for index in range(min(emitted, MAX_DIAGNOSTIC_JOKERS)):
+            center = _extract_step_info_value(
+                infos,
+                f"build_post_joker_{index}_id",
+                env_idx,
+                done=done,
+                default="",
+            )
+            ratio = _extract_step_info_value(
+                infos,
+                f"build_post_joker_{index}_marginal_ratio",
+                env_idx,
+                done=done,
+                default=None,
+            )
+            modeled = _extract_step_info_value(
+                infos,
+                f"build_post_joker_{index}_modeled_fraction",
+                env_idx,
+                done=done,
+                default=None,
+            )
+            if center and ratio is not None:
+                rm.joker_marginal_ratios[str(center)].append(float(ratio))
+            if center and modeled is not None:
+                rm.joker_modeled_fractions[str(center)].append(float(modeled))
+
+        for timing in ("pre", "post", "delta"):
+            for component in (
+                "blind_progress",
+                "ante_progress",
+                "realized_build_quality",
+                "scaling_option_value",
+                "readiness",
+                "total",
+            ):
+                value = _extract_step_info_value(
+                    infos,
+                    f"potential_{timing}_{component}",
+                    env_idx,
+                    done=done,
+                    default=None,
+                )
+                if value is not None:
+                    rm.potential_values[f"{timing}_{component}"].append(float(value))
+
+    hologram_count = _extract_step_info_value(
+        infos, "hologram_scaling_count", env_idx, done=done, default=None
+    )
+    if hologram_count is not None:
+        rm.hologram_scaling_counts.append(float(hologram_count))
+        rm.hologram_x_mult_deltas.append(
+            float(
+                _extract_step_info_value(
+                    infos, "hologram_x_mult_delta", env_idx, done=done, default=0.0
+                )
+            )
+        )
+        rm.hologram_build_score_deltas.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "hologram_build_score_delta",
+                    env_idx,
+                    done=done,
+                    default=0.0,
+                )
+            )
+        )
+
+    if _extract_step_info_value(
+        infos, "counterfactual_call", env_idx, done=done, default=False
+    ):
+        rm.counterfactual_calls += 1
+        failure = bool(
+            _extract_step_info_value(
+                infos, "counterfactual_failure", env_idx, done=done, default=False
+            )
+        )
+        rm.counterfactual_failures += int(failure)
+        focal = _extract_step_info_value(
+            infos, "counterfactual_focal_joker_id", env_idx, done=done, default=""
+        )
+        if focal:
+            rm.counterfactual_focal_counts[str(focal)] += 1
+        if not failure:
+            abs_gap = _extract_step_info_value(
+                infos,
+                "counterfactual_representative_vs_realized_abs_log_ratio_gap",
+                env_idx,
+                done=done,
+                default=None,
+            )
+            signed_gap = _extract_step_info_value(
+                infos,
+                "counterfactual_representative_vs_realized_log_ratio_gap",
+                env_idx,
+                done=done,
+                default=None,
+            )
+            if abs_gap is not None:
+                rm.counterfactual_representative_realized_abs_gaps.append(float(abs_gap))
+            if signed_gap is not None:
+                rm.counterfactual_representative_realized_signed_gaps.append(float(signed_gap))
+
 
 def _safe_mean(values: list[float]) -> float:
     """Return the mean of a list or NaN when empty."""
@@ -2259,6 +2682,9 @@ def train_ppo(
       many more updates *after* the checkpoint's saved update count.
     """
     _validate_ppo_config(config)
+    # Work with a private RewardConfig copy and pin its potential discount to
+    # the PPO return discount before resume validation or environment creation.
+    config.reward_config = _effective_reward_config(config)
     _seed_training_rngs(config.seed)
     if data is None:
         data = load_game_data()
@@ -2293,7 +2719,12 @@ def train_ppo(
     resume_state: dict | None = None
     if resume_path:
         from ..checkpoint import load_ppo_resume_payload, restore_rng_states
-        resume_state = load_ppo_resume_payload(resume_path, device)
+        resume_state = load_ppo_resume_payload(
+            resume_path,
+            device,
+            active_reward_config=config.reward_config,
+            active_win_ante=config.win_ante,
+        )
         _load_state_dict_into_model(model, resume_state["state_dict"], resume_path)
         logger.info(
             "Resumed model weights from %s (update_count=%d, total_steps=%d)",
@@ -2304,7 +2735,11 @@ def train_ppo(
         restore_rng_states(resume_state.get("rng_states", {}))
     elif pretrained_path:
         _load_checkpoint_compatible(
-            model, pretrained_path, device, reinit_value_head=config.reinit_value_head
+            model,
+            pretrained_path,
+            device,
+            reinit_value_head=config.reinit_value_head,
+            active_reward_config=config.reward_config,
         )
         if config.reinit_value_head:
             logger.info(
@@ -2372,10 +2807,10 @@ def train_ppo(
         )
     logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
                 config.rollout_temperature)
-    # Phase 3.3: discount-horizon diagnostic. At gamma=0.99 a terminal reward
-    # is discounted to ~0.22 at 150 steps, ~0.05 at 300, the early-game shop
-    # economy decisions that matter most for winning are nearly invisible. For
-    # win_ante >= 6 (long episodes), 0.997 is recommended (0.997^300 ~ 0.41).
+    # Discount-horizon diagnostic for explicit low-gamma overrides. At
+    # gamma=0.99 a terminal reward is discounted to ~0.22 at 150 steps and
+    # ~0.05 at 300, making early-game economy decisions nearly invisible.
+    # The default 0.997 retains ~0.41 at 300 steps.
     effective_win_ante = config.win_ante if config.win_ante is not None else 8
     if effective_win_ante >= 6 and config.gamma < 0.995:
         logger.warning(
@@ -2421,11 +2856,6 @@ def train_ppo(
         _apply_lr_override(optimizer, config.lr, resume_state.get("lr"))
         logger.info("Restored PPO optimizer state (Adam moments + counters) from checkpoint.")
 
-    # Sync gamma into the reward config so potential-based shaping (Phase 2)
-    # telescopes under the same discount the value function regresses.
-    if config.reward_config is not None:
-        config.reward_config.gamma = config.gamma
-
     # Create vectorized environments. Each env replays a deterministic
     # game-seed stream from its constructor seed, so resuming with plain
     # 0..N-1 seeds replays the same opening game library every leg and the
@@ -2461,6 +2891,7 @@ def train_ppo(
         reward_config=config.reward_config,
         env_seed_base=env_seed_base,
         enable_teacher=teacher_needed,
+        counterfactual_diagnostic_interval=config.counterfactual_diagnostic_interval,
     )
     obs_dict, reset_info = vec_env.reset()
     # Pre-allocate obs tensors for batched inference
@@ -2740,6 +3171,11 @@ def train_ppo(
                 # Step all envs at once
                 next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
                 dones = terminated | truncated
+                ppo_terminated, ppo_truncated, stalled_flags = _ppo_terminal_flags(
+                    terminated,
+                    truncated,
+                    infos,
+                )
                 bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
                 teacher_actions_np = np.asarray(
                     [
@@ -2760,9 +3196,13 @@ def train_ppo(
                     dtype=np.float32,
                 )
 
-                if np.any(truncated) and "final_obs" in infos:
+                if np.any(ppo_truncated) and "final_obs" in infos:
                     final_obs_arr = infos["final_obs"]
-                    truncated_indices = [idx for idx in np.where(truncated)[0] if final_obs_arr[idx] is not None]
+                    truncated_indices = [
+                        idx
+                        for idx in np.where(ppo_truncated)[0]
+                        if final_obs_arr[idx] is not None
+                    ]
                     if truncated_indices:
                         final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
                         with torch.no_grad():
@@ -2782,8 +3222,8 @@ def train_ppo(
                     rewards=rewards.astype(np.float32),
                     values=values_np,
                     log_probs=log_probs_np,
-                    terminated=terminated,
-                    truncated=truncated,
+                    terminated=ppo_terminated,
+                    truncated=ppo_truncated,
                     bootstrap_values=bootstrap_values_np,
                     teacher_actions=teacher_actions_np,
                     distill_weights=distill_weights_np,
@@ -2864,7 +3304,7 @@ def train_ppo(
                     episode_rewards.append(float(env_ep_reward[i]))
                     episode_lengths.append(int(env_ep_length[i]))
                     ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
-                    ep_stalled = bool(_extract_step_info_value(infos, "stalled", i, done=True, default=False))
+                    ep_stalled = bool(stalled_flags[i])
                     ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)

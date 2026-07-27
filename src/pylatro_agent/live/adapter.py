@@ -61,7 +61,13 @@ def _edition(value: object) -> dict[str, bool] | None:
 
 def _rank(value: object) -> str:
     rank = str(value or "A")
-    return {"Ace": "A", "Jack": "J", "Queen": "Q", "King": "K"}.get(rank, rank)
+    return {
+        "Ace": "A",
+        "10": "T",
+        "Jack": "J",
+        "Queen": "Q",
+        "King": "K",
+    }.get(rank, rank)
 
 
 @dataclass(slots=True)

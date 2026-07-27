@@ -57,13 +57,13 @@ directory.
 Start Python before entering a run:
 
 ```bash
-uv run python play.py --live --heuristic
+uv run --extra agent python play.py --live --heuristic
 ```
 
 Or use an unchanged checkpoint:
 
 ```bash
-uv run python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
+uv run --extra agent python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
 ```
 
 `--device`, `--sample`, and `--temperature` work as they do in simulated play.

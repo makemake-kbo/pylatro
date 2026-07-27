@@ -5,8 +5,8 @@ Usage:
     uv run python play.py --checkpoint checkpoints/supervised/supervised_epoch10.pt
     uv run python play.py --checkpoint checkpoints/ppo/ppo_update100.pt --games 20 --seed 42
     uv run python play.py --heuristic --games 50
-    uv run python play.py --live --heuristic
-    uv run python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
+    uv run --extra agent python play.py --live --heuristic
+    uv run --extra agent python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
 """
 
 from __future__ import annotations

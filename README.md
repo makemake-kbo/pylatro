@@ -206,8 +206,8 @@ uv run python play.py --heuristic --games 50
 Control a manually started vanilla Balatro run through the Steamodded bridge:
 
 ```bash
-uv run python play.py --live --heuristic
-uv run python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
+uv run --extra agent python play.py --live --heuristic
+uv run --extra agent python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
 ```
 
 See [the live bridge setup and troubleshooting guide](docs/live_bridge.md).

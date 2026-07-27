@@ -1,16 +1,17 @@
 --- STEAMODDED HEADER
 --- MOD_NAME: Pylatro Live Bridge
 --- MOD_ID: pylatro_bridge
---- MOD_AUTHOR: [pylatro]
+--- MOD_AUTHOR: [makemake]
 --- MOD_DESCRIPTION: Loopback bridge to the Pylatro live agent.
 --- PREFIX: pylatro_bridge
---- VERSION: 0.1.0
+--- VERSION: 0.1.4
 --- DEPENDENCIES: [Steamodded>=1.0.0~BETA]
 
 local mod = SMODS.current_mod
 local https = require "SMODS.https"
 local json = require "json"
 local Serializer = assert(SMODS.load_file("serializer.lua"))()
+local Readiness = assert(SMODS.load_file("readiness.lua"))()
 
 PYLATRO_BRIDGE = {
     serializer = Serializer,
@@ -27,6 +28,9 @@ PYLATRO_BRIDGE = {
     previous_action = nil,
     connected = false,
     cash_out_started = false,
+    action_rejections = 0,
+    hand_signature = nil,
+    hand_stable_since = nil,
 }
 PYLATRO_BRIDGE.executor = assert(SMODS.load_file("executor.lua"))()
 local Bridge = PYLATRO_BRIDGE
@@ -63,19 +67,11 @@ local function phase()
     return nil
 end
 
-local function stable()
-    if not G or not G.GAME or not G.CONTROLLER then return false end
-    if G.CONTROLLER.locked then return false end
-    if G.GAME.STOP_USE and G.GAME.STOP_USE > 0 then return false end
-    if G.E_MANAGER and G.E_MANAGER.queue and #G.E_MANAGER.queue > 0 then return false end
-    return true
-end
-
 local function versions()
     return {
         balatro = tostring(G.VERSION or "unknown"),
         steamodded = tostring(SMODS.version or "unknown"),
-        bridge = tostring(mod.version or "0.1.0"),
+        bridge = tostring(mod.version or "0.1.4"),
     }
 end
 
@@ -158,7 +154,12 @@ local function handle_response(code, body, _, request)
     }
     if not executed then
         log("warn", "action rejected: " .. tostring(action_error))
+        Bridge.action_rejections = math.min(Bridge.action_rejections + 1, 5)
+        local delay = math.min(0.25 * (2 ^ (Bridge.action_rejections - 1)), 2)
+        Bridge.next_attempt_at = love.timer.getTime() + delay
         Bridge.last_fingerprint = nil
+    else
+        Bridge.action_rejections = 0
     end
 end
 
@@ -181,10 +182,11 @@ local function send_request(request)
 end
 
 local function update_bridge()
-    if not stable() or Bridge.in_flight then return end
+    if Bridge.in_flight then return end
     local now = love.timer.getTime()
-    if now < Bridge.next_attempt_at then return end
     local current_phase = phase()
+    if not Readiness.ready(current_phase, now, Bridge) then return end
+    if now < Bridge.next_attempt_at then return end
     if not current_phase then
         -- Cash-out is a non-strategic transition. It still goes through the
         -- enabled UI callback and waits for Balatro's own event queue.
@@ -230,4 +232,4 @@ function Game:update(dt)
     end
 end
 
-log("info", "loaded; start Python with `uv run python play.py --live --heuristic`")
+log("info", "loaded; start Python with `uv run --extra agent python play.py --live --heuristic`")

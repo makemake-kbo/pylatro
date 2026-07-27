@@ -209,11 +209,11 @@ function Serializer.snapshot(phase)
     local round = game.current_round or {}
     local resets = game.round_resets or {}
     local unsupported = {}
-    for _, area in ipairs({
-        G.hand, G.deck, G.discard, G.jokers, G.consumeables,
-        G.shop_jokers, G.shop_vouchers, G.shop_booster, G.pack_cards,
+    for _, area_name in ipairs({
+        "hand", "deck", "discard", "jokers", "consumeables",
+        "shop_jokers", "shop_vouchers", "shop_booster", "pack_cards",
     }) do
-        scan_area(area, unsupported)
+        scan_area(G[area_name], unsupported)
     end
 
     local shop = {
@@ -310,7 +310,8 @@ function Serializer.legality(phase)
             if not card.debuff then table.insert(legal.use_consumable_ids, card_id(card)) end
         end
     elseif phase == "shop" then
-        for _, area in ipairs({G.shop_jokers, G.shop_vouchers, G.shop_booster}) do
+        for _, area_name in ipairs({"shop_jokers", "shop_vouchers", "shop_booster"}) do
+            local area = G[area_name]
             for _, card in ipairs(area and area.cards or {}) do
                 if card.cost <= value_or(G.GAME.dollars, 0) then
                     table.insert(legal.shop_buy_ids, card_id(card))

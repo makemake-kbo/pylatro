@@ -7,25 +7,61 @@ local function walk(node, visit, seen)
     seen[node] = true
     local result = visit(node)
     if result then return result end
-    for _, key in ipairs({"children", "nodes", "UIBox", "definition"}) do
-        local child = rawget(node, key)
-        if type(child) == "table" then
-            for _, nested in pairs(child) do
-                local found = walk(nested, visit, seen)
+
+    -- UIBox instances keep the executable UIElement tree under UIRoot. The
+    -- `definition` field is only the construction schema and must not be
+    -- passed to G.FUNCS callbacks.
+    local ui_root = rawget(node, "UIRoot")
+    if type(ui_root) == "table" then
+        local found = walk(ui_root, visit, seen)
+        if found then return found end
+    end
+
+    for _, key in ipairs({"children", "nodes"}) do
+        local children = rawget(node, key)
+        if type(children) == "table" then
+            for _, child in pairs(children) do
+                local found = walk(child, visit, seen)
                 if found then return found end
             end
         end
+    end
+
+    -- Some UI elements embed another UIBox in config.object.
+    local config = rawget(node, "config")
+    local object = type(config) == "table" and rawget(config, "object")
+    if type(object) == "table" then
+        local found = walk(object, visit, seen)
+        if found then return found end
     end
     return nil
 end
 
 local function roots()
     local result = {}
+    local seen = {}
+    local function append(root)
+        if type(root) == "table" and not seen[root] then
+            seen[root] = true
+            table.insert(result, root)
+        end
+    end
+
+    -- Named live UI boxes cover vanilla decision screens.
+    if G.buttons then append(G.buttons) end
     if G.ROOM then table.insert(result, G.ROOM) end
-    if G.HUD then table.insert(result, G.HUD) end
-    if G.blind_select then table.insert(result, G.blind_select) end
-    if G.shop then table.insert(result, G.shop) end
-    if G.booster_pack then table.insert(result, G.booster_pack) end
+    if G.HUD then append(G.HUD) end
+    if G.HUD_blind then append(G.HUD_blind) end
+    if G.blind_select then append(G.blind_select) end
+    if G.shop then append(G.shop) end
+    if G.booster_pack then append(G.booster_pack) end
+    if G.round_eval then append(G.round_eval) end
+    if G.OVERLAY_MENU then append(G.OVERLAY_MENU) end
+
+    -- Card-local buy/use/sell buttons are separate UIBox instances. G.I.UIBOX
+    -- is Balatro's registry of currently live boxes and catches those without
+    -- relying on their visual nesting.
+    for _, root in pairs(G.I and G.I.UIBOX or {}) do append(root) end
     return result
 end
 
@@ -39,22 +75,30 @@ local function node_refers_to(node, ref)
 end
 
 local function find_callback(name, ref)
-    for _, root in ipairs(roots()) do
-        local found = walk(root, function(node)
+    if ref then
+        local found = walk(ref, function(node)
             local config = node.config or {}
             if config.button == name and node_refers_to(node, ref)
-                and config.disable_button ~= true and config.disabled ~= true then
+                and config.disable_button ~= true and config.disabled ~= true
+                and node.REMOVED ~= true
+                and (not node.states or node.states.visible ~= false) then
                 return node
             end
         end)
         if found then return found end
     end
-    if ref and ref.children then
-        return walk(ref.children, function(node)
+
+    for _, root in ipairs(roots()) do
+        local found = walk(root, function(node)
             local config = node.config or {}
-            if config.button == name and config.disable_button ~= true
-                and config.disabled ~= true then return node end
+            if config.button == name and node_refers_to(node, ref)
+                and config.disable_button ~= true and config.disabled ~= true
+                and node.REMOVED ~= true
+                and (not node.states or node.states.visible ~= false) then
+                return node
+            end
         end)
+        if found then return found end
     end
     return nil
 end
@@ -62,19 +106,66 @@ end
 local function invoke(names, ref)
     for _, name in ipairs(names) do
         local node = find_callback(name, ref)
-        if node and G.FUNCS and type(G.FUNCS[name]) == "function" then
-            G.FUNCS[name](node)
-            return true
+        if node then
+            -- Card buttons are sometimes created and invoked in this same
+            -- update. Run Balatro's own gate once so can_select_card,
+            -- can_buy, and related checks decide whether the callback is
+            -- actually live before execution.
+            local config = node.config or {}
+            local gate = config.func
+            if gate and G.FUNCS and type(G.FUNCS[gate]) == "function" then
+                G.FUNCS[gate](node)
+            end
+            if config.button == name
+                and config.disable_button ~= true and config.disabled ~= true
+                and G.FUNCS and type(G.FUNCS[name]) == "function" then
+                G.FUNCS[name](node)
+                return true
+            end
         end
     end
     return false, "no enabled UI callback: " .. table.concat(names, "/")
 end
 
+local function invoke_hand_button(action_type)
+    local callback = action_type == "play"
+        and "play_cards_from_highlighted"
+        or "discard_cards_from_highlighted"
+    local button_id = action_type == "play" and "play_button" or "discard_button"
+
+    if not G.buttons or type(G.buttons.get_UIE_by_ID) ~= "function" then
+        return false, "hand button UI is not live: " .. button_id
+    end
+    local node = G.buttons:get_UIE_by_ID(button_id)
+    if not node or type(node.config) ~= "table" then
+        return false, "hand button UI node is absent: " .. button_id
+    end
+
+    -- Highlighting and the HTTP callback happen in the same update. Refresh
+    -- Balatro's own can_play/can_discard gate immediately instead of waiting a
+    -- frame for UIElement:update to set config.button.
+    local gate = node.config.func
+    if gate and G.FUNCS and type(G.FUNCS[gate]) == "function" then
+        G.FUNCS[gate](node)
+    end
+    if node.config.button ~= callback then
+        return false, "hand button is disabled after live legality check: " .. button_id
+    end
+    if not G.FUNCS or type(G.FUNCS[callback]) ~= "function" then
+        return false, "Balatro callback is unavailable: " .. callback
+    end
+    G.FUNCS[callback](node)
+    return true
+end
+
 local function find_card(id)
-    for _, area in ipairs({
-        G.hand, G.deck, G.discard, G.jokers, G.consumeables,
-        G.shop_jokers, G.shop_vouchers, G.shop_booster, G.pack_cards,
+    -- Use names rather than a table containing optional nil values: ipairs
+    -- stops at the first hole, which could hide every shop or pack area.
+    for _, area_name in ipairs({
+        "hand", "deck", "discard", "jokers", "consumeables",
+        "shop_jokers", "shop_vouchers", "shop_booster", "pack_cards",
     }) do
+        local area = G[area_name]
         for _, card in ipairs(area and area.cards or {}) do
             if PYLATRO_BRIDGE.serializer.card_id(card) == id then return card, area end
         end
@@ -100,6 +191,16 @@ local function highlight_ids(ids, expected_area)
             expected_area:add_to_highlighted(card, true)
         else
             table.insert(expected_area.highlighted, card)
+        end
+    end
+
+    local highlighted = {}
+    for _, card in ipairs(expected_area and expected_area.highlighted or {}) do
+        highlighted[PYLATRO_BRIDGE.serializer.card_id(card)] = true
+    end
+    for _, id in ipairs(ids or {}) do
+        if not highlighted[id] then
+            return false, "Balatro refused to highlight card: " .. id
         end
     end
     return true
@@ -130,9 +231,7 @@ function Executor.execute(action)
     elseif action.type == "play" or action.type == "discard" then
         ok, err = highlight_ids(action.card_ids, G.hand)
         if not ok then return false, err end
-        return invoke(action.type == "play"
-            and {"play_cards_from_highlighted"}
-            or {"discard_cards_from_highlighted"})
+        return invoke_hand_button(action.type)
     elseif action.type == "shop_buy" then
         local card = find_card(action.item_id)
         if not card then return false, "shop item is no longer live" end
@@ -140,8 +239,14 @@ function Executor.execute(action)
     elseif action.type == "shop_reroll" then
         return invoke({"reroll_shop"})
     elseif action.type == "shop_sell" then
-        local card = find_card(action.item_id)
+        local card, area = find_card(action.item_id)
         if not card then return false, "owned item is no longer live" end
+        if area ~= G.jokers and area ~= G.consumeables then
+            return false, "shop sell target is not an owned joker or consumable"
+        end
+        -- Owned Sell controls are instantiated by Card:highlight().
+        ok, err = highlight_ids({action.item_id}, area)
+        if not ok then return false, err end
         return invoke({"sell_card"}, card)
     elseif action.type == "shop_leave" then
         return invoke({"toggle_shop", "next_round"})
@@ -158,6 +263,10 @@ function Executor.execute(action)
     elseif action.type == "pack_claim" then
         local card = find_card(action.item_id)
         if not card then return false, "pack card is no longer live" end
+        -- Pack Select/Use controls are instantiated by Card:highlight().
+        -- Highlight the claimed card first, just as a player click does.
+        ok, err = highlight_ids({action.item_id}, G.pack_cards)
+        if not ok then return false, err end
         ok, err = highlight_ids(action.card_ids or {}, G.hand)
         if not ok then return false, err end
         if action.joker_ids and #action.joker_ids > 0 then

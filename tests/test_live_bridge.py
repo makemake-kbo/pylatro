@@ -9,6 +9,7 @@ import pytest
 
 from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
+from pylatro_agent.hand_candidates import generate_hand_candidates
 from pylatro_agent.live.actions import semantic_action
 from pylatro_agent.live.adapter import SnapshotAdapter
 from pylatro_agent.live.legality import intersect_live_legality
@@ -142,6 +143,11 @@ def test_golden_live_snapshots_validate(case):
     assert live.sub_phase in SubPhase
     if case["name"] == "face_down_hand":
         assert live.state.hand_cards[0].face_down
+    if case["name"] == "ten_rank_hand":
+        assert live.state.hand_cards[0].rank == "T"
+        play_candidates, discard_candidates = generate_hand_candidates(live.state)
+        assert play_candidates
+        assert discard_candidates
     if case["name"] == "boss_blind":
         assert live.state.round_resets.blind["chips"] == 900
     if case["phase"] == "booster_pack":

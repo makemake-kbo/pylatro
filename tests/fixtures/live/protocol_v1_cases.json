@@ -1,6 +1,7 @@
 [
   {"name":"blind_selection","phase":"blind_select","patch":{}},
   {"name":"face_down_hand","phase":"hand_play","patch":{"cards":{"hand":[{"id":"h1","front_key":"S_A","face_down":true},{"id":"h2","front_key":"H_K"}]}}},
+  {"name":"ten_rank_hand","phase":"hand_play","patch":{"cards":{"hand":[{"id":"h1","front_key":"C_T","rank":"10"},{"id":"h2","front_key":"H_K"}]}}},
   {"name":"boss_blind","phase":"blind_select","patch":{"blind_on_deck":"Boss","blind":{"key":"bl_hook","chips":900}}},
   {"name":"shop","phase":"shop","patch":{"shop":{"cards":[{"id":"shop1","center_key":"j_joker","card_type":"Joker","cost":2}]}}},
   {"name":"tarot_pack","phase":"booster_pack","patch":{"pack":{"booster_key":"p_arcana_normal_1","state_name":"TAROT_PACK","choices_remaining":1,"cards":[{"id":"pack1","center_key":"c_magician","card_type":"Tarot","cost":0}]}}},

@@ -1,5 +1,5 @@
-local card_1 = {wire_id = "hand:1"}
-local card_2 = {wire_id = "hand:2"}
+local card_1 = {wire_id = "hand:1", STATIONARY = true}
+local card_2 = {wire_id = "hand:2", STATIONARY = true}
 local play_button = {}
 local discard_button = {}
 
@@ -28,18 +28,21 @@ PYLATRO_BRIDGE = {
 local Readiness = assert(loadfile("mods/pylatro_bridge/readiness.lua"))()
 local state = {}
 
+-- Unrelated UI events may live in the base queue indefinitely and must not
+-- prevent the bridge's first blind-selection request.
+G.E_MANAGER.queues.base = {{}}
+assert(Readiness.ready("blind_select", 0, state))
+
 assert(not Readiness.ready("hand_play", 0, state))
 G.STATE_COMPLETE = true
-
--- The real EventManager field is queues.base. Pending draw animation events
--- must block a decision even after Balatro enters SELECTING_HAND.
-G.E_MANAGER.queues.base = {{}}
-assert(not Readiness.ready("hand_play", 0, state))
-G.E_MANAGER.queues.base = {}
 
 SMODS.cards_to_draw = 2
 assert(not Readiness.ready("hand_play", 0, state))
 SMODS.cards_to_draw = 0
+
+card_1.STATIONARY = false
+assert(not Readiness.ready("hand_play", 1.00, state))
+card_1.STATIONARY = true
 
 assert(not Readiness.ready("hand_play", 1.00, state))
 assert(not Readiness.ready("hand_play", 1.24, state))

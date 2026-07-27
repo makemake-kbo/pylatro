@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [makemake]
 --- MOD_DESCRIPTION: Loopback bridge to the Pylatro live agent.
 --- PREFIX: pylatro_bridge
---- VERSION: 0.1.4
+--- VERSION: 0.1.5
 --- DEPENDENCIES: [Steamodded>=1.0.0~BETA]
 
 local mod = SMODS.current_mod
@@ -71,7 +71,7 @@ local function versions()
     return {
         balatro = tostring(G.VERSION or "unknown"),
         steamodded = tostring(SMODS.version or "unknown"),
-        bridge = tostring(mod.version or "0.1.4"),
+        bridge = tostring(mod.version or "0.1.5"),
     }
 end
 

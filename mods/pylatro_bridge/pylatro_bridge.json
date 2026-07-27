@@ -5,7 +5,7 @@
   "description": "Thin loopback sensor/actuator bridge for the Pylatro live agent.",
   "prefix": "pylatro_bridge",
   "main_file": "main.lua",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "priority": 0,
   "badge_colour": "4f8fba",
   "dependencies": ["Steamodded (>=1.0.0~BETA)"]

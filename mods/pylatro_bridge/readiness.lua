@@ -2,15 +2,17 @@ local Readiness = {}
 
 local HAND_SETTLE_SECONDS = 0.25
 
-local function base_queue_empty()
-    local queues = G.E_MANAGER and G.E_MANAGER.queues
-    return not queues or not queues.base or #queues.base == 0
-end
-
 local function controller_locks_clear()
     if G.CONTROLLER.locked then return false end
     for _, locked in pairs(G.CONTROLLER.locks or {}) do
         if locked then return false end
+    end
+    return true
+end
+
+local function hand_cards_stationary()
+    for _, card in ipairs(G.hand and G.hand.cards or {}) do
+        if card.STATIONARY ~= true then return false end
     end
     return true
 end
@@ -40,12 +42,12 @@ function Readiness.ready(current_phase, now, state)
     if not G or not G.GAME or not G.CONTROLLER then return false end
     if not controller_locks_clear() then return false end
     if G.GAME.STOP_USE and G.GAME.STOP_USE > 0 then return false end
-    if not base_queue_empty() then return false end
 
     if current_phase == "hand_play" then
         if not G.STATE_COMPLETE then return false end
         if not hand_buttons_live() then return false end
         if (SMODS.cards_to_draw or 0) > 0 or SMODS.draw_queued then return false end
+        if not hand_cards_stationary() then return false end
 
         local signature = hand_signature()
         if state.hand_signature ~= signature then

@@ -264,7 +264,10 @@ def main():
         "--target-kl",
         type=float,
         default=0.05,
-        help="Stop each PPO epoch early when approximate KL exceeds this value; <=0 disables (default: 0.05)",
+        help=(
+            "Stop remaining PPO epochs when full-rollout approximate KL exceeds "
+            "this value; <=0 disables (default: 0.05)"
+        ),
     )
     parser.add_argument(
         "--target-kl-p95",
@@ -281,8 +284,8 @@ def main():
         type=float,
         default=None,
         help=(
-            "Optional hard guard: warn when the max minibatch approx_kl exceeds this "
-            "(logged as ppo/stop_reason_kl_max). Use ~0.25 to surface dangerous KL spikes. "
+            "Optional hard safety limit: reject the complete PPO update and restore "
+            "model plus optimizer when any minibatch approximate KL exceeds this. "
             "Default: disabled."
         ),
     )
@@ -291,8 +294,8 @@ def main():
         type=float,
         default=None,
         help=(
-            "Optional hard guard: warn when ppo/minibatch_fraction falls below this "
-            "(target_kl is stopping updates too early). Use ~0.50. Default: disabled."
+            "Minimum minibatch fraction that must be processed before target-KL may "
+            "soft-stop remaining epochs. Use ~0.50. Default: disabled."
         ),
     )
     parser.add_argument(

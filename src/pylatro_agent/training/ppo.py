@@ -1,5 +1,6 @@
 """Phase 2: PPO training loop with vectorized environments."""
 
+import copy
 import logging
 import math
 import random
@@ -299,8 +300,9 @@ class PPOConfig:
     gae_lambda: float = 0.97
     clip_epsilon: float = 0.1  # PPO clip range; tighter than the usual 0.2
     target_kl: float | None = 0.05  # Phase 4: raised from 0.03; chronic KL-stop means the step size is wrong, not the trust region
-    # Optional trust-region diagnostic guards (do not stop training on their
-    # own; they log ppo/stop_reason_* and emit console warnings when breached).
+    # Optional trust-region guards. P95 remains diagnostic; max rejects and
+    # rolls back the complete PPO update. The minimum fraction prevents a soft
+    # target-KL stop until enough minibatches have been processed.
     target_kl_p95: float | None = None
     target_kl_max: float | None = None
     min_minibatch_fraction: float | None = None
@@ -565,6 +567,12 @@ class _UpdateStats:
     on_policy_positive_advantage_fractions: list[float] = field(default_factory=list)
     on_policy_return_means: list[float] = field(default_factory=list)
     ppo_minibatches_processed: list[int] = field(default_factory=list)
+    ppo_samples_processed: int = 0
+    running_kl: float = 0.0
+    full_kl: float = 0.0
+    kl_rollback: bool = False
+    stop_reason: str = "none"
+    actual_lr: float = 0.0
     sil_losses: list[float] = field(default_factory=list)
     sil_losses_weighted: list[float] = field(default_factory=list)
     sil_advantage_means: list[float] = field(default_factory=list)
@@ -592,6 +600,48 @@ class _UpdateStats:
     sil_grad_ppo_actor_norm_ratio: float | None = None
     sil_grad_ppo_actor_grad_cosine: float | None = None
     sil_grad_diagnostic_valid: bool = False
+
+
+@dataclass
+class _PPOUpdateSnapshot:
+    """Exact pre-update state used to reject an unsafe PPO update."""
+
+    model: dict
+    optimizer: dict
+
+
+def _clone_state_to_cpu(value):
+    """Recursively clone checkpoint-like state without retaining GPU storage."""
+    if torch.is_tensor(value):
+        return value.detach().to(device="cpu", copy=True)
+    if isinstance(value, dict):
+        return {key: _clone_state_to_cpu(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clone_state_to_cpu(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_clone_state_to_cpu(item) for item in value)
+    return copy.deepcopy(value)
+
+
+def _snapshot_ppo_update(model: nn.Module, optimizer: Adam) -> _PPOUpdateSnapshot:
+    """Clone model/optimizer state to CPU before a rollback-protected update."""
+    return _PPOUpdateSnapshot(
+        model=_clone_state_to_cpu(model.state_dict()),
+        optimizer=_clone_state_to_cpu(optimizer.state_dict()),
+    )
+
+
+def _restore_ppo_update(
+    model: nn.Module,
+    optimizer: Adam,
+    snapshot: _PPOUpdateSnapshot,
+) -> None:
+    """Restore every parameter, buffer, Adam moment, and Adam step exactly."""
+    model.load_state_dict(snapshot.model)
+    optimizer.load_state_dict(snapshot.optimizer)
+    device = next(model.parameters()).device
+    _optimizer_to(optimizer, device)
+    optimizer.zero_grad(set_to_none=True)
 
 
 @dataclass
@@ -738,6 +788,15 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("entropy_coeff must be non-negative")
     if config.target_kl is not None and config.target_kl <= 0.0:
         raise ValueError("target_kl must be positive when set")
+    if config.target_kl_p95 is not None and config.target_kl_p95 <= 0.0:
+        raise ValueError("target_kl_p95 must be positive when set")
+    if config.target_kl_max is not None and config.target_kl_max <= 0.0:
+        raise ValueError("target_kl_max must be positive when set")
+    if (
+        config.min_minibatch_fraction is not None
+        and not 0.0 <= config.min_minibatch_fraction <= 1.0
+    ):
+        raise ValueError("min_minibatch_fraction must be between 0 and 1")
     if not 0.0 <= config.teacher_rollout_prob <= 1.0:
         raise ValueError("teacher_rollout_prob must be between 0 and 1")
     if config.teacher_rollout_final_prob is not None and not 0.0 <= config.teacher_rollout_final_prob <= 1.0:
@@ -1034,6 +1093,62 @@ def _safe_distill_loss(
     return distill_loss, distill_loss_weighted
 
 
+@dataclass
+class _WeightedKL:
+    """Sample-weighted KL accumulator (minibatches may have different sizes)."""
+
+    total: float = 0.0
+    samples: int = 0
+
+    def add(self, mean_kl: float, samples: int) -> None:
+        if samples > 0:
+            self.total += float(mean_kl) * samples
+            self.samples += samples
+
+    @property
+    def mean(self) -> float:
+        return self.total / self.samples if self.samples else 0.0
+
+
+def _evaluate_rollout_kl(
+    model: nn.Module,
+    buffer: RolloutBuffer,
+    batch_size: int,
+    device: torch.device,
+    use_pin_memory: bool,
+    temperature: float,
+) -> tuple[float, float, int]:
+    """Evaluate current-vs-rollout KL over all on-policy samples.
+
+    The buffer API shuffles with NumPy, so preserve its RNG state: a diagnostic
+    pass must not change the order of the following training epoch.
+    """
+    numpy_state = np.random.get_state()
+    try:
+        batches = buffer.get_batches(batch_size, device, pin_memory=use_pin_memory)
+    finally:
+        np.random.set_state(numpy_state)
+
+    aggregate = _WeightedKL()
+    minibatch_max = 0.0
+    with torch.no_grad():
+        for batch in batches:
+            dist, _ = _grammar_distribution(
+                model, batch, temperature=temperature
+            )
+            on_policy = ~batch["teacher_forced"].bool()
+            sample_count = int(on_policy.sum().item())
+            if sample_count == 0:
+                continue
+            new_log_probs = dist.log_prob(batch["actions"])
+            log_ratio = new_log_probs - batch["old_log_probs"]
+            ratio = torch.exp(log_ratio)
+            kl = ((ratio - 1.0) - log_ratio)[on_policy].mean().item()
+            aggregate.add(kl, sample_count)
+            minibatch_max = max(minibatch_max, kl)
+    return aggregate.mean, minibatch_max, aggregate.samples
+
+
 def _run_ppo_update(
     model: nn.Module,
     optimizer: Adam,
@@ -1077,6 +1192,30 @@ def _run_ppo_update(
         distill_losses=[], teacher_match_fractions=[], distill_weight_means=[],
         on_policy_fractions=[],
     )
+    stats.actual_lr = float(optimizer.param_groups[0]["lr"])
+
+    # A hard KL limit is a rejection criterion, not a warning. Snapshot before
+    # the first gradient is computed so a rejected update restores both weights
+    # and Adam's moments/step counters.
+    rollback_snapshot = (
+        _snapshot_ppo_update(model, optimizer)
+        if config.target_kl_max is not None and not policy_frozen
+        else None
+    )
+    n_rollout_samples = len(buffer._flat_returns)
+    minibatches_per_epoch = max(
+        1, math.ceil(n_rollout_samples / effective_batch_size)
+    )
+    expected_minibatches = minibatches_per_epoch * config.ppo_epochs
+    min_soft_stop_fraction = (
+        config.min_minibatch_fraction
+        if config.min_minibatch_fraction is not None
+        else 0.0
+    )
+    min_soft_stop_minibatches = math.ceil(
+        expected_minibatches * min_soft_stop_fraction
+    )
+    running_kl = _WeightedKL()
 
     # SIL logical-group budget. Per update (not per epoch). Attempted groups
     # count even when their gate is empty, so training does not keep resampling
@@ -1095,11 +1234,8 @@ def _run_ppo_update(
     grad_diag_attempted = False
     sil_grad_snapshot: list[torch.Tensor | None] | None = None
 
-    stop_update = False
     minibatches_processed = 0
     for _ppo_epoch in range(config.ppo_epochs):
-        if stop_update:
-            break
         batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
         optimizer.zero_grad()
         for i, batch in enumerate(batches):
@@ -1444,20 +1580,72 @@ def _run_ppo_update(
                 stats.teacher_unreachable_family_fractions.setdefault(fam_name, []).append(frac)
             stats.on_policy_fractions.append(on_policy_fraction)
             minibatches_processed += 1
+            on_policy_samples = int(on_policy_count.item())
+            stats.ppo_samples_processed += on_policy_samples
+            running_kl.add(approx_kl, on_policy_samples)
+            stats.running_kl = running_kl.mean
 
-            if config.target_kl is not None and approx_kl > config.target_kl:
-                logger.debug(
-                    "Stopping PPO update early: approx_kl=%.5f exceeded target_kl=%.5f",
+            # A hard minibatch breach rejects the entire PPO update. This check
+            # is intentionally independent of the soft-stop minimum fraction.
+            if (
+                rollback_snapshot is not None
+                and config.target_kl_max is not None
+                and approx_kl > config.target_kl_max
+            ):
+                logger.warning(
+                    "Rejecting PPO update: minibatch KL %.5f exceeded hard limit %.5f",
                     approx_kl,
-                    config.target_kl,
+                    config.target_kl_max,
                 )
-                stop_update = True
-            # KL early stopping happens at a logical optimizer-group boundary:
-            # finish the pending accumulation group (step above), then stop. Do
-            # not abandon a group halfway through, and do not run more groups or
-            # a standalone SIL pass afterwards.
-            if stop_update and is_step_boundary:
+                _restore_ppo_update(model, optimizer, rollback_snapshot)
+                stats.kl_rollback = True
+                stats.stop_reason = "hard_kl"
                 break
+        if stats.kl_rollback:
+            break
+
+        # Soft stopping uses a full-rollout, sample-weighted measurement at an
+        # epoch boundary. A noisy individual minibatch can therefore neither
+        # terminate an update nor bias the aggregate merely by being small.
+        full_kl, full_kl_max, _ = _evaluate_rollout_kl(
+            model,
+            buffer,
+            effective_batch_size,
+            device,
+            use_pin_memory,
+            config.rollout_temperature,
+        )
+        stats.full_kl = full_kl
+        if (
+            rollback_snapshot is not None
+            and config.target_kl_max is not None
+            and full_kl_max > config.target_kl_max
+        ):
+            logger.warning(
+                "Rejecting PPO update: full-rollout minibatch KL %.5f exceeded "
+                "hard limit %.5f",
+                full_kl_max,
+                config.target_kl_max,
+            )
+            _restore_ppo_update(model, optimizer, rollback_snapshot)
+            stats.kl_rollback = True
+            stats.stop_reason = "hard_kl"
+            break
+        if (
+            config.target_kl is not None
+            and full_kl > config.target_kl
+            and minibatches_processed >= min_soft_stop_minibatches
+        ):
+            logger.debug(
+                "Stopping remaining PPO epochs: full-rollout KL %.5f exceeded "
+                "target %.5f after %d/%d minibatches",
+                full_kl,
+                config.target_kl,
+                minibatches_processed,
+                expected_minibatches,
+            )
+            stats.stop_reason = "soft_kl"
+            break
 
     stats.ppo_minibatches_processed.append(minibatches_processed)
     return stats
@@ -3486,19 +3674,24 @@ def train_ppo(
                 grad_diagnostics_due=sil_grad_diagnostics_due,
             )
 
-            dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
-                model=model,
-                optimizer=optimizer,
-                buffer=buffer,
-                # DAgger BC trains the policy, so it must respect the critic
-                # warmup freeze or the "frozen" policy drifts anyway.
-                coeff=0.0 if in_critic_warmup else config.dagger_bc_coeff,
-                config=config,
-                accum_steps=accum_steps,
-                effective_batch_size=effective_batch_size,
-                device=device,
-                use_pin_memory=use_pin_memory,
-            )
+            if update_stats.kl_rollback:
+                # Keep the rejected update atomic: do not apply a subsequent
+                # policy mutation or advance a controller from rejected stats.
+                dagger_losses, dagger_teacher_match_fractions = [], []
+            else:
+                dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
+                    model=model,
+                    optimizer=optimizer,
+                    buffer=buffer,
+                    # DAgger BC trains the policy, so it must respect the critic
+                    # warmup freeze or the "frozen" policy drifts anyway.
+                    coeff=0.0 if in_critic_warmup else config.dagger_bc_coeff,
+                    config=config,
+                    accum_steps=accum_steps,
+                    effective_batch_size=effective_batch_size,
+                    device=device,
+                    use_pin_memory=use_pin_memory,
+                )
 
             update_policy_losses = update_stats.policy_losses
             update_value_losses = update_stats.value_losses
@@ -3522,7 +3715,7 @@ def train_ppo(
                 mean_normalized_entropy,
                 config.entropy_ema_beta,
             )
-            if config.adaptive_entropy:
+            if config.adaptive_entropy and not update_stats.kl_rollback:
                 assert log_alpha is not None
                 assert alpha_optimizer is not None
                 alpha_loss = _entropy_alpha_loss(log_alpha, entropy_signal_ema, config.target_entropy)
@@ -3547,7 +3740,20 @@ def train_ppo(
             writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
             writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
             writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
-            writer.add_scalar("ppo/approx_kl", np.mean(update_approx_kls), update_count)
+            writer.add_scalar("ppo/approx_kl", update_stats.running_kl, update_count)
+            writer.add_scalar("ppo/full_kl", update_stats.full_kl, update_count)
+            writer.add_scalar(
+                "ppo/kl_rollback_event",
+                1.0 if update_stats.kl_rollback else 0.0,
+                update_count,
+            )
+            writer.add_scalar("ppo/actual_lr", update_stats.actual_lr, update_count)
+            for reason in ("none", "soft_kl", "hard_kl"):
+                writer.add_scalar(
+                    f"ppo/stop_reason_{reason}",
+                    1.0 if update_stats.stop_reason == reason else 0.0,
+                    update_count,
+                )
             writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
             writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
             if sil_buffer is not None:
@@ -3790,6 +3996,11 @@ def train_ppo(
             )
             minibatches_processed = int(np.sum(update_stats.ppo_minibatches_processed))
             writer.add_scalar("ppo/minibatches_processed", minibatches_processed, update_count)
+            writer.add_scalar(
+                "ppo/samples_processed",
+                update_stats.ppo_samples_processed,
+                update_count,
+            )
             # Target-KL early stopping can halt an update after far fewer minibatches
             # than expected; without this it is invisible. Expected = full passes over
             # the rollout for every PPO epoch.

@@ -8,6 +8,7 @@ and the logical-minibatch SIL budget inside ``_run_ppo_update``.
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 
@@ -914,6 +915,165 @@ def test_kl_stop_at_logical_boundary() -> None:
         # Early stop happened; it must have landed on a group boundary, not
         # abandoned a pending accumulation group halfway through.
         assert processed % accum_steps == 0
+
+
+def _sync_buffer_log_probs(model: _SilModel, buffer) -> None:
+    """Make a synthetic buffer genuinely on-policy for KL tests."""
+    with torch.no_grad():
+        batch = buffer.get_batches(buffer.total_size, torch.device("cpu"))[0]
+        dist, _ = model.action_distribution(
+            batch["tokens"],
+            batch["token_types"],
+            batch["scalars"],
+            batch["attention_mask"],
+            batch["action_mask"],
+        )
+        log_prob = float(dist.log_prob(torch.zeros(buffer.total_size, dtype=torch.long))[0])
+    buffer.log_probs[:] = log_prob
+
+
+def _assert_nested_tensors_equal(left, right) -> None:
+    if torch.is_tensor(left):
+        assert torch.equal(left, right)
+    elif isinstance(left, dict):
+        assert left.keys() == right.keys()
+        for key in left:
+            _assert_nested_tensors_equal(left[key], right[key])
+    elif isinstance(left, (list, tuple)):
+        assert len(left) == len(right)
+        for left_item, right_item in zip(left, right, strict=True):
+            _assert_nested_tensors_equal(left_item, right_item)
+    else:
+        assert left == right
+
+
+def test_weighted_kl_uses_sample_count() -> None:
+    from pylatro_agent.training.ppo import _WeightedKL
+
+    aggregate = _WeightedKL()
+    aggregate.add(0.01, 10)
+    aggregate.add(0.05, 2)
+
+    assert aggregate.samples == 12
+    assert aggregate.mean == pytest.approx((0.01 * 10 + 0.05 * 2) / 12)
+
+
+def test_soft_kl_stop_cannot_happen_before_min_fraction(monkeypatch) -> None:
+    import pylatro_agent.training.ppo as ppo
+
+    model = _SilModel()
+    optimizer = ppo._make_policy_optimizer(model.parameters(), lr=0.01)
+    buffer = _ppo_signal_buffer(8)
+    _sync_buffer_log_probs(model, buffer)
+    monkeypatch.setattr(
+        ppo,
+        "_evaluate_rollout_kl",
+        lambda *args, **kwargs: (1.0, 1.0, 8),
+    )
+
+    stats = ppo._run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=_sil_ppo_config(
+            ppo_epochs=4,
+            mini_batch_size=2,
+            target_kl=0.01,
+            target_kl_max=None,
+            min_minibatch_fraction=0.5,
+        ),
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert stats.ppo_minibatches_processed == [8]  # 2 complete epochs of 4
+    assert stats.stop_reason == "soft_kl"
+    assert not stats.kl_rollback
+
+
+def test_hard_kl_breach_restores_model_and_adam_exactly() -> None:
+    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+
+    model = _SilModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.5)
+    # Seed all Adam moments and step counters before the protected update.
+    for param in model.parameters():
+        param.grad = torch.ones_like(param)
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+
+    buffer = _ppo_signal_buffer(8)
+    buffer.advantages[:] = 1.0
+    _sync_buffer_log_probs(model, buffer)
+    model_before = copy.deepcopy(model.state_dict())
+    optimizer_before = copy.deepcopy(optimizer.state_dict())
+
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=_sil_ppo_config(
+            ppo_epochs=4,
+            mini_batch_size=2,
+            target_kl=None,
+            target_kl_max=1e-8,
+        ),
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert stats.kl_rollback
+    assert stats.stop_reason == "hard_kl"
+    _assert_nested_tensors_equal(model.state_dict(), model_before)
+    _assert_nested_tensors_equal(optimizer.state_dict(), optimizer_before)
+
+
+def test_no_kl_breach_path_trains_normally() -> None:
+    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+
+    model = _SilModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
+    buffer = _ppo_signal_buffer(8)
+    buffer.advantages[:] = 1.0
+    _sync_buffer_log_probs(model, buffer)
+    before = copy.deepcopy(model.state_dict())
+
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        distill_coeff=0.0,
+        config=_sil_ppo_config(
+            ppo_epochs=2,
+            mini_batch_size=2,
+            target_kl=None,
+            target_kl_max=10.0,
+        ),
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+
+    assert not stats.kl_rollback
+    assert stats.stop_reason == "none"
+    assert stats.ppo_minibatches_processed == [8]
+    assert any(
+        not torch.equal(value, before[key])
+        for key, value in model.state_dict().items()
+    )
 
 
 def test_sil_shares_optimizer_step_with_ppo() -> None:

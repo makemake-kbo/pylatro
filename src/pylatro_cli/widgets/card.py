@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pylatro.models import PlayingCard
 
 
-CARD_WIDTH = 9
+CARD_WIDTH = 7
 CARD_HEIGHT = 5
 
 
@@ -24,9 +24,9 @@ class PlayingCardWidget(Widget):
 
     DEFAULT_CSS = """
     PlayingCardWidget {
-        width: 9;
+        width: 7;
         height: 5;
-        margin: 0 0;
+        margin: 0 1;
     }
     """
 

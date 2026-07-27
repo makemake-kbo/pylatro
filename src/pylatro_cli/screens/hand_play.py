@@ -9,6 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Static
 
 from ..controller import GameController, GamePhase
+from ..joker_order import move_owned_joker
 from ..widgets.action_buttons import ActionButtons
 from ..widgets.card_row import CardRow
 from ..widgets.consumable_bar import ConsumableBar
@@ -24,6 +25,7 @@ class HandPlayScreen(Screen):
         Binding("d", "do_discard", "Discard", show=True),
         Binding("s", "sort_hand", "Sort", show=False),
         Binding("i", "run_info", "Run Info", show=False),
+        Binding("f2", "focus_jokers", "Manage Jokers", show=False),
         Binding("tab", "focus_next", "Next Zone", show=False),
         Binding("shift+tab", "focus_previous", "Prev Zone", show=False),
         Binding("1", "use_consumable_1", "Use C1", show=False),
@@ -40,6 +42,7 @@ class HandPlayScreen(Screen):
     #center-area {
         width: 1fr;
         layout: vertical;
+        align: center middle;
     }
     #hand-label {
         height: 1;
@@ -53,7 +56,7 @@ class HandPlayScreen(Screen):
         color: #95a5a6;
     }
     #right-sidebar {
-        width: 22;
+        width: 16;
         background: #1c1c3a;
         border-left: solid #5c5c8a;
         padding: 1;
@@ -256,6 +259,9 @@ class HandPlayScreen(Screen):
 
         self.app.push_screen(RunInfoScreen())
 
+    def action_focus_jokers(self) -> None:
+        self.query_one("#joker-bar", JokerBar).focus()
+
     def _use_consumable(self, idx: int) -> None:
         ctrl = self._ctrl()
         state = ctrl.state
@@ -306,6 +312,12 @@ class HandPlayScreen(Screen):
         ctrl = self._ctrl()
         ctrl.sell_joker(event.index)
         self._refresh_display()
+
+    def on_joker_bar_move_requested(self, event: JokerBar.MoveRequested) -> None:
+        state = self._ctrl().state
+        if state is not None:
+            move_owned_joker(state, event.index, event.offset)
+            self._refresh_display()
 
     def on_consumable_bar_sell_requested(self, event: ConsumableBar.SellRequested) -> None:
         ctrl = self._ctrl()

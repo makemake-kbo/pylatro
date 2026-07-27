@@ -21,12 +21,13 @@ class CardRow(Widget):
 
     DEFAULT_CSS = """
     CardRow {
-        height: auto;
+        height: 7;
         width: 100%;
     }
     CardRow HorizontalScroll {
-        height: auto;
+        height: 7;
         width: 100%;
+        align: center middle;
     }
     """
 

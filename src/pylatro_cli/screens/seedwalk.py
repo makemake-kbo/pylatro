@@ -23,6 +23,7 @@ from textual.widgets import Button, Input, Label, Static
 from pylatro import get_blind_amount
 from pylatro.seedsearch import SpecError
 
+from ..joker_order import move_owned_joker
 from ..theme import BALATRO_PALETTE
 from ..widgets.blind_panel import BlindPanel
 from ..widgets.consumable_bar import ConsumableBar
@@ -290,6 +291,7 @@ class SeedWalkShopScreen(_WalkScreen):
         Binding("r", "reroll", "Reroll"),
         Binding("p", "pin", "Pin"),
         Binding("f", "focus_find", "Find joker"),
+        Binding("f2", "focus_jokers", "Manage Jokers", show=False),
         Binding("n", "next_blind", "Next blind"),
         Binding("R", "report", "Report"),
     ]
@@ -454,6 +456,9 @@ class SeedWalkShopScreen(_WalkScreen):
     def action_focus_find(self) -> None:
         self.query_one("#sw-find", Input).focus()
 
+    def action_focus_jokers(self) -> None:
+        self.query_one("#sw-joker-bar", JokerBar).focus()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         walk = self._walk()
         query = event.value.strip()
@@ -493,6 +498,10 @@ class SeedWalkShopScreen(_WalkScreen):
 
     def on_joker_bar_sell_requested(self, event: JokerBar.SellRequested) -> None:
         self._walk().sell_joker(event.index)
+        self._refresh()
+
+    def on_joker_bar_move_requested(self, event: JokerBar.MoveRequested) -> None:
+        move_owned_joker(self._walk().state, event.index, event.offset)
         self._refresh()
 
     def on_consumable_bar_sell_requested(self, event: ConsumableBar.SellRequested) -> None:

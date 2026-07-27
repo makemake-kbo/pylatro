@@ -18,8 +18,9 @@ class ActionButtons(Widget):
         align: center middle;
     }
     ActionButtons Button {
-        min-width: 14;
-        margin: 0 1;
+        width: 1fr;
+        min-width: 10;
+        margin: 0;
     }
     """
 

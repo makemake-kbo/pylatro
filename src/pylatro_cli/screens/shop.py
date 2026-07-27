@@ -11,6 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Static
 
 from ..controller import GameController
+from ..joker_order import move_owned_joker
 from ..theme import BALATRO_PALETTE
 from ..widgets.consumable_bar import ConsumableBar
 from ..widgets.joker_bar import JokerBar
@@ -31,6 +32,7 @@ class ShopScreen(Screen):
         Binding("enter", "buy_item", "Buy"),
         Binding("r", "reroll", "Reroll"),
         Binding("n", "next_round", "Next Round"),
+        Binding("f2", "focus_jokers", "Manage Jokers", show=False),
         Binding("tab", "focus_next", "Next Zone", show=False),
         Binding("shift+tab", "focus_previous", "Prev Zone", show=False),
     ]
@@ -283,6 +285,9 @@ class ShopScreen(Screen):
 
         self.app.switch_screen(BlindSelectScreen())
 
+    def action_focus_jokers(self) -> None:
+        self.query_one("#shop-joker-bar", JokerBar).focus()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         match event.button.id:
             case "reroll-btn":
@@ -293,6 +298,12 @@ class ShopScreen(Screen):
     def on_joker_bar_sell_requested(self, event: JokerBar.SellRequested) -> None:
         self._ctrl().sell_joker(event.index)
         self._refresh_display()
+
+    def on_joker_bar_move_requested(self, event: JokerBar.MoveRequested) -> None:
+        state = self._ctrl().state
+        if state is not None:
+            move_owned_joker(state, event.index, event.offset)
+            self._refresh_display()
 
     def on_consumable_bar_sell_requested(self, event: ConsumableBar.SellRequested) -> None:
         self._ctrl().sell_consumable(event.index)

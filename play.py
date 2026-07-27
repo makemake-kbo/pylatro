@@ -5,28 +5,31 @@ Usage:
     uv run python play.py --checkpoint checkpoints/supervised/supervised_epoch10.pt
     uv run python play.py --checkpoint checkpoints/ppo/ppo_update100.pt --games 20 --seed 42
     uv run python play.py --heuristic --games 50
+    uv run python play.py --live --heuristic
+    uv run python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-
-import torch
+from typing import TYPE_CHECKING
 
 from pylatro import load_game_data
 from pylatro_agent.action import ActionType, decode_action
-from pylatro_agent.agent import AgentConfig, BalatroAgent
-from pylatro_agent.checkpoint import load_checkpoint_payload
-from pylatro_agent.env import BalatroEnv
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.vocab import build_vocab
+
+if TYPE_CHECKING:
+    import torch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def _single_obs_to_batch(obs: dict, device: torch.device) -> dict[str, torch.Tensor]:
+    import torch
+
     return {
         "tokens": torch.tensor(obs["tokens"], dtype=torch.long, device=device).unsqueeze(0),
         "token_types": torch.tensor(obs["token_types"], dtype=torch.long, device=device).unsqueeze(0),
@@ -49,6 +52,12 @@ def play_model(
     audit: bool,
     win_ante: int | None,
 ) -> None:
+    import torch
+
+    from pylatro_agent.agent import AgentConfig, BalatroAgent
+    from pylatro_agent.checkpoint import load_checkpoint_payload
+    from pylatro_agent.env import BalatroEnv
+
     data = load_game_data()
     vocab = build_vocab(data)
 
@@ -79,8 +88,11 @@ def play_model(
             with torch.no_grad():
                 batch = _single_obs_to_batch(obs, dev)
                 dist, _ = model.action_distribution(
-                    batch["tokens"], batch["token_types"], batch["scalars"],
-                    batch["attention_mask"], batch["action_mask"],
+                    batch["tokens"],
+                    batch["token_types"],
+                    batch["scalars"],
+                    batch["attention_mask"],
+                    batch["action_mask"],
                     temperature=temperature,
                 )
                 action = (dist.sample() if sample else dist.mode()).item()
@@ -102,19 +114,21 @@ def play_model(
         total_antes += ante
         total_steps += steps
         status = "WIN" if won else f"LOSS (ante {ante})"
-        logger.info(f"Game {i+1}/{num_games}: {status} in {steps} steps")
+        logger.info(f"Game {i + 1}/{num_games}: {status} in {steps} steps")
 
-    print(f"\n{'='*40}")
-    print(f"Results: {wins}/{num_games} wins ({wins/num_games:.1%})")
-    print(f"Avg ante reached: {total_antes/num_games:.1f}")
-    print(f"Avg steps: {total_steps/num_games:.0f}")
+    print(f"\n{'=' * 40}")
+    print(f"Results: {wins}/{num_games} wins ({wins / num_games:.1%})")
+    print(f"Avg ante reached: {total_antes / num_games:.1f}")
+    print(f"Avg steps: {total_steps / num_games:.0f}")
     if audit and audited_steps:
-        print(f"Teacher match: {teacher_matches/audited_steps:.1%}")
+        print(f"Teacher match: {teacher_matches / audited_steps:.1%}")
         if play_steps:
-            print(f"Out-of-candidate plays: {out_of_candidate_plays/play_steps:.1%}")
+            print(f"Out-of-candidate plays: {out_of_candidate_plays / play_steps:.1%}")
 
 
 def play_heuristic(num_games: int, seed: int, win_ante: int | None) -> None:
+    from pylatro_agent.env import BalatroEnv
+
     data = load_game_data()
     vocab = build_vocab(data)
     agent = HeuristicAgent()
@@ -129,7 +143,9 @@ def play_heuristic(num_games: int, seed: int, win_ante: int | None) -> None:
         while not done:
             mask = obs["action_mask"]
             action = agent.select_action(
-                env.state, env._sub_phase, mask,
+                env.state,
+                env._sub_phase,
+                mask,
                 selected_cards=env._selected_cards,
                 pending_action=env._pending_action,
             )
@@ -143,18 +159,22 @@ def play_heuristic(num_games: int, seed: int, win_ante: int | None) -> None:
         total_antes += ante
         total_steps += steps
         status = "WIN" if won else f"LOSS (ante {ante})"
-        logger.info(f"Game {i+1}/{num_games}: {status} in {steps} steps")
+        logger.info(f"Game {i + 1}/{num_games}: {status} in {steps} steps")
 
-    print(f"\n{'='*40}")
-    print(f"Heuristic: {wins}/{num_games} wins ({wins/num_games:.1%})")
-    print(f"Avg ante reached: {total_antes/num_games:.1f}")
-    print(f"Avg steps: {total_steps/num_games:.0f}")
+    print(f"\n{'=' * 40}")
+    print(f"Heuristic: {wins}/{num_games} wins ({wins / num_games:.1%})")
+    print(f"Avg ante reached: {total_antes / num_games:.1f}")
+    print(f"Avg steps: {total_steps / num_games:.0f}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Play Balatro with a trained agent")
-    parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint")
-    parser.add_argument("--heuristic", action="store_true", help="Use rule-based heuristic agent")
+    policy = parser.add_mutually_exclusive_group(required=True)
+    policy.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint")
+    policy.add_argument("--heuristic", action="store_true", help="Use rule-based heuristic agent")
+    parser.add_argument("--live", action="store_true", help="Control a running Balatro game through the bridge")
+    parser.add_argument("--host", default="127.0.0.1", help="Live bind host (loopback only)")
+    parser.add_argument("--port", type=int, default=43137, help="Live bridge port (default: 43137)")
     parser.add_argument("--games", type=int, default=10, help="Number of games (default: 10)")
     parser.add_argument("--seed", type=int, default=0, help="Starting seed (default: 0)")
     parser.add_argument("--device", type=str, default=None, help="Device: cpu, mps, cuda")
@@ -167,17 +187,38 @@ def main():
     parser.add_argument("--win-ante", type=int, default=None, help="Curriculum victory ante override")
     args = parser.parse_args()
 
-    if args.heuristic:
+    device = args.device or "cpu"
+    if args.checkpoint and args.device is None:
+        import torch
+
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+
+    if args.live:
+        from pylatro_agent.live.policy import build_live_runner
+        from pylatro_agent.live.server import serve_live
+
+        if not 1 <= args.port <= 65535:
+            parser.error("--port must be between 1 and 65535")
+        try:
+            runner = build_live_runner(
+                checkpoint=args.checkpoint,
+                heuristic=args.heuristic,
+                device=device,
+                d_model=args.d_model,
+                n_layers=args.n_layers,
+                d_ff=args.d_ff,
+                sample=args.sample,
+                temperature=args.temperature,
+            )
+            serve_live(runner, host=args.host, port=args.port)
+        except ValueError as exc:
+            parser.error(str(exc))
+    elif args.heuristic:
         play_heuristic(args.games, args.seed, args.win_ante)
-    elif args.checkpoint:
-        device = args.device
-        if device is None:
-            if torch.backends.mps.is_available():
-                device = "mps"
-            elif torch.cuda.is_available():
-                device = "cuda"
-            else:
-                device = "cpu"
+    else:
         play_model(
             args.checkpoint,
             args.games,
@@ -191,8 +232,6 @@ def main():
             args.audit,
             args.win_ante,
         )
-    else:
-        parser.error("Provide --checkpoint or --heuristic")
 
 
 if __name__ == "__main__":

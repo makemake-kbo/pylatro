@@ -201,6 +201,17 @@ uv run python play.py --checkpoint checkpoints/supervised/supervised_epoch10.pt 
 uv run python play.py --heuristic --games 50
 ```
 
+#### Live Balatro
+
+Control a manually started vanilla Balatro run through the Steamodded bridge:
+
+```bash
+uv run python play.py --live --heuristic
+uv run python play.py --live --checkpoint checkpoints/ppo/ppo_update100.pt
+```
+
+See [the live bridge setup and troubleshooting guide](docs/live_bridge.md).
+
 #### Options
 
 ```

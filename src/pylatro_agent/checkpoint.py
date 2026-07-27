@@ -120,7 +120,12 @@ def restore_rng_states(states: dict[str, Any]) -> None:
         # to an accelerator; set_rng_state requires a CPU ByteTensor.
         torch.set_rng_state(states["torch_cpu"].to(device="cpu", dtype=torch.uint8))
     if "torch_cuda" in states and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(states["torch_cuda"])
+        # Checkpoints loaded with map_location="cuda" move these tensors onto
+        # the accelerator, but set_rng_state_all requires CPU ByteTensors.
+        cuda_states = [
+            state.to(device="cpu", dtype=torch.uint8) for state in states["torch_cuda"]
+        ]
+        torch.cuda.set_rng_state_all(cuda_states)
 
 
 def save_ppo_checkpoint(

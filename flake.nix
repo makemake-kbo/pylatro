@@ -26,6 +26,7 @@
             packages = with pkgs; [
               python
               uv
+              lua
               stdenv.cc
               gnumake
               pkg-config

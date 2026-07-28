@@ -1,0 +1,14 @@
+[
+  {"name":"blind_selection","phase":"blind_select","patch":{}},
+  {"name":"face_down_hand","phase":"hand_play","patch":{"cards":{"hand":[{"id":"h1","front_key":"S_A","face_down":true},{"id":"h2","front_key":"H_K"}]}}},
+  {"name":"ten_rank_hand","phase":"hand_play","patch":{"cards":{"hand":[{"id":"h1","front_key":"C_T","rank":"10"},{"id":"h2","front_key":"H_K"}]}}},
+  {"name":"boss_blind","phase":"blind_select","patch":{"blind_on_deck":"Boss","blind":{"key":"bl_hook","chips":900}}},
+  {"name":"shop","phase":"shop","patch":{"shop":{"cards":[{"id":"shop1","center_key":"j_joker","card_type":"Joker","cost":2}]}}},
+  {"name":"tarot_pack","phase":"booster_pack","patch":{"pack":{"booster_key":"p_arcana_normal_1","state_name":"TAROT_PACK","choices_remaining":1,"cards":[{"id":"pack1","center_key":"c_magician","card_type":"Tarot","cost":0}]}}},
+  {"name":"planet_pack","phase":"booster_pack","patch":{"pack":{"booster_key":"p_celestial_normal_1","state_name":"PLANET_PACK","choices_remaining":1,"cards":[{"id":"pack1","center_key":"c_mercury","card_type":"Planet","cost":0}]}}},
+  {"name":"spectral_pack","phase":"booster_pack","patch":{"pack":{"booster_key":"p_spectral_normal_1","state_name":"SPECTRAL_PACK","choices_remaining":1,"cards":[{"id":"pack1","center_key":"c_aura","card_type":"Spectral","cost":0}]}}},
+  {"name":"standard_pack","phase":"booster_pack","patch":{"pack":{"booster_key":"p_standard_normal_1","state_name":"STANDARD_PACK","choices_remaining":1,"cards":[{"id":"pack1","center_key":"c_base","card_type":"Default","front_key":"S_A","cost":0}]}}},
+  {"name":"buffoon_pack","phase":"booster_pack","patch":{"pack":{"booster_key":"p_buffoon_normal_1","state_name":"BUFFOON_PACK","choices_remaining":1,"cards":[{"id":"pack1","center_key":"j_joker","card_type":"Joker","cost":0}]}}},
+  {"name":"win","phase":"terminal","patch":{"won":true}},
+  {"name":"game_over","phase":"terminal","patch":{"game_over":true}}
+]

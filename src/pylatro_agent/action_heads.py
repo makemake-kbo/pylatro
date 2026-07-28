@@ -493,3 +493,32 @@ class PackHead(nn.Module):
         logits[:, ActionRange.PACK_SKIP] = self.skip_proj(global_pool).squeeze(-1)
 
         return logits
+
+
+class JokerMoveHead(nn.Module):
+    """Relational source/destination scores for ordered joker insertion."""
+
+    def __init__(self, d_model: int):
+        super().__init__()
+        ctx = 64
+        self.source_proj = nn.Linear(d_model, ctx)
+        self.destination_proj = nn.Linear(d_model, ctx)
+        self.pair_bias = nn.Parameter(torch.zeros(MAX_JOKER_SLOTS, MAX_JOKER_SLOTS))
+
+    def forward(self, backbone_out: torch.Tensor) -> torch.Tensor:
+        batch = backbone_out.shape[0]
+        logits = torch.full((batch, NUM_ACTIONS), -1e8, device=backbone_out.device)
+        joker_tokens = backbone_out[:, JOKER_START:JOKER_START + MAX_JOKER_SLOTS]
+        pair = torch.einsum(
+            "bic,bjc->bij",
+            self.source_proj(joker_tokens),
+            self.destination_proj(joker_tokens),
+        ) + self.pair_bias
+        for source in range(MAX_JOKER_SLOTS):
+            for destination in range(MAX_JOKER_SLOTS):
+                if source == destination:
+                    continue
+                compressed = destination - (destination > source)
+                action = int(ActionRange.MOVE_JOKER_START) + source * (MAX_JOKER_SLOTS - 1) + compressed
+                logits[:, action] = pair[:, source, destination]
+        return logits

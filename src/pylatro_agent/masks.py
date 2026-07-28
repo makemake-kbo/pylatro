@@ -93,6 +93,7 @@ def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
         mask[AR.DISCARD_SUBSET_START:AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     _mask_consumable_flat(mask, state)
+    _mask_joker_moves(mask, state)
 
 
 def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray) -> np.ndarray:
@@ -247,6 +248,16 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
 
     # Leave always valid
     mask[AR.SHOP_LEAVE] = 1
+    _mask_joker_moves(mask, state)
+
+
+def _mask_joker_moves(mask: np.ndarray, state: RunState) -> None:
+    count = min(len(state.jokers), MAX_JOKER_SLOTS)
+    for source in range(count):
+        for destination in range(count):
+            if source != destination:
+                compressed = destination - (destination > source)
+                mask[int(ActionRange.MOVE_JOKER_START) + source * (MAX_JOKER_SLOTS - 1) + compressed] = 1
 
 
 def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:

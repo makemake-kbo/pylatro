@@ -1,14 +1,189 @@
 from __future__ import annotations
 
+import numpy as np
+
 from pylatro import add_consumable, add_joker, create_run_state, load_game_data
+from pylatro.instances import move_joker
 from pylatro.models import PlayingCard, ShopCard
-from pylatro_agent.constants import ActionRange, SubPhase
+from pylatro_agent.action import decode_action
+from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.masks import compute_action_mask
+from pylatro_agent.subset_actions import subset_index
 
 
 def _shop_card(center_key: str, card_type: str, cost: int = 3) -> ShopCard:
     return ShopCard(center_key=center_key, card_type=card_type, cost=cost, base_cost=cost)
+
+
+def test_joker_move_search_skips_build_without_xmult_or_copy(monkeypatch) -> None:
+    data = load_game_data()
+    state = create_run_state("reorder_search_gate", data=data)
+    add_joker(state, "j_joker")
+    add_joker(state, "j_sly")
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+
+    def unexpected_score(*_args, **_kwargs):
+        raise AssertionError("ordinary builds should skip ordered hand scoring")
+
+    monkeypatch.setattr(HeuristicAgent, "_score_joker_move_for_hand", unexpected_score)
+
+    assert HeuristicAgent()._best_joker_move(state, mask, (0,)) is None
+
+
+def test_joker_move_search_orders_xmult_for_selected_hand() -> None:
+    data = load_game_data()
+    state = create_run_state("reorder_search_xmult", data=data)
+    add_joker(state, "j_cavendish")
+    add_joker(state, "j_joker")
+    state.hand_cards = [PlayingCard(front_key="S_A", suit="Spades", rank="A")]
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+
+    action = HeuristicAgent()._best_joker_move(state, mask, (0,))
+    decoded = decode_action(action)
+    move_joker(state, decoded.index, decoded.detail)
+
+    assert state.joker_keys == ["j_joker", "j_cavendish"]
+
+
+def test_selected_play_emits_move_then_play_for_bc() -> None:
+    data = load_game_data()
+    state = create_run_state("reorder_then_play", data=data)
+    add_joker(state, "j_cavendish")
+    add_joker(state, "j_joker")
+    state.hand_cards = [PlayingCard(front_key="S_A", suit="Spades", rank="A")]
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+    play_action = ActionRange.PLAY_SUBSET_START + subset_index((0,))
+    agent = HeuristicAgent()
+
+    first_action = agent._play_or_reorder_jokers(state, mask, play_action)
+    decoded = decode_action(first_action)
+    move_joker(state, decoded.index, decoded.detail)
+    second_action = agent._play_or_reorder_jokers(state, mask, play_action)
+
+    assert decode_action(first_action).action_type.value == "move_joker"
+    assert second_action == play_action
+
+
+def test_selected_play_reuses_cached_joker_order_plan(monkeypatch) -> None:
+    data = load_game_data()
+    state = create_run_state("reorder_plan_cache", data=data)
+    add_joker(state, "j_cavendish")
+    add_joker(state, "j_joker")
+    state.hand_cards = [PlayingCard(front_key="S_A", suit="Spades", rank="A")]
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+    play_action = ActionRange.PLAY_SUBSET_START + subset_index((0,))
+    agent = HeuristicAgent()
+    original_score = agent._score_joker_move_for_hand
+    score_calls = 0
+
+    def counted_score(*args, **kwargs):
+        nonlocal score_calls
+        score_calls += 1
+        return original_score(*args, **kwargs)
+
+    monkeypatch.setattr(agent, "_score_joker_move_for_hand", counted_score)
+
+    first_action = agent._play_or_reorder_jokers(state, mask, play_action)
+    first_search_calls = score_calls
+    decoded = decode_action(first_action)
+    move_joker(state, decoded.index, decoded.detail)
+    second_action = agent._resume_joker_order_plan(state, mask)
+
+    assert first_search_calls == 2
+    assert score_calls == first_search_calls
+    assert second_action == play_action
+
+
+def test_joker_order_candidate_search_has_hard_budget() -> None:
+    data = load_game_data()
+    state = create_run_state("reorder_candidate_budget", data=data)
+    for center_key in (
+        "j_blueprint",
+        "j_blueprint",
+        "j_brainstorm",
+        "j_dusk",
+        "j_hack",
+        "j_idol",
+        "j_joker",
+        "j_cavendish",
+    ):
+        add_joker(state, center_key)
+
+    candidates = HeuristicAgent()._joker_order_candidates(state, len(state.jokers))
+
+    assert len(candidates) <= 16
+    assert len(candidates) == len(set(candidates))
+    assert all(sorted(order) == list(range(len(state.jokers))) for order in candidates)
+
+
+def test_joker_move_search_orders_copy_without_xmult() -> None:
+    data = load_game_data()
+    state = create_run_state("reorder_search_copy", data=data)
+    add_joker(state, "j_joker")
+    add_joker(state, "j_blueprint")
+    state.hand_cards = [PlayingCard(front_key="S_A", suit="Spades", rank="A")]
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+
+    action = HeuristicAgent()._best_joker_move(state, mask, (0,))
+    decoded = decode_action(action)
+    move_joker(state, decoded.index, decoded.detail)
+
+    assert state.joker_keys == ["j_blueprint", "j_joker"]
+
+
+def test_joker_move_balances_retrigger_and_idol_effects() -> None:
+    data = load_game_data()
+    state = create_run_state("retrigger_idol_balance", data=data)
+    add_joker(state, "j_blueprint")
+    add_joker(state, "j_dusk")
+    add_joker(state, "j_hack")
+    add_joker(state, "j_idol")
+    state.current_round.hands_left = 1
+    state.current_round.idol_card = {"rank": "2", "suit": "Hearts", "id": 2}
+    state.hand_cards = [
+        PlayingCard(front_key="H_2", suit="Hearts", rank="2", seal="Red"),
+    ]
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+    agent = HeuristicAgent()
+
+    for _ in range(len(state.jokers)):
+        action = agent._best_joker_move(state, mask, (0,))
+        if action is None:
+            break
+        decoded = decode_action(action)
+        move_joker(state, decoded.index, decoded.detail)
+
+    blueprint_index = state.joker_keys.index("j_blueprint")
+    assert state.joker_keys[blueprint_index + 1] == "j_idol"
+
+
+def test_joker_move_copies_retrigger_when_it_repeats_more_effects() -> None:
+    data = load_game_data()
+    state = create_run_state("retrigger_multiple_effects", data=data)
+    for center_key in (
+        "j_blueprint",
+        "j_sock_and_buskin",
+        "j_smiley",
+        "j_photograph",
+        "j_triboulet",
+    ):
+        add_joker(state, center_key)
+    state.hand_cards = [
+        PlayingCard(front_key="H_K", suit="Hearts", rank="K"),
+    ]
+    mask = np.ones(NUM_ACTIONS, dtype=np.int8)
+    agent = HeuristicAgent()
+
+    for _ in range(len(state.jokers)):
+        action = agent._best_joker_move(state, mask, (0,))
+        if action is None:
+            break
+        decoded = decode_action(action)
+        move_joker(state, decoded.index, decoded.detail)
+
+    blueprint_index = state.joker_keys.index("j_blueprint")
+    assert state.joker_keys[blueprint_index + 1] == "j_sock_and_buskin"
 
 
 def test_midgame_full_joker_slots_sell_weak_joker_for_xmult() -> None:

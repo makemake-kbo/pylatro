@@ -83,7 +83,7 @@ _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
 # distillation run can tell whether the heuristic teacher is unreachable because
 # it picks hand subsets the structured policy can't represent, shop/pack items,
 # or blind selections.
-_ACTION_FAMILY_NAMES = ("play_subset", "use_consumable", "shop", "pack", "blind")
+_ACTION_FAMILY_NAMES = ("play_subset", "use_consumable", "shop", "pack", "blind", "move_joker")
 _ACTION_TYPE_TO_FAMILY: dict[ActionType, int] = {
     ActionType.BLIND_PLAY: 4,
     ActionType.BLIND_SKIP: 4,
@@ -100,6 +100,7 @@ _ACTION_TYPE_TO_FAMILY: dict[ActionType, int] = {
     ActionType.SHOP_LEAVE: 2,
     ActionType.PACK_CLAIM: 3,
     ActionType.PACK_SKIP: 3,
+    ActionType.MOVE_JOKER: 5,
 }
 _ACTION_ID_TO_FAMILY = torch.tensor(
     [_ACTION_TYPE_TO_FAMILY[decode_action(action_id).action_type] for action_id in range(NUM_ACTIONS)],

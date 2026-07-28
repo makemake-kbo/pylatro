@@ -14,6 +14,7 @@ import cython
 import numpy as np
 
 from pylatro import can_use_consumable
+from pylatro.instances import move_joker
 from pylatro.runtime import consumable_limit, joker_limit
 from pylatro_cli.controller import GameController, GamePhase
 
@@ -300,6 +301,11 @@ class FastRunner:
         elif aid == AR.PACK_SKIP:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
+        elif AR.MOVE_JOKER_START <= aid <= AR.MOVE_JOKER_END:
+            rel = aid - int(AR.MOVE_JOKER_START)
+            source, compressed = divmod(rel, MAX_JOKER_SLOTS - 1)
+            destination = compressed + (compressed >= source)
+            move_joker(state, source, destination)
 
     def _progress_signature(self):
         state = self._state
@@ -311,6 +317,7 @@ class FastRunner:
             state.current_round.discards_left,
             state.dollars,
             self._sub_phase,
+            tuple(sorted(state.joker_keys)),
         )
 
 
@@ -354,6 +361,7 @@ def _mask_action(m, state, AR):
         else:
             m[_disc_start : _disc_start + n_subsets] = legal_subsets
     _mask_consumable_flat(m, state, AR)
+    _mask_joker_moves(m, state, AR)
 
 
 @cython.cfunc
@@ -397,6 +405,16 @@ def _mask_shop(m, state, AR):
         m[_sell_cons + i] = 1
 
     m[_leave] = 1
+    _mask_joker_moves(m, state, AR)
+
+
+def _mask_joker_moves(m, state, AR):
+    count = min(len(state.jokers), MAX_JOKER_SLOTS)
+    for source in range(count):
+        for destination in range(count):
+            if source != destination:
+                compressed = destination - (destination > source)
+                m[AR.MOVE_JOKER_START + source * (MAX_JOKER_SLOTS - 1) + compressed] = 1
 
 
 @cython.cfunc

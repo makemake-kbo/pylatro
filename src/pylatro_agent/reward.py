@@ -381,6 +381,7 @@ REWARD_COMPONENT_NAMES = (
     "xmult_acquisition",
     "consumable_improvement",
     "build_curve_bonus",
+    "joker_move",
     # Phase 2: potential-based shaping (policy-invariant; replaces killed
     # heuristic-agreement components when enable_potential_shaping is set).
     "potential_shaping",
@@ -428,6 +429,7 @@ _COMPONENT_GROUP = {
     "joker_sell_bad": "joker_strategy",
     "xmult_acquisition": "joker_strategy",
     "build_curve_bonus": "joker_strategy",
+    "joker_move": "joker_strategy",
 }
 
 # Strategic components clamped together per step (pre dense-scale).
@@ -1221,6 +1223,14 @@ def default_reward_components(
             ) / REWARD_SCALE
         for key in components:
             components[key] *= REWARD_SCALE
+        components["total"] = sum(components.values())
+        return components
+
+    # Reordering is its own atomic shaping event. It must not receive generic
+    # build/shop potential or idle shaping, which would double-pay a layout
+    # change and make reverse cycles exploitable.
+    if str(curr_info.get("action_type", "")) == "move_joker":
+        components["joker_move"] = float(curr_info.get("joker_move_reward", 0.0) or 0.0)
         components["total"] = sum(components.values())
         return components
 

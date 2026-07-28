@@ -9,7 +9,7 @@ from enum import IntEnum, StrEnum
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-TOKENIZER_VERSION = 2
+TOKENIZER_VERSION = 3
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
@@ -106,6 +106,8 @@ _SHOP_LEAVE = _SHOP_SELL_CONSUMABLE_END + 1
 _PACK_CLAIM_START = _SHOP_LEAVE + 1
 _PACK_CLAIM_END = _PACK_CLAIM_START + MAX_PACK_CARDS - 1
 _PACK_SKIP = _PACK_CLAIM_END + 1
+_MOVE_JOKER_START = _PACK_SKIP + 1
+_MOVE_JOKER_END = _MOVE_JOKER_START + MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1) - 1
 
 
 class ActionRange(IntEnum):
@@ -130,9 +132,11 @@ class ActionRange(IntEnum):
     PACK_CLAIM_START = _PACK_CLAIM_START
     PACK_CLAIM_END = _PACK_CLAIM_END
     PACK_SKIP = _PACK_SKIP
+    MOVE_JOKER_START = _MOVE_JOKER_START
+    MOVE_JOKER_END = _MOVE_JOKER_END
 
 
-NUM_ACTIONS = int(ActionRange.PACK_SKIP) + 1
+NUM_ACTIONS = int(ActionRange.MOVE_JOKER_END) + 1
 
 
 # Token type IDs

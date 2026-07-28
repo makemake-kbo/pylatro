@@ -208,6 +208,19 @@ def remove_joker(state: RunState, joker: JokerInstance) -> None:
     sync_all_jokers(state)
 
 
+def move_joker(state: RunState, source: int, destination: int) -> None:
+    """Atomically move a joker to its final zero-based slot."""
+    count = len(state.jokers)
+    if not (0 <= source < count and 0 <= destination < count):
+        raise IndexError(f"Joker move out of range for {count} jokers: {source} -> {destination}")
+    if source == destination:
+        raise ValueError(f"Joker move must change position: {source} -> {destination}")
+    joker = state.jokers.pop(source)
+    state.jokers.insert(destination, joker)
+    state.joker_keys = [owned.center_key for owned in state.jokers]
+    sync_all_jokers(state)
+
+
 def sync_joker_state(state: RunState, joker: JokerInstance, *, index: int | None = None) -> None:
     center = state.data.centers[joker.center_key]
     name = center["name"]

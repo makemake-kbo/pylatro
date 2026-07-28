@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pylatro.instances import sync_all_jokers
+from pylatro.instances import move_joker
 
 if TYPE_CHECKING:
     from pylatro.models import RunState
@@ -21,7 +21,5 @@ def move_owned_joker(state: RunState, index: int, offset: int) -> int:
     if not 0 <= index < len(state.jokers) or not 0 <= target < len(state.jokers):
         return index
 
-    state.jokers[index], state.jokers[target] = state.jokers[target], state.jokers[index]
-    state.joker_keys = [joker.center_key for joker in state.jokers]
-    sync_all_jokers(state)
+    move_joker(state, index, target)
     return target

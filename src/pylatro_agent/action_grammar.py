@@ -68,6 +68,7 @@ _SHOP_BUY = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_BUY]
 _SHOP_SELL_JOKER = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_SELL_JOKER]
 _SHOP_SELL_CONSUMABLE = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_SELL_CONSUMABLE]
 _PACK_CLAIM = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PACK_CLAIM]
+_MOVE_JOKER = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.MOVE_JOKER]
 
 _ACTION_ID_TO_GRAMMAR = np.zeros(NUM_ACTIONS, dtype=np.int64)
 _ACTION_ID_TO_INDEX = np.zeros(NUM_ACTIONS, dtype=np.int64)
@@ -127,6 +128,14 @@ class ActionGrammarOutput:
     shop_sell_joker_logits: torch.Tensor     # (B, MAX_JOKER_SLOTS)
     shop_sell_consumable_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS)
     pack_claim_logits: torch.Tensor          # (B, MAX_PACK_CARDS)
+    joker_move_logits: torch.Tensor | None = None  # (B, 56); optional for legacy test fixtures
+
+    def __post_init__(self) -> None:
+        if self.joker_move_logits is None:
+            self.joker_move_logits = self.macro_logits.new_zeros(
+                self.macro_logits.shape[0],
+                MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1),
+            )
 
 
 class ActionGrammarHead(nn.Module):
@@ -173,6 +182,8 @@ class ActionGrammarHead(nn.Module):
             nn.Linear(hidden, MAX_JOKER_SLOTS + MAX_CONSUMABLE_SLOTS),
         )
         self.pack_claim_head = nn.Linear(d_model, 1)
+        self.joker_move_source_proj = nn.Linear(d_model, ctx)
+        self.joker_move_destination_proj = nn.Linear(d_model, ctx)
         self.candidate_play_head = nn.Linear(d_model, 1)
         self.candidate_discard_head = nn.Linear(d_model, 1)
 
@@ -224,6 +235,20 @@ class ActionGrammarHead(nn.Module):
         candidate_play_logits = candidate_scores.masked_fill(~play_cand_mask, -1e8)
         candidate_disc_logits = self.candidate_discard_head(candidate_tokens).squeeze(-1)
         candidate_discard_logits = candidate_disc_logits.masked_fill(~discard_cand_mask, -1e8)
+        move_pair = torch.einsum(
+            "bic,bjc->bij",
+            self.joker_move_source_proj(joker_tokens),
+            self.joker_move_destination_proj(joker_tokens),
+        )
+        move_logits = torch.stack(
+            [
+                move_pair[:, source, destination]
+                for source in range(MAX_JOKER_SLOTS)
+                for destination in range(MAX_JOKER_SLOTS)
+                if source != destination
+            ],
+            dim=1,
+        )
 
         return ActionGrammarOutput(
             macro_logits=self.macro_head(state),
@@ -242,6 +267,7 @@ class ActionGrammarHead(nn.Module):
                 MAX_JOKER_SLOTS:MAX_JOKER_SLOTS + MAX_CONSUMABLE_SLOTS,
             ],
             pack_claim_logits=self.pack_claim_head(pack_tokens).squeeze(-1),
+            joker_move_logits=move_logits,
         )
 
     @staticmethod
@@ -378,10 +404,16 @@ class ActionGrammarDistribution:
             _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
             int(ActionRange.PACK_CLAIM_START),
         )
+        move_actions = self._sample_indexed_actions(
+            self._t(self.output.joker_move_logits),
+            _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
+            int(ActionRange.MOVE_JOKER_START),
+        )
         actions = torch.where(macro == _SHOP_BUY, shop_buy_actions, actions)
         actions = torch.where(macro == _SHOP_SELL_JOKER, shop_sell_joker_actions, actions)
         actions = torch.where(macro == _SHOP_SELL_CONSUMABLE, shop_sell_consumable_actions, actions)
         actions = torch.where(macro == _PACK_CLAIM, pack_claim_actions, actions)
+        actions = torch.where(macro == _MOVE_JOKER, move_actions, actions)
 
         valid = self.action_mask.gather(1, actions.unsqueeze(-1)).squeeze(-1)
         return torch.where(valid, actions, self._first_valid_actions())
@@ -448,6 +480,15 @@ class ActionGrammarDistribution:
                 self._t(self.output.pack_claim_logits),
                 _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
                 int(ActionRange.PACK_CLAIM_START),
+            ),
+            actions,
+        )
+        actions = torch.where(
+            macro == _MOVE_JOKER,
+            self._greedy_indexed_actions(
+                self._t(self.output.joker_move_logits),
+                _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
+                int(ActionRange.MOVE_JOKER_START),
             ),
             actions,
         )
@@ -521,6 +562,18 @@ class ActionGrammarDistribution:
             ),
             torch.zeros_like(log_prob),
         )
+        move_offset = (actions - int(ActionRange.MOVE_JOKER_START)).clamp(
+            0, MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1) - 1
+        )
+        log_prob = log_prob + torch.where(
+            action_macro == _MOVE_JOKER,
+            self._indexed_log_prob(
+                self._t(self.output.joker_move_logits),
+                _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
+                move_offset,
+            ),
+            torch.zeros_like(log_prob),
+        )
         return log_prob
 
     def entropy(self) -> torch.Tensor:
@@ -555,6 +608,10 @@ class ActionGrammarDistribution:
         entropy = entropy + macro_probs[:, _PACK_CLAIM] * _masked_entropy(
             self._t(self.output.pack_claim_logits),
             _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
+        )
+        entropy = entropy + macro_probs[:, _MOVE_JOKER] * _masked_entropy(
+            self._t(self.output.joker_move_logits),
+            _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
         )
         return entropy
 
@@ -617,6 +674,11 @@ class ActionGrammarDistribution:
             self._t(self.output.pack_claim_logits),
             reference._t(reference.output.pack_claim_logits),
             _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
+        )
+        kl = kl + macro_probs[:, _MOVE_JOKER] * _masked_kl(
+            self._t(self.output.joker_move_logits),
+            reference._t(reference.output.joker_move_logits),
+            _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
         )
         return kl.mean()
 

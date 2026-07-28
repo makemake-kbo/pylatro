@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .action_grammar import ActionGrammarDistribution, ActionGrammarHead
-from .action_heads import BlindSelectHead, ConsumableFlatHead, HandPlayHead, PackHead, ShopHead
+from .action_heads import BlindSelectHead, ConsumableFlatHead, HandPlayHead, JokerMoveHead, PackHead, ShopHead
 from .backbone import TransformerBackbone
 from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SubPhase
 from .distributions import MaskedCategorical  # noqa: F401, re-exported for callers
@@ -65,6 +65,7 @@ class BalatroAgent(nn.Module):
         self.hand_play_head = HandPlayHead(d, vocab)
         self.shop_head = ShopHead(d)
         self.consumable_flat_head = ConsumableFlatHead(d)
+        self.joker_move_head = JokerMoveHead(d)
         self.pack_head = PackHead(d)
         self.action_grammar_head = ActionGrammarHead(d)
 
@@ -194,11 +195,12 @@ class BalatroAgent(nn.Module):
                 # without corrupting masked positions.
                 play_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=False)
                 cons_logits = self.consumable_flat_head(bo, am, tok, tok_types)
-                head_logits = torch.maximum(play_logits, cons_logits)
+                move_logits = self.joker_move_head(bo)
+                head_logits = torch.maximum(torch.maximum(play_logits, cons_logits), move_logits)
             elif sp == SubPhase.SELECT_CARDS:
                 head_logits = self.hand_play_head(bo, am, tok, tok_types, scal, select_mode=True)
             elif sp == SubPhase.SHOP:
-                head_logits = self.shop_head(bo, am)
+                head_logits = torch.maximum(self.shop_head(bo, am), self.joker_move_head(bo))
             elif sp == SubPhase.BOOSTER_PACK:
                 head_logits = self.pack_head(bo, am)
             else:

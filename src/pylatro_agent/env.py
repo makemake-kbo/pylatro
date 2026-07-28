@@ -9,6 +9,7 @@ import numpy as np
 from gymnasium import spaces
 
 from pylatro import GameData, get_blind_amount, load_game_data
+from pylatro.instances import move_joker
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
@@ -31,7 +32,7 @@ from .reward import (
     default_reward,
     default_reward_components,
 )
-from .shop_eval import capture_build_features
+from .shop_eval import capture_build_features, evaluate_build
 from .subset_actions import consumable_subset_indices, subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
@@ -238,6 +239,18 @@ class BalatroEnv(gymnasium.Env):
         curr_info["action_detail"] = decoded.detail
         curr_info["teacher_action"] = teacher_action
         curr_info["teacher_action_match"] = teacher_action >= 0 and int(action) == teacher_action
+        if decoded.action_type == ActionType.MOVE_JOKER:
+            pre_score = evaluate_build(self._prev_info).estimated_score
+            post_score = evaluate_build(curr_info).estimated_score
+            ratio = max(post_score, 1.0) / max(pre_score, 1.0)
+            action_diagnostics.update({
+                "joker_move_source": decoded.index,
+                "joker_move_destination": decoded.detail,
+                "joker_move_pre_score": pre_score,
+                "joker_move_post_score": post_score,
+                "joker_move_score_ratio": ratio,
+                "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
+            })
 
         event_diagnostics = step_event_diagnostics(self._prev_info, curr_info, decoded)
         action_diagnostics.update(event_diagnostics)
@@ -466,6 +479,9 @@ class BalatroEnv(gymnasium.Env):
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
 
+        elif at == ActionType.MOVE_JOKER:
+            move_joker(state, decoded.index, decoded.detail)
+
     def _build_obs(self) -> RawObservation:
         state = self._controller.state
         mask = self.action_masks()
@@ -558,7 +574,7 @@ class BalatroEnv(gymnasium.Env):
             info.get("phase", ""),
             info.get("reroll_cost", 0),
             info.get("free_rerolls", 0),
-            info.get("joker_keys", ()),
+            tuple(sorted(info.get("joker_keys", ()))),
             info.get("consumable_keys", ()),
             info.get("last_tarot_planet", ""),
             info.get("shop_keys", ()),
@@ -618,5 +634,3 @@ def _pack_state_name_for_shop_card(center: dict) -> str:
     if "Buffoon" in name:
         return "BUFFOON_PACK"
     return ""
-
-

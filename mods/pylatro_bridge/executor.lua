@@ -127,6 +127,13 @@ local function invoke(names, ref)
     return false, "no enabled UI callback: " .. table.concat(names, "/")
 end
 
+function Executor.callback_available(names, ref)
+    for _, name in ipairs(names) do
+        if find_callback(name, ref) then return true end
+    end
+    return false
+end
+
 local function invoke_hand_button(action_type)
     local callback = action_type == "play"
         and "play_cards_from_highlighted"
@@ -155,6 +162,24 @@ local function invoke_hand_button(action_type)
         return false, "Balatro callback is unavailable: " .. callback
     end
     G.FUNCS[callback](node)
+    return true
+end
+
+local function invoke_shop_leave()
+    if not G.shop or G.shop.REMOVED
+        or type(G.shop.get_UIE_by_ID) ~= "function" then
+        return false, "active shop UI is unavailable"
+    end
+    local node = G.shop:get_UIE_by_ID("next_round_button")
+    if not node or type(node.config) ~= "table"
+        or node.config.button ~= "toggle_shop"
+        or node.config.disable_button == true or node.config.disabled == true then
+        return false, "active shop leave button is unavailable"
+    end
+    if not G.FUNCS or type(G.FUNCS.toggle_shop) ~= "function" then
+        return false, "Balatro callback is unavailable: toggle_shop"
+    end
+    G.FUNCS.toggle_shop(node)
     return true
 end
 
@@ -249,7 +274,7 @@ function Executor.execute(action)
         if not ok then return false, err end
         return invoke({"sell_card"}, card)
     elseif action.type == "shop_leave" then
-        return invoke({"toggle_shop", "next_round"})
+        return invoke_shop_leave()
     elseif action.type == "use_consumable" then
         local card = find_card(action.consumable_id)
         if not card then return false, "consumable is no longer live" end

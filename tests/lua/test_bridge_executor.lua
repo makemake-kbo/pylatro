@@ -140,6 +140,18 @@ ok, err = Executor.execute({type = "shop_buy", item_id = "shop:1"})
 assert(ok, err)
 assert(calls.buy == 1)
 
+local leave_button = node({id = "next_round_button", button = "toggle_shop"})
+G.shop = {
+    get_UIE_by_ID = function(_, id)
+        if id == "next_round_button" then return leave_button end
+    end,
+}
+G.FUNCS.toggle_shop = function(button)
+    assert(button == leave_button)
+end
+ok, err = Executor.execute({type = "shop_leave"})
+assert(ok, err)
+
 G.FUNCS.can_select_card = function(button)
     button.config.button = "use_card"
 end

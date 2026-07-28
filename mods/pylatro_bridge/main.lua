@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [makemake]
 --- MOD_DESCRIPTION: Loopback bridge to the Pylatro live agent.
 --- PREFIX: pylatro_bridge
---- VERSION: 0.1.5
+--- VERSION: 0.1.7
 --- DEPENDENCIES: [Steamodded>=1.0.0~BETA]
 
 local mod = SMODS.current_mod
@@ -31,6 +31,8 @@ PYLATRO_BRIDGE = {
     action_rejections = 0,
     hand_signature = nil,
     hand_stable_since = nil,
+    readiness_reason = nil,
+    readiness_log_at = 0,
 }
 PYLATRO_BRIDGE.executor = assert(SMODS.load_file("executor.lua"))()
 local Bridge = PYLATRO_BRIDGE
@@ -71,7 +73,7 @@ local function versions()
     return {
         balatro = tostring(G.VERSION or "unknown"),
         steamodded = tostring(SMODS.version or "unknown"),
-        bridge = tostring(mod.version or "0.1.5"),
+        bridge = tostring(mod.version or "0.1.7"),
     }
 end
 
@@ -185,7 +187,16 @@ local function update_bridge()
     if Bridge.in_flight then return end
     local now = love.timer.getTime()
     local current_phase = phase()
-    if not Readiness.ready(current_phase, now, Bridge) then return end
+    local ready, reason = Readiness.ready(current_phase, now, Bridge)
+    if not ready then
+        if current_phase and (reason ~= Bridge.readiness_reason or now >= Bridge.readiness_log_at) then
+            log("info", "waiting in " .. current_phase .. ": " .. tostring(reason))
+            Bridge.readiness_reason = reason
+            Bridge.readiness_log_at = now + 5
+        end
+        return
+    end
+    Bridge.readiness_reason = nil
     if now < Bridge.next_attempt_at then return end
     if not current_phase then
         -- Cash-out is a non-strategic transition. It still goes through the

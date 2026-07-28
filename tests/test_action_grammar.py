@@ -73,6 +73,17 @@ def test_action_grammar_samples_only_valid_flat_actions() -> None:
     assert dist.entropy().shape == (3,)
 
 
+def test_move_joker_action_has_finite_grammar_support() -> None:
+    action = encode_action(ActionType.MOVE_JOKER, 0, 1)
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    action_mask[0, action] = 1
+
+    dist = ActionGrammarDistribution(_blank_output(batch_size=1), action_mask)
+
+    assert dist.mode().item() == action
+    assert dist.log_prob(torch.tensor([action])).item() > -1e7
+
+
 def test_action_grammar_log_prob_has_gradients_for_components() -> None:
     action_mask = torch.zeros(1, NUM_ACTIONS)
     play_subset = subset_index([0, 1, 2, 3, 4])

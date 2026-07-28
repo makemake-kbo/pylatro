@@ -1157,6 +1157,11 @@ def _macro_valid_mask(action_mask: torch.Tensor) -> torch.Tensor:
         ActionRange.PACK_CLAIM_START,
         ActionRange.PACK_CLAIM_END,
     ).any(dim=-1)
+    mask[:, _MOVE_JOKER] = _range_mask(
+        action_mask,
+        ActionRange.MOVE_JOKER_START,
+        ActionRange.MOVE_JOKER_END,
+    ).any(dim=-1)
     return mask
 
 

@@ -117,6 +117,41 @@ def add_generated_consumable(
     return add_consumable(state, forced_key, edition=edition)
 
 
+def resolve_blue_seals(
+    state: RunState,
+    held_cards: Iterable[PlayingCard],
+    hand_type: str,
+) -> list[ConsumableInstance]:
+    """Create the played hand's Planet for each live Blue seal held on a win."""
+    planet_key = next(
+        (
+            key
+            for key, center in state.data.centers.items()
+            if center.get("set") == "Planet"
+            and isinstance(center.get("config"), dict)
+            and center["config"].get("hand_type") == hand_type
+        ),
+        None,
+    )
+    if planet_key is None:
+        return []
+    generated: list[ConsumableInstance] = []
+    for card in held_cards:
+        if card.seal != "Blue" or card.debuff:
+            continue
+        planet = add_generated_consumable(
+            state,
+            "Planet",
+            forced_key=planet_key,
+            append="blue_seal",
+            soulable=False,
+        )
+        if planet is None:
+            break
+        generated.append(planet)
+    return generated
+
+
 def create_joker_spec(
     state: RunState,
     *,

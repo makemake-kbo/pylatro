@@ -169,6 +169,7 @@ def play_heuristic(num_games: int, seed: int, win_ante: int | None) -> None:
                 env.state,
                 env._sub_phase,
                 mask,
+                round_score=env._controller.round_score,
             )
             obs, _reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated

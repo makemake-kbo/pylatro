@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pylatro import can_use_consumable, get_blind_amount
+from pylatro import can_use_consumable, get_blind_amount, get_poker_hand_info
 from pylatro.flow import play_cards
 from pylatro.instances import move_joker
 from pylatro.runtime import consumable_limit, joker_limit
@@ -25,6 +25,7 @@ from .constants import (
     ActionRange,
     SubPhase,
 )
+from .hand_candidates import generate_hand_candidates
 from .subset_actions import consumable_subset_index, subset_index, subset_indices
 
 if TYPE_CHECKING:
@@ -133,6 +134,22 @@ _SCALING_XMULT_JOKER_KEYS = frozenset(
     }
 )
 
+# Subset of xmult jokers that genuinely need shop/round investment before
+# becoming useful. Conditional jokers such as Ancient, Baron, and Blackboard
+# apply their xmult immediately and must not receive the late-scaler penalty.
+_DEVELOPING_XMULT_JOKER_KEYS = frozenset(
+    {
+        "j_steel_joker",
+        "j_campfire",
+        "j_throwback",
+        "j_constellation",
+        "j_hologram",
+        "j_obelisk",
+        "j_glass",
+        "j_vampire",
+    }
+)
+
 # Per-joker buy weight for scaling jokers.
 _SCALING_JOKER_SCORES = {
     "j_runner": 14.0,
@@ -158,12 +175,45 @@ _SCALING_JOKER_KEYS = frozenset(_SCALING_JOKER_SCORES)
 
 _MID_GAME_ANTE = 3
 
-_ANTE1_SKIP_TAGS = frozenset({"tag_economy", "tag_investment", "tag_rare"})
+_ANTE1_SKIP_TAGS = frozenset(
+    {
+        "tag_economy",
+    }
+)
 
 _RETRIGGER_JOKER_KEYS = frozenset({"j_hanging_chad", "j_sock_and_buskin", "j_selzer", "j_mime", "j_dusk", "j_hack"})
 
 _COPY_JOKER_KEYS = frozenset({"j_blueprint", "j_brainstorm"})
 _MAX_JOKER_ORDER_CANDIDATES = 16
+
+_SUIT_TAROT_TARGETS = {
+    "The Star": "Diamonds",
+    "The Moon": "Clubs",
+    "The Sun": "Hearts",
+    "The World": "Spades",
+}
+_SUIT_BOSS_KEYS = {
+    "bl_window": "Diamonds",
+    "bl_club": "Clubs",
+    "bl_head": "Hearts",
+    "bl_goad": "Spades",
+}
+_DECK_SHAPING_TAROTS = frozenset(
+    {
+        "The Magician",
+        "The Empress",
+        "The Hierophant",
+        "The Lovers",
+        "The Chariot",
+        "Justice",
+        "The Devil",
+        "The Tower",
+        "Strength",
+        "Death",
+        "The Hanged Man",
+        *_SUIT_TAROT_TARGETS,
+    }
+)
 
 # Scoring-profile key sets for jokers whose effect lives in per-joker code
 # rather than the numeric config fields (t_chips / mult / Xmult), so the
@@ -325,6 +375,7 @@ class HeuristicAgent:
 
     def _cached_best_hand(self, state: RunState, hand: list[PlayingCard]) -> set[int]:
         key = (
+            self._run_key(state),
             tuple(
                 (
                     card.rank,
@@ -332,20 +383,110 @@ class HeuristicAgent:
                     card.center_key,
                     card.debuff,
                     card.face_down,
+                    card.forced_selection,
                 )
                 for card in hand
             ),
-            tuple(joker.center_key for joker in state.jokers),
+            self._joker_keys_sig(state),
+            self._hands_sig(state),
+            state.dollars,
+            state.current_round.discards_left,
+            state.current_round.hands_left,
+            state.current_round.hands_played,
+            state.round_resets.ante,
+            state.blind_on_deck,
+            state.blind_disabled,
         )
         if key == self._hand_cache_key:
             return set(self._hand_cache_val)
-        result = set(self._find_best_hand(state, hand))
+        structural, _ = generate_hand_candidates(state)
+        candidates = [candidate.indices for candidate in structural]
+        legacy = tuple(sorted(self._find_best_hand(state, hand)))
+        if legacy and legacy not in candidates:
+            candidates.append(legacy)
+
+        forced = {i for i, card in enumerate(hand) if card.forced_selection}
+        if forced:
+            # Final Bell can force an otherwise irrelevant card. Structural
+            # generators often return a clean Pair/Trips candidate without
+            # that card, leaving only the forced singleton legal. Exhaustively
+            # score the small legal space containing every forced card.
+            optional = [i for i in range(len(hand)) if i not in forced]
+            max_optional = 5 - len(forced)
+            for extra_count in range(max_optional + 1):
+                for extras in combinations(optional, extra_count):
+                    combined = tuple(sorted(forced | set(extras)))
+                    if combined and combined not in candidates:
+                        candidates.append(combined)
+
+        if any(j.center_key == "j_blackboard" and not j.debuff for j in state.jokers):
+            # Blackboard checks the cards left in hand, so playing every red
+            # card is often stronger than a conventional poker subset.
+            red_cards = {i for i, card in enumerate(hand) if card.suit in {"Hearts", "Diamonds"}}
+            blackboard_play = tuple(sorted(forced | red_cards))
+            if 1 <= len(blackboard_play) <= 5 and blackboard_play not in candidates:
+                candidates.append(blackboard_play)
+            for candidate in tuple(candidates) + tuple((i,) for i in range(len(hand))):
+                combined = tuple(sorted(forced | red_cards | set(candidate)))
+                if 1 <= len(combined) <= 5 and combined not in candidates:
+                    candidates.append(combined)
+
+        if any(j.center_key == "j_raised_fist" and not j.debuff for j in state.jokers):
+            # Raised Fist uses the lowest held rank. Try playing the complement
+            # of each high-card suffix so low cards can be cleared deliberately.
+            ranked = sorted(
+                range(len(hand)),
+                key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0),
+                reverse=True,
+            )
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            for held_count in range(max(1, len(hand) - 5), len(hand)):
+                play = tuple(sorted(forced | (set(range(len(hand))) - set(ranked[:held_count]))))
+                if 1 <= len(play) <= 5 and play not in candidates:
+                    candidates.append(play)
+
+        # A mature High Card build can get more value from a nominally
+        # non-scoring second card (Photograph, seals, enhancements, boss
+        # selection, etc.). Structural poker candidates deliberately omit
+        # most such pairs. Score every legal one- and two-card play: this
+        # catches those interactions without paying for all 218 subsets.
+        if self._get_main_hand_type(state) == "High Card":
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            if len(forced) <= 1:
+                singletons = [
+                    (i,)
+                    for i in range(len(hand))
+                    if not forced or i in forced
+                ]
+                for singleton in singletons:
+                    if singleton not in candidates:
+                        candidates.append(singleton)
+                for pair in combinations(range(len(hand)), 2):
+                    if forced and not forced.issubset(pair):
+                        continue
+                    if pair not in candidates:
+                        candidates.append(pair)
+            elif len(forced) < 5:
+                forced_tuple = tuple(sorted(forced))
+                for kicker in range(len(hand)):
+                    if kicker in forced:
+                        continue
+                    padded = tuple(sorted((*forced_tuple, kicker)))
+                    if padded not in candidates:
+                        candidates.append(padded)
+        if candidates:
+            result = set(max(candidates, key=lambda indices: self._estimate_hand_score(state, indices)))
+        else:
+            result = set(legacy)
         self._hand_cache_key = key
         self._hand_cache_val = result
         return set(result)
 
     def _get_blind_target(self, state: RunState) -> int:
         blind = state.round_resets.blind
+        blind_key = state.round_resets.blind_choices.get(state.blind_on_deck or "")
+        if blind_key:
+            blind = state.data.blinds.get(blind_key, blind)
         if blind is None:
             return 0
         ante = state.round_resets.ante
@@ -354,18 +495,48 @@ class HeuristicAgent:
         mult = blind.get("mult", 1)
         return int(base * mult)
 
+    def _near_term_shop_target(self, state: RunState) -> int:
+        """Largest blind target remaining before the next ante shop cycle."""
+        target = self._get_blind_target(state)
+        # During the shop immediately before Boss selection, `round_resets.blind`
+        # still describes the blind just cleared. Resolve the chosen boss
+        # explicitly instead of mistaking that stale 1x/1.5x amount for the
+        # upcoming target (especially disastrous for The Wall).
+        boss_key = state.round_resets.blind_choices.get("Boss", "")
+        boss = state.data.blinds.get(boss_key, {})
+        base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
+        target = max(target, int(base * boss.get("mult", 1)))
+        return target
+
     def _estimate_hand_score(self, state: RunState, hand_indices: tuple[int, ...]) -> int:
         if not hand_indices:
             return 0
         joker_key = self._joker_keys_sig(state)
+        hand_key = tuple(
+            (
+                card.front_key,
+                card.center_key,
+                card.edition_key,
+                card.seal,
+                card.perma_bonus,
+                card.debuff,
+                card.face_down,
+            )
+            for card in state.hand_cards
+        )
         cache_key = (
+            self._run_key(state),
             hand_indices,
+            hand_key,
             joker_key,
             self._hands_sig(state),
             state.dollars,
             state.current_round.discards_left,
             state.current_round.hands_left,
+            state.current_round.hands_played,
             state.round_resets.ante,
+            state.blind_on_deck,
+            state.blind_disabled,
         )
         if joker_key != self._score_cache_joker_key:
             self._score_cache.clear()
@@ -379,353 +550,11 @@ class HeuristicAgent:
         return result
 
     def _estimate_hand_score_compute(self, state: RunState, hand_indices: tuple[int, ...]) -> int:
-        # Approximates the full scoring pipeline for the given played cards:
-        # base chips/mult -> per-card chips -> retriggers -> per-joker effects -> xmult.
-        # Probabilistic jokers are valued by their expected (rather than rolled) contribution.
-        hand = state.hand_cards
-        cards = [hand[i] for i in hand_indices]
-        hand_type = self._quick_hand_quality(state, cards)
-        hand_info = state.hands.get(hand_type, {})
-        base_chips = hand_info.get("chips", 0)
-        base_mult = hand_info.get("mult", 0)
-
-        # number of played cards that contribute chips for each poker hand type
-        _SCORING_COUNT = {
-            "High Card": 1,
-            "Pair": 2,
-            "Two Pair": 4,
-            "Three of a Kind": 3,
-            "Straight": 5,
-            "Flush": 5,
-            "Full House": 5,
-            "Four of a Kind": 4,
-            "Five of a Kind": 5,
-            "Straight Flush": 5,
-            "Flush Five": 5,
-            "Flush House": 5,
-        }
-        n_scoring = _SCORING_COUNT.get(hand_type, len(cards))
-
-        card_chip_values = []
-        centers_get = state.data.centers.get
-        for c in cards:
-            center = centers_get(c.center_key)
-            effect = center.get("effect", "") if center else ""
-            if effect == "Stone Card":
-                card_chip_values.append(50 + c.perma_bonus)
-            else:
-                card_chip_values.append(RANK_TO_NOMINAL.get(c.rank, 0) + c.perma_bonus)
-        card_chip_values.sort(reverse=True)
-        card_chips = sum(card_chip_values[:n_scoring])
-
-        total_chips = base_chips + card_chips
-        total_mult = base_mult
-        x_mult_acc = 1.0
-
-        scoring_cards = cards[:n_scoring]
-        scoring_ranks = tuple(c.rank for c in scoring_cards)
-        scoring_suits = tuple(c.suit for c in scoring_cards)
-        held_cards = [hand[i] for i in range(len(hand)) if i not in hand_indices]
-
-        dollars = state.dollars
-        discards_left = state.current_round.discards_left
-        ante = state.round_resets.ante
-
-        scoring_card_chips = card_chip_values[:n_scoring]
-        retriggers = [0] * n_scoring
-        joker_centers_by_name: dict[str, JokerInstance] = {}
-        for jj in state.jokers:
-            if jj.debuff:
-                continue
-            cc = centers_get(jj.center_key)
-            if cc:
-                joker_centers_by_name[cc.get("name", "")] = jj
-        last_hand = state.current_round.hands_left == 1
-        if "Hanging Chad" in joker_centers_by_name and n_scoring > 0:
-            retriggers[0] += 2
-        if "Sock and Buskin" in joker_centers_by_name:
-            for i, c in enumerate(scoring_cards):
-                if c.rank in ("J", "Q", "K"):
-                    retriggers[i] += 1
-        if "Hack" in joker_centers_by_name:
-            for i, c in enumerate(scoring_cards):
-                if c.rank in ("2", "3", "4", "5"):
-                    retriggers[i] += 1
-        if "Seltzer" in joker_centers_by_name:
-            sel = joker_centers_by_name["Seltzer"]
-            rem = 0
-            if isinstance(sel.extra, dict):
-                rem = int(sel.extra.get("hands", 0) or 0)
-            elif isinstance(sel.extra, (int, float)):
-                rem = int(sel.extra)
-            if rem > 0:
-                for i in range(n_scoring):
-                    retriggers[i] += 1
-        if "Dusk" in joker_centers_by_name and last_hand:
-            for i in range(n_scoring):
-                retriggers[i] += 1
-
-        for i, n in enumerate(retriggers):
-            if n > 0 and i < len(scoring_card_chips):
-                total_chips += scoring_card_chips[i] * n
-
-        for j in state.jokers:
-            if j.debuff:
-                continue
-
-            center = centers_get(j.center_key)
-            if not center:
-                continue
-            jname = center.get("name", "")
-
-            if j.mult:
-                total_mult += j.mult
-
-            if j.t_mult and (not j.type or j.type == hand_type):
-                total_mult += j.t_mult
-
-            if j.t_chips and (not j.type or j.type == hand_type):
-                total_chips += j.t_chips
-
-            if j.x_mult and j.x_mult > 1 and (not j.type or j.type == hand_type):
-                if jname == "Obelisk":
-                    play_more_than = int(hand_info.get("played", 0) if hand_info else 0)
-                    resets = True
-                    for other_name, other_hand in state.hands.items():
-                        if (
-                            other_name != hand_type
-                            and other_hand.get("visible", True)
-                            and int(other_hand.get("played", 0) or 0) > play_more_than
-                        ):
-                            resets = False
-                            break
-                    if not resets:
-                        x_mult_acc *= max(float(j.x_mult) + float(j.extra or 0), 1.0)
-                else:
-                    x_mult_acc *= j.x_mult
-
-            extra = j.extra
-            if isinstance(extra, dict):
-                em = extra.get("mult")
-                if isinstance(em, (int, float)) and em:
-                    total_mult += em
-                ec = extra.get("chips")
-                if isinstance(ec, (int, float)) and ec:
-                    total_chips += ec
-                exm = extra.get("Xmult")
-                if isinstance(exm, (int, float)) and exm and exm > 1:
-                    if jname == "Cavendish" or (jname == "Card Sharp" and hand_info.get("played_this_round", 0) > 1):
-                        x_mult_acc *= exm
-                    elif jname == "Loyalty Card":
-                        every = int(extra.get("every", 0) or 0)
-                        if every > 0:
-                            remaining = (every - 1 - (state.hands_played - j.hands_played_at_create)) % (every + 1)
-                            if remaining == every:
-                                x_mult_acc *= exm
-
-            if jname == "Fibonacci":
-                for r in scoring_ranks:
-                    if r in ("2", "3", "5", "8", "A"):
-                        total_mult += 8
-            elif jname == "Even Steven":
-                for r in scoring_ranks:
-                    if r in ("2", "4", "6", "8", "T"):
-                        total_mult += 4
-            elif jname == "Odd Todd":
-                for r in scoring_ranks:
-                    if r in ("A", "3", "5", "7", "9"):
-                        total_chips += 31
-            elif jname == "Scary Face":
-                for r in scoring_ranks:
-                    if r in ("J", "Q", "K"):
-                        total_chips += 30
-            elif jname == "Smiley Face":
-                for r in scoring_ranks:
-                    if r in ("J", "Q", "K"):
-                        total_mult += 5
-            elif jname == "Scholar":
-                for r in scoring_ranks:
-                    if r == "A":
-                        total_chips += 20
-                        total_mult += 4
-            elif jname == "Walkie Talkie":
-                for r in scoring_ranks:
-                    if r in ("4", "T"):
-                        total_chips += 10
-                        total_mult += 4
-            elif jname == "Photograph":
-                face_found = False
-                for r in scoring_ranks:
-                    if r in ("J", "Q", "K") and not face_found:
-                        x_mult_acc *= 2
-                        face_found = True
-            elif jname in ("Greedy Joker", "Lusty Joker", "Wrathful Joker", "Gluttonous Joker"):
-                suit_map = {
-                    "Greedy Joker": "Diamonds",
-                    "Lusty Joker": "Hearts",
-                    "Wrathful Joker": "Spades",
-                    "Gluttonous Joker": "Clubs",
-                }
-                target_suit = suit_map[jname]
-                sv = 3 if isinstance(j.extra, dict) else (j.extra or 3)
-                for s in scoring_suits:
-                    if s == target_suit:
-                        total_mult += sv
-            elif jname == "Onyx Agate":
-                for s in scoring_suits:
-                    if s == "Clubs":
-                        total_mult += 7
-            elif jname == "Arrowhead":
-                for s in scoring_suits:
-                    if s == "Spades":
-                        total_chips += 50
-            elif jname == "Shoot the Moon":
-                for c in held_cards:
-                    if c.rank == "Q":
-                        total_mult += 13
-            elif jname == "Baron":
-                for c in held_cards:
-                    if c.rank == "K":
-                        x_mult_acc *= 1.5
-            elif jname == "Bootstraps":
-                total_mult += (dollars // 5) * 2
-            elif jname == "Half Joker":
-                if len(cards) <= 3:
-                    total_mult += 20
-            elif jname == "Mystic Summit":
-                if discards_left == 0:
-                    total_mult += 15
-            elif jname == "Banner":
-                total_chips += discards_left * 30
-            elif jname == "Abstract Joker":
-                total_mult += len([jj for jj in state.jokers if not jj.debuff])
-            elif jname == "Supernova":
-                played = hand_info.get("played", 0) if hand_info else 0
-                total_mult += played
-            elif jname == "Green Joker":
-                total_mult += max(ante * 2, 0)
-            elif jname == "Runner":
-                total_chips += ante * 10
-            elif jname == "Square Joker":
-                total_chips += ante * 4
-            elif jname == "Ride the Bus" or jname == "Fortune Teller":
-                total_mult += ante * 2
-            elif jname == "Flash":
-                total_chips += ante * 10
-            elif jname == "Constellation":
-                x_mult_acc *= 1 + ante * 0.1
-            elif jname == "Hologram":
-                x_mult_acc *= 1 + ante * 0.15
-            elif jname == "Bull":
-                total_chips += dollars * 2 * n_scoring
-            elif jname == "Triboulet":
-                xm = float(j.extra) if isinstance(j.extra, (int, float)) else 2.0
-                for r in scoring_ranks:
-                    if r in ("K", "Q"):
-                        x_mult_acc *= xm
-            elif jname == "Bloodstone":
-                if isinstance(j.extra, dict):
-                    xm = float(j.extra.get("Xmult", 1.5))
-                    odds = float(j.extra.get("odds", 2)) or 2.0
-                    p = 1.0 / odds
-                    # Bloodstone procs on Hearts; value the flip at its expectation.
-                    for s in scoring_suits:
-                        if s == "Hearts":
-                            x_mult_acc *= 1.0 + (xm - 1.0) * p
-            elif jname == "The Idol":
-                idol = state.current_round.idol_card if hasattr(state, "current_round") else None
-                if idol:
-                    xm = float(j.extra) if isinstance(j.extra, (int, float)) else 2.0
-                    for c in scoring_cards:
-                        if c.rank == idol.get("rank") and c.suit == idol.get("suit"):
-                            x_mult_acc *= xm
-            elif jname == "Ancient Joker":
-                anc = state.current_round.ancient_card if hasattr(state, "current_round") else None
-                if anc:
-                    xm = float(j.extra) if isinstance(j.extra, (int, float)) else 1.5
-                    for s in scoring_suits:
-                        if s == anc.get("suit"):
-                            x_mult_acc *= xm
-            elif jname == "Reserved Parking":
-                if isinstance(j.extra, dict):
-                    dollar_extra = float(j.extra.get("dollars", 1))
-                    odds = float(j.extra.get("odds", 2)) or 2.0
-                    # held face cards earn $1 each w/ p=1/odds, value as +1 mult expectation per face
-                    held_faces = sum(1 for c in held_cards if c.rank in ("J", "Q", "K"))
-                    total_mult += int(held_faces * dollar_extra / odds)
-            elif jname == "Blackboard":
-                if held_cards and all(c.suit in ("Spades", "Clubs") for c in held_cards):
-                    xm = float(j.extra) if isinstance(j.extra, (int, float)) else 3.0
-                    x_mult_acc *= xm
-            elif jname == "Driver's License":
-                enhanced = sum(
-                    1
-                    for c in state.deck_cards
-                    if (centers_get(c.center_key) or {}).get("effect") not in ("", None, "Base")
-                )
-                if enhanced >= 16:
-                    xm = float(j.extra) if isinstance(j.extra, (int, float)) else 3.0
-                    x_mult_acc *= xm
-            elif jname == "Joker Stencil":
-                empty_slots = max(joker_limit(state) - len(state.jokers), 0)
-                if empty_slots > 0:
-                    x_mult_acc *= 1.0 + empty_slots
-            elif jname == "Acrobat":
-                if last_hand:
-                    xm = float(j.extra) if isinstance(j.extra, (int, float)) else 3.0
-                    x_mult_acc *= xm
-            elif jname == "Throwback":
-                per = float(j.extra) if isinstance(j.extra, (int, float)) else 0.25
-                skips = int(getattr(state, "skips", 0) or 0)
-                if skips > 0:
-                    x_mult_acc *= 1.0 + per * skips
-            elif jname == "Erosion":
-                per = float(j.extra) if isinstance(j.extra, (int, float)) else 4.0
-                start = int(getattr(state, "starting_deck_size", 52) or 52)
-                missing = max(start - len(state.deck_cards), 0)
-                total_mult += int(per * missing)
-            elif jname == "Canio":
-                xm = float(j.caino_xmult) if j.caino_xmult else 1.0
-                if xm > 1.0:
-                    x_mult_acc *= xm
-            elif jname == "Stone Joker":
-                per = float(j.extra) if isinstance(j.extra, (int, float)) else 25.0
-                tally = int(j.stone_tally or 0)
-                if tally > 0:
-                    total_chips += int(per * tally)
-            elif jname == "Steel Joker":
-                per = float(j.extra) if isinstance(j.extra, (int, float)) else 0.2
-                tally = int(j.steel_tally or 0)
-                if tally > 0:
-                    x_mult_acc *= 1.0 + per * tally
-            elif jname == "Misprint":
-                if isinstance(j.extra, dict):
-                    lo = float(j.extra.get("min", 0))
-                    hi = float(j.extra.get("max", 23))
-                    total_mult += (lo + hi) / 2.0
-            elif jname in ("Yorick", "Ramen"):
-                xm = j.x_mult if j.x_mult and j.x_mult > 1 else 1.0
-                if xm > 1.0:
-                    x_mult_acc *= xm
-            elif jname == "Swashbuckler":
-                # +1 mult per dollar of total sell value of other jokers
-                sell_total = sum(int(jj.sell_cost or 0) for jj in state.jokers if jj is not j and not jj.debuff)
-                if sell_total > 0:
-                    total_mult += sell_total
-            elif jname == "Baseball Card":
-                # x1.5 per uncommon joker, uses uncommon rarity from center
-                xm = float(j.extra) if isinstance(j.extra, (int, float)) else 1.5
-                count = 0
-                for jj in state.jokers:
-                    if jj is j or jj.debuff:
-                        continue
-                    cc = centers_get(jj.center_key) or {}
-                    if cc.get("rarity") == 2 or cc.get("rarity") == "Uncommon":
-                        count += 1
-                if count > 0:
-                    x_mult_acc *= xm**count
-
-        return int(total_chips * total_mult * x_mult_acc)
+        # Use the engine as the scoring oracle. Hand values depend on conditional
+        # joker, blind, enhancement, held-card, and retrigger effects; a copied
+        # state isolates stateful/random scoring effects from the real run.
+        trial = deepcopy(state, {id(state.data): state.data})
+        return play_cards(trial, list(hand_indices)).score.total
 
     def _get_joker_names(self, state: RunState) -> frozenset[str]:
         keys = state.joker_keys
@@ -785,11 +614,12 @@ class HeuristicAgent:
         )
 
     def _get_main_hand_type(self, state: RunState) -> str:
-        sig = (self._joker_keys_sig(state), self._hands_sig(state))
+        sig = (self._run_key(state), self._joker_keys_sig(state), self._hands_sig(state))
         if sig == self._main_type_cache_key:
             return self._main_type_cache_val
         best = "Pair"
         best_score = 1.0
+        has_trousers = any(j.center_key == "j_trousers" and not j.debuff for j in state.jokers)
         for ht in (
             "Pair",
             "Two Pair",
@@ -808,10 +638,56 @@ class HeuristicAgent:
             ht_info = state.hands.get(ht)
             played = ht_info.get("played", 0) if ht_info else 0
             level = ht_info.get("level", 1) if ht_info else 1
-            score = synergy * 3 + played * 1.0 + level * 5
+            # Keep planet investment concentrated. Incidental premium hands
+            # should not redirect the build; real levels or joker synergy can.
+            if ht == "Two Pair" and not has_trousers:
+                # Generic Two Pair bonuses do not justify a planet plan: the
+                # hand is harder to assemble than Pair and its base scaling is
+                # only modestly better. Keep it opportunistic unless levels
+                # have already been deliberately invested.
+                score = synergy * 0.5 + played * 0.05 + (level - 1) * 22 + 1
+            elif ht in {
+                "Three of a Kind",
+                "Full House",
+                "Flush",
+                "Straight",
+                "Four of a Kind",
+                "Straight Flush",
+                "Five of a Kind",
+                "Flush House",
+                "Flush Five",
+            }:
+                # One conditional payoff does not make a reliable hand plan.
+                # Wily/Droll remain useful when their hand naturally appears,
+                # while planets and draw shaping stay on Pair until the hard
+                # hand has real investment or its dedicated scaler is live.
+                runner_live = ht == "Straight" and any(
+                    joker.center_key == "j_runner"
+                    and not joker.debuff
+                    and self._owned_scaling_progress(state, joker) >= 30
+                    for joker in state.jokers
+                )
+                repeated_draw_hand = ht in {"Straight", "Flush"} and level >= 2 and played >= 6
+                dedicated_flush = ht == "Flush" and synergy >= 8
+                dedicated_straight = ht == "Straight" and synergy >= 16
+                committed = (
+                    runner_live
+                    or repeated_draw_hand
+                    or dedicated_flush
+                    or dedicated_straight
+                    or level >= 3
+                )
+                if committed:
+                    score = synergy * 4 + played * 0.25 + (level - 1) * 30 + 5
+                else:
+                    score = played * 0.05 + (level - 1) * 5 + 1
+            else:
+                score = synergy * 4 + played * 0.25 + (level - 1) * 30 + 5
             if ht == "Pair":
-                score += 3.0
-            elif ht in ("Two Pair", "Three of a Kind"):
+                score += 8.0
+            elif ht == "Two Pair" and has_trousers:
+                score += 5.0
+            elif ht == "Three of a Kind":
                 score += 1.0
             if score > best_score:
                 best_score = score
@@ -919,6 +795,25 @@ class HeuristicAgent:
 
     def _blind_select(self, state: RunState, mask: np.ndarray) -> int:
         ante = state.round_resets.ante
+        if state.blind_on_deck == "Boss" and mask[ActionRange.BLIND_REROLL]:
+            boss_key = state.round_resets.blind_choices.get("Boss", "")
+            reroll_thresholds = {
+                "bl_needle": 10,
+                "bl_flint": 10,
+                "bl_wall": 10,
+            }
+            dangerous = boss_key == "bl_final_vessel" or state.dollars >= reroll_thresholds.get(
+                boss_key, 10**9
+            )
+            boss_suit = _SUIT_BOSS_KEYS.get(boss_key)
+            suit_locked = boss_suit is not None and boss_suit == self._preferred_suit(state)
+            face_engine = any(
+                joker.center_key in {"j_sock_and_buskin", "j_photograph", "j_scary_face", "j_smiley"}
+                for joker in state.jokers
+            )
+            face_disabled = boss_key == "bl_plant" and face_engine
+            if dangerous or ((suit_locked or face_disabled) and state.dollars >= 25):
+                return ActionRange.BLIND_REROLL
         if ante == 1 and mask[ActionRange.BLIND_SKIP]:
             blind_on_deck = state.blind_on_deck or ""
             upcoming_tag = state.round_resets.blind_tags.get(blind_on_deck, "")
@@ -955,6 +850,22 @@ class HeuristicAgent:
                 if action is not None:
                     return action
 
+        # Purple seals turn discards into Tarot generation. Cash them in
+        # before ordinary draw logic while there is consumable room.
+        purple_room = max(consumable_limit(state) - len(state.consumables), 0)
+        purple_cards = tuple(
+            i for i, card in enumerate(hand) if card.seal == "Purple" and not card.forced_selection
+        )[:purple_room]
+        card_sharp_opening = False
+        if (
+            purple_cards
+            and state.current_round.discards_left > 0
+            and state.current_round.hands_left > 1
+        ):
+            purple_action = ActionRange.DISCARD_SUBSET_START + subset_index(purple_cards)
+            if mask[purple_action]:
+                return purple_action
+
         best_play = tuple(sorted(self._cached_best_hand(state, hand)))
 
         if best_play and len(best_play) < 5 and len(hand) > len(best_play):
@@ -971,21 +882,236 @@ class HeuristicAgent:
                 if mask[padded_action]:
                     best_play = padded
 
+        square_candidate: tuple[int, tuple[int, ...]] | None = None
+        if any(j.center_key == "j_square" and not j.debuff for j in state.jokers):
+            # Square Joker grows only on exactly four played cards. Structural
+            # Pair candidates are normally padded to five for redraw value,
+            # which left Square at zero chips for whole blinds. Accept a
+            # modest immediate-score discount to put its persistent scaling
+            # online.
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            square_plays = [
+                indices
+                for indices in combinations(range(len(hand)), 4)
+                if forced.issubset(indices)
+                and mask[ActionRange.PLAY_SUBSET_START + subset_index(indices)]
+            ]
+            if square_plays:
+                square_play = max(square_plays, key=lambda indices: self._estimate_hand_score(state, indices))
+                square_score = self._estimate_hand_score(state, square_play)
+                square_candidate = (square_score, square_play)
+                current_score = self._estimate_hand_score(state, best_play) if best_play else 0
+                if square_score >= current_score * 0.35:
+                    best_play = square_play
+
         best_play_cards = [hand[i] for i in best_play] if best_play else []
         best_hand_quality_now = self._quick_hand_quality(state, best_play_cards) if best_play_cards else ""
 
         est_score = self._estimate_hand_score(state, best_play) if best_play else 0
+
+        # Mystic Summit is +15 Mult only at zero discards.  A discard action
+        # does not consume a hand, so preserve the current best five cards and
+        # cycle the remainder until the joker is actually online.  Previously
+        # the agent bought Summit, immediately banked a modest Two Pair, and
+        # carried three or four unused discards through the entire blind.
+        if (
+            state.current_round.discards_left > 0
+            and any(j.center_key == "j_mystic_summit" and not j.debuff for j in state.jokers)
+        ):
+            protected = set(best_play)
+            summit_discard = tuple(
+                i
+                for i, card in enumerate(hand)
+                if i not in protected
+                and not card.forced_selection
+                and card.seal != "Blue"
+            )[:5]
+            if summit_discard and self._discard_mask_ok(state, mask, summit_discard):
+                return ActionRange.DISCARD_SUBSET_START + subset_index(summit_discard)
 
         blind_target = self._get_blind_target(state)
         target_remaining = max(0, blind_target - self._current_round_score_estimate(state))
         hands_left = state.current_round.hands_left
         discards_left = state.current_round.discards_left
         can_win_now = est_score >= target_remaining
+        # Early blinds are intentionally forgiving. If repeating the current
+        # best hand can clear them, take the guaranteed score instead of
+        # spending a discard to chase a speculative 15% cushion.
+        safety_margin = 1.0 if state.round_resets.ante <= 2 else 1.15
+        projected_target = target_remaining * (
+            safety_margin if discards_left > 0 and hands_left > 1 else 1.0
+        )
+
+        # Card Sharp rewards repeating the same poker hand after the first
+        # play. The exact one-hand oracle otherwise opens with an incidental
+        # Straight/Two Pair, stranding a mature High Card or Pair plan for the
+        # rest of the blind. Establish the reproducible main hand first unless
+        # the greedy play already clears the blind.
+        if (
+            any(j.center_key == "j_card_sharp" and not j.debuff for j in state.jokers)
+            and state.current_round.hands_played == 0
+            and hands_left >= 3
+            and state.hands.get(self._get_main_hand_type(state), {}).get("level", 1) >= 3
+            and not can_win_now
+        ):
+            card_sharp_type = self._get_main_hand_type(state)
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            card_sharp_candidates: list[tuple[int, tuple[int, ...]]] = []
+            for size in range(1, min(5, len(hand)) + 1):
+                for indices in combinations(range(len(hand)), size):
+                    if not forced.issubset(indices):
+                        continue
+                    if self._quick_hand_quality(state, [hand[i] for i in indices]) != card_sharp_type:
+                        continue
+                    action = ActionRange.PLAY_SUBSET_START + subset_index(indices)
+                    if mask[action]:
+                        card_sharp_candidates.append((self._estimate_hand_score(state, indices), indices))
+            if card_sharp_candidates:
+                sharp_score, sharp_play = max(card_sharp_candidates)
+                if sharp_score >= est_score * 0.15:
+                    best_play = sharp_play
+                    est_score = sharp_score
+                    best_play_cards = [hand[i] for i in best_play]
+                    best_hand_quality_now = card_sharp_type
+                    can_win_now = est_score >= target_remaining
+                    card_sharp_opening = True
+
+        # The Mouth makes the first played hand type the only legal type for
+        # the rest of the blind. From Ante 3 onward, lock the established plan
+        # (normally Pair/High Card) rather than taking a large one-off Straight
+        # or Full House that the remaining draws cannot reproduce.
+        boss_key = state.round_resets.blind_choices.get("Boss", "")
+        if (
+            boss_key == "bl_mouth"
+            and state.blind_on_deck == "Boss"
+            and not state.mouth_only_hand
+            and state.round_resets.ante >= 3
+            and est_score < target_remaining
+        ):
+            mouth_type = self._get_main_hand_type(state)
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            mouth_candidates: list[tuple[int, tuple[int, ...]]] = []
+            for size in range(1, min(5, len(hand)) + 1):
+                for indices in combinations(range(len(hand)), size):
+                    if not forced.issubset(indices):
+                        continue
+                    cards = [hand[i] for i in indices]
+                    if self._quick_hand_quality(state, cards) != mouth_type:
+                        continue
+                    action = ActionRange.PLAY_SUBSET_START + subset_index(indices)
+                    if mask[action]:
+                        mouth_candidates.append((self._estimate_hand_score(state, indices), indices))
+            if mouth_candidates:
+                est_score, best_play = max(mouth_candidates)
+                play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
+                return self._play_or_reorder_jokers(state, mask, play_action)
+            elif discards_left > 0:
+                mouth_discard = self._should_discard_for_draw(state, hand, mask)
+                if mouth_discard is None:
+                    mouth_discard = tuple(
+                        sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand))))
+                    )
+                if mouth_discard and self._discard_mask_ok(state, mask, mouth_discard):
+                    return ActionRange.DISCARD_SUBSET_START + subset_index(mouth_discard)
+
+        # Hold at least one Blue seal and play the run's most-played hand so
+        # the end-of-round Planet reinforces the established build.
+        blue_indices = {i for i, card in enumerate(hand) if card.seal == "Blue"}
+        if blue_indices:
+            most_played = max(
+                state.hands,
+                key=lambda hand_type: (
+                    state.hands[hand_type].get("played", 0),
+                    state.hands[hand_type].get("level", 1),
+                    hand_type == self._get_main_hand_type(state),
+                ),
+            )
+            if state.hands[most_played].get("played", 0) <= 0:
+                most_played = self._get_main_hand_type(state)
+            structural, _ = generate_hand_candidates(state)
+            blue_candidates = {candidate.indices for candidate in structural}
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            type_hand = self._find_type_hand(state, hand, most_played)
+            if type_hand and forced.issubset(type_hand):
+                blue_candidates.add(type_hand)
+            if most_played == "High Card":
+                blue_candidates.update((i,) for i in range(len(hand)) if not forced or i in forced)
+            matching_blue_holds: list[tuple[int, tuple[int, ...]]] = []
+            for indices in blue_candidates:
+                if not (blue_indices - set(indices)):
+                    continue
+                cards = [hand[i] for i in indices]
+                if self._quick_hand_quality(state, cards) != most_played:
+                    continue
+                matching_blue_holds.append((self._estimate_hand_score(state, indices), indices))
+            if matching_blue_holds:
+                blue_score, blue_play = max(matching_blue_holds)
+                safe_blue_play = blue_score >= target_remaining or blue_score * hands_left >= projected_target
+                if safe_blue_play and blue_score >= est_score * 0.65:
+                    best_play = blue_play
+                    est_score = blue_score
+                    best_play_cards = [hand[i] for i in best_play]
+                    best_hand_quality_now = most_played
+                    can_win_now = est_score >= target_remaining
+
+        # Baron is a held-card engine: spending Kings as a temporary Pair can
+        # improve one hand while deleting x-mult from every later hand. Search
+        # all legal plays that hold every King and accept a lower immediate
+        # score when it preserves meaningful multi-hand output.
+        if any(j.center_key == "j_baron" and not j.debuff for j in state.jokers):
+            king_indices = {i for i, card in enumerate(hand) if card.rank == "K"}
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            if king_indices and not (king_indices & forced) and hands_left > 1:
+                non_kings = [i for i in range(len(hand)) if i not in king_indices]
+                held_king_plays: list[tuple[int, tuple[int, ...]]] = []
+                for size in range(1, min(5, len(non_kings)) + 1):
+                    for indices in combinations(non_kings, size):
+                        if not forced.issubset(indices):
+                            continue
+                        action = ActionRange.PLAY_SUBSET_START + subset_index(indices)
+                        if mask[action]:
+                            held_king_plays.append((self._estimate_hand_score(state, indices), indices))
+                if held_king_plays:
+                    baron_score, baron_play = max(held_king_plays)
+                    if baron_score >= est_score * 0.35:
+                        best_play = baron_play
+                        est_score = baron_score
+                        best_play_cards = [hand[i] for i in best_play]
+                        best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
+                        can_win_now = est_score >= target_remaining
+
+        # Ride the Bus permanently gains mult only when the scoring cards have
+        # no faces. Prefer a safe faceless line even when a face-heavy hand is
+        # marginally stronger right now.
+        if any(j.center_key == "j_ride_the_bus" and not j.debuff for j in state.jokers):
+            structural, _ = generate_hand_candidates(state)
+            bus_candidates = {candidate.indices for candidate in structural}
+            forced = {i for i, card in enumerate(hand) if card.forced_selection}
+            for size in (1, 2):
+                for indices in combinations(range(len(hand)), size):
+                    if forced.issubset(indices):
+                        bus_candidates.add(indices)
+            faceless: list[tuple[int, tuple[int, ...]]] = []
+            for indices in bus_candidates:
+                cards = [hand[i] for i in indices]
+                _name, _display, _poker_hands, scoring_hand = get_poker_hand_info(state, cards)
+                if any(card.rank in {"J", "Q", "K"} for card in scoring_hand):
+                    continue
+                faceless.append((self._estimate_hand_score(state, indices), indices))
+            if faceless:
+                bus_score, bus_play = max(faceless)
+                safe_bus_play = bus_score >= target_remaining or bus_score * hands_left >= projected_target
+                if safe_bus_play and bus_score >= est_score * 0.55:
+                    best_play = bus_play
+                    est_score = bus_score
+                    best_play_cards = [hand[i] for i in best_play]
+                    best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
+                    can_win_now = est_score >= target_remaining
 
         main_type = self._get_main_hand_type(state)
         main_synergy = self._hand_type_synergy(state, main_type)
 
-        if not can_win_now:
+        if not can_win_now and not card_sharp_opening:
             alt_types = ["Pair", "Two Pair", "Three of a Kind", "Four of a Kind", "Flush"]
             if main_type in alt_types:
                 alt_types.remove(main_type)
@@ -1019,6 +1145,17 @@ class HeuristicAgent:
                         best_play_cards = [hand[i] for i in best_play]
                         best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
 
+        # Main-hand and alternative-hand selection above can replace the
+        # four-card Square line with a conventional five-card Pair. Restore
+        # the scaling play when it remains within the accepted score budget.
+        if square_candidate is not None:
+            square_score, square_play = square_candidate
+            if square_score >= est_score * 0.35:
+                best_play = square_play
+                est_score = square_score
+                best_play_cards = [hand[i] for i in best_play]
+                best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
+
         best_planet_score = -1
         best_planet_action = None
         for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
@@ -1029,17 +1166,16 @@ class HeuristicAgent:
             if action is None:
                 continue
             planet_hand_type = center.get("config", {}).get("hand_type", "")
+            planet_synergy = self._hand_type_synergy(state, planet_hand_type)
+            if planet_hand_type != main_type and planet_synergy <= 0:
+                continue
             score = 0
             if planet_hand_type == main_type:
                 score += 20
-            if planet_hand_type == best_hand_quality_now:
-                score += 15
-            score += self._hand_type_synergy(state, planet_hand_type)
+            score += planet_synergy
             played_count = state.hands.get(planet_hand_type, {}).get("played", 0)
             if played_count > 0:
                 score += 10
-            if score == 0:
-                score = 1
             if score > best_planet_score:
                 best_planet_score = score
                 best_planet_action = action
@@ -1054,6 +1190,8 @@ class HeuristicAgent:
                 "The Lovers",
                 "The Chariot",
                 "Justice",
+                "The Devil",
+                "The Tower",
                 "Strength",
                 "The Star",
                 "The Moon",
@@ -1066,9 +1204,6 @@ class HeuristicAgent:
             {
                 "Death",
                 "The Hanged Man",
-                "The Devil",
-                "The Tower",
-                "Judgement",
             }
         )
 
@@ -1079,10 +1214,32 @@ class HeuristicAgent:
             name = center.get("name", "")
             preferred = None
             if name in _BUFF_TAROTS:
+                target_suit = _SUIT_TAROT_TARGETS.get(name)
+                if target_suit is not None and target_suit != self._preferred_suit(state):
+                    continue
                 preferred = best_play if best_play else None
             elif name in _DESTROY_TAROTS:
                 worst = tuple(sorted(self._find_worst_cards(state, hand, max_discard=2)))
-                preferred = worst if worst else None
+                if name == "Death":
+                    # Death copies the rightmost selected card into the other.
+                    # Pair a disposable card with a later, high-value source.
+                    death_pair = None
+                    for target in worst:
+                        sources = [index for index in range(target + 1, len(hand)) if index not in worst]
+                        if sources:
+                            source = max(
+                                sources,
+                                key=lambda index: (
+                                    hand[index].center_key != "c_base",
+                                    bool(hand[index].seal or hand[index].edition_key),
+                                    RANK_TO_NOMINAL.get(hand[index].rank, 0),
+                                ),
+                            )
+                            death_pair = (target, source)
+                            break
+                    preferred = death_pair or (worst if worst else None)
+                else:
+                    preferred = worst if worst else None
             elif name in ("The Fool", "The Emperor", "The High Priestess", "Judgement"):
                 action = self._atomic_consumable_action(state, slot, mask)
                 if action is not None:
@@ -1099,13 +1256,76 @@ class HeuristicAgent:
             if mask[play_action]:
                 return self._play_or_reorder_jokers(state, mask, play_action)
 
-        if best_play and est_score * hands_left >= target_remaining:
+        if best_play and est_score * hands_left >= projected_target:
+            play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
+            if mask[play_action]:
+                return self._play_or_reorder_jokers(state, mask, play_action)
+
+        # In the opening antes, a made hand is also a redraw: playing it scores
+        # now and replaces every played card.  The old policy repeatedly held
+        # Pair/Two Pair through all four discards, chasing Trips/Full House and
+        # entering its four hands with zero points.  Bank Two Pair outright,
+        # and bank Pair when its current output is within one discard's worth
+        # of the remaining pace.  This is an early survival rule, not a reason
+        # to commit the build to Two Pair.
+        early_made_hand = (
+            state.round_resets.ante <= 2
+            and best_play
+            and self._owned_build_roles(state)["chips"] == 0
+            and self._owned_build_roles(state)["mult"] == 0
+            and (
+                (
+                    best_hand_quality_now == "Two Pair"
+                    and (
+                        est_score * (hands_left + 2) >= target_remaining * 1.5
+                        or discards_left <= 1
+                    )
+                )
+                or (
+                    best_hand_quality_now == "Pair"
+                    and self._current_round_score_estimate(state) > 0
+                    and hands_left >= 3
+                    and est_score * (hands_left + 1) >= target_remaining
+                )
+            )
+        )
+        if early_made_hand:
+            play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
+            if mask[play_action]:
+                return self._play_or_reorder_jokers(state, mask, play_action)
+
+        # A lone Three-of-a-Kind payoff (for example Wily Joker) is useful
+        # when it naturally lands, but it must not consume the whole early
+        # blind fishing for a difficult condition. After two misses, bank an
+        # available Pair/Two Pair and let the played cards provide the redraw.
+        if (
+            best_play
+            and state.round_resets.ante <= 2
+            and any(j.center_key == "j_wily" and not j.debuff for j in state.jokers)
+            and best_hand_quality_now in {"Pair", "Two Pair"}
+            and discards_left <= 2
+            and hands_left >= 2
+        ):
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
                 return self._play_or_reorder_jokers(state, mask, play_action)
 
         draw_discard = self._should_discard_for_draw(state, hand, mask)
-        if draw_discard is not None and est_score * max(hands_left - 1, 1) < target_remaining:
+        if draw_discard is not None:
+            active_keys = {joker.center_key for joker in state.jokers if not joker.debuff}
+            without_blue = tuple(
+                i
+                for i in draw_discard
+                if hand[i].seal != "Blue"
+                and not ("j_baron" in active_keys and hand[i].rank == "K")
+                and not ("j_shoot_the_moon" in active_keys and hand[i].rank == "Q")
+            )
+            draw_discard = (
+                without_blue
+                if without_blue and self._discard_mask_ok(state, mask, without_blue)
+                else None
+            )
+        if draw_discard is not None and est_score * max(hands_left - 1, 1) < projected_target:
             return ActionRange.DISCARD_SUBSET_START + subset_index(draw_discard)
 
         best_discard = tuple(sorted(self._find_worst_cards(state, hand, max_discard=min(5, len(hand))))) if hand else ()
@@ -1117,9 +1337,8 @@ class HeuristicAgent:
 
         if (
             can_discard
-            and hands_left > 1
-            and est_score * hands_left < target_remaining
-            and not self._has_scaling_jokers(state)
+            and hands_left > 0
+            and est_score * hands_left < projected_target
         ):
             return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
 
@@ -1468,6 +1687,10 @@ class HeuristicAgent:
             score += 5.0
         elif jname == "Throwback":
             score += 6.0
+        elif jname == "Riff-Raff":
+            # Besides finding an early scoring engine, every disposable
+            # common can be sold and the empty slot rolled again next blind.
+            score += 30.0 if ante <= 2 else (14.0 if ante <= 4 else 3.0)
 
         if cost <= 3:
             score *= 1.3
@@ -1499,6 +1722,142 @@ class HeuristicAgent:
                 best = v
         return max(best * 0.6, 8.0)
 
+    def _joker_build_roles(self, state: RunState, center_key: str) -> frozenset[str]:
+        """Classify the scoring job a joker can fill in a conventional build."""
+        roles: set[str] = set()
+        if center_key in _CHIPS_PROFILE_JOKER_KEYS:
+            roles.add("chips")
+        if center_key in _MULT_PROFILE_JOKER_KEYS:
+            roles.add("mult")
+        if self._is_xmult_center(state, center_key):
+            roles.add("xmult")
+
+        center = state.data.centers.get(center_key, {})
+        config = center.get("config", {})
+        if isinstance(config, dict):
+            if float(config.get("t_chips", 0) or 0) > 0:
+                roles.add("chips")
+            if float(config.get("mult", 0) or 0) > 0 or float(config.get("t_mult", 0) or 0) > 0:
+                roles.add("mult")
+            extra = config.get("extra")
+            if isinstance(extra, dict):
+                if float(extra.get("chips", 0) or 0) > 0 or float(extra.get("chip_mod", 0) or 0) > 0:
+                    roles.add("chips")
+                if float(extra.get("mult", 0) or 0) > 0 or float(extra.get("hand_add", 0) or 0) > 0:
+                    roles.add("mult")
+        return frozenset(roles)
+
+    def _owned_build_roles(self, state: RunState) -> Counter[str]:
+        roles: Counter[str] = Counter()
+        for joker in state.jokers:
+            if joker.debuff:
+                continue
+            roles.update(self._joker_build_roles(state, joker.center_key))
+        return roles
+
+    def _score_joker_for_build(
+        self,
+        state: RunState,
+        center_key: str,
+        edition: dict | None = None,
+    ) -> float:
+        """Value a shop/pack joker against the build roles still missing."""
+        score = self._score_joker_value(state, center_key, edition=edition)
+        roles = self._joker_build_roles(state, center_key)
+        owned = self._owned_build_roles(state)
+        ante = state.round_resets.ante
+        has_live_additive_mult = any(
+            not joker.debuff
+            and (
+                (joker.mult and joker.mult > 0)
+                or (joker.t_mult and joker.t_mult > 0)
+                or (joker.h_mult and joker.h_mult > 0)
+            )
+            for joker in state.jokers
+        )
+
+        # Early slots must make chips or mult.  Pure utility jokers such as
+        # Pareidolia and Ceremonial Dagger routinely consumed all available
+        # money while leaving the run unable to clear Ante 1.
+        utility_exception = center_key in (
+            _ECONOMY_JOKERS | _COPY_JOKER_KEYS | _RETRIGGER_JOKER_KEYS | {"j_riff_raff"}
+        )
+        if ante <= 3 and not roles and not utility_exception:
+            return -100.0
+
+        # Riff-Raff immediately fills two empty slots with common jokers at
+        # each blind. In Ante 1 that is a much stronger route to a complete
+        # chips+mult engine than gambling the same money on one Buffoon pack.
+        if center_key == "j_riff_raff":
+            empty_after_buy = max(joker_limit(state) - len(state.jokers) - 1, 0)
+            score += min(empty_after_buy, 2) * (38.0 if ante <= 2 else 16.0)
+
+        if "chips" in roles:
+            score += 48.0 if owned["chips"] == 0 else (10.0 if owned["chips"] == 1 else -22.0)
+        if "mult" in roles:
+            score += 65.0 if owned["mult"] == 0 else (16.0 if owned["mult"] == 1 else -18.0)
+        if "xmult" in roles:
+            if owned["xmult"] == 0:
+                score += 70.0 if owned["mult"] > 0 else 30.0
+            elif owned["xmult"] == 1:
+                score += 12.0
+            else:
+                score -= 35.0
+
+        if (
+            ante <= 2
+            and center_key in _DEVELOPING_XMULT_JOKER_KEYS
+            and not has_live_additive_mult
+        ):
+            # Vampire/Hologram/Constellation are excellent only after their
+            # enabling cards have appeared.  Buying one as the first Ante 1
+            # joker spends the whole bankroll without changing the next blind.
+            # Prefer an immediate scorer or Buffoon roll until basic chips or
+            # +Mult is online.
+            score -= 120.0
+
+        if ante <= 2 and center_key == "j_flash" and not has_live_additive_mult:
+            # Flash Card's advertised +Mult is still zero on purchase and its
+            # growth costs reroll money.  It cannot be the run's first actual
+            # +Mult source immediately before an Ante 1/2 blind.
+            score -= 150.0
+
+        if center_key in _DEVELOPING_XMULT_JOKER_KEYS and ante >= 5:
+            # A fresh Constellation/Hologram/Campfire is close to x1 and has
+            # little runway left. Do not replace an established additive-mult
+            # slot with unrealized late-game potential.
+            score -= 80.0
+        elif center_key in _SCALING_JOKER_KEYS and ante >= 5:
+            score -= 55.0
+
+        center = state.data.centers.get(center_key, {})
+        config = center.get("config", {})
+        hand_type = config.get("type", "") if isinstance(config, dict) else ""
+        suit_flush_engine = hand_type == "Flush" and any(
+            state.data.centers.get(joker.center_key, {}).get("effect") == "Suit Mult"
+            for joker in state.jokers
+            if not joker.debuff
+        )
+        if suit_flush_engine:
+            # Droll plus an existing suit scorer is a complete additive-mult
+            # route, not an off-plan conditional. It is worth pivoting from an
+            # otherwise weak Pair shell before buying another small planet.
+            score += 125.0
+        elif hand_type and hand_type != self._get_main_hand_type(state):
+            played = int(state.hands.get(hand_type, {}).get("played", 0) or 0)
+            score -= 35.0 if played == 0 else 15.0
+            if hand_type not in {"Pair", "High Card", "Two Pair"}:
+                level = int(state.hands.get(hand_type, {}).get("level", 1) or 1)
+                if level <= 1 and played < 4:
+                    score -= 80.0
+        if center.get("effect") == "Suit Mult" and self._get_main_hand_type(state) in {"High Card", "Pair"}:
+            extra = config.get("extra", {}) if isinstance(config, dict) else {}
+            target_suit = extra.get("suit", "") if isinstance(extra, dict) else ""
+            suit_count = sum(1 for card in state.deck_cards if card.suit == target_suit)
+            if suit_count < 20:
+                score -= 45.0
+        return score
+
     def _score_owned_joker_value(self, state: RunState, joker: JokerInstance) -> float:
         score = self._score_joker_value(state, joker.center_key, edition=joker.edition)
         center = state.data.centers.get(joker.center_key, {})
@@ -1510,15 +1869,15 @@ class HeuristicAgent:
         mid_game = ante >= _MID_GAME_ANTE
 
         base_mult = config.get("mult", 0) or 0
-        if isinstance(base_mult, (int, float)) and joker.mult > base_mult:
+        if isinstance(base_mult, (int, float)) and joker.mult != base_mult:
             score += (joker.mult - base_mult) * (11.0 if mid_game else 14.0)
 
         base_t_mult = config.get("t_mult", 0) or 0
-        if isinstance(base_t_mult, (int, float)) and joker.t_mult > base_t_mult:
+        if isinstance(base_t_mult, (int, float)) and joker.t_mult != base_t_mult:
             score += (joker.t_mult - base_t_mult) * 10.0
 
         base_t_chips = config.get("t_chips", 0) or 0
-        if isinstance(base_t_chips, (int, float)) and joker.t_chips > base_t_chips:
+        if isinstance(base_t_chips, (int, float)) and joker.t_chips != base_t_chips:
             score += (joker.t_chips - base_t_chips) * (0.9 if mid_game else 1.5)
 
         base_x_mult = config.get("Xmult", 1) or 1
@@ -1549,6 +1908,13 @@ class HeuristicAgent:
             and name in {"Castle", "Square Joker", "Runner", "Ice Cream", "Wee Joker"}
         ):
             score += (extra - cfg_extra) * (0.6 if mid_game else 1.0)
+
+        if (
+            joker.center_key in _SCALING_JOKER_KEYS
+            and ante >= _MID_GAME_ANTE
+            and self._owned_scaling_progress(state, joker) < 3.0
+        ):
+            score *= 0.2
 
         return score
 
@@ -1591,7 +1957,7 @@ class HeuristicAgent:
     def _should_preserve_scaling_joker(self, state: RunState, joker: JokerInstance) -> bool:
         if joker.center_key not in _SCALING_JOKER_KEYS:
             return False
-        return state.round_resets.ante >= _MID_GAME_ANTE or self._owned_scaling_progress(state, joker) > 0
+        return self._owned_scaling_progress(state, joker) >= 3.0
 
     def _hand_type_synergy(self, state: RunState, hand_type: str) -> float:
         if not hand_type:
@@ -1605,6 +1971,12 @@ class HeuristicAgent:
             return self._synergy_cache[cache_key]
         synergy = 0.0
         for j in state.jokers:
+            if j.debuff:
+                continue
+            if j.center_key == "j_runner" and hand_type == "Straight":
+                synergy += 10.0
+            elif j.center_key == "j_trousers" and hand_type == "Two Pair":
+                synergy += 12.0
             jc = state.data.centers.get(j.center_key, {})
             jcfg = jc.get("config")
             if not isinstance(jcfg, dict):
@@ -1894,10 +2266,58 @@ class HeuristicAgent:
         is_flush_type = main_type == "Flush" and main_synergy > 0
         is_sf_type = main_type == "Straight Flush" and main_synergy > 0
         high_ranks = frozenset(("A", "K", "Q", "J", "T"))
+        joker_keys = {joker.center_key for joker in state.jokers if not joker.debuff}
+        preferred_suit = self._preferred_suit(state)
+        avoided_suit = self._boss_debuff_suit(state)
+        ancient_suit = (
+            state.current_round.ancient_card.get("suit", "")
+            if "j_ancient" in joker_keys
+            else ""
+        )
 
         keep_scores: list[float] = []
         for i, card in enumerate(hand):
             score = nominals[i] * 0.1
+
+            if card.suit == preferred_suit:
+                score += 18.0
+            if ancient_suit:
+                # Ancient Joker's target changes each blind. Draw toward the
+                # live target here without redirecting permanent deck shaping.
+                score += 52.0 if card.suit == ancient_suit else -10.0
+            if avoided_suit and card.suit == avoided_suit and card.suit != preferred_suit:
+                score -= 8.0
+            if "j_hack" in joker_keys and card.rank in ("2", "3", "4", "5"):
+                score += 28.0
+            if "j_sock_and_buskin" in joker_keys and card.rank in ("J", "Q", "K"):
+                score += 28.0
+            if "j_baron" in joker_keys and card.rank == "K":
+                # Baron scores held Kings every hand; discarding one to polish
+                # a poker pattern usually destroys far more x-mult than the
+                # replacement hand can recover. Mime makes that even stronger.
+                score += 130.0 if "j_mime" in joker_keys else 90.0
+            if "j_shoot_the_moon" in joker_keys and card.rank == "Q":
+                score += 70.0
+            if (
+                "j_ride_the_bus" in joker_keys
+                and "j_sock_and_buskin" not in joker_keys
+                and card.rank in ("J", "Q", "K")
+            ):
+                score -= 32.0
+            if "j_blackboard" in joker_keys:
+                if card.suit in ("Clubs", "Spades"):
+                    score += 22.0
+                else:
+                    score -= 28.0
+            center = state.data.centers.get(card.center_key, {})
+            if center.get("effect") not in (None, "", "Base"):
+                score += 16.0
+            if card.edition_key or card.seal:
+                score += 12.0
+            if card.seal == "Blue":
+                score += 55.0
+            elif card.seal == "Purple":
+                score -= 65.0
 
             rank_n = rank_counts[card.rank]
             if is_pair_type:
@@ -1963,6 +2383,35 @@ class HeuristicAgent:
         ranked = sorted(range(len(hand)), key=lambda idx: keep_scores[idx])
         return set(ranked[:max_discard])
 
+    def _boss_debuff_suit(self, state: RunState) -> str | None:
+        boss_key = state.round_resets.blind_choices.get("Boss", "")
+        return _SUIT_BOSS_KEYS.get(boss_key)
+
+    def _preferred_suit(self, state: RunState) -> str:
+        """Choose the suit the deck should consolidate around."""
+        suits = ("Spades", "Hearts", "Clubs", "Diamonds")
+        score = Counter(card.suit for card in state.deck_cards)
+        joker_targets = {
+            "j_wrathful_joker": "Spades",
+            "j_arrowhead": "Spades",
+            "j_lusty_joker": "Hearts",
+            "j_bloodstone": "Hearts",
+            "j_gluttenous_joker": "Clubs",
+            "j_onyx_agate": "Clubs",
+            "j_greedy_joker": "Diamonds",
+            "j_rough_gem": "Diamonds",
+        }
+        for joker in state.jokers:
+            target = joker_targets.get(joker.center_key)
+            if target and not joker.debuff:
+                score[target] += 10
+        avoided = self._boss_debuff_suit(state)
+        raw_counts = Counter(card.suit for card in state.deck_cards)
+        concentrated = raw_counts and max(raw_counts.values()) - min(raw_counts.values()) >= 3
+        if avoided and not concentrated:
+            score[avoided] -= 12
+        return max(suits, key=lambda suit: (score[suit], -suits.index(suit)))
+
     def _has_scaling_jokers(self, state: RunState) -> bool:
         scaling_keys = _SCALING_JOKER_KEYS | {"j_obelisk", "j_cavendish"}
         return any(j.center_key in scaling_keys for j in state.jokers)
@@ -1970,7 +2419,10 @@ class HeuristicAgent:
     def _should_discard_for_draw(
         self, state: RunState, hand: list[PlayingCard], mask: np.ndarray
     ) -> tuple[int, ...] | None:
-        if state.current_round.discards_left <= 0 or state.current_round.hands_left < 2:
+        # A discard does not consume a hand. Fishing before the final hand is
+        # legal and often decisive when the current play cannot clear the
+        # remaining target.
+        if state.current_round.discards_left <= 0 or state.current_round.hands_left <= 0:
             return None
         best = self._cached_best_hand(state, hand)
         best_cards = [hand[i] for i in best]
@@ -1979,11 +2431,33 @@ class HeuristicAgent:
 
         main_type = self._get_main_hand_type(state)
 
+        active_jokers = {joker.center_key for joker in state.jokers if not joker.debuff}
+        if "j_ancient" in active_jokers:
+            target_suit = state.current_round.ancient_card.get("suit", "")
+            hand_suits = Counter(card.suit for card in hand)
+            # Chase the rotating suit from a real foothold, but do not throw
+            # away an existing four-card flush draw for a lone target card.
+            if hand_suits[target_suit] >= 2 and max(hand_suits.values(), default=0) < 4:
+                off_target = tuple(i for i, card in enumerate(hand) if card.suit != target_suit)[:5]
+                if off_target and self._discard_mask_ok(state, mask, off_target):
+                    return off_target
+        if "j_blackboard" in active_jokers:
+            red_cards = tuple(i for i, card in enumerate(hand) if card.suit in {"Hearts", "Diamonds"})[:5]
+            if red_cards and self._discard_mask_ok(state, mask, red_cards):
+                return red_cards
+
         by_rank: dict[str, list[int]] = {}
         for i, card in enumerate(hand):
             by_rank.setdefault(card.rank, []).append(i)
 
-        if main_type in ("Pair", "Two Pair", "Three of a Kind"):
+        owned_roles = self._owned_build_roles(state)
+        raw_early_deck = (
+            state.round_resets.ante <= 2
+            and owned_roles["chips"] == 0
+            and owned_roles["mult"] == 0
+        )
+
+        if main_type in ("Pair", "Two Pair", "Three of a Kind") and not raw_early_deck:
             non_group_cards = []
             for i, card in enumerate(hand):
                 if len(by_rank.get(card.rank, [])) < 2:
@@ -2050,6 +2524,18 @@ class HeuristicAgent:
                     if to_discard and self._discard_mask_ok(state, mask, to_discard):
                         return to_discard
 
+        # With no additive engine, raw Pair/Two Pair output is often below the
+        # Ante 1 pace.  Give four-card Flush/Straight draws first refusal, then
+        # fall back to the ordinary rank-grouping discard plan.
+        if raw_early_deck and main_type in ("Pair", "Two Pair", "Three of a Kind"):
+            non_group_cards = [
+                i for i, card in enumerate(hand) if len(by_rank.get(card.rank, [])) < 2
+            ]
+            non_group_cards.sort(key=lambda i: RANK_TO_NOMINAL.get(hand[i].rank, 0))
+            to_discard = tuple(sorted(non_group_cards[:5]))
+            if to_discard and self._discard_mask_ok(state, mask, to_discard):
+                return to_discard
+
         # Rule 3: Pair -> Trips/Two-Pair
         if best_quality == "Pair" and state.current_round.hands_left >= 2:
             pair_ranks: dict[int, list[int]] = {}
@@ -2103,6 +2589,46 @@ class HeuristicAgent:
             return True
         if joker.edition and joker.edition.get("polychrome"):
             return True
+        # These centers are prospective x-mult, not active x-mult. Keep
+        # searching until their live instance has actually grown above x1.
+        if joker.center_key in _DEVELOPING_XMULT_JOKER_KEYS:
+            if joker.center_key == "j_steel_joker":
+                return joker.steel_tally > 0
+            return False
+        if joker.center_key in _COPY_JOKER_KEYS:
+            return False
+        if joker.center_key == "j_baseball":
+            return any(
+                other is not joker
+                and not other.debuff
+                and state.data.centers.get(other.center_key, {}).get("rarity") == 2
+                for other in state.jokers
+            )
+        if joker.center_key == "j_stencil":
+            return joker_limit(state) - len(state.jokers) > 0
+        if joker.center_key == "j_drivers_license":
+            enhanced = sum(
+                state.data.centers.get(card.center_key, {}).get("effect") not in {None, "", "Base"}
+                for card in state.deck_cards
+            )
+            return enhanced >= 16
+        if joker.center_key == "j_loyalty_card":
+            # Loyalty triggers every sixth global hand, but a newly purchased
+            # copy needs five plays before its first trigger. Count forward
+            # from the instance's creation point and only call it active when
+            # the next trigger fits inside the available blind hands.
+            elapsed = state.hands_played - joker.hands_played_at_create
+            hands_until_trigger = next(
+                hands
+                for hands in range(1, 7)
+                if (4 - (elapsed + hands - 1)) % 6 == 5
+            )
+            available_hands = (
+                state.current_round.hands_left
+                if state.hand_cards
+                else max(int(state.round_resets.hands), 1)
+            )
+            return hands_until_trigger <= available_hands
         return self._is_xmult_center(state, joker.center_key)
 
     def _is_xmult_center(self, state: RunState, center_key: str) -> bool:
@@ -2124,13 +2650,20 @@ class HeuristicAgent:
 
     def _score_planet_value(self, state: RunState, hand_type: str) -> float:
         main_type = self._get_main_hand_type(state)
+        # Two Pair is a useful early scoring find, but Uranus has the same +Mult
+        # growth as easier hands while requiring four coordinated cards. Only
+        # invest when a real Two Pair engine (for example Trousers) made it the
+        # committed main hand.
+        if hand_type == "Two Pair" and main_type != "Two Pair":
+            return 4.0
         score = 0.0
         if hand_type == main_type:
             score += 45.0
         played_count = state.hands.get(hand_type, {}).get("played", 0)
         if played_count > 0:
             score += 18.0 + min(played_count, 8) * 2.0
-        score += self._hand_type_synergy(state, hand_type) * 1.5
+        synergy = self._hand_type_synergy(state, hand_type)
+        score += synergy * 1.5
         if state.round_resets.ante >= _MID_GAME_ANTE and score > 0:
             score += 18.0
         return score
@@ -2385,21 +2918,115 @@ class HeuristicAgent:
         reroll_cost = state.current_round.reroll_cost
         ante = state.round_resets.ante
         main_type = self._get_main_hand_type(state)
+        recent_score = self._current_round_score_estimate(state)
+        upcoming_target = max(self._near_term_shop_target(state), 1)
+        score_output_ready = recent_score <= 0 or recent_score >= upcoming_target * 1.15
+
+        # Preserve the $10 boss-reroll cost when Violet Vessel is waiting. Its
+        # 6x target is worth more than one final marginal shop purchase.
+        if (
+            state.round_resets.blind_choices.get("Boss", "") == "bl_final_vessel"
+            and dollars < 20
+            and mask[ActionRange.SHOP_LEAVE]
+        ):
+            return ActionRange.SHOP_LEAVE
+
+        upcoming_boss = state.round_resets.blind_choices.get("Boss", "")
+        strong_xmult_offer = any(
+            state.data.centers.get(item.center_key, {}).get("set") == "Joker"
+            and self._is_xmult_center(state, item.center_key)
+            and item.cost <= dollars
+            and self._score_joker_for_build(state, item.center_key, edition=item.edition) >= 50
+            for item in all_items
+        )
+        if (
+            state.blind_on_deck == "Boss"
+            and upcoming_boss in {"bl_flint", "bl_needle", "bl_wall"}
+            and 10 <= dollars < 15
+            and not (upcoming_boss == "bl_wall" and state.current_round.reroll_cost_increase > 0)
+            and not strong_xmult_offer
+            and mask[ActionRange.SHOP_LEAVE]
+        ):
+            return ActionRange.SHOP_LEAVE
 
         # Balatro pays `interest_amount` per $5 held, up to the `interest_cap` cash
         # threshold (default $25, Seed Money $50, Money Tree $100). Roll/spend down to
         # this threshold to preserve max interest income.
-        interest_threshold = state.interest_cap
+        antes_remaining = max(int(state.win_ante) - ante, 0)
+        if antes_remaining == 0:
+            interest_threshold = 0
+        elif antes_remaining == 1:
+            interest_threshold = min(state.interest_cap, 10)
+        else:
+            interest_threshold = min(state.interest_cap, 25)
+        if upcoming_boss == "bl_final_vessel":
+            interest_threshold = max(interest_threshold, 10)
+
+        # Early-Wall rescue: arrive funded, spend one pre-boss shop reroll to
+        # expose an immediate scorer, and recover the $10 boss-reroll cost by
+        # selling a now-redundant Castle if necessary. This is still scoring
+        # investment; packs and speculative scalers remain behind the reserve.
+        if upcoming_boss == "bl_wall" and ante <= 2 and state.blind_on_deck == "Boss":
+            if (
+                state.current_round.reroll_cost_increase == 0
+                and dollars >= 15
+                and mask[ActionRange.SHOP_REROLL]
+            ):
+                return ActionRange.SHOP_REROLL
+            if state.current_round.reroll_cost_increase > 0:
+                affordable_immediate: list[tuple[float, int]] = []
+                max_sell = max((joker.sell_cost for joker in state.jokers if not joker.eternal), default=0)
+                for i, item in enumerate(all_items):
+                    action = ActionRange.SHOP_BUY_START + i
+                    center = state.data.centers.get(item.center_key, {})
+                    if (
+                        center.get("set") == "Joker"
+                        and item.center_key not in _SCALING_JOKER_KEYS
+                        and mask[action]
+                        and dollars - item.cost + max_sell >= 10
+                    ):
+                        affordable_immediate.append((self._score_joker_for_build(state, item.center_key), action))
+                if affordable_immediate:
+                    immediate_score, immediate_action = max(affordable_immediate)
+                    if immediate_score > 0:
+                        return immediate_action
+                if dollars < 10 and any(j.center_key == "j_blue_joker" for j in state.jokers):
+                    for ji, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
+                        sell_action = ActionRange.SHOP_SELL_JOKER_START + ji
+                        if (
+                            joker.center_key == "j_castle"
+                            and dollars + joker.sell_cost >= 10
+                            and mask[sell_action]
+                        ):
+                            return sell_action
+
+        # An early Wall is a 4x target and often cannot be repaired by one
+        # ordinary purchase. If we already have enough bankroll to reach the
+        # pre-boss purchase plus the boss-reroll reserve through blind rewards,
+        # stop spending it too early. This makes the Wall reroll policy usable.
+        if (
+            upcoming_boss == "bl_wall"
+            and ante <= 2
+            and dollars >= 10
+            and (state.blind_on_deck != "Boss" or dollars < 18)
+            and not (state.blind_on_deck == "Big" and dollars >= 18)
+            and mask[ActionRange.SHOP_LEAVE]
+        ):
+            return ActionRange.SHOP_LEAVE
 
         best_joker_action = -1
         best_joker_score = -1e9
         best_xmult_action = -1
-        best_xmult_cost = 999
+        best_xmult_score = -1e9
         best_economy_action = -1
         best_economy_score = -1e9
+        best_immediate_joker_action = -1
+        best_immediate_joker_score = -1e9
         main_planet_action = -1
         best_planet_action = -1
         best_planet_score = -1e9
+        best_tarot_action = -1
+        best_tarot_score = -1e9
         judgement_action = -1
         overstock_action = -1
         priority_voucher_action = -1
@@ -2416,14 +3043,25 @@ class HeuristicAgent:
                 continue
             if cset == "Joker":
                 is_economy = item.center_key in _ECONOMY_JOKERS
-                jscore = self._score_joker_value(state, item.center_key, edition=item.edition)
+                jscore = self._score_joker_for_build(state, item.center_key, edition=item.edition)
                 is_xmult = self._is_xmult_center(state, item.center_key)
-                if is_xmult and (best_xmult_action < 0 or item.cost < best_xmult_cost):
+                if is_xmult and jscore > best_xmult_score:
                     best_xmult_action = action
-                    best_xmult_cost = item.cost
+                    best_xmult_score = jscore
                 if not is_economy and jscore > best_joker_score:
                     best_joker_score = jscore
                     best_joker_action = action
+                if (
+                    not is_economy
+                    and (
+                        item.center_key not in _SCALING_JOKER_KEYS
+                        or item.center_key == "j_popcorn"
+                    )
+                    and bool(self._joker_build_roles(state, item.center_key) & {"chips", "mult"})
+                    and jscore > best_immediate_joker_score
+                ):
+                    best_immediate_joker_score = jscore
+                    best_immediate_joker_action = action
                 if is_economy:
                     eco = _ECONOMY_SCORES.get(item.center_key, 5.0)
                     if ante <= 3:
@@ -2442,6 +3080,10 @@ class HeuristicAgent:
                 if planet_type == main_type and main_planet_action < 0:
                     main_planet_action = action
             elif cset == "Tarot":
+                tarot_score = self._score_tarot_value(state, center)
+                if tarot_score > best_tarot_score:
+                    best_tarot_score = tarot_score
+                    best_tarot_action = action
                 if center.get("name") == "Judgement" and judgement_action < 0:
                     judgement_action = action
             elif cset == "Voucher":
@@ -2452,6 +3094,10 @@ class HeuristicAgent:
 
         n_jokers = len(state.jokers)
         no_xmult = not self._has_xmult_joker(state)
+        owned_roles = self._owned_build_roles(state)
+        missing_early_core = ante <= 2 and (
+            owned_roles["chips"] == 0 or owned_roles["mult"] == 0
+        )
 
         def _worst_consumable_sell(score_threshold: int = 50) -> int:
             worst_cons_slot = -1
@@ -2481,13 +3127,44 @@ class HeuristicAgent:
                     return sell_action
             return -1
 
+        # In an Ante 1/2 boss shop, search once for a real chips/+Mult joker
+        # before spending the bankroll on a planet when neither scoring role
+        # is represented and the current shop has no immediate scorer.  Keep
+        # enough money to buy an ordinary $5 joker after the reroll.
+        if (
+            state.blind_on_deck == "Boss"
+            and owned_roles["chips"] == 0
+            and owned_roles["mult"] == 0
+            and best_immediate_joker_action < 0
+            and mask[ActionRange.SHOP_REROLL]
+            and dollars - reroll_cost >= 5
+            and state.current_round.reroll_cost_increase == 0
+        ):
+            return ActionRange.SHOP_REROLL
+
         def _worst_joker_sell(skip_xmult: bool = True, prefer_economy: bool = False) -> tuple[int, int, int]:
             candidates = []
             for i, j in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
                 if j.eternal:
                     continue
                 if skip_xmult and self._is_xmult_center(state, j.center_key):
-                    continue
+                    replaceable_inactive_condition = (
+                        j.center_key
+                        in {
+                            "j_baseball",
+                            "j_stencil",
+                            "j_drivers_license",
+                            "j_loyalty_card",
+                        }
+                        and (j.center_key != "j_baseball" or ante >= 5)
+                        and not self._is_xmult_joker(state, j)
+                    )
+                    replaceable_unscaled_developer = (
+                        j.center_key in _DEVELOPING_XMULT_JOKER_KEYS
+                        and self._owned_scaling_progress(state, j) < 3.0
+                    )
+                    if not replaceable_inactive_condition and not replaceable_unscaled_developer:
+                        continue
                 if self._should_preserve_scaling_joker(state, j):
                     continue
                 jscore = self._score_owned_joker_value(state, j)
@@ -2522,6 +3199,57 @@ class HeuristicAgent:
             max_sell = max((cons.sell_cost for cons in state.consumables[:MAX_CONSUMABLE_SLOTS]), default=0)
             return dollars + max_sell >= all_items[item_idx].cost
 
+        # Keep Riff-Raff producing and realize its economy value. When all
+        # slots are full, cash out the weakest generated joker while retaining
+        # the only source of any core scoring role and any established scaler.
+        has_riff_raff = any(j.center_key == "j_riff_raff" and not j.debuff for j in state.jokers)
+        if has_riff_raff and ante <= 4 and len(state.jokers) >= joker_limit(state):
+            roles = self._owned_build_roles(state)
+            disposable: list[tuple[float, int]] = []
+            for ji, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
+                if joker.center_key == "j_riff_raff" or joker.eternal:
+                    continue
+                joker_roles = self._joker_build_roles(state, joker.center_key)
+                if "xmult" in joker_roles:
+                    continue
+                if any(role in {"chips", "mult"} and roles[role] <= 1 for role in joker_roles):
+                    continue
+                if self._should_preserve_scaling_joker(state, joker):
+                    continue
+                sell_action = ActionRange.SHOP_SELL_JOKER_START + ji
+                if mask[sell_action]:
+                    disposable.append((self._score_owned_joker_value(state, joker), sell_action))
+            if disposable:
+                worst_score, sell_action = min(disposable)
+                if worst_score < 35.0:
+                    return sell_action
+
+        # Campfire only becomes an x-mult joker when the policy deliberately
+        # feeds it sold cards. Scale it between non-boss blinds with disposable
+        # consumables and cheap off-plan planets.
+        has_campfire = any(j.center_key == "j_campfire" and not j.debuff for j in state.jokers)
+        if has_campfire:
+            for ci, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
+                center = state.data.centers.get(cons.center_key, {})
+                cset = center.get("set", "")
+                is_disposable = False
+                if cset == "Planet":
+                    is_disposable = center.get("config", {}).get("hand_type", "") != main_type
+                elif cset == "Tarot":
+                    is_disposable = self._score_tarot_value(state, center) < 18
+                sell_action = ActionRange.SHOP_SELL_CONSUMABLE_START + ci
+                if is_disposable and mask[sell_action]:
+                    return sell_action
+
+            if cons_slots_left > 0:
+                for i, item in enumerate(all_items):
+                    action = ActionRange.SHOP_BUY_START + i
+                    if not mask[action] or item.cost > 3 or dollars - item.cost < 4:
+                        continue
+                    center = state.data.centers.get(item.center_key, {})
+                    if center.get("set") == "Planet" and center.get("config", {}).get("hand_type", "") != main_type:
+                        return action
+
         # ═══ PRIORITY 1: Overstock voucher, best economy investment ═══
         if overstock_action >= 0:
             item_idx = overstock_action - ActionRange.SHOP_BUY_START
@@ -2541,7 +3269,7 @@ class HeuristicAgent:
                     return priority_voucher_action
 
         # ═══ PRIORITY 3: X-mult joker, buy immediately if affordable ═══
-        if n_jokers > 0 and joker_slots_left == 0 and best_xmult_action >= 0:
+        if n_jokers > 0 and joker_slots_left == 0 and best_xmult_action >= 0 and best_xmult_score > 10:
             sell_act, _, sell_val = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
             if sell_act >= 0 and mask[sell_act]:
                 xm_idx = best_xmult_action - ActionRange.SHOP_BUY_START
@@ -2550,10 +3278,38 @@ class HeuristicAgent:
                     if dollars + sell_val >= xm_cost:
                         return sell_act
 
-        if best_xmult_action >= 0 and joker_slots_left > 0:
+        if best_xmult_action >= 0 and joker_slots_left > 0 and best_xmult_score > 10:
             item_idx = best_xmult_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_xmult_action
+
+        # Red Card is the one paid-Arcana exception while score is behind:
+        # skipping the pack directly scales an owned scoring joker by +3 Mult.
+        # Do not extend this to Standard packs in Antes 1-2.
+        has_red_card = any(j.center_key == "j_red_card" and not j.debuff for j in state.jokers)
+        if has_red_card and not score_output_ready:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action] or item.cost > dollars:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster" and "Arcana" in center.get("name", ""):
+                    return action
+
+        # Antes 1-2 should be secured by reliable current output. When the
+        # latest blind score is behind the pending boss, buy an affordable
+        # immediate scorer before gambling on packs or a fresh conditional
+        # scaler that has not accumulated any value yet.
+        if (
+            ante <= 2
+            and not score_output_ready
+            and joker_slots_left > 0
+            and best_immediate_joker_action >= 0
+            and best_immediate_joker_score > 0
+        ):
+            item_idx = best_immediate_joker_action - ActionRange.SHOP_BUY_START
+            if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
+                return best_immediate_joker_action
 
         # ═══ PRIORITY 4: Celestial pack, only after scoring joker or from ante 2 ═══
         has_scoring_joker = any(j.mult or j.t_mult for j in state.jokers if not j.debuff)
@@ -2565,8 +3321,11 @@ class HeuristicAgent:
                 center = state.data.centers.get(item.center_key, {})
                 if center.get("set") == "Booster":
                     name = center.get("name", "")
-                    if "Celestial" in name and item.cost <= 4 and dollars >= item.cost + 1:
-                        return action
+                    if "Celestial" in name:
+                        cheap_early = item.cost <= 4 and dollars >= item.cost + 1
+                        surplus_cash = ante >= 3 and dollars - item.cost >= interest_threshold
+                        if cheap_early or surplus_cash:
+                            return action
 
         # ═══ PRIORITY 5: Main-type planet BUY ═══
         if cons_slots_left > 0 and main_planet_action >= 0:
@@ -2605,7 +3364,11 @@ class HeuristicAgent:
             best_joker_action >= 0
             and joker_slots_left > 0
             and best_joker_score > joker_threshold
-            and not (save_xmult_slot and best_joker_score <= 15)
+            # Once an additive engine occupies most slots, its last open slot
+            # is substantially more valuable as a route to multiplicative
+            # scaling than as one more chips/+Mult joker. X-mult purchases were
+            # already handled by the priority directly above this block.
+            and not save_xmult_slot
         ):
             item_idx = best_joker_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
@@ -2623,8 +3386,68 @@ class HeuristicAgent:
                 if center.get("set") == "Booster" and "Buffoon" in center.get("name", "") and item.cost <= 4:
                     return action
 
+        # Buy useful card improvement/removal tarots once the run has at least
+        # one scoring role.  A small survival buffer is sufficient early; the
+        # old full-interest requirement meant Arcana was almost never touched.
+        # Paid Arcana improves consistency and deck quality, but those gains do
+        # not rescue an engine that is currently behind the score curve. The
+        # shop still exposes the score from the blind just cleared, so compare
+        # it with the upcoming target and require a modest safety margin. Tests
+        # and callers without an observed score fall back to build composition.
+        if recent_score > 0:
+            score_output_ready = recent_score >= upcoming_target * 1.15
+        else:
+            score_output_ready = ante <= 2 or not no_xmult
+        score_engine_ready = (
+            owned_roles["chips"] > 0
+            and owned_roles["mult"] > 0
+            and score_output_ready
+        )
+        if cons_slots_left > 0 and best_tarot_action >= 0 and best_tarot_score >= 18:
+            item_idx = best_tarot_action - ActionRange.SHOP_BUY_START
+            if item_idx < len(all_items):
+                cost = all_items[item_idx].cost
+                cash_buffer = 3 if ante <= 2 else 5
+                if score_engine_ready and dollars - cost >= cash_buffer:
+                    return best_tarot_action
+
+        if cons_slots_left > 0 and score_engine_ready:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster" and "Arcana" in center.get("name", ""):
+                    cash_buffer = 3 if ante <= 2 else 5
+                    cheap = item.cost <= 4 and dollars - item.cost >= cash_buffer
+                    surplus_cash = ante >= 3 and dollars - item.cost >= interest_threshold
+                    if cheap or surplus_cash:
+                        return action
+
+        has_hologram = any(j.center_key == "j_hologram" and not j.debuff for j in state.jokers)
+        priority_seals = sum(card.seal in {"Purple", "Blue"} for card in state.deck_cards)
+        seal_pipeline_ready = priority_seals >= 3
+        midgame_seal_hunt = ante >= 3 and not seal_pipeline_ready
+        if has_hologram or midgame_seal_hunt:
+            for i, item in enumerate(all_items):
+                action = ActionRange.SHOP_BUY_START + i
+                if not mask[action]:
+                    continue
+                center = state.data.centers.get(item.center_key, {})
+                if center.get("set") == "Booster" and "Standard" in center.get("name", ""):
+                    cash_buffer = 5 if has_hologram else max(interest_threshold, 4)
+                    if item.cost <= 6 and dollars - item.cost >= cash_buffer:
+                        return action
+
         # ═══ PRIORITY 10: Economy joker if cheap and we have room (NOT before ante 3) ═══
-        if best_economy_action >= 0 and joker_slots_left > 0 and ante >= 3 and ante <= 5 and best_economy_score > 5:
+        if (
+            score_engine_ready
+            and best_economy_action >= 0
+            and joker_slots_left > 0
+            and ante >= 3
+            and ante <= 5
+            and best_economy_score > 5
+        ):
             item_idx = best_economy_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
                 item_cost = all_items[item_idx].cost
@@ -2634,8 +3457,18 @@ class HeuristicAgent:
 
         # ═══ PRIORITY 11: Sell economy joker for strong scoring joker ═══
         if n_jokers > 0 and joker_slots_left == 0 and best_joker_action >= 0 and best_joker_score > 10:
-            sell_act, sell_sc, _ = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
-            if sell_act >= 0 and mask[sell_act] and best_joker_score - sell_sc > 8:
+            sell_act, sell_sc, sell_val = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
+            item_idx = best_joker_action - ActionRange.SHOP_BUY_START
+            can_complete_replacement = (
+                0 <= item_idx < len(all_items)
+                and dollars + sell_val >= all_items[item_idx].cost
+            )
+            if (
+                sell_act >= 0
+                and mask[sell_act]
+                and can_complete_replacement
+                and best_joker_score - sell_sc > 8
+            ):
                 return sell_act
 
         # ═══ PRIORITY 12: Buffoon pack ═══
@@ -2650,28 +3483,15 @@ class HeuristicAgent:
                     if "Buffoon" in name and item.cost <= 4 and dollars >= item.cost:
                         return action
 
-        # ═══ PRIORITY 13: ANY played-type planet BUY ═══
-        if cons_slots_left > 0:
-            for i, item in enumerate(all_items):
-                action = ActionRange.SHOP_BUY_START + i
-                if not mask[action]:
-                    continue
-                center = state.data.centers.get(item.center_key, {})
-                if center.get("set") == "Planet":
-                    pt = center.get("config", {}).get("hand_type", "")
-                    played = state.hands.get(pt, {}).get("played", 0)
-                    if played > 0 and item.cost <= 4 and dollars >= item.cost:
-                        return action
-
         # ═══ PRIORITY 14: Sell consumable to make room for packs ═══
         if cons_slots_left == 0:
-            has_target = main_planet_action >= 0
+            has_target = main_planet_action >= 0 or (best_tarot_action >= 0 and best_tarot_score >= 18)
             if not has_target:
                 for item in all_items:
                     center = state.data.centers.get(item.center_key, {})
                     if center.get("set") == "Booster":
                         name = center.get("name", "")
-                        if "Celestial" in name or "Buffoon" in name:
+                        if "Celestial" in name or "Arcana" in name or "Buffoon" in name:
                             has_target = True
                             break
             if has_target:
@@ -2703,7 +3523,7 @@ class HeuristicAgent:
                     return action
 
         # ═══ PRIORITY 17: Arcana pack ═══
-        if cons_slots_left > 0 and dollars > interest_threshold + 3:
+        if score_engine_ready and cons_slots_left > 0 and dollars > interest_threshold + 3:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
                 if not mask[action]:
@@ -2737,28 +3557,13 @@ class HeuristicAgent:
                     if self._hand_type_synergy(state, planet_type) > 0 and _can_afford_after_interest(item.cost):
                         return action
 
-        # ═══ PRIORITY 20: Other boosters ═══
-        for i, item in enumerate(all_items):
-            action = ActionRange.SHOP_BUY_START + i
-            if not mask[action]:
-                continue
-            center = state.data.centers.get(item.center_key, {})
-            if center.get("set") == "Booster" and item.cost <= 4 and dollars > interest_threshold + 3:
-                return action
-
-        # ═══ PRIORITY 21: Other vouchers (non-priority) ═══
-        for i, item in enumerate(all_items):
-            action = ActionRange.SHOP_BUY_START + i
-            if not mask[action]:
-                continue
-            center = state.data.centers.get(item.center_key, {})
-            if center.get("set") == "Voucher" and item.center_key not in _PRIORITY_VOUCHERS:
-                post_buy = dollars - item.cost
-                if post_buy >= interest_threshold:
-                    return action
-
         # ═══ PRIORITY 22: Buy any decent joker as last resort ═══
-        if best_joker_action >= 0 and joker_slots_left > 0 and best_joker_score > 0:
+        if (
+            best_joker_action >= 0
+            and joker_slots_left > 0
+            and best_joker_score > 0
+            and not save_xmult_slot
+        ):
             item_idx = best_joker_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_joker_action
@@ -2768,18 +3573,46 @@ class HeuristicAgent:
         # (xmult joker + ≥4 jokers) clears blinds easily, so don't burn cash.
         # Otherwise, max-reroll while we stay above the interest cap.
         strong_engine = self._has_xmult_joker(state) and len(state.jokers) >= 4
-        reroll_cap = 2 if strong_engine else (10 if ante >= _MID_GAME_ANTE else 6)
+        reroll_cap = 6 if strong_engine else (10 if ante >= _MID_GAME_ANTE else 6)
+        replaceable_action, replaceable_score, _ = _worst_joker_sell(skip_xmult=True)
+        can_search_for_upgrade = joker_slots_left > 0 or replaceable_action >= 0
         if (
             mask[ActionRange.SHOP_REROLL]
-            and joker_slots_left > 0
+            and can_search_for_upgrade
             and state.current_round.reroll_cost_increase < reroll_cap
         ):
             post_reroll = dollars - reroll_cost
+            roles = self._owned_build_roles(state)
+            missing_early_core = ante <= 2 and (roles["chips"] == 0 or roles["mult"] == 0)
+            purchase_floor = 5 if missing_early_core and state.blind_on_deck == "Boss" else (3 if missing_early_core else 4)
+            retains_purchase_cash = reroll_cost == 0 or post_reroll >= purchase_floor
+            # Bull and Bootstraps turn cash into immediate blind score. Burning
+            # that cash on speculative rerolls can make an otherwise free
+            # Ante 1-2 blind unwinnable, so treat their scoring bankroll as an
+            # additional purchase floor.
+            active_keys = {joker.center_key for joker in state.jokers if not joker.debuff}
+            cash_scaler_floor = 10 if "j_bull" in active_keys else (5 if "j_bootstraps" in active_keys else 0)
+            retains_cash_scaler = reroll_cost == 0 or post_reroll >= cash_scaler_floor
             keeps_interest = post_reroll >= interest_threshold
             cheap_reroll = ante <= 2 and post_reroll >= 4
-            no_good_pickup = best_joker_score < (15 if ante >= _MID_GAME_ANTE else 10)
-            xmult_hunt = no_xmult and ante >= _MID_GAME_ANTE and post_reroll >= 12
-            if (keeps_interest or cheap_reroll or xmult_hunt) and (no_good_pickup or xmult_hunt):
+            emergency_core_hunt = (
+                ante <= 2
+                and (roles["chips"] == 0 or roles["mult"] == 0)
+                and post_reroll >= (5 if state.blind_on_deck == "Boss" else 3)
+            )
+            pickup_threshold = 15 if ante >= _MID_GAME_ANTE else 10
+            actionable_pickup = (
+                joker_slots_left > 0 and best_joker_score >= pickup_threshold
+            ) or (
+                joker_slots_left == 0
+                and replaceable_action >= 0
+                and best_joker_score - replaceable_score > 8
+            )
+            no_good_pickup = not actionable_pickup
+            xmult_hunt = no_xmult and ante >= _MID_GAME_ANTE and post_reroll >= 8
+            if retains_purchase_cash and retains_cash_scaler and (keeps_interest or cheap_reroll or xmult_hunt or emergency_core_hunt) and (
+                no_good_pickup or xmult_hunt or emergency_core_hunt
+            ):
                 return ActionRange.SHOP_REROLL
 
         if mask[ActionRange.SHOP_LEAVE]:
@@ -2789,6 +3622,18 @@ class HeuristicAgent:
     def _booster_pack(self, state: RunState, mask: np.ndarray) -> int:
         pack = state.pack
         if pack and pack.cards:
+            pack_center = state.data.centers.get(pack.booster_key, {})
+            is_standard_pack = "Standard" in pack_center.get("name", "")
+            is_arcana_pack = "Arcana" in pack_center.get("name", "")
+            recent_score = self._current_round_score_estimate(state)
+            score_behind = recent_score > 0 and recent_score < self._near_term_shop_target(state) * 1.15
+            if (
+                is_arcana_pack
+                and score_behind
+                and any(j.center_key == "j_red_card" and not j.debuff for j in state.jokers)
+                and mask[ActionRange.PACK_SKIP]
+            ):
+                return ActionRange.PACK_SKIP
             best_score = -1e9
             best_action = -1
             for i, card in enumerate(pack.cards):
@@ -2796,12 +3641,20 @@ class HeuristicAgent:
                 if not mask[action]:
                     continue
                 center = state.data.centers.get(card.center_key, {})
-                cscore = self._score_pack_card(state, center, edition=card.edition)
+                cscore = self._score_pack_card(
+                    state,
+                    center,
+                    edition=card.edition,
+                    seal=card.seal,
+                )
                 if cscore > best_score:
                     best_score = cscore
                     best_action = action
-            if best_action >= 0:
+            if best_action >= 0 and (is_standard_pack or best_score >= 10.0):
                 return best_action
+
+            if mask[ActionRange.PACK_SKIP]:
+                return ActionRange.PACK_SKIP
 
         for i in range(5):
             action = ActionRange.PACK_CLAIM_START + i
@@ -2811,34 +3664,101 @@ class HeuristicAgent:
             return ActionRange.PACK_SKIP
         return self._random_valid(mask)
 
-    def _score_pack_card(self, state: RunState, center: dict, *, edition: dict | None = None) -> float:
+    def _score_pack_card(
+        self,
+        state: RunState,
+        center: dict,
+        *,
+        edition: dict | None = None,
+        seal: str | None = None,
+    ) -> float:
         cset = center.get("set", "")
+        seal_bonus = {
+            "Purple": 46.0,
+            "Blue": 44.0,
+            "Gold": 24.0,
+            "Red": 34.0 if state.round_resets.ante >= 6 else 18.0,
+        }.get(seal, 0.0)
         if cset == "Joker":
             jslots = joker_limit(state) - len(state.jokers)
             negative = bool(edition and edition.get("negative"))
             if jslots > 0 or negative:
-                return self._score_joker_value(state, center.get("key", ""), edition=edition)
+                return self._score_joker_for_build(state, center.get("key", ""), edition=edition) + seal_bonus
             return -100.0
         elif cset == "Planet":
             planet_type = center.get("config", {}).get("hand_type", "")
             main_type = self._get_main_hand_type(state)
             if planet_type == main_type:
-                return 25.0
-            if state.hands.get(planet_type, {}).get("played", 0) > 0:
-                return 15.0
-            if planet_type in ("Pair", "Two Pair"):
-                return 12.0
+                return 30.0 + seal_bonus
             if self._hand_type_synergy(state, planet_type) > 0:
-                return 10.0
-            return 3.0
+                return 18.0 + seal_bonus
+            return -5.0
         elif cset == "Tarot":
             cons_slots = consumable_limit(state) - len(state.consumables)
             if cons_slots <= 0:
                 return -100.0
-            return 4.0
+            tarot_score = self._score_tarot_value(state, center)
+            roles = self._owned_build_roles(state)
+            preboss_survival = (
+                state.round_resets.ante <= 2
+                and state.blind_on_deck == "Boss"
+                and (roles["chips"] == 0 or roles["mult"] == 0)
+            )
+            if preboss_survival:
+                name = center.get("name", "")
+                if name in {"The Hermit", "Temperance"}:
+                    tarot_score = 6.0
+                elif name in _DECK_SHAPING_TAROTS:
+                    tarot_score += 16.0
+            return tarot_score + seal_bonus
         elif cset == "Spectral":
-            return 3.0
-        return 1.0
+            return 3.0 + seal_bonus
+        elif cset == "Enhanced":
+            return seal_bonus + {
+                "Glass Card": 30.0,
+                "Steel Card": 26.0,
+                "Lucky Card": 24.0,
+                "Mult Card": 22.0,
+                "Wild Card": 20.0,
+                "Bonus Card": 18.0,
+                "Gold Card": 16.0,
+                "Stone Card": 10.0,
+            }.get(center.get("effect", ""), 12.0)
+        return 1.0 + seal_bonus
+
+    def _score_tarot_value(self, state: RunState, center: dict) -> float:
+        name = center.get("name", "")
+        if name in ("The Hermit", "Temperance"):
+            return 30.0
+        if name == "The Hanged Man":
+            return 28.0
+        if name == "Death":
+            return 26.0
+        if name in ("The Emperor", "The High Priestess"):
+            return 24.0
+        if name == "Judgement":
+            return 22.0 if len(state.jokers) < joker_limit(state) else 5.0
+        target_suit = _SUIT_TAROT_TARGETS.get(name)
+        if target_suit is not None:
+            return 24.0 if target_suit == self._preferred_suit(state) else 2.0
+        enhancement_scores = {
+            "Justice": 32.0,
+            "The Empress": 30.0,
+            "The Hierophant": 30.0,
+            "The Chariot": 28.0,
+            "The Tower": 26.0,
+            "The Magician": 24.0,
+            "The Lovers": 22.0,
+            "Strength": 20.0,
+            "The Devil": 16.0,
+        }
+        if name in enhancement_scores:
+            return enhancement_scores[name]
+        if name in _DECK_SHAPING_TAROTS:
+            return 20.0
+        if name in ("The Fool", "The Wheel of Fortune"):
+            return 16.0
+        return 8.0
 
     def _atomic_consumable_action(
         self, state: RunState, slot: int, mask: np.ndarray, *, preferred_indices: tuple[int, ...] | None = None

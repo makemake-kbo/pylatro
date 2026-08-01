@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pylatro import add_consumable, create_run_state, load_game_data, select_blind, start_blind
+from pylatro.models import PlayingCard
 from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.constants import ActionRange
 from pylatro_agent.heuristic import HeuristicAgent
@@ -96,6 +97,84 @@ def test_cached_best_hand_updates_after_in_place_mutation() -> None:
     assert cached != initial
 
 
+def test_high_card_candidate_search_checks_effect_kickers(monkeypatch) -> None:
+    data = load_game_data()
+    state = create_run_state("high_card_kicker", data=data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    state.hands["High Card"]["level"] = 4
+    agent = HeuristicAgent()
+
+    def synthetic_score(_state, indices) -> int:
+        indices = tuple(indices)
+        if indices == (3, 7):
+            return 10_000
+        if len(indices) == 1:
+            return 100 - indices[0]
+        return 1
+
+    monkeypatch.setattr(agent, "_estimate_hand_score", synthetic_score)
+
+    assert agent._cached_best_hand(state, state.hand_cards) == {3, 7}
+
+
+def test_forced_card_candidate_can_include_a_pair() -> None:
+    data = load_game_data()
+    state = create_run_state("forced_pair_candidate", data=data)
+    state.hands["Pair"]["level"] = 6
+    state.hand_cards = [
+        PlayingCard(front_key="S_3", suit="Spades", rank="3", forced_selection=True),
+        PlayingCard(front_key="H_6", suit="Hearts", rank="6"),
+        PlayingCard(front_key="C_6", suit="Clubs", rank="6"),
+        PlayingCard(front_key="D_9", suit="Diamonds", rank="9"),
+        PlayingCard(front_key="H_Q", suit="Hearts", rank="Q"),
+    ]
+    agent = HeuristicAgent()
+
+    chosen = agent._cached_best_hand(state, state.hand_cards)
+
+    assert {0, 1, 2}.issubset(chosen)
+    assert agent._quick_hand_quality(state, [state.hand_cards[i] for i in chosen]) == "Pair"
+
+
+def test_cached_best_hand_updates_after_planet_level_change(monkeypatch) -> None:
+    data = load_game_data()
+    state = create_run_state("best_hand_planet_cache", data=data)
+    select_blind(state, "Small")
+    start_blind(state, "Small")
+    agent = HeuristicAgent()
+    calls = 0
+    original = agent._find_best_hand
+
+    def counted_find(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(agent, "_find_best_hand", counted_find)
+    agent._cached_best_hand(state, state.hand_cards)
+    state.hands["Pair"]["level"] += 1
+    agent._cached_best_hand(state, state.hand_cards)
+
+    assert calls == 2
+
+
+def test_hand_score_cache_does_not_leak_between_runs(monkeypatch) -> None:
+    data = load_game_data()
+    first = create_run_state("score_cache_run_a", data=data)
+    second = create_run_state("score_cache_run_b", data=data)
+    first.hand_cards = second.hand_cards = [first.deck_cards[0]]
+    agent = HeuristicAgent()
+
+    def run_specific_score(state, _indices) -> int:
+        return 111 if state.seed == "score_cache_run_a" else 222
+
+    monkeypatch.setattr(agent, "_estimate_hand_score_compute", run_specific_score)
+
+    assert agent._estimate_hand_score(first, (0,)) == 111
+    assert agent._estimate_hand_score(second, (0,)) == 222
+
+
 def test_fast_runner_unmasks_hand_targeted_consumable() -> None:
     data = load_game_data()
     runner = FastRunner(0, data)
@@ -110,3 +189,99 @@ def test_fast_runner_unmasks_hand_targeted_consumable() -> None:
     )
 
     assert mask[action] == 1
+
+
+def test_heuristic_known_early_seeds_reach_ante_three() -> None:
+    from pylatro_agent.env import BalatroEnv
+
+    data = load_game_data()
+    vocab = build_vocab(data)
+    for seed in (1, 3, 17, 26, 38):
+        env = BalatroEnv(seed=seed, data=data, vocab=vocab, max_steps=100)
+        obs, _ = env.reset()
+        agent = HeuristicAgent()
+        done = False
+        info = {"ante": 1, "won": False}
+
+        while not done and info["ante"] < 3:
+            action = agent.select_action(
+                env.state,
+                env._sub_phase,
+                obs["action_mask"],
+                round_score=env._controller.round_score,
+            )
+            obs, _reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+        assert info["won"] or info["ante"] >= 3, f"seed {seed} died before Ante 3"
+
+
+def test_heuristic_repaired_ante_one_seeds_reach_ante_two() -> None:
+    from pylatro_agent.env import BalatroEnv
+
+    data = load_game_data()
+    vocab = build_vocab(data)
+    for seed in (50, 64, 69, 88, 115, 202, 223, 292):
+        env = BalatroEnv(seed=seed, data=data, vocab=vocab, max_steps=100)
+        obs, _ = env.reset()
+        agent = HeuristicAgent()
+        done = False
+        info = {"ante": 1, "won": False}
+
+        while not done and info["ante"] < 2:
+            action = agent.select_action(
+                env.state,
+                env._sub_phase,
+                obs["action_mask"],
+                round_score=env._controller.round_score,
+            )
+            obs, _reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+        assert info["won"] or info["ante"] >= 2, f"seed {seed} died in Ante 1"
+
+
+def test_baron_seed_preserves_engine_past_ante_three() -> None:
+    from pylatro_agent.env import BalatroEnv
+
+    data = load_game_data()
+    env = BalatroEnv(seed=18, data=data, vocab=build_vocab(data), max_steps=180)
+    obs, _ = env.reset()
+    agent = HeuristicAgent()
+    done = False
+    info = {"ante": 1, "won": False}
+
+    while not done and info["ante"] < 4:
+        action = agent.select_action(
+            env.state,
+            env._sub_phase,
+            obs["action_mask"],
+            round_score=env._controller.round_score,
+        )
+        obs, _reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+
+    assert info["won"] or info["ante"] >= 4
+
+
+def test_mouth_seed_does_not_lock_an_off_plan_straight() -> None:
+    from pylatro_agent.env import BalatroEnv
+
+    data = load_game_data()
+    env = BalatroEnv(seed=10, data=data, vocab=build_vocab(data), max_steps=180)
+    obs, _ = env.reset()
+    agent = HeuristicAgent()
+    done = False
+    info = {"ante": 1, "won": False}
+
+    while not done and info["ante"] < 4:
+        action = agent.select_action(
+            env.state,
+            env._sub_phase,
+            obs["action_mask"],
+            round_score=env._controller.round_score,
+        )
+        obs, _reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+
+    assert info["won"] or info["ante"] >= 4

@@ -128,6 +128,8 @@ def discard_cards(
             card.face_down = False
             state.discard_pile.append(card)
             discarded.append(card)
+            if card.seal == "Purple" and not card.debuff:
+                add_generated_consumable(state, "Tarot", append="purple_seal")
 
     _apply_removed_card_effects(state, destroyed)
     sync_all_jokers(state)

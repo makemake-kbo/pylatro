@@ -72,7 +72,13 @@ class GameController:
         result = pylatro.play_cards(self.state, cards)
         self.round_score += result.score.total
         # If blind beaten, caller transitions to shop; otherwise draw and check loss.
-        if not self.blind_beaten():
+        if self.blind_beaten():
+            pylatro.resolve_blue_seals(
+                self.state,
+                result.score.held_cards,
+                result.score.hand_name,
+            )
+        else:
             pylatro.draw_to_hand(self.state)
             if self.state.current_round.hands_left <= 0:
                 if pylatro.check_mr_bones(self.state, self.round_score, self.blind_target()):

@@ -18,6 +18,13 @@ from .constants import (
     HAND_CANDIDATE_START,
     HAND_LEVEL_MAX,
     HAND_LEVEL_START,
+    HISTORY_FEATURE_DIM,
+    HISTORY_MAX_CARDS,
+    HISTORY_MAX_JOKERS,
+    HISTORY_MAX_PLAYS,
+    HISTORY_OMITTED_DIM,
+    HISTORY_ROUNDS,
+    HISTORY_START,
     JOKER_MAX,
     JOKER_START,
     MAX_HAND_SIZE,
@@ -342,13 +349,95 @@ class HandCandidateEmbedding(nn.Module):
         )
 
 
+class HistoryEncoder(nn.Module):
+    """Compress retained play events into one context token per round.
+
+    Each token combines an equal-weight chronological pool with a score-weighted
+    strength pool.  Equal weighting keeps low-score setup plays visible; the
+    second pool emphasizes the hands that actually carried the blind.
+    """
+
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.hand_type_emb = nn.Embedding(13, d_model)
+        self.ordinal_emb = nn.Embedding(33, d_model)
+        self.hands_remaining_emb = nn.Embedding(17, d_model)
+        self.mechanic_emb = nn.Embedding(16, d_model)
+        self.joker_slot_emb = nn.Embedding(HISTORY_MAX_JOKERS, d_model)
+        self.round_emb = nn.Embedding(HISTORY_ROUNDS, d_model)
+        self.feature_proj = nn.Sequential(
+            nn.Linear(HISTORY_FEATURE_DIM, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+        self.omitted_proj = nn.Sequential(
+            nn.Linear(HISTORY_OMITTED_DIM, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+        self.event_norm = nn.LayerNorm(d_model)
+        self.combine = nn.Sequential(
+            nn.Linear(d_model * 3, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
+
+    def forward(
+        self,
+        events: torch.Tensor,
+        event_features: torch.Tensor,
+        card_embeddings: torch.Tensor,
+        card_mask: torch.Tensor,
+        joker_embeddings: torch.Tensor,
+        joker_mask: torch.Tensor,
+        event_mask: torch.Tensor,
+        omitted: torch.Tensor,
+    ) -> torch.Tensor:
+        batch = events.shape[0]
+        event = (
+            self.hand_type_emb(events[..., 0].clamp(0, 12))
+            + self.ordinal_emb(events[..., 1].clamp(0, 32))
+            + self.hands_remaining_emb(events[..., 2].clamp(0, 16))
+            + self.mechanic_emb(events[..., 3].clamp(0, 15))
+            + self.feature_proj(event_features.float())
+        )
+
+        card_weights = card_mask.float().unsqueeze(-1)
+        card_pool = (card_embeddings * card_weights).sum(dim=-2) / card_weights.sum(dim=-2).clamp_min(1.0)
+        slots = torch.arange(HISTORY_MAX_JOKERS, device=events.device)
+        joker_embeddings = joker_embeddings + self.joker_slot_emb(slots).view(1, 1, 1, HISTORY_MAX_JOKERS, -1)
+        joker_weights = joker_mask.float().unsqueeze(-1)
+        joker_pool = (joker_embeddings * joker_weights).sum(dim=-2) / joker_weights.sum(dim=-2).clamp_min(1.0)
+        event = self.event_norm(event + card_pool + joker_pool)
+
+        mask = event_mask.float()
+        chronological = (event * mask.unsqueeze(-1)).sum(dim=-2) / mask.sum(dim=-1, keepdim=True).clamp_min(1.0)
+
+        # sign-log(score) is feature 0.  Softmax supplies a normalized strength
+        # pool while the explicit mask makes padding exactly inert.
+        strength_logits = event_features[..., 0].float().masked_fill(event_mask == 0, -1e9)
+        strength_weights = torch.softmax(strength_logits, dim=-1) * mask
+        strength_weights = strength_weights / strength_weights.sum(dim=-1, keepdim=True).clamp_min(1.0)
+        strength = (event * strength_weights.unsqueeze(-1)).sum(dim=-2)
+
+        omitted_input = omitted.float().clone()
+        # Counts can grow without bound; scores are already sign-log encoded.
+        count_columns = [0, *range(3, HISTORY_OMITTED_DIM)]
+        omitted_input[..., count_columns] = torch.log1p(omitted_input[..., count_columns].clamp_min(0.0))
+        omitted_pool = self.omitted_proj(omitted_input)
+        round_ids = torch.arange(HISTORY_ROUNDS, device=events.device).view(1, HISTORY_ROUNDS)
+        return self.combine(torch.cat((chronological, strength, omitted_pool), dim=-1)) + self.round_emb(
+            round_ids.expand(batch, -1)
+        )
+
+
 class ContentEmbeddingLayer(nn.Module):
     """Routes each token type to its specialized embedding, then adds token type embedding."""
 
     def __init__(self, vocab: Vocab, d_model: int):
         super().__init__()
         self.d_model = d_model
-        self.token_type_emb = nn.Embedding(11, d_model)
+        self.token_type_emb = nn.Embedding(12, d_model)
         self.position_emb = nn.Embedding(MAX_SEQ_LEN, d_model)
         self.hand_slot_emb = nn.Embedding(MAX_HAND_SIZE + 1, d_model)
 
@@ -362,12 +451,21 @@ class ContentEmbeddingLayer(nn.Module):
         self.blind_select_emb = BlindSelectEmbedding(vocab, d_model)
         self.hand_level_emb = HandLevelEmbedding(d_model)
         self.hand_candidate_emb = HandCandidateEmbedding(d_model, hand_slot_emb=self.hand_slot_emb)
+        self.history_encoder = HistoryEncoder(d_model)
 
     def forward(
         self,
         tokens: torch.Tensor,
         token_types: torch.Tensor,
         scalars: torch.Tensor,
+        history_events: torch.Tensor | None = None,
+        history_event_features: torch.Tensor | None = None,
+        history_cards: torch.Tensor | None = None,
+        history_card_mask: torch.Tensor | None = None,
+        history_jokers: torch.Tensor | None = None,
+        history_joker_mask: torch.Tensor | None = None,
+        history_event_mask: torch.Tensor | None = None,
+        history_omitted: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -425,5 +523,38 @@ class ContentEmbeddingLayer(nn.Module):
         # Add token type embedding
         positions = torch.arange(MAX_SEQ_LEN, device=device).unsqueeze(0)
         out = out + self.token_type_emb(token_types) + self.position_emb(positions)
+
+        if history_events is not None:
+            assert history_event_features is not None
+            assert history_cards is not None
+            assert history_card_mask is not None
+            assert history_jokers is not None
+            assert history_joker_mask is not None
+            assert history_event_mask is not None
+            assert history_omitted is not None
+            flat_cards = history_cards.reshape(
+                batch, HISTORY_ROUNDS * HISTORY_MAX_PLAYS * HISTORY_MAX_CARDS, -1
+            )
+            card_embeddings = self.deck_emb(flat_cards).reshape(
+                batch, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS, self.d_model
+            )
+            joker_ids = history_jokers.clamp(0, self.joker_emb.id_emb.num_embeddings - 1)
+            joker_embeddings = self.joker_emb.id_emb(joker_ids)
+            context = self.history_encoder(
+                history_events,
+                history_event_features,
+                card_embeddings,
+                history_card_mask,
+                joker_embeddings,
+                history_joker_mask,
+                history_event_mask,
+                history_omitted,
+            )
+            history_positions = torch.arange(HISTORY_START, HISTORY_START + HISTORY_ROUNDS, device=device)
+            out[:, HISTORY_START : HISTORY_START + HISTORY_ROUNDS] = (
+                context
+                + self.token_type_emb(token_types[:, HISTORY_START : HISTORY_START + HISTORY_ROUNDS])
+                + self.position_emb(history_positions).unsqueeze(0)
+            )
 
         return out

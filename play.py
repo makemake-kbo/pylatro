@@ -30,13 +30,27 @@ logger = logging.getLogger(__name__)
 def _single_obs_to_batch(obs: dict, device: torch.device) -> dict[str, torch.Tensor]:
     import torch
 
-    return {
+    batch = {
         "tokens": torch.tensor(obs["tokens"], dtype=torch.long, device=device).unsqueeze(0),
         "token_types": torch.tensor(obs["token_types"], dtype=torch.long, device=device).unsqueeze(0),
         "scalars": torch.tensor(obs["scalars"], dtype=torch.float32, device=device).unsqueeze(0),
         "attention_mask": torch.tensor(obs["attention_mask"], dtype=torch.long, device=device).unsqueeze(0),
         "action_mask": torch.tensor(obs["action_mask"], dtype=torch.float32, device=device).unsqueeze(0),
     }
+    for key in (
+        "history_events",
+        "history_event_features",
+        "history_cards",
+        "history_card_mask",
+        "history_jokers",
+        "history_joker_mask",
+        "history_event_mask",
+        "history_round_mask",
+        "history_omitted",
+    ):
+        dtype = torch.float32 if key in {"history_event_features", "history_omitted"} else torch.long
+        batch[key] = torch.tensor(obs[key], dtype=dtype, device=device).unsqueeze(0)
+    return batch
 
 
 def play_model(
@@ -93,6 +107,15 @@ def play_model(
                     batch["scalars"],
                     batch["attention_mask"],
                     batch["action_mask"],
+                    history_events=batch["history_events"],
+                    history_event_features=batch["history_event_features"],
+                    history_cards=batch["history_cards"],
+                    history_card_mask=batch["history_card_mask"],
+                    history_jokers=batch["history_jokers"],
+                    history_joker_mask=batch["history_joker_mask"],
+                    history_event_mask=batch["history_event_mask"],
+                    history_round_mask=batch["history_round_mask"],
+                    history_omitted=batch["history_omitted"],
                     temperature=temperature,
                 )
                 action = (dist.sample() if sample else dist.mode()).item()

@@ -26,6 +26,7 @@ from gymnasium.vector.vector_env import AutoresetMode
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
+from ..constants import TOKENIZER_VERSION
 from ..env import BalatroEnv
 from ..vocab import Vocab, build_vocab
 from .ppo import _extract_step_info_value, _load_checkpoint_compatible, _ObsBuffer
@@ -166,11 +167,29 @@ def generate_training_data_from_model(
             pre_scalars = obs_buf._np_scalars
             pre_attention = obs_buf._np_attention_mask
             pre_action_mask = obs_buf._np_action_mask
+            pre_history_events = obs_buf._np_history_events
+            pre_history_event_features = obs_buf._np_history_event_features
+            pre_history_cards = obs_buf._np_history_cards
+            pre_history_card_mask = obs_buf._np_history_card_mask
+            pre_history_jokers = obs_buf._np_history_jokers
+            pre_history_joker_mask = obs_buf._np_history_joker_mask
+            pre_history_event_mask = obs_buf._np_history_event_mask
+            pre_history_round_mask = obs_buf._np_history_round_mask
+            pre_history_omitted = obs_buf._np_history_omitted
 
             with torch.no_grad():
                 dist, _ = model.action_distribution(
                     obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
                     obs_buf.attention_mask, obs_buf.action_mask,
+                    history_events=obs_buf.history_events,
+                    history_event_features=obs_buf.history_event_features,
+                    history_cards=obs_buf.history_cards,
+                    history_card_mask=obs_buf.history_card_mask,
+                    history_jokers=obs_buf.history_jokers,
+                    history_joker_mask=obs_buf.history_joker_mask,
+                    history_event_mask=obs_buf.history_event_mask,
+                    history_round_mask=obs_buf.history_round_mask,
+                    history_omitted=obs_buf.history_omitted,
                     temperature=temperature,
                 )
                 actions = dist.sample()
@@ -187,6 +206,15 @@ def generate_training_data_from_model(
                     "scalars": pre_scalars[i].copy(),
                     "attention_mask": pre_attention[i].copy(),
                     "action_mask": pre_action_mask[i].copy(),
+                    "history_events": pre_history_events[i].copy(),
+                    "history_event_features": pre_history_event_features[i].copy(),
+                    "history_cards": pre_history_cards[i].copy(),
+                    "history_card_mask": pre_history_card_mask[i].copy(),
+                    "history_jokers": pre_history_jokers[i].copy(),
+                    "history_joker_mask": pre_history_joker_mask[i].copy(),
+                    "history_event_mask": pre_history_event_mask[i].copy(),
+                    "history_round_mask": pre_history_round_mask[i].copy(),
+                    "history_omitted": pre_history_omitted[i].copy(),
                 })
                 ep_actions[i].append(int(actions_np[i]))
                 ep_rewards[i].append(float(step_rewards[i]))
@@ -311,7 +339,11 @@ def save_records(records: list[dict[str, Any]], path: str | Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "wb") as f:
-        pickle.dump(records, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(
+            {"tokenizer_version": TOKENIZER_VERSION, "records": records},
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
     tmp.rename(path)
     logger.info("Saved %d records to %s", len(records), path)
 
@@ -320,6 +352,20 @@ def load_records(path: str | Path) -> list[dict[str, Any]]:
     """Load previously generated records from disk."""
     path = Path(path)
     with open(path, "rb") as f:
-        records = pickle.load(f)
+        payload = pickle.load(f)
+    if not isinstance(payload, dict) or "tokenizer_version" not in payload:
+        raise ValueError(
+            "Observation dataset predates tokenizer version metadata; regenerate it for "
+            f"TOKENIZER_VERSION={TOKENIZER_VERSION}."
+        )
+    saved_version = payload.get("tokenizer_version")
+    if saved_version != TOKENIZER_VERSION:
+        raise ValueError(
+            f"Observation dataset uses TOKENIZER_VERSION={saved_version!r}, but the current "
+            f"version is {TOKENIZER_VERSION}; regenerate the dataset."
+        )
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise ValueError("Observation dataset has an invalid records payload")
     logger.info("Loaded %d records from %s", len(records), path)
     return records

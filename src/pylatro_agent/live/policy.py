@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
+from pylatro import get_poker_hand_info
 from pylatro.models import ConsumableInstance
 from pylatro_agent.action import ActionType, decode_action
 from pylatro_agent.constants import (
@@ -17,7 +18,9 @@ from pylatro_agent.constants import (
     SubPhase,
 )
 from pylatro_agent.heuristic import HeuristicAgent
+from pylatro_agent.history import PendingPlay, PlayHistoryTracker, blind_history_key
 from pylatro_agent.masks import compute_action_mask
+from pylatro_agent.subset_actions import subset_indices
 from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.vocab import build_vocab
 
@@ -45,6 +48,7 @@ class Policy(Protocol):
         live: LiveState,
         tokenizer: Tokenizer,
         action_mask: np.ndarray,
+        history: PlayHistoryTracker | None = None,
     ) -> Selection: ...
 
 
@@ -57,8 +61,9 @@ class HeuristicPolicy:
         live: LiveState,
         tokenizer: Tokenizer,
         action_mask: np.ndarray,
+        history: PlayHistoryTracker | None = None,
     ) -> Selection:
-        del tokenizer
+        del tokenizer, history
         action = self.agent.select_action(
             live.state,
             live.sub_phase,
@@ -111,6 +116,7 @@ class CheckpointPolicy:
         live: LiveState,
         tokenizer: Tokenizer,
         action_mask: np.ndarray,
+        history: PlayHistoryTracker | None = None,
     ) -> Selection:
         torch = self.torch
         obs = tokenizer.tokenize(
@@ -118,6 +124,7 @@ class CheckpointPolicy:
             live.sub_phase,
             action_mask=action_mask,
             round_score=live.round_score,
+            history=history,
         )
         batch = {
             "tokens": torch.as_tensor(obs.tokens, dtype=torch.long, device=self.device).unsqueeze(0),
@@ -125,6 +132,27 @@ class CheckpointPolicy:
             "scalars": torch.as_tensor(obs.scalars, dtype=torch.float32, device=self.device).unsqueeze(0),
             "attention_mask": torch.as_tensor(obs.attention_mask, dtype=torch.long, device=self.device).unsqueeze(0),
             "action_mask": torch.as_tensor(obs.action_mask, dtype=torch.float32, device=self.device).unsqueeze(0),
+            "history_events": torch.as_tensor(obs.history_events, dtype=torch.long, device=self.device).unsqueeze(0),
+            "history_event_features": torch.as_tensor(
+                obs.history_event_features, dtype=torch.float32, device=self.device
+            ).unsqueeze(0),
+            "history_cards": torch.as_tensor(obs.history_cards, dtype=torch.long, device=self.device).unsqueeze(0),
+            "history_card_mask": torch.as_tensor(
+                obs.history_card_mask, dtype=torch.long, device=self.device
+            ).unsqueeze(0),
+            "history_jokers": torch.as_tensor(obs.history_jokers, dtype=torch.long, device=self.device).unsqueeze(0),
+            "history_joker_mask": torch.as_tensor(
+                obs.history_joker_mask, dtype=torch.long, device=self.device
+            ).unsqueeze(0),
+            "history_event_mask": torch.as_tensor(
+                obs.history_event_mask, dtype=torch.long, device=self.device
+            ).unsqueeze(0),
+            "history_round_mask": torch.as_tensor(
+                obs.history_round_mask, dtype=torch.long, device=self.device
+            ).unsqueeze(0),
+            "history_omitted": torch.as_tensor(
+                obs.history_omitted, dtype=torch.float32, device=self.device
+            ).unsqueeze(0),
         }
         with torch.no_grad():
             dist, values = self.model.action_distribution(
@@ -133,6 +161,15 @@ class CheckpointPolicy:
                 batch["scalars"],
                 batch["attention_mask"],
                 batch["action_mask"],
+                history_events=batch["history_events"],
+                history_event_features=batch["history_event_features"],
+                history_cards=batch["history_cards"],
+                history_card_mask=batch["history_card_mask"],
+                history_jokers=batch["history_jokers"],
+                history_joker_mask=batch["history_joker_mask"],
+                history_event_mask=batch["history_event_mask"],
+                history_round_mask=batch["history_round_mask"],
+                history_omitted=batch["history_omitted"],
                 temperature=self.temperature,
             )
             action = dist.sample() if self.sample else dist.mode()
@@ -148,18 +185,98 @@ class LivePolicyRunner:
         self.adapter = SnapshotAdapter()
         self.tokenizer = Tokenizer(build_vocab(self.adapter.data))
         self.policy = policy
+        self.history = PlayHistoryTracker()
+        self._pending_play: tuple[int, PendingPlay, str] | None = None
+        self._pending_skip: tuple[int, tuple[int, str, str]] | None = None
+
+    def reset_session(self) -> None:
+        self.history.reset()
+        self._pending_play = None
+        self._pending_skip = None
+
+    def observe(self, request: DecisionRequest) -> LiveState:
+        """Reconcile the prior command against the next authoritative snapshot."""
+        live = self.adapter.adapt(request)
+        pending_skip = self._pending_skip
+        if pending_skip is not None:
+            skip_decision_id, skipped_key = pending_skip
+            previous = request.previous_action
+            matching_result = previous is not None and int(
+                previous.get("decision_id", -1)
+            ) == skip_decision_id
+            moved_to_next_blind = (
+                int(live.state.round_resets.ante),
+                str(live.state.blind_on_deck or ""),
+            ) != skipped_key[:2]
+            if (matching_result and bool(previous.get("ok", True))) or (
+                previous is None and moved_to_next_blind
+            ):
+                self.history.start_round(skipped_key)
+            self._pending_skip = None
+
+        pending = self._pending_play
+        if pending is not None:
+            decision_id, captured, hand_type = pending
+            previous = request.previous_action
+            matching_result = previous is not None and int(
+                previous.get("decision_id", -1)
+            ) == decision_id
+            snapshot_progressed = (
+                live.round_score > captured.score_before
+                or live.state.current_round.hands_left <= captured.hands_remaining
+                or request.phase in {"shop", "terminal"}
+            )
+            accepted = (
+                matching_result and bool(previous.get("ok", True))
+            ) or (previous is None and snapshot_progressed)
+            if accepted:
+                explicit_score = previous.get("score") if matching_result else None
+                if isinstance(explicit_score, (int, float)):
+                    score = max(0, int(explicit_score))
+                else:
+                    score = max(0, int(live.round_score) - captured.score_before)
+                self.history.finalize(captured, hand_type=hand_type, score=score)
+            # A mismatch is the bridge's stale previous result, and no progress
+            # means the command was discarded before execution.  Neither may
+            # leak forward and attach to a later snapshot.
+            self._pending_play = None
+
+        if request.phase == "hand_play":
+            self.history.start_round(blind_history_key(live.state))
+        return live
 
     def decide(self, request: DecisionRequest) -> tuple[dict[str, Any], Selection]:
         if request.phase == "terminal":
             raise ProtocolError("terminal snapshots do not have strategic actions")
-        live = self.adapter.adapt(request)
+        live = self.observe(request)
         local_mask = compute_action_mask(live.state, live.sub_phase)
         action_mask = intersect_live_legality(local_mask, live, request.legal)
-        selection = self.policy.select(live, self.tokenizer, action_mask)
+        selection = self.policy.select(live, self.tokenizer, action_mask, self.history)
         if selection.action_id < 0 or selection.action_id >= len(action_mask) or not action_mask[selection.action_id]:
             raise ProtocolError(f"policy selected illegal action {selection.action_id}")
         wire = semantic_action(selection.action_id, live)
-        if decode_action(selection.action_id).action_type == ActionType.PACK_CLAIM:
+        decoded = decode_action(selection.action_id)
+        if decoded.action_type == ActionType.PLAY_SUBSET:
+            indices = tuple(subset_indices(decoded.index))
+            cards = [live.state.hand_cards[index] for index in indices]
+            pending = self.history.capture(
+                live.state,
+                cards,
+                blind_target=int((live.state.round_resets.blind or {}).get("chips") or 0),
+                round_score=live.round_score,
+            )
+            hand_type, _display_name, _hands, _scoring = get_poker_hand_info(live.state, cards)
+            self._pending_play = (request.decision_id, pending, hand_type)
+        elif decoded.action_type == ActionType.BLIND_SKIP:
+            self._pending_skip = (
+                request.decision_id,
+                (
+                    int(live.state.round_resets.ante),
+                    str(live.state.blind_on_deck or "Small"),
+                    "skipped",
+                ),
+            )
+        if decoded.action_type == ActionType.PACK_CLAIM:
             wire.update(self._pack_targets(live, selection.action_id))
         return wire, selection
 
@@ -213,7 +330,7 @@ class LivePolicyRunner:
             }:
                 return {}
             raise ProtocolError(f"pack consumable {pack_card.center_key!r} has no legal target")
-        target_selection = self.policy.select(target_live, self.tokenizer, restricted)
+        target_selection = self.policy.select(target_live, self.tokenizer, restricted, self.history)
         if not restricted[target_selection.action_id]:
             raise ProtocolError("policy selected an illegal booster target")
         decoded = decode_action(target_selection.action_id)
@@ -258,4 +375,7 @@ def build_live_runner(
     runner.adapter = adapter
     runner.tokenizer = Tokenizer(vocab)
     runner.policy = policy
+    runner.history = PlayHistoryTracker()
+    runner._pending_play = None
+    runner._pending_skip = None
     return runner

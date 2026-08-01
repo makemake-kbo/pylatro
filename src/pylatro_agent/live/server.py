@@ -41,6 +41,9 @@ class DecisionService:
 
             if self.active_session is None:
                 self.active_session = request.session_id
+                reset_session = getattr(self.runner, "reset_session", None)
+                if reset_session is not None:
+                    reset_session()
                 logger.info("Attached to live Balatro session %s", request.session_id)
             elif request.session_id != self.active_session:
                 return DecisionResponse.error_response(
@@ -75,6 +78,9 @@ class DecisionService:
                 )
 
             if request.phase == "terminal":
+                observe = getattr(self.runner, "observe", None)
+                if observe is not None:
+                    observe(request)
                 state = request.state
                 outcome = "win" if state.get("won") else "game over"
                 logger.info("Live run ended: %s", outcome)

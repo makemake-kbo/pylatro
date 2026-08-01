@@ -13,7 +13,7 @@ from pylatro_agent.hand_candidates import generate_hand_candidates
 from pylatro_agent.live.actions import semantic_action
 from pylatro_agent.live.adapter import SnapshotAdapter
 from pylatro_agent.live.legality import intersect_live_legality
-from pylatro_agent.live.policy import HeuristicPolicy, LivePolicyRunner
+from pylatro_agent.live.policy import HeuristicPolicy, LivePolicyRunner, Selection
 from pylatro_agent.live.protocol import DecisionRequest, DecisionResponse, ProtocolError
 from pylatro_agent.live.server import DecisionService
 from pylatro_agent.masks import compute_action_mask
@@ -266,6 +266,105 @@ class _Runner:
         return {"type": "blind_play"}, type(
             "Selection", (), {"expected_score": None, "win_probability": None}
         )()
+
+
+class _FirstPlayPolicy:
+    def select(self, live, tokenizer, action_mask, history=None):
+        del live, tokenizer, history
+        start = int(ActionRange.PLAY_SUBSET_START)
+        end = int(ActionRange.PLAY_SUBSET_END) + 1
+        choices = np.flatnonzero(action_mask[start:end])
+        assert len(choices)
+        return Selection(start + int(choices[0]))
+
+
+class _SkipPolicy:
+    def select(self, live, tokenizer, action_mask, history=None):
+        del live, tokenizer, history
+        action = int(ActionRange.BLIND_SKIP)
+        assert action_mask[action]
+        return Selection(action)
+
+
+def _with_previous(request: DecisionRequest, decision_id: int, *, ok: bool) -> DecisionRequest:
+    object.__setattr__(
+        request,
+        "previous_action",
+        {"decision_id": decision_id, "ok": ok, "error": None if ok else "rejected"},
+    )
+    return request
+
+
+def test_live_history_finalizes_success_rejects_failure_and_rotates_rounds():
+    runner = LivePolicyRunner(_FirstPlayPolicy())
+    runner.decide(_request(decision_id=1))
+    successful_state = _state()
+    successful_state["round_score"] = 65
+    runner.decide(_with_previous(_request(state=successful_state, decision_id=2), 1, ok=True))
+    assert len(runner.history.rounds[-1].events) == 1
+    assert runner.history.rounds[-1].events[0].score == 40
+
+    rejected_runner = LivePolicyRunner(_FirstPlayPolicy())
+    rejected_runner.decide(_request(decision_id=1))
+    rejected_runner.decide(_with_previous(_request(decision_id=2), 1, ok=False))
+    assert not rejected_runner.history.rounds[-1].events
+
+    # Reconcile decision 2, then enter a different blind.  The completed Small
+    # Blind becomes the immediately preceding round; no synthetic event is made
+    # for the new blind.
+    shop_state = deepcopy(successful_state)
+    shop_request = _with_previous(
+        _request(phase="shop", state=shop_state, decision_id=3), 2, ok=False
+    )
+    runner.observe(shop_request)
+    big_state = _merge(
+        _state(),
+        {
+            "blind_on_deck": "Big",
+            "round_score": 0,
+            "blind": {"key": "bl_big", "chips": 450},
+        },
+    )
+    runner.observe(_request(state=big_state, decision_id=4))
+    assert len(runner.history.rounds[-2].events) == 1
+    assert not runner.history.rounds[-1].events
+
+
+def test_live_terminal_play_is_finalized_and_duplicate_is_not_replayed():
+    runner = LivePolicyRunner(_FirstPlayPolicy())
+    service = DecisionService(runner)
+    first = _request(decision_id=1)
+    service.handle(first)
+    service.handle(first)
+    assert not runner.history.rounds[-1].events
+
+    terminal_state = _state()
+    terminal_state["round_score"] = 75
+    terminal = _with_previous(
+        _request(phase="terminal", state=terminal_state, decision_id=2), 1, ok=True
+    )
+    response = service.handle(terminal)
+    assert response.wait
+    assert len(runner.history.rounds[-1].events) == 1
+    assert runner.history.rounds[-1].events[0].score == 50
+
+
+def test_live_accepted_skip_advances_history_without_inventing_a_play():
+    runner = LivePolicyRunner(_SkipPolicy())
+    runner.decide(_request(phase="blind_select", decision_id=1))
+    big_state = _merge(
+        _state(),
+        {"blind_on_deck": "Big", "blind": {"key": "bl_big", "chips": 450}},
+    )
+    runner.decide(
+        _with_previous(
+            _request(phase="blind_select", state=big_state, decision_id=2),
+            1,
+            ok=True,
+        )
+    )
+    assert runner.history.rounds[-1].key == (1, "Small", "skipped")
+    assert not runner.history.rounds[-1].events
 
 
 def test_duplicate_requests_execute_inference_once_and_conflicts_are_rejected():

@@ -28,7 +28,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -345,3 +345,160 @@ def _mcnemar_exact_pvalue(b: int, c: int) -> float:
     # Two-sided: double the smaller tail (handles the symmetric upper tail).
     p = min(1.0, 2.0 * tail)
     return p
+
+
+def evaluate_history_ablation(
+    model,
+    records: list[dict[str, Any]],
+    device: torch.device,
+    *,
+    batch_size: int = 256,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Report held-out prediction/policy metrics with and without history.
+
+    Results are split by empty/partial/full three-round context and by whether
+    the visible context contains a tagged DNA, Dusk, or Burglar event.  The
+    ``context_reliance`` section is ``masked - normal`` for every metric, so a
+    positive loss delta measures actual reliance by the trained checkpoint.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    from .action import ActionType, decode_action
+    from .training.ppo import _grammar_distribution
+    from .training.supervised import SupervisedConfig, _collate_batch
+
+    if not records:
+        return {"normal": {}, "masked": {}, "context_reliance": {}}
+
+    groups = (
+        "overall",
+        "history_empty",
+        "history_partial",
+        "history_full",
+        "mechanic_flagged",
+        "ordinary_history",
+        "play_actions",
+        "discard_actions",
+    )
+    totals: dict[str, dict[str, dict[str, float]]] = {
+        mode: {
+            group: {
+                "count": 0.0,
+                "return_abs_error": 0.0,
+                "win_brier": 0.0,
+                "win_bce": 0.0,
+                "survival_count": 0.0,
+                "survival_brier": 0.0,
+                "survival_bce": 0.0,
+                "policy_nll": 0.0,
+            }
+            for group in groups
+        }
+        for mode in ("normal", "masked")
+    }
+    config = SupervisedConfig()
+    was_training = model.training
+    model.eval()
+    with torch.inference_mode():
+        for start in range(0, len(records), batch_size):
+            chunk = records[start : start + batch_size]
+            batch = _collate_batch(chunk, device, config=config)
+            round_counts = batch["history_round_mask"].sum(dim=-1)
+            mechanic = (batch["history_events"][..., 3] != 0).any(dim=(-1, -2))
+            action_types = [decode_action(int(record["action"])).action_type for record in chunk]
+            group_masks = {
+                "overall": torch.ones(len(chunk), dtype=torch.bool, device=device),
+                "history_empty": round_counts == 0,
+                "history_partial": (round_counts > 0) & (round_counts < 3),
+                "history_full": round_counts == 3,
+                "mechanic_flagged": mechanic,
+                "ordinary_history": (round_counts > 0) & ~mechanic,
+                "play_actions": torch.tensor(
+                    [action_type == ActionType.PLAY_SUBSET for action_type in action_types],
+                    dtype=torch.bool,
+                    device=device,
+                ),
+                "discard_actions": torch.tensor(
+                    [action_type == ActionType.DISCARD_SUBSET for action_type in action_types],
+                    dtype=torch.bool,
+                    device=device,
+                ),
+            }
+            for mode in ("normal", "masked"):
+                model_batch = batch
+                if mode == "masked":
+                    model_batch = dict(batch)
+                    for key in (
+                        "history_events",
+                        "history_event_features",
+                        "history_cards",
+                        "history_card_mask",
+                        "history_jokers",
+                        "history_joker_mask",
+                        "history_event_mask",
+                        "history_round_mask",
+                        "history_omitted",
+                    ):
+                        model_batch[key] = torch.zeros_like(batch[key])
+                distribution, values = _grammar_distribution(model, model_batch)
+                policy_nll = -distribution.log_prob(batch["actions"])
+                return_error = (values["expected_score"] - batch["value_target"]).abs()
+                win_probability = values["win_prob"].clamp(1e-7, 1.0 - 1e-7)
+                win_brier = (win_probability - batch["won"]).square()
+                win_bce = F.binary_cross_entropy(win_probability, batch["won"], reduction="none")
+                survival_probability = values["ante_survival"].clamp(1e-7, 1.0 - 1e-7)
+                survival_mask = batch["ante_survival_mask"]
+                survival_brier = (survival_probability - batch["ante_survival_target"]).square()
+                survival_bce = F.binary_cross_entropy(
+                    survival_probability, batch["ante_survival_target"], reduction="none"
+                )
+                for group, mask in group_masks.items():
+                    count = int(mask.sum().item())
+                    if not count:
+                        continue
+                    target = totals[mode][group]
+                    target["count"] += count
+                    target["return_abs_error"] += float(return_error[mask].sum().item())
+                    target["win_brier"] += float(win_brier[mask].sum().item())
+                    target["win_bce"] += float(win_bce[mask].sum().item())
+                    target["policy_nll"] += float(policy_nll[mask].sum().item())
+                    group_survival_mask = survival_mask[mask]
+                    survival_count = float(group_survival_mask.sum().item())
+                    target["survival_count"] += survival_count
+                    target["survival_brier"] += float(
+                        (survival_brier[mask] * group_survival_mask).sum().item()
+                    )
+                    target["survival_bce"] += float(
+                        (survival_bce[mask] * group_survival_mask).sum().item()
+                    )
+
+    if was_training:
+        model.train()
+
+    report: dict[str, dict[str, dict[str, float]]] = {"normal": {}, "masked": {}}
+    for mode in ("normal", "masked"):
+        for group, raw in totals[mode].items():
+            count = raw["count"]
+            if not count:
+                continue
+            survival_count = max(raw["survival_count"], 1.0)
+            report[mode][group] = {
+                "count": count,
+                "expected_return_mae": raw["return_abs_error"] / count,
+                "win_brier": raw["win_brier"] / count,
+                "win_bce": raw["win_bce"] / count,
+                "ante_survival_brier": raw["survival_brier"] / survival_count,
+                "ante_survival_bce": raw["survival_bce"] / survival_count,
+                "policy_nll": raw["policy_nll"] / count,
+            }
+    reliance: dict[str, dict[str, float]] = {}
+    for group in set(report["normal"]) & set(report["masked"]):
+        reliance[group] = {
+            metric: report["masked"][group][metric] - report["normal"][group][metric]
+            for metric in report["normal"][group]
+            if metric != "count"
+        }
+        reliance[group]["count"] = report["normal"][group]["count"]
+    report["context_reliance"] = reliance
+    return report

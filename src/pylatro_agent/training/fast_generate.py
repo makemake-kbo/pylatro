@@ -124,6 +124,7 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
         runner.sub_phase,
         action_mask=mask.copy(),
         round_score=runner.round_score,
+        history=runner.history,
     )
     return {
         "tokens": raw.tokens,
@@ -131,6 +132,15 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
         "scalars": raw.scalars,
         "attention_mask": raw.attention_mask,
         "action_mask": raw.action_mask,
+        "history_events": raw.history_events,
+        "history_event_features": raw.history_event_features,
+        "history_cards": raw.history_cards,
+        "history_card_mask": raw.history_card_mask,
+        "history_jokers": raw.history_jokers,
+        "history_joker_mask": raw.history_joker_mask,
+        "history_event_mask": raw.history_event_mask,
+        "history_round_mask": raw.history_round_mask,
+        "history_omitted": raw.history_omitted,
     }
 
 

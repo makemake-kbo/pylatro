@@ -35,6 +35,7 @@ from ..constants import (
     ActionRange,
     SubPhase,
 )
+from ..history import PlayHistoryTracker, blind_history_key
 from ..masks import _mask_debuffed_plays
 from ..subset_actions import (
     consumable_subset_indices,
@@ -52,6 +53,7 @@ class FastRunner:
     __slots__ = (
         "_ctrl",
         "_done",
+        "_history",
         "_mask",
         "_max_ante",
         "_max_steps",
@@ -74,6 +76,7 @@ class FastRunner:
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
+        self._history = PlayHistoryTracker()
         self._won: bool = False
         self._step_count: int = 0
         self._steps_since_progress: int = 0
@@ -106,6 +109,10 @@ class FastRunner:
     @property
     def round_score(self) -> int:
         return self._round_score
+
+    @property
+    def history(self) -> PlayHistoryTracker:
+        return self._history
 
     @property
     def phase(self) -> GamePhase:
@@ -191,11 +198,18 @@ class FastRunner:
         if aid == AR.BLIND_PLAY:
             blind_type = state.blind_on_deck or "Small"
             ctrl.select_blind(blind_type)
+            self._history.start_round(blind_history_key(state))
             self._sub_phase = SubPhase.CHOOSE_ACTION
             self._round_score = 0
 
         elif aid == AR.BLIND_SKIP:
+            skipped_key = (
+                int(state.round_resets.ante),
+                str(state.blind_on_deck or "Small"),
+                "skipped",
+            )
             ctrl.skip_blind()
+            self._history.start_round(skipped_key)
             self._sub_phase = SubPhase.BLIND_SELECT
 
         elif aid == AR.BLIND_REROLL:
@@ -207,8 +221,20 @@ class FastRunner:
             indices = subset_indices(idx)
             if any(slot >= len(state.hand_cards) for slot in indices):
                 return
+            selected_cards = [state.hand_cards[slot] for slot in sorted(indices)]
+            pending_history = self._history.capture(
+                state,
+                selected_cards,
+                blind_target=ctrl.blind_target(),
+                round_score=self._round_score,
+            )
             result = ctrl.play_selected(list(indices))
             self._round_score += result.score.total
+            self._history.finalize(
+                pending_history,
+                hand_type=result.score.hand_name,
+                score=result.score.total,
+            )
             if ctrl.blind_beaten():
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:

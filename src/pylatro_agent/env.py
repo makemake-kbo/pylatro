@@ -13,7 +13,20 @@ from pylatro.instances import move_joker
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
-from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from .constants import (
+    HISTORY_EVENT_DIM,
+    HISTORY_FEATURE_DIM,
+    HISTORY_MAX_CARDS,
+    HISTORY_MAX_JOKERS,
+    HISTORY_MAX_PLAYS,
+    HISTORY_OMITTED_DIM,
+    HISTORY_ROUNDS,
+    MAX_SEQ_LEN,
+    NUM_ACTIONS,
+    SCALAR_DIM,
+    TOKEN_DIM,
+    SubPhase,
+)
 from .diagnostics import (
     action_diagnostics as _shared_action_diagnostics,
 )
@@ -24,6 +37,7 @@ from .diagnostics import (
     step_event_diagnostics,
 )
 from .heuristic import HeuristicAgent
+from .history import PlayHistoryTracker, blind_history_key
 from .masks import compute_action_mask
 from .reward import (
     DEFAULT_REWARD_CONFIG,
@@ -81,6 +95,7 @@ class BalatroEnv(gymnasium.Env):
         self._controller: GameController | None = None
         self._sub_phase = SubPhase.BLIND_SELECT
         self._steps_since_progress = 0
+        self._history = PlayHistoryTracker()
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -96,10 +111,41 @@ class BalatroEnv(gymnasium.Env):
         self.observation_space = spaces.Dict(
             {
                 "tokens": spaces.Box(0, 32767, (MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
-                "token_types": spaces.Box(0, 10, (MAX_SEQ_LEN,), dtype=np.int8),
+                "token_types": spaces.Box(0, 11, (MAX_SEQ_LEN,), dtype=np.int8),
                 "scalars": spaces.Box(-np.inf, np.inf, (SCALAR_DIM,), dtype=np.float32),
                 "attention_mask": spaces.Box(0, 1, (MAX_SEQ_LEN,), dtype=np.int8),
                 "action_mask": spaces.Box(0, 1, (NUM_ACTIONS,), dtype=np.int8),
+                "history_events": spaces.Box(
+                    0, 32767, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_EVENT_DIM), dtype=np.int16
+                ),
+                "history_event_features": spaces.Box(
+                    -np.inf,
+                    np.inf,
+                    (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_FEATURE_DIM),
+                    dtype=np.float32,
+                ),
+                "history_cards": spaces.Box(
+                    0,
+                    32767,
+                    (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS, TOKEN_DIM),
+                    dtype=np.int16,
+                ),
+                "history_card_mask": spaces.Box(
+                    0, 1, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS), dtype=np.int8
+                ),
+                "history_jokers": spaces.Box(
+                    0, 32767, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int16
+                ),
+                "history_joker_mask": spaces.Box(
+                    0, 1, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int8
+                ),
+                "history_event_mask": spaces.Box(
+                    0, 1, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int8
+                ),
+                "history_round_mask": spaces.Box(0, 1, (HISTORY_ROUNDS,), dtype=np.int8),
+                "history_omitted": spaces.Box(
+                    -np.inf, np.inf, (HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32
+                ),
             }
         )
         self.action_space = spaces.Discrete(NUM_ACTIONS)
@@ -132,6 +178,7 @@ class BalatroEnv(gymnasium.Env):
         self._sub_phase = SubPhase.BLIND_SELECT
         self._steps_since_progress = 0
         self._play_diagnostic_count = 0
+        self._history.reset()
         self._prev_info = self._capture_state_info()
 
         obs = self._build_obs()
@@ -352,10 +399,17 @@ class BalatroEnv(gymnasium.Env):
         if at == ActionType.BLIND_PLAY:
             blind_type = state.blind_on_deck or "Small"
             ctrl.select_blind(blind_type)
+            self._history.start_round(blind_history_key(state))
             self._sub_phase = SubPhase.CHOOSE_ACTION
 
         elif at == ActionType.BLIND_SKIP:
+            skipped_key = (
+                int(state.round_resets.ante),
+                str(state.blind_on_deck or "Small"),
+                "skipped",
+            )
             ctrl.skip_blind()
+            self._history.start_round(skipped_key)
             # Stay in BLIND_SELECT for next blind
             self._sub_phase = SubPhase.BLIND_SELECT
 
@@ -367,7 +421,19 @@ class BalatroEnv(gymnasium.Env):
             indices = subset_indices(decoded.index)
             if any(idx >= len(state.hand_cards) for idx in indices):
                 raise IndexError(f"Play subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
+            selected_cards = [state.hand_cards[index] for index in sorted(indices)]
+            pending_history = self._history.capture(
+                state,
+                selected_cards,
+                blind_target=ctrl.blind_target(),
+                round_score=ctrl.round_score,
+            )
             result = ctrl.play_selected(list(indices))
+            self._history.finalize(
+                pending_history,
+                hand_type=result.score.hand_name,
+                score=result.score.total,
+            )
             if ctrl.blind_beaten():
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
@@ -452,16 +518,31 @@ class BalatroEnv(gymnasium.Env):
             self._sub_phase,
             action_mask=mask,
             round_score=self._controller.round_score,
+            history=self._history,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
-        return {
+        result = {
             "tokens": obs.tokens,
             "token_types": obs.token_types,
             "scalars": obs.scalars,
             "attention_mask": obs.attention_mask,
             "action_mask": obs.action_mask,
         }
+        result.update(
+            {
+                "history_events": obs.history_events,
+                "history_event_features": obs.history_event_features,
+                "history_cards": obs.history_cards,
+                "history_card_mask": obs.history_card_mask,
+                "history_jokers": obs.history_jokers,
+                "history_joker_mask": obs.history_joker_mask,
+                "history_event_mask": obs.history_event_mask,
+                "history_round_mask": obs.history_round_mask,
+                "history_omitted": obs.history_omitted,
+            }
+        )
+        return result
 
     def _action_diagnostics(self, decoded) -> dict[str, Any]:
         """Return policy-quality diagnostics for the pre-action state.

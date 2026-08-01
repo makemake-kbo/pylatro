@@ -128,7 +128,22 @@ class EpisodeReplayBuffer:
     """
 
     # Compact observation/mask fields stored per transition.
-    _COMPACT_FIELDS = ("tokens", "token_types", "scalars", "attention_mask", "action_mask_packed")
+    _COMPACT_FIELDS = (
+        "tokens",
+        "token_types",
+        "scalars",
+        "attention_mask",
+        "action_mask_packed",
+        "history_events",
+        "history_event_features",
+        "history_cards",
+        "history_card_mask",
+        "history_jokers",
+        "history_joker_mask",
+        "history_event_mask",
+        "history_round_mask",
+        "history_omitted",
+    )
 
     def __init__(self, capacity_episodes: int, seed: int | None = None) -> None:
         if capacity_episodes <= 0:
@@ -249,6 +264,15 @@ class EpisodeReplayBuffer:
         return self._materialize_batch(picks, device)
 
     def _materialize_batch(self, picks: list[tuple[dict, int]], device: torch.device) -> dict[str, torch.Tensor]:
+        from ..history import HistoryArrays
+
+        empty_history = HistoryArrays.empty().as_dict()
+
+        def history_stack(key: str) -> np.ndarray:
+            return np.stack(
+                [ep[key][t] if key in ep else empty_history[key] for ep, t in picks]
+            )
+
         tokens = np.stack([ep["tokens"][t] for ep, t in picks])
         token_types = np.stack([ep["token_types"][t] for ep, t in picks])
         scalars = np.stack([ep["scalars"][t] for ep, t in picks])
@@ -270,6 +294,23 @@ class EpisodeReplayBuffer:
             "scalars": torch.as_tensor(scalars, device=device),
             "attention_mask": torch.as_tensor(attention_mask.astype(np.int64), device=device),
             "action_mask": torch.as_tensor(action_mask, device=device),
+            "history_events": torch.as_tensor(history_stack("history_events").astype(np.int64), device=device),
+            "history_event_features": torch.as_tensor(history_stack("history_event_features"), device=device),
+            "history_cards": torch.as_tensor(history_stack("history_cards").astype(np.int64), device=device),
+            "history_card_mask": torch.as_tensor(
+                history_stack("history_card_mask").astype(np.int64), device=device
+            ),
+            "history_jokers": torch.as_tensor(history_stack("history_jokers").astype(np.int64), device=device),
+            "history_joker_mask": torch.as_tensor(
+                history_stack("history_joker_mask").astype(np.int64), device=device
+            ),
+            "history_event_mask": torch.as_tensor(
+                history_stack("history_event_mask").astype(np.int64), device=device
+            ),
+            "history_round_mask": torch.as_tensor(
+                history_stack("history_round_mask").astype(np.int64), device=device
+            ),
+            "history_omitted": torch.as_tensor(history_stack("history_omitted"), device=device),
             "actions": torch.as_tensor(actions, device=device),
             "returns": torch.as_tensor(returns, device=device),
             "teacher_forced_flags": torch.as_tensor(teacher, device=device),
@@ -312,6 +353,13 @@ class SILEpisodeTracker:
     ) -> None:
         if teacher_forced is None:
             teacher_forced = np.zeros(self.num_envs, dtype=bool)
+        from ..history import HistoryArrays
+
+        empty_history = HistoryArrays.empty().as_dict()
+        history_obs = {
+            key: obs.get(key, np.broadcast_to(value, (self.num_envs, *value.shape)))
+            for key, value in empty_history.items()
+        }
         for i in range(self.num_envs):
             if self._overflowed[i]:
                 continue
@@ -329,6 +377,15 @@ class SILEpisodeTracker:
                     int(actions[i]),
                     float(rewards[i]),
                     bool(teacher_forced[i]),
+                    history_obs["history_events"][i].astype(np.int16),
+                    history_obs["history_event_features"][i].astype(np.float32),
+                    history_obs["history_cards"][i].astype(np.int16),
+                    history_obs["history_card_mask"][i].astype(np.int8),
+                    history_obs["history_jokers"][i].astype(np.int16),
+                    history_obs["history_joker_mask"][i].astype(np.int8),
+                    history_obs["history_event_mask"][i].astype(np.int8),
+                    history_obs["history_round_mask"][i].astype(np.int8),
+                    history_obs["history_omitted"][i].astype(np.float32),
                 )
             )
 
@@ -374,6 +431,15 @@ class SILEpisodeTracker:
                 "actions": np.asarray([s[5] for s in steps], dtype=np.int64),
                 "returns": returns,
                 "teacher_forced": np.asarray([s[7] for s in steps], dtype=np.int8),
+                "history_events": np.stack([s[8] for s in steps]),
+                "history_event_features": np.stack([s[9] for s in steps]),
+                "history_cards": np.stack([s[10] for s in steps]),
+                "history_card_mask": np.stack([s[11] for s in steps]),
+                "history_jokers": np.stack([s[12] for s in steps]),
+                "history_joker_mask": np.stack([s[13] for s in steps]),
+                "history_event_mask": np.stack([s[14] for s in steps]),
+                "history_round_mask": np.stack([s[15] for s in steps]),
+                "history_omitted": np.stack([s[16] for s in steps]),
                 "won": bool(won),
                 "final_ante": int(final_ante),
                 "episode_length": len(steps),

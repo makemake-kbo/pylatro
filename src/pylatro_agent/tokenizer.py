@@ -12,6 +12,8 @@ import numpy as np
 if TYPE_CHECKING:
     from pylatro.models import ConsumableInstance, JokerInstance, RunState, ShopCard
 
+    from .history import PlayHistoryTracker
+
 from .constants import (
     BLIND_SELECT_MAX,
     BLIND_SELECT_START,
@@ -23,6 +25,8 @@ from .constants import (
     HAND_CANDIDATE_START,
     HAND_LEVEL_MAX,
     HAND_LEVEL_START,
+    HISTORY_ROUNDS,
+    HISTORY_START,
     JOKER_MAX,
     JOKER_START,
     MAX_DISCARD_CANDIDATES,
@@ -60,6 +64,15 @@ class RawObservation:
     scalars: np.ndarray  # (SCALAR_DIM,), float32
     attention_mask: np.ndarray  # (MAX_SEQ_LEN,), int8
     action_mask: np.ndarray  # (NUM_ACTIONS,), int8
+    history_events: np.ndarray
+    history_event_features: np.ndarray
+    history_cards: np.ndarray
+    history_card_mask: np.ndarray
+    history_jokers: np.ndarray
+    history_joker_mask: np.ndarray
+    history_event_mask: np.ndarray
+    history_round_mask: np.ndarray
+    history_omitted: np.ndarray
 
 
 @dataclass
@@ -84,6 +97,7 @@ class Tokenizer:
         sub_phase: SubPhase,
         action_mask: np.ndarray | None = None,
         round_score: int = 0,
+        history: PlayHistoryTracker | None = None,
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -223,12 +237,21 @@ class Tokenizer:
         if action_mask is None:
             action_mask = np.ones(NUM_ACTIONS, dtype=np.int8)
 
+        from .history import HistoryArrays
+
+        history_arrays = history.encode(self.vocab) if history is not None else HistoryArrays.empty()
+        for i in range(HISTORY_ROUNDS):
+            if history_arrays.round_mask[i]:
+                token_types[HISTORY_START + i] = TokenType.HISTORY
+                attn_mask[HISTORY_START + i] = 1
+
         return RawObservation(
             tokens=np.asarray(tokens),
             token_types=np.asarray(token_types),
             scalars=np.asarray(scalars),
             attention_mask=np.asarray(attn_mask),
             action_mask=action_mask,
+            **history_arrays.as_dict(),
         )
 
     @cython.locals(blind_type_id=cython.int, boss_id=cython.int)

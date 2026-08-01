@@ -5,7 +5,19 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from ..constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
+from ..constants import (
+    HISTORY_EVENT_DIM,
+    HISTORY_FEATURE_DIM,
+    HISTORY_MAX_CARDS,
+    HISTORY_MAX_JOKERS,
+    HISTORY_MAX_PLAYS,
+    HISTORY_OMITTED_DIM,
+    HISTORY_ROUNDS,
+    MAX_SEQ_LEN,
+    NUM_ACTIONS,
+    SCALAR_DIM,
+    TOKEN_DIM,
+)
 from ..survival import DEFAULT_MAX_ANTES
 
 
@@ -36,6 +48,38 @@ class RolloutBuffer:
         self.scalars = np.zeros((self.total_size, SCALAR_DIM), dtype=np.float32)
         self.attention_masks = np.zeros((self.total_size, MAX_SEQ_LEN), dtype=np.int8)
         self.action_masks = np.zeros((self.total_size, NUM_ACTIONS), dtype=np.float32)
+        self.history_events = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_EVENT_DIM), dtype=np.int16
+        )
+        self.history_event_features = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_FEATURE_DIM), dtype=np.float32
+        )
+        self.history_cards = np.zeros(
+            (
+                self.total_size,
+                HISTORY_ROUNDS,
+                HISTORY_MAX_PLAYS,
+                HISTORY_MAX_CARDS,
+                TOKEN_DIM,
+            ),
+            dtype=np.int16,
+        )
+        self.history_card_masks = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS), dtype=np.int8
+        )
+        self.history_jokers = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int16
+        )
+        self.history_joker_masks = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int8
+        )
+        self.history_event_masks = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int8
+        )
+        self.history_round_masks = np.zeros((self.total_size, HISTORY_ROUNDS), dtype=np.int8)
+        self.history_omitted = np.zeros(
+            (self.total_size, HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32
+        )
 
         # Pre-allocate action/value arrays, shape: (total,)
         self.actions = np.zeros(self.total_size, dtype=np.int64)
@@ -79,6 +123,19 @@ class RolloutBuffer:
         self.scalars[indices] = obs["scalars"]
         self.attention_masks[indices] = obs["attention_mask"]
         self.action_masks[indices] = obs["action_mask"]
+        for target, key in (
+            (self.history_events, "history_events"),
+            (self.history_event_features, "history_event_features"),
+            (self.history_cards, "history_cards"),
+            (self.history_card_masks, "history_card_mask"),
+            (self.history_jokers, "history_jokers"),
+            (self.history_joker_masks, "history_joker_mask"),
+            (self.history_event_masks, "history_event_mask"),
+            (self.history_round_masks, "history_round_mask"),
+            (self.history_omitted, "history_omitted"),
+        ):
+            if key in obs:
+                target[indices] = obs[key]
         self.actions[indices] = actions
         self.rewards[indices] = rewards
         self.values[indices] = values
@@ -220,6 +277,23 @@ class RolloutBuffer:
                 "scalars": torch.as_tensor(self.scalars[idx], device=device),
                 "attention_mask": torch.as_tensor(self.attention_masks[idx].astype(np.int64), device=device),
                 "action_mask": torch.as_tensor(self.action_masks[idx], device=device),
+                "history_events": torch.as_tensor(self.history_events[idx].astype(np.int64), device=device),
+                "history_event_features": torch.as_tensor(self.history_event_features[idx], device=device),
+                "history_cards": torch.as_tensor(self.history_cards[idx].astype(np.int64), device=device),
+                "history_card_mask": torch.as_tensor(
+                    self.history_card_masks[idx].astype(np.int64), device=device
+                ),
+                "history_jokers": torch.as_tensor(self.history_jokers[idx].astype(np.int64), device=device),
+                "history_joker_mask": torch.as_tensor(
+                    self.history_joker_masks[idx].astype(np.int64), device=device
+                ),
+                "history_event_mask": torch.as_tensor(
+                    self.history_event_masks[idx].astype(np.int64), device=device
+                ),
+                "history_round_mask": torch.as_tensor(
+                    self.history_round_masks[idx].astype(np.int64), device=device
+                ),
+                "history_omitted": torch.as_tensor(self.history_omitted[idx], device=device),
                 "actions": torch.as_tensor(self.actions[idx], device=device),
                 "old_log_probs": torch.as_tensor(self.log_probs[idx], device=device),
                 "advantages": torch.as_tensor(self.advantages[idx], device=device),

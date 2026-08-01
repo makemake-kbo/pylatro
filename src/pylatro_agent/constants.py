@@ -9,12 +9,24 @@ from enum import IntEnum, StrEnum
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-TOKENIZER_VERSION = 4
+TOKENIZER_VERSION = 5
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = 12
 SCALAR_DIM = 11  # continuous scalar features
+
+# Played-hand history.  The tracker presents rounds oldest-to-newest, with the
+# active blind in the final slot.  History lives in side-channel arrays and is
+# compressed into three context tokens at HISTORY_START, leaving the main
+# token layout (and its inexpensive engine tokenizer) unchanged.
+HISTORY_ROUNDS = 3
+HISTORY_MAX_PLAYS = 12
+HISTORY_MAX_CARDS = 5
+HISTORY_MAX_JOKERS = 8
+HISTORY_EVENT_DIM = 6
+HISTORY_FEATURE_DIM = 6
+HISTORY_OMITTED_DIM = 1 + 2 + 12 + 4
 
 MAX_HAND_SIZE = 16
 MAX_JOKER_SLOTS = 8
@@ -145,7 +157,8 @@ class TokenType(IntEnum):
     BLIND_SELECT = 7
     HAND_LEVEL = 8
     HAND_CANDIDATE = 9
-    PAD = 10
+    HISTORY = 10
+    PAD = 11
 
 
 # Token position ranges (start positions)
@@ -168,3 +181,5 @@ HAND_LEVEL_START = 102
 HAND_LEVEL_MAX = 12
 HAND_CANDIDATE_START = 114
 HAND_CANDIDATE_MAX = 32
+HISTORY_START = 146
+HISTORY_MAX = HISTORY_ROUNDS

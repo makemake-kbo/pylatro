@@ -10,7 +10,7 @@ import torch.nn as nn
 
 from .action_grammar import ActionGrammarDistribution, ActionGrammarHead
 from .backbone import TransformerBackbone
-from .constants import MAX_SEQ_LEN
+from .constants import HISTORY_ROUNDS, HISTORY_START, MAX_SEQ_LEN
 from .embeddings import ContentEmbeddingLayer
 from .value_head import ValueHead
 
@@ -74,12 +74,36 @@ class BalatroAgent(nn.Module):
         scalars: torch.Tensor,
         attention_mask: torch.Tensor,
         action_mask: torch.Tensor,
+        history_events: torch.Tensor | None = None,
+        history_event_features: torch.Tensor | None = None,
+        history_cards: torch.Tensor | None = None,
+        history_card_mask: torch.Tensor | None = None,
+        history_jokers: torch.Tensor | None = None,
+        history_joker_mask: torch.Tensor | None = None,
+        history_event_mask: torch.Tensor | None = None,
+        history_round_mask: torch.Tensor | None = None,
+        history_omitted: torch.Tensor | None = None,
         temperature: float = 1.0,
         hand_ar_mixture_eps: float | None = None,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
         """Return the structured policy distribution and value predictions."""
         eps = self.config.hand_ar_mixture_eps if hand_ar_mixture_eps is None else hand_ar_mixture_eps
-        x = self.embedding(tokens, token_types, scalars)
+        if history_events is not None and history_round_mask is not None:
+            attention_mask = attention_mask.clone()
+            attention_mask[:, HISTORY_START : HISTORY_START + HISTORY_ROUNDS] = history_round_mask
+        x = self.embedding(
+            tokens,
+            token_types,
+            scalars,
+            history_events,
+            history_event_features,
+            history_cards,
+            history_card_mask,
+            history_jokers,
+            history_joker_mask,
+            history_event_mask,
+            history_omitted,
+        )
         x = self.backbone(x, padding_mask=(attention_mask == 0))
         grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
         value_dict = self.value_head(x, attention_mask)
@@ -101,6 +125,15 @@ class BalatroAgent(nn.Module):
         scalars: torch.Tensor,
         attention_mask: torch.Tensor,
         action_mask: torch.Tensor,
+        history_events: torch.Tensor | None = None,
+        history_event_features: torch.Tensor | None = None,
+        history_cards: torch.Tensor | None = None,
+        history_card_mask: torch.Tensor | None = None,
+        history_jokers: torch.Tensor | None = None,
+        history_joker_mask: torch.Tensor | None = None,
+        history_event_mask: torch.Tensor | None = None,
+        history_round_mask: torch.Tensor | None = None,
+        history_omitted: torch.Tensor | None = None,
         temperature: float = 1.0,
         hand_ar_mixture_eps: float | None = None,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
@@ -111,6 +144,15 @@ class BalatroAgent(nn.Module):
             scalars,
             attention_mask,
             action_mask,
+            history_events,
+            history_event_features,
+            history_cards,
+            history_card_mask,
+            history_jokers,
+            history_joker_mask,
+            history_event_mask,
+            history_round_mask,
+            history_omitted,
             temperature=temperature,
             hand_ar_mixture_eps=hand_ar_mixture_eps,
         )

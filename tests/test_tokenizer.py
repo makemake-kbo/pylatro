@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from pylatro import (
@@ -17,7 +16,6 @@ from pylatro import (
 from pylatro_agent.constants import (
     HAND_CANDIDATE_MAX,
     HAND_CANDIDATE_START,
-    MAX_HAND_SIZE,
     MAX_PACK_CARDS,
     MAX_SEQ_LEN,
     SCALAR_DIM,
@@ -63,7 +61,6 @@ def test_tokenize_shape(run_state, vocab):
     assert obs.token_types.shape == (MAX_SEQ_LEN,)
     assert obs.scalars.shape == (SCALAR_DIM,)
     assert obs.attention_mask.shape == (MAX_SEQ_LEN,)
-    assert obs.selected_cards.shape == (MAX_HAND_SIZE,)
 
 
 def test_tokenize_has_tokens(run_state, vocab):
@@ -249,7 +246,7 @@ def test_booster_pack_cards_encoded(pack_state, vocab):
     n_pack_cards = len(pack_state.pack.cards)
     assert n_pack_cards > 0, "Pack should have at least one card"
 
-    shop_tokens_mask = obs.token_types[SHOP_START:SHOP_START + MAX_PACK_CARDS] == TokenType.SHOP
+    shop_tokens_mask = obs.token_types[SHOP_START : SHOP_START + MAX_PACK_CARDS] == TokenType.SHOP
     n_encoded = shop_tokens_mask.sum()
     assert n_encoded == n_pack_cards, f"Expected {n_pack_cards} pack tokens, got {n_encoded}"
 
@@ -309,5 +306,5 @@ def test_shop_tokens_present_in_shop_phase(game_data, vocab):
 
     shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
     n_items = len(shop_items)
-    shop_types = obs.token_types[SHOP_START:SHOP_START + n_items]
+    shop_types = obs.token_types[SHOP_START : SHOP_START + n_items]
     assert (shop_types == TokenType.SHOP).sum() == n_items

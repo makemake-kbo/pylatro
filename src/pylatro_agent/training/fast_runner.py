@@ -50,16 +50,13 @@ if TYPE_CHECKING:
 
 class FastRunner:
     __slots__ = (
-        "_blind_just_beaten",
         "_ctrl",
         "_done",
         "_mask",
         "_max_ante",
         "_max_steps",
-        "_pending_action",
         "_prev_signature",
         "_round_score",
-        "_selected_cards",
         "_state",
         "_step_count",
         "_steps_since_progress",
@@ -74,13 +71,10 @@ class FastRunner:
         self._ctrl = ctrl
         self._state: RunState = cast("RunState", ctrl.state)
         self._sub_phase: SubPhase = SubPhase.BLIND_SELECT
-        self._selected_cards: set[int] = set()
-        self._pending_action: str | None = None
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
         self._won: bool = False
-        self._blind_just_beaten: bool = False
         self._step_count: int = 0
         self._steps_since_progress: int = 0
         self._prev_signature: tuple | None = None
@@ -98,14 +92,6 @@ class FastRunner:
         return self._sub_phase
 
     @property
-    def selected_cards(self) -> set[int]:
-        return self._selected_cards
-
-    @property
-    def pending_action(self) -> str | None:
-        return self._pending_action
-
-    @property
     def max_ante(self) -> int:
         return self._max_ante
 
@@ -120,10 +106,6 @@ class FastRunner:
     @property
     def round_score(self) -> int:
         return self._round_score
-
-    @property
-    def blind_just_beaten(self) -> bool:
-        return self._blind_just_beaten
 
     @property
     def phase(self) -> GamePhase:
@@ -157,7 +139,6 @@ class FastRunner:
 
     @cython.locals(action_id=cython.int, _step_count=cython.int)
     def step(self, action_id: int) -> None:
-        self._blind_just_beaten = False
         self._step_count += 1
 
         try:
@@ -229,7 +210,6 @@ class FastRunner:
             result = ctrl.play_selected(list(indices))
             self._round_score += result.score.total
             if ctrl.blind_beaten():
-                self._blind_just_beaten = True
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
                     return

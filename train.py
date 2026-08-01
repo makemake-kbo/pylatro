@@ -41,7 +41,7 @@ def main():
         default=None,
         help=(
             "Mixture weight on the autoregressive hand/discard head (Phase 1). 0.0 "
-            "reproduces the historical candidate-only support; the default depends on "
+            "selects candidate-only support; the default depends on "
             "phase: 0.5 for supervised (trains the AR head on every label), 0.1 for PPO "
             "(targeted exploration). Pass explicitly to override."
         ),
@@ -322,11 +322,6 @@ def main():
         help="Enable adaptive entropy tuning. Disabled by default to preserve pretrained policies.",
     )
     parser.add_argument(
-        "--no-adaptive-entropy",
-        action="store_true",
-        help="Deprecated compatibility flag; adaptive entropy is disabled unless --adaptive-entropy is passed.",
-    )
-    parser.add_argument(
         "--gamma",
         type=float,
         default=0.997,
@@ -420,48 +415,10 @@ def main():
         ),
     )
     parser.add_argument(
-        "--local-hand-reward-scale",
-        type=float,
-        default=1.0,
-        help=(
-            "Group dense-scale for already-solved local hand-play shaping "
-            "(hand_subset/top1/top3 bonuses). Lower (e.g. 0.10) to stop local hand "
-            "play from drowning out strategic shop/economy signal. Default: 1.0."
-        ),
-    )
-    parser.add_argument(
-        "--progression-reward-scale",
-        type=float,
-        default=1.0,
-        help=(
-            "Group dense-scale for blind-clear / ante-advance / score & pressure "
-            "progress shaping. Lower to de-emphasize progression farming relative "
-            "to terminal win/loss. Default: 1.0."
-        ),
-    )
-    parser.add_argument(
-        "--shop-strategy-reward-scale",
-        type=float,
-        default=1.0,
-        help="Group dense-scale for strategic shop buy/reroll/leave shaping. Default: 1.0.",
-    )
-    parser.add_argument(
-        "--joker-strategy-reward-scale",
-        type=float,
-        default=1.0,
-        help="Group dense-scale for joker slot-fill / xmult / sell shaping. Default: 1.0.",
-    )
-    parser.add_argument(
-        "--economy-reward-scale",
-        type=float,
-        default=1.0,
-        help="Group dense-scale for interest-progress / overspend shaping. Default: 1.0.",
-    )
-    parser.add_argument(
         "--consumable-reward-scale",
         type=float,
         default=1.0,
-        help="Group dense-scale for planet/tarot/spectral improvement shaping. Default: 1.0.",
+        help="Additional scale for optional planet-alignment shaping. Default: 1.0.",
     )
     parser.add_argument(
         "--planet-unmatched-use-penalty-coeff",
@@ -486,54 +443,26 @@ def main():
         ),
     )
     parser.add_argument(
-        "--disable-shop-strategy-rewards",
-        action="store_true",
-        help="Disable context-aware strategic shop/economy/joker rewards (legacy flat shaping only).",
-    )
-    parser.add_argument(
-        "--reward-v2",
-        action="store_true",
-        help=(
-            "Use the Phase 2 PPO_V2_REWARD_CONFIG: kills all prescriptive heuristic-"
-            "agreement shaping and replaces it with policy-invariant potential-based "
-            "shaping. Terminal reward uses the halved v2 scale so outcome dominates "
-            "return. The gamma from --gamma is plumbed into the potential telescope."
-        ),
-    )
-    parser.add_argument(
         "--planet-match-shaping",
         action="store_true",
         help=(
-            "With --reward-v2: re-enable the planet-alignment shaping component "
+            "Enable the optional planet-alignment shaping component "
             "(bonuses for using/claiming planets that match played hand types, plus "
-            "the --planet-unmatched-*-penalty-coeff penalties). The sparse v2 signal "
+            "the --planet-unmatched-*-penalty-coeff penalties). The base signal "
             "cannot credit-assign planet choices; without this agents drift to ~90%% "
-            "unmatched planet use. No effect without --reward-v2."
+            "unmatched planet use."
         ),
     )
     parser.add_argument(
         "--score-build-potential",
-        "--build-curve-shaping",
         dest="score_build_potential",
         action="store_true",
         help=(
-            "With --reward-v2, enable contextual score/build potential shaping. "
+            "Enable contextual score/build potential shaping. "
             "It values representative score, blind readiness, early chip marginal "
-            "value, and capped recognized-scaler option value. "
-            "--build-curve-shaping is retained as a compatibility alias. "
-            "Default: disabled for compatibility with existing runs."
+            "value, and capped recognized-scaler option value. Default: disabled."
         ),
     )
-    parser.add_argument(
-        "--disable-score-build-potential",
-        dest="score_build_potential",
-        action="store_false",
-        help=(
-            "Explicitly disable contextual score/build potential shaping under "
-            "--reward-v2. This is the default and is useful for ablation scripts."
-        ),
-    )
-    parser.set_defaults(score_build_potential=False)
     parser.add_argument(
         "--critic-warmup-updates",
         type=int,
@@ -638,7 +567,7 @@ def main():
     parser.add_argument(
         "--sil-objective",
         choices=("advantage", "winning_bc"),
-        default=None,
+        default="advantage",
         help=(
             "SIL objective. 'advantage' samples all valid completed episodes "
             "(wins and losses), computes a current-critic MC advantage, and "
@@ -674,10 +603,7 @@ def main():
         "--sil-samples-per-episode",
         type=int,
         default=8,
-        help=(
-            "Maximum transitions one episode may contribute to a SIL / "
-            "calibration batch (default: 8)."
-        ),
+        help=("Maximum transitions one episode may contribute to a SIL / calibration batch (default: 8)."),
     )
     parser.add_argument(
         "--sil-logical-minibatches-per-update",
@@ -734,16 +660,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--no-sil-advantage-gating",
-        action=argparse.BooleanOptionalAction,  # type: ignore[attr-defined]
-        default=None,
-        help=(
-            "Deprecated alias for --sil-objective winning_bc. Retained for "
-            "backwards compatibility; passing it selects winning-BC and rejects "
-            "combinations with an explicit --sil-objective."
-        ),
-    )
-    parser.add_argument(
         "--inference-checkpoint",
         type=str,
         default=None,
@@ -781,22 +697,10 @@ def main():
     )
     args = parser.parse_args()
 
-    # Reconcile the deprecated --no-sil-advantage-gating flag with --sil-objective
-    # via the shared helper (see resolve_sil_objective for the full contract).
-    from pylatro_agent.training.ppo import resolve_sil_objective
-    try:
-        sil_objective = resolve_sil_objective(args.sil_objective, args.no_sil_advantage_gating)
-    except ValueError as exc:
-        parser.error(str(exc))
-    if args.no_sil_advantage_gating is not None:
-        logging.info(
-            "--no-sil-advantage-gating is deprecated; using --sil-objective %s.",
-            sil_objective,
-        )
-
     device = args.device
     if device is None:
         import torch
+
         if torch.backends.mps.is_available():
             device = "mps"
         elif torch.cuda.is_available():
@@ -806,12 +710,13 @@ def main():
     logging.info(f"Using device: {device}")
 
     from pylatro_agent.agent import AgentConfig
+
     agent_config = AgentConfig(
         d_model=args.d_model,
         n_layers=args.n_layers,
         n_heads=args.n_heads,
         d_ff=args.d_ff,
-        # 0 keeps the legacy scalar head; 51 atoms over [-8, 12] otherwise.
+        # 0 uses the scalar head; 51 atoms over [-8, 12] uses HL-Gauss.
         # In supervised mode a categorical head still trains (MSE through the
         # histogram mean); the HL-Gauss cross-entropy loss is PPO-only.
         value_bins=51 if args.hl_gauss else 0,
@@ -822,6 +727,7 @@ def main():
 
     if args.phase == "supervised":
         from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
+
         sup_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.5
         train_supervised(
             SupervisedConfig(
@@ -843,8 +749,9 @@ def main():
         )
 
     elif args.phase == "ppo":
-        from pylatro_agent.reward import PPO_V2_REWARD_CONFIG, RewardConfig
+        from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.ppo import PPOConfig, train_ppo
+
         if args.resume and args.pretrained:
             parser.error("Pass either --pretrained or --resume, not both.")
         if args.additional_updates is not None and not args.resume:
@@ -855,14 +762,6 @@ def main():
             parser.error(
                 "--updates and --additional-updates are mutually exclusive with --resume "
                 "(--updates is an absolute target, --additional-updates is relative)."
-            )
-        if args.reward_v2 and args.pretrained and not args.reinit_value_head:
-            parser.error(
-                "--reward-v2 with --pretrained requires --reinit-value-head (Phase 2.4): "
-                "the pretrained value head regresses returns from the old reward "
-                "function, producing systematically wrong advantages that can destroy "
-                "the BC policy before the critic re-converges. Pair it with "
-                "--critic-warmup-updates to warm the fresh head."
             )
         # --updates N overrides --steps and is converted internally to
         # N * envs * rollout_length timesteps via PPOConfig.total_updates.
@@ -892,7 +791,7 @@ def main():
                 target_kl_p95=args.target_kl_p95,
                 target_kl_max=args.target_kl_max,
                 min_minibatch_fraction=args.min_minibatch_fraction,
-                adaptive_entropy=args.adaptive_entropy and not args.no_adaptive_entropy,
+                adaptive_entropy=args.adaptive_entropy,
                 target_entropy=args.target_entropy,
                 entropy_ema_beta=args.entropy_ema_beta,
                 alpha_lr=args.alpha_lr,
@@ -922,7 +821,7 @@ def main():
                 sil_buffer_episodes=args.sil_buffer_episodes,
                 sil_batch_size=args.sil_batch_size,
                 sil_min_episodes=args.sil_min_episodes,
-                sil_objective=sil_objective,
+                sil_objective=args.sil_objective,
                 sil_advantage_floor=args.sil_advantage_floor,
                 sil_gate_open_percentile=args.sil_gate_open_percentile,
                 sil_gate_saturation_percentile=args.sil_gate_saturation_percentile,
@@ -934,37 +833,15 @@ def main():
                 sil_grad_diagnostics_interval=args.sil_grad_diagnostics_interval,
                 advantage_clip_sigma=args.advantage_clip_sigma,
                 counterfactual_diagnostic_interval=args.counterfactual_diagnostic_interval,
-                # A RewardConfig with all scales 1.0 and strategic rewards on is
-                # field-for-field identical to DEFAULT_REWARD_CONFIG, so runs
-                # without these flags keep their exact prior shaping behavior.
-                # --reward-v2 overrides with the Phase 2 potential-based config.
-                reward_config=(
-                    PPO_V2_REWARD_CONFIG(
-                        gamma=args.gamma,
-                        win_ante=args.win_ante or 8,
-                        planet_match_shaping=args.planet_match_shaping,
-                        planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
-                        planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-                        build_curve_shaping=args.score_build_potential,
-                        dense_reward_scale=args.dense_reward_scale,
-                        progression_reward_scale=args.progression_reward_scale,
-                        consumable_reward_scale=args.consumable_reward_scale,
-                    )
-                    if args.reward_v2
-                    else RewardConfig(
-                        dense_reward_scale=args.dense_reward_scale,
-                        local_hand_reward_scale=args.local_hand_reward_scale,
-                        progression_reward_scale=args.progression_reward_scale,
-                        shop_strategy_reward_scale=args.shop_strategy_reward_scale,
-                        joker_strategy_reward_scale=args.joker_strategy_reward_scale,
-                        economy_reward_scale=args.economy_reward_scale,
-                        consumable_reward_scale=args.consumable_reward_scale,
-                        planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
-                        planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-                        enable_shop_strategy_rewards=not args.disable_shop_strategy_rewards,
-                        enable_economy_strategy_rewards=not args.disable_shop_strategy_rewards,
-                        enable_joker_context_rewards=not args.disable_shop_strategy_rewards,
-                    )
+                reward_config=RewardConfig(
+                    gamma=args.gamma,
+                    potential_win_ante=args.win_ante or 8,
+                    enable_planet_match_rewards=args.planet_match_shaping,
+                    planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+                    planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
+                    enable_score_build_potential=args.score_build_potential,
+                    dense_reward_scale=args.dense_reward_scale,
+                    consumable_reward_scale=args.consumable_reward_scale,
                 ),
             ),
             agent_config=agent_config,
@@ -975,6 +852,7 @@ def main():
 
     elif args.phase == "self_play":
         from pylatro_agent.training.self_play import SelfPlayConfig, train_self_play
+
         train_self_play(
             SelfPlayConfig(
                 ppo_timesteps_per_stage=args.steps,

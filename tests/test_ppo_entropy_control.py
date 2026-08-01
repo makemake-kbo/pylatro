@@ -15,10 +15,8 @@ from pylatro_agent.training.ppo import (
     _load_checkpoint_compatible,
     _make_alpha_optimizer,
     _make_policy_optimizer,
-    _masked_kl_divergence,
-    _mean_normalized_action_type_entropy,
-    _mean_normalized_entropy,
     _mean_valid_action_type_count,
+    _per_state_normalized_entropy,
     _ppo_terminal_flags,
     _record_action_diagnostics,
     _RolloutMetrics,
@@ -144,8 +142,8 @@ def _make_signal_buffer(
             teacher_actions=teacher,
             teacher_forced=forced,
         )
-    buffer.advantages[:len(actions)] = np.asarray(advantages, dtype=np.float32)
-    buffer.returns[:len(actions)] = 0.0
+    buffer.advantages[: len(actions)] = np.asarray(advantages, dtype=np.float32)
+    buffer.returns[: len(actions)] = 0.0
     return buffer
 
 
@@ -508,7 +506,7 @@ def test_mean_normalized_entropy_is_one_for_uniform_binary_policy() -> None:
     entropy = torch.distributions.Categorical(probs=probs).entropy()
     action_mask = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
 
-    normalized = _mean_normalized_entropy(entropy, action_mask)
+    normalized = _per_state_normalized_entropy(entropy, action_mask).mean()
 
     assert normalized.item() == pytest.approx(1.0)
 
@@ -518,35 +516,7 @@ def test_mean_normalized_entropy_is_zero_when_only_one_action_is_valid() -> None
     entropy = torch.distributions.Categorical(probs=probs).entropy()
     action_mask = torch.tensor([[1.0]], dtype=torch.float32)
 
-    normalized = _mean_normalized_entropy(entropy, action_mask)
-
-    assert normalized.item() == pytest.approx(0.0)
-
-
-def test_mean_normalized_action_type_entropy_is_one_for_uniform_type_mass() -> None:
-    probs = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
-    mask = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
-    probs[0, ActionRange.SHOP_BUY_START] = 0.25
-    probs[0, ActionRange.SHOP_BUY_START + 1] = 0.25
-    probs[0, ActionRange.SHOP_LEAVE] = 0.5
-    mask[0, ActionRange.SHOP_BUY_START] = 1.0
-    mask[0, ActionRange.SHOP_BUY_START + 1] = 1.0
-    mask[0, ActionRange.SHOP_LEAVE] = 1.0
-
-    normalized = _mean_normalized_action_type_entropy(probs, mask)
-
-    assert normalized.item() == pytest.approx(1.0)
-
-
-def test_mean_normalized_action_type_entropy_is_zero_with_one_valid_type() -> None:
-    probs = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
-    mask = torch.zeros((1, NUM_ACTIONS), dtype=torch.float32)
-    probs[0, ActionRange.PLAY_SUBSET_START] = 0.6
-    probs[0, ActionRange.PLAY_SUBSET_START + 1] = 0.4
-    mask[0, ActionRange.PLAY_SUBSET_START] = 1.0
-    mask[0, ActionRange.PLAY_SUBSET_START + 1] = 1.0
-
-    normalized = _mean_normalized_action_type_entropy(probs, mask)
+    normalized = _per_state_normalized_entropy(entropy, action_mask).mean()
 
     assert normalized.item() == pytest.approx(0.0)
 
@@ -565,27 +535,6 @@ def test_mean_valid_action_type_count_counts_distinct_types() -> None:
     assert mean_count == pytest.approx(2.5)
 
 
-def test_masked_kl_divergence_is_zero_for_identical_logits() -> None:
-    logits = torch.tensor([[2.0, 0.0, -4.0]], dtype=torch.float32)
-    mask = torch.tensor([[1.0, 1.0, 0.0]], dtype=torch.float32)
-
-    kl = _masked_kl_divergence(logits, logits, mask)
-
-    assert torch.isfinite(kl)
-    assert kl.item() == pytest.approx(0.0)
-
-
-def test_masked_kl_divergence_stays_finite_for_extreme_valid_logits() -> None:
-    policy_logits = torch.tensor([[0.0, -120.0]], dtype=torch.float32)
-    reference_logits = torch.tensor([[-120.0, 0.0]], dtype=torch.float32)
-    mask = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
-
-    kl = _masked_kl_divergence(policy_logits, reference_logits, mask)
-
-    assert torch.isfinite(kl)
-    assert kl.item() > 0.0
-
-
 def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:
     infos = {
         "reward_total": np.array([0.25, 0.5], dtype=np.float32),
@@ -601,7 +550,7 @@ def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:
 
 
 def test_effective_reward_config_pins_potential_gamma_without_mutating_input() -> None:
-    original = RewardConfig(gamma=0.9, enable_potential_shaping=True)
+    original = RewardConfig(gamma=0.9)
     effective = _effective_reward_config(PPOConfig(gamma=0.997, reward_config=original))
 
     assert effective.gamma == pytest.approx(0.997)
@@ -891,8 +840,7 @@ def test_dagger_before_ppo_inflates_kl_beyond_target() -> None:
     assert ppo_stats.ppo_minibatches_processed
     total_minibatches = int(np.sum(ppo_stats.ppo_minibatches_processed))
     assert total_minibatches >= 2, (
-        f"PPO should process multiple mini-batches when KL is controlled, "
-        f"got {total_minibatches}"
+        f"PPO should process multiple mini-batches when KL is controlled, got {total_minibatches}"
     )
 
     _run_dagger_bc_update(
@@ -992,9 +940,7 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     config = _freeze_test_config(critic_updates_trunk=True)
 
     # 1) Unfrozen update with signal: builds Adam momentum on policy params.
-    warm_buffer = _make_signal_buffer(
-        actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[-1, -1]
-    )
+    warm_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[-1, -1])
     warm_buffer.returns[:2] = 5.0
     _run_ppo_update(
         model=model,
@@ -1020,9 +966,7 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
 
     # 2) Frozen update with a large value error that would move the trunk if
     #    the critic loss leaked past the value head.
-    frozen_buffer = _make_signal_buffer(
-        actions=[action, action], advantages=[1.0, -1.0], teacher_actions=[-1, -1]
-    )
+    frozen_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, -1.0], teacher_actions=[-1, -1])
     frozen_buffer.returns[:2] = 10.0
     _run_ppo_update(
         model=model,
@@ -1057,9 +1001,7 @@ def test_frozen_update_skips_teacher_pass_and_reports_zero_distill_stats() -> No
     torch.nn.init.constant_(model.value_head.weight, 0.5)
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
     config = _freeze_test_config(heuristic_distill_coeff=0.5)
-    buffer = _make_signal_buffer(
-        actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher]
-    )
+    buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher])
     buffer.returns[:2] = 10.0
 
     policy_before = model.policy_head.weight.detach().clone()
@@ -1092,9 +1034,7 @@ def test_disabled_distillation_skips_teacher_diagnostics() -> None:
     model = _TinyPpoModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
     config = _freeze_test_config(value_loss_coeff=0.0, heuristic_distill_coeff=0.0)
-    buffer = _make_signal_buffer(
-        actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher]
-    )
+    buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher])
 
     stats = _run_ppo_update(
         model=model,

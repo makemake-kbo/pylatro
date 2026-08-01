@@ -1,9 +1,7 @@
-"""Checkpoint save/load with tokenizer-version guard.
+"""Checkpoint save/load with a tokenizer-version guard.
 
-Legacy checkpoints were raw `state_dict()` tensors. New checkpoints are a
-dict with a `tokenizer_version` field plus the state dict, so that loading
-an old model against a newer observation format fails loudly instead of
-silently mis-aligning.
+Every supported checkpoint contains a ``tokenizer_version`` and state dict so
+an observation-schema mismatch fails loudly instead of silently mis-aligning.
 
 Full PPO checkpoints additionally carry optimizer state, update counters,
 entropy-controller state, RNG states, and config snapshots so that a run can
@@ -53,10 +51,7 @@ def load_checkpoint_payload(
     path: str | Path,
     device: torch.device | str,
 ) -> dict[str, Any]:
-    """Load a checkpoint and verify its tokenizer_version matches.
-
-    Accepts both the new dict format and legacy raw state_dicts (warning
-    logged for the latter, no version can be verified).
+    """Load a checkpoint and verify its tokenizer version.
 
     Loads with ``weights_only=True`` first (the safe default for arbitrary
     checkpoints). Full PPO resume checkpoints carry optimizer/NumPy RNG state
@@ -73,22 +68,20 @@ def load_checkpoint_payload(
             blob = torch.load(path, map_location=device, weights_only=False)
         else:
             raise
-    if isinstance(blob, dict) and "state_dict" in blob:
-        saved_version = blob.get("tokenizer_version")
-        if saved_version != TOKENIZER_VERSION:
-            raise RuntimeError(
-                f"Checkpoint {path} was saved with tokenizer_version="
-                f"{saved_version!r}, but current TOKENIZER_VERSION="
-                f"{TOKENIZER_VERSION}. Observation format has changed; "
-                "retrain or pin the tokenizer version."
-            )
-        return blob
-    logger.warning(
-        "Checkpoint %s has no tokenizer_version stamp (legacy format); "
-        "loading without version check. Re-save to lock in the current version.",
-        path,
-    )
-    return {"state_dict": blob, "tokenizer_version": None}
+    if not isinstance(blob, dict) or "state_dict" not in blob:
+        raise RuntimeError(
+            f"Checkpoint {path} has no versioned payload. Raw state dicts are unsupported; "
+            "retrain with the current tokenizer."
+        )
+    saved_version = blob.get("tokenizer_version")
+    if saved_version != TOKENIZER_VERSION:
+        raise RuntimeError(
+            f"Checkpoint {path} was saved with tokenizer_version="
+            f"{saved_version!r}, but current TOKENIZER_VERSION="
+            f"{TOKENIZER_VERSION}. Observation format has changed; "
+            "retrain or pin the tokenizer version."
+        )
+    return blob
 
 
 def capture_rng_states() -> dict[str, Any]:
@@ -122,9 +115,7 @@ def restore_rng_states(states: dict[str, Any]) -> None:
     if "torch_cuda" in states and torch.cuda.is_available():
         # Checkpoints loaded with map_location="cuda" move these tensors onto
         # the accelerator, but set_rng_state_all requires CPU ByteTensors.
-        cuda_states = [
-            state.to(device="cpu", dtype=torch.uint8) for state in states["torch_cuda"]
-        ]
+        cuda_states = [state.to(device="cpu", dtype=torch.uint8) for state in states["torch_cuda"]]
         torch.cuda.set_rng_state_all(cuda_states)
 
 
@@ -169,9 +160,7 @@ def save_ppo_checkpoint(
         "total_steps": int(total_steps),
         "planned_updates": int(planned_updates),
         "entropy_coeff": float(entropy_coeff),
-        "entropy_signal_ema": (
-            float(entropy_signal_ema) if entropy_signal_ema is not None else None
-        ),
+        "entropy_signal_ema": (float(entropy_signal_ema) if entropy_signal_ema is not None else None),
         "lr": float(lr),
         "rng_states": capture_rng_states(),
     }
@@ -232,8 +221,7 @@ def load_ppo_resume_payload(
     blob = torch.load(path, map_location=device, weights_only=False)
     if not (isinstance(blob, dict) and blob.get("checkpoint_format") == PPO_CHECKPOINT_FORMAT):
         raise RuntimeError(
-            f"Checkpoint {path} is a weights-only checkpoint; "
-            "use --pretrained or resume from a full PPO checkpoint."
+            f"Checkpoint {path} is a weights-only checkpoint; use --pretrained or resume from a full PPO checkpoint."
         )
     saved_version = blob.get("tokenizer_version")
     if saved_version != TOKENIZER_VERSION:

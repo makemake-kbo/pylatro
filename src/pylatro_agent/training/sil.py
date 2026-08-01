@@ -181,9 +181,7 @@ class EpisodeReplayBuffer:
             evicted = self._episodes.pop(0)
             self._num_transitions -= int(evicted["actions"].shape[0])
 
-    def _eligible_row_indices(
-        self, episode: dict, *, include_teacher_forced: bool
-    ) -> np.ndarray:
+    def _eligible_row_indices(self, episode: dict, *, include_teacher_forced: bool) -> np.ndarray:
         """Rows usable for SIL loss / gate calibration under the teacher filter."""
         if include_teacher_forced:
             return np.arange(episode["actions"].shape[0], dtype=np.int64)
@@ -250,9 +248,7 @@ class EpisodeReplayBuffer:
 
         return self._materialize_batch(picks, device)
 
-    def _materialize_batch(
-        self, picks: list[tuple[dict, int]], device: torch.device
-    ) -> dict[str, torch.Tensor]:
+    def _materialize_batch(self, picks: list[tuple[dict, int]], device: torch.device) -> dict[str, torch.Tensor]:
         tokens = np.stack([ep["tokens"][t] for ep, t in picks])
         token_types = np.stack([ep["token_types"][t] for ep, t in picks])
         scalars = np.stack([ep["scalars"][t] for ep, t in picks])
@@ -267,9 +263,7 @@ class EpisodeReplayBuffer:
         )
         episode_ids = np.asarray([float(ep["episode_id"]) for ep, t in picks], dtype=np.float32)
         outcomes = np.asarray([1.0 if ep["won"] else 0.0 for ep, t in picks], dtype=np.float32)
-        episode_returns = np.asarray(
-            [float(ep["total_reward"]) for ep, t in picks], dtype=np.float32
-        )
+        episode_returns = np.asarray([float(ep["total_reward"]) for ep, t in picks], dtype=np.float32)
         return {
             "tokens": torch.as_tensor(tokens.astype(np.int64), device=device),
             "token_types": torch.as_tensor(token_types.astype(np.int64), device=device),
@@ -283,10 +277,6 @@ class EpisodeReplayBuffer:
             "episode_outcomes": torch.as_tensor(outcomes, device=device),
             "episode_returns": torch.as_tensor(episode_returns, device=device),
         }
-
-
-# Backwards-compatibility alias: earlier scripts/tests imported ``WinEpisodeBuffer``.
-WinEpisodeBuffer = EpisodeReplayBuffer
 
 
 class SILEpisodeTracker:

@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
-from pylatro_agent.training.supervised import _collate_batch, _discounted_returns
+from pylatro_agent.training.supervised import SupervisedConfig, _collate_batch, _discounted_returns
 
 
 def _dummy_obs() -> dict[str, np.ndarray]:
@@ -36,22 +36,7 @@ def test_collate_batch_prefers_recorded_return_target() -> None:
             }
         ],
         torch.device("cpu"),
+        SupervisedConfig(),
     )
 
     assert batch["value_target"].tolist() == [-0.25]
-
-
-def test_collate_batch_falls_back_to_legacy_value_target() -> None:
-    batch = _collate_batch(
-        [
-            {
-                "obs": _dummy_obs(),
-                "action": 0,
-                "won": False,
-                "max_ante": 3,
-            }
-        ],
-        torch.device("cpu"),
-    )
-
-    assert batch["value_target"].tolist() == [-7.0]

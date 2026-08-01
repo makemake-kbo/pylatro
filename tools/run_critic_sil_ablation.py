@@ -103,9 +103,8 @@ RESERVED_SHARED_FLAGS = {
 }
 
 XMULT_BASE_ARGS = (
-    "--reward-v2",
     "--planet-match-shaping",
-    "--build-curve-shaping",
+    "--score-build-potential",
     "--planet-unmatched-use-penalty-coeff",
     "0.4",
     "--planet-unmatched-claim-penalty-coeff",
@@ -176,21 +175,32 @@ def _sil_treatment_flags(
     if treatment == "no_sil":
         return ["--sil-coeff", "0"]
     common = [
-        "--sil-coeff", str(sil_coeff),
-        "--sil-coeff-final", "0",
-        "--sil-decay-fraction", "1.0",
-        "--sil-logical-minibatches-per-update", "1",
+        "--sil-coeff",
+        str(sil_coeff),
+        "--sil-coeff-final",
+        "0",
+        "--sil-decay-fraction",
+        "1.0",
+        "--sil-logical-minibatches-per-update",
+        "1",
     ]
     if treatment == "advantage_sil":
-        return [*common,
-            "--sil-objective", "advantage",
-            "--sil-gate-open-percentile", "80",
-            "--sil-gate-saturation-percentile", "95",
-            "--sil-advantage-floor", "0.25",
+        return [
+            *common,
+            "--sil-objective",
+            "advantage",
+            "--sil-gate-open-percentile",
+            "80",
+            "--sil-gate-saturation-percentile",
+            "95",
+            "--sil-advantage-floor",
+            "0.25",
         ]
     if treatment == "winning_bc":
-        return [*common,
-            "--sil-objective", "winning_bc",
+        return [
+            *common,
+            "--sil-objective",
+            "winning_bc",
         ]
     raise ValueError(f"unknown SIL treatment: {treatment}")
 
@@ -277,14 +287,17 @@ def _build_command(
         command.append("--hl-gauss")
     # Shared replay constants held identical across arms so only the SIL
     # treatment differs (no-ops for the no_sil control where sil-coeff is 0).
-    command.extend([
-        "--sil-buffer-episodes", str(sil_buffer_episodes),
-        "--sil-batch-size", str(sil_batch_size),
-        "--sil-samples-per-episode", str(sil_samples_per_episode),
-    ])
     command.extend(
-        _sil_treatment_flags(arm.sil_treatment, sil_coeff=sil_coeff)
+        [
+            "--sil-buffer-episodes",
+            str(sil_buffer_episodes),
+            "--sil-batch-size",
+            str(sil_batch_size),
+            "--sil-samples-per-episode",
+            str(sil_samples_per_episode),
+        ]
     )
+    command.extend(_sil_treatment_flags(arm.sil_treatment, sil_coeff=sil_coeff))
     command.extend(shared_args)
     return command
 
@@ -511,6 +524,7 @@ def _paired_effects(
     ``advantage_sil - winning_bc`` for the given critic. Returns None unless
     all three arms of that critic have the requested metric/statistic.
     """
+
     def value(treatment: str) -> float | None:
         arm_id = f"{critic}_{treatment}"
         stats = arms_by_id.get(arm_id, {}).get("metrics", {}).get(metric)
@@ -559,9 +573,7 @@ def build_summary(
     for cell in manifest["cells"]:
         raw_metrics = metric_reader(Path(cell["log_dir"]), METRIC_TAGS)
         metrics = {
-            tag: stats
-            for tag, events in raw_metrics.items()
-            if (stats := _metric_stats(events, tail)) is not None
+            tag: stats for tag, events in raw_metrics.items() if (stats := _metric_stats(events, tail)) is not None
         }
         cell_summaries.append(
             {
@@ -584,11 +596,7 @@ def build_summary(
         for tag in METRIC_TAGS:
             statistic_summary: dict[str, Any] = {}
             for statistic_name in ("last", "tail_mean"):
-                values = [
-                    cell["metrics"][tag][statistic_name]
-                    for cell in arm_cells
-                    if tag in cell["metrics"]
-                ]
+                values = [cell["metrics"][tag][statistic_name] for cell in arm_cells if tag in cell["metrics"]]
                 aggregate = _aggregate(values)
                 if aggregate is not None:
                     aggregate["by_seed"] = {
@@ -616,9 +624,7 @@ def build_summary(
         for statistic_name in ("last", "tail_mean"):
             per_seed: dict[str, Any] = {}
             for seed in manifest["seeds"]:
-                seed_arms = {
-                    cell["arm_id"]: cell for cell in cell_summaries if cell["seed"] == seed
-                }
+                seed_arms = {cell["arm_id"]: cell for cell in cell_summaries if cell["seed"] == seed}
                 for critic in ("scalar", "hl_gauss"):
                     result = _paired_effects(seed_arms, effect_metric, statistic_name, critic)
                     if result is not None:
@@ -627,9 +633,7 @@ def build_summary(
                 metric_effects[statistic_name] = {
                     "per_seed": per_seed,
                     "aggregate": {
-                        name: _aggregate(
-                            [seed_effects[name] for seed_effects in per_seed.values()]
-                        )
+                        name: _aggregate([seed_effects[name] for seed_effects in per_seed.values()])
                         for name in PAIRED_EFFECT_NAMES
                     },
                 }
@@ -660,10 +664,7 @@ def _arm_metric_mean(arm: dict[str, Any], tag: str, statistic_name: str = "tail_
 
 def print_summary(summary: dict[str, Any]) -> None:
     print(f"\nArm summary across {len(summary['seeds'])} seed(s)")
-    print(
-        f"{'arm':<26} {'eval tail':>10} {'rollout tail':>13} "
-        f"{'ep reward':>10} {'SIL gate':>9} {'SIL ratio':>9}"
-    )
+    print(f"{'arm':<26} {'eval tail':>10} {'rollout tail':>13} {'ep reward':>10} {'SIL gate':>9} {'SIL ratio':>9}")
     for arm_spec in ARM_SPECS:
         arm = summary["arms"][arm_spec.arm_id]
         print(
@@ -693,10 +694,7 @@ def print_summary(summary: dict[str, Any]) -> None:
                     f"(sd {aggregate['std'] * (100.0 if pct else 1.0):.3f}, n={aggregate['n']})"
                 )
     if not summary.get("paired_effects"):
-        print(
-            "\nPaired effects need eval/win_rate data for all three arms of at "
-            "least one critic/seed pairing."
-        )
+        print("\nPaired effects need eval/win_rate data for all three arms of at least one critic/seed pairing.")
 
 
 def _load_manifest(output_dir: Path) -> dict[str, Any]:
@@ -706,9 +704,7 @@ def _load_manifest(output_dir: Path) -> dict[str, Any]:
     with manifest_path.open(encoding="utf-8") as handle:
         manifest = json.load(handle)
     if manifest.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError(
-            f"Unsupported manifest schema {manifest.get('schema_version')}; expected {SCHEMA_VERSION}."
-        )
+        raise ValueError(f"Unsupported manifest schema {manifest.get('schema_version')}; expected {SCHEMA_VERSION}.")
     return manifest
 
 
@@ -717,9 +713,7 @@ def _add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--checkpoint", required=True, help="Common weights checkpoint for every job.")
     parser.add_argument("--output-dir", required=True, help="New directory for manifests, runs, and checkpoints.")
     parser.add_argument("--updates", type=int, required=True, help="PPO updates per job.")
-    parser.add_argument(
-        "--seeds", type=_parse_seeds, default=[0], help="Comma-separated training seeds (default: 0)."
-    )
+    parser.add_argument("--seeds", type=_parse_seeds, default=[0], help="Comma-separated training seeds (default: 0).")
     parser.add_argument(
         "--sil-coeff",
         type=float,

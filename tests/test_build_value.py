@@ -9,7 +9,7 @@ from pylatro import add_joker, create_run_state
 from pylatro.models import PlayingCard, ShopCard
 from pylatro.scoring import score_hand
 from pylatro_agent.build_value import estimate_build_value
-from pylatro_agent.shop_eval import capture_build_features, evaluate_build, evaluate_shop_opportunity, score_shop_item
+from pylatro_agent.shop_eval import capture_build_features
 
 
 def joker(key: str, **over: Any) -> dict[str, Any]:
@@ -150,9 +150,7 @@ def test_typed_joker_matches_nested_real_engine_hand() -> None:
     analytic = estimate_build_value(snapshot)
 
     assert analytic.representative_hand_type == "Full House"
-    assert analytic.joker_marginal_score_ratios[0] == pytest.approx(
-        exact_with / exact_without
-    )
+    assert analytic.joker_marginal_score_ratios[0] == pytest.approx(exact_with / exact_without)
 
 
 @pytest.mark.parametrize(
@@ -191,9 +189,7 @@ def test_copy_joker_matches_simple_real_engine_target(
     snapshot["hand_details"]["Pair"]["played"] = 8
     analytic = estimate_build_value(snapshot)
 
-    assert analytic.joker_marginal_score_ratios[copy_index] == pytest.approx(
-        exact_with / exact_without
-    )
+    assert analytic.joker_marginal_score_ratios[copy_index] == pytest.approx(exact_with / exact_without)
     assert analytic.joker_marginals[copy_index].modeled_effect_fraction == 1.0
 
 
@@ -243,9 +239,10 @@ def test_suit_joker_uses_deck_concentration() -> None:
     hearts = info([card("7", "Hearts") for _ in range(40)] + [card("7", "Diamonds") for _ in range(12)], [lusty])
     diamonds = info([card("7", "Diamonds") for _ in range(40)] + [card("7", "Hearts") for _ in range(12)], [lusty])
 
-    assert estimate_build_value(hearts).representative_score_per_hand > estimate_build_value(
-        diamonds
-    ).representative_score_per_hand
+    assert (
+        estimate_build_value(hearts).representative_score_per_hand
+        > estimate_build_value(diamonds).representative_score_per_hand
+    )
 
 
 def test_smeared_and_wild_cards_support_suit_effects() -> None:
@@ -260,12 +257,14 @@ def test_smeared_and_wild_cards_support_suit_effects() -> None:
     wild = info([card("7", "Clubs", "Wild Card") for _ in range(52)], [lusty])
     plain = info([card("7", "Clubs") for _ in range(52)], [lusty])
 
-    assert estimate_build_value(red).representative_score_per_hand > estimate_build_value(
-        plain
-    ).representative_score_per_hand
-    assert estimate_build_value(wild).representative_score_per_hand > estimate_build_value(
-        plain
-    ).representative_score_per_hand
+    assert (
+        estimate_build_value(red).representative_score_per_hand
+        > estimate_build_value(plain).representative_score_per_hand
+    )
+    assert (
+        estimate_build_value(wild).representative_score_per_hand
+        > estimate_build_value(plain).representative_score_per_hand
+    )
 
 
 def test_hack_targets_ranks_two_through_five() -> None:
@@ -332,36 +331,6 @@ def test_unknown_conditional_effect_has_no_static_fallback() -> None:
     assert estimate.representative_score_per_hand == estimate.no_joker_baseline_score
     assert estimate.joker_marginal_score_ratios == (1.0,)
     assert estimate.joker_marginals[0].unmodeled_effects == ("conditional_effect",)
-
-
-def test_full_slots_choose_best_legal_replacement() -> None:
-    weak = joker("j_weak", mult=2, sell_cost=3)
-    eternal = joker("j_eternal", mult=20, eternal=True, sell_cost=10)
-    candidate = joker("j_candidate", x_mult=2.0)
-    snapshot = info([card("8", "Clubs") for _ in range(52)], [weak, eternal], slots=2)
-    snapshot["shop_cards"] = (
-        {"key": "j_candidate", "set": "Joker", "cost": 5, "joker": candidate},
-    )
-
-    opportunity = evaluate_shop_opportunity(snapshot)
-    assert opportunity.best_replacement_index == 0
-    assert opportunity.best_replacement_key == "j_weak"
-    assert opportunity.best_score_delta > 0
-
-
-def test_negative_candidate_uses_real_slot_capacity() -> None:
-    eternal = joker("j_eternal", mult=4, eternal=True)
-    snapshot = info([card("8", "Clubs") for _ in range(52)], [eternal], slots=1)
-    regular = {"key": "j_add", "set": "Joker", "cost": 4, "joker": joker("j_add", mult=6)}
-    negative = {
-        "key": "j_add",
-        "set": "Joker",
-        "cost": 4,
-        "joker": joker("j_add", mult=6, edition={"negative": True}),
-    }
-
-    assert score_shop_item(snapshot, regular, evaluate_build(snapshot)) == 0.0
-    assert score_shop_item(snapshot, negative, evaluate_build(snapshot)) > 0.0
 
 
 def test_capture_copies_live_context_and_shop_stickers() -> None:

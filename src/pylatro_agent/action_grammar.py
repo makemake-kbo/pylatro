@@ -55,9 +55,7 @@ from .subset_actions import (
 
 GRAMMAR_ACTION_TYPES: tuple[ActionType, ...] = tuple(ActionType)
 NUM_GRAMMAR_ACTIONS = len(GRAMMAR_ACTION_TYPES)
-ACTION_TYPE_TO_GRAMMAR_INDEX = {
-    action_type: idx for idx, action_type in enumerate(GRAMMAR_ACTION_TYPES)
-}
+ACTION_TYPE_TO_GRAMMAR_INDEX = {action_type: idx for idx, action_type in enumerate(GRAMMAR_ACTION_TYPES)}
 
 _PLAY = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
 _DISCARD = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.DISCARD_SUBSET]
@@ -86,7 +84,7 @@ for _action_id in range(NUM_ACTIONS):
 
 _HAND_SUBSET_SLOT_PAD = np.full((len(HAND_SUBSETS), 5), -1, dtype=np.int64)
 for _idx, _subset in enumerate(HAND_SUBSETS):
-    _HAND_SUBSET_SLOT_PAD[_idx, :len(_subset)] = _subset
+    _HAND_SUBSET_SLOT_PAD[_idx, : len(_subset)] = _subset
 
 _CONSUMABLE_SUBSET_SLOT_PAD = np.full(
     (len(CONSUMABLE_HAND_SUBSETS), MAX_CONSUMABLE_HAND_TARGETS),
@@ -94,7 +92,7 @@ _CONSUMABLE_SUBSET_SLOT_PAD = np.full(
     dtype=np.int64,
 )
 for _idx, _subset in enumerate(CONSUMABLE_HAND_SUBSETS):
-    _CONSUMABLE_SUBSET_SLOT_PAD[_idx, :len(_subset)] = _subset
+    _CONSUMABLE_SUBSET_SLOT_PAD[_idx, : len(_subset)] = _subset
 
 _BIT_TABLE_SIZE = 1 << MAX_HAND_SIZE
 _BIT_TO_HAND_SUBSET_INDEX = np.full(_BIT_TABLE_SIZE, -1, dtype=np.int64)
@@ -116,26 +114,19 @@ _TENSOR_CACHE: dict[tuple[int, str, torch.dtype], torch.Tensor] = {}
 @dataclass(slots=True)
 class ActionGrammarOutput:
     macro_logits: torch.Tensor
-    hand_count_logits: torch.Tensor          # (B, 2, 5), order: play, discard
-    hand_card_logits: torch.Tensor           # (B, 2, MAX_HAND_SIZE)
-    candidate_play_logits: torch.Tensor      # (B, MAX_PLAY_CANDIDATES)
-    candidate_discard_logits: torch.Tensor   # (B, MAX_DISCARD_CANDIDATES)
-    consumable_slot_logits: torch.Tensor     # (B, 3, MAX_CONSUMABLE_SLOTS), no/hand/joker
-    consumable_count_logits: torch.Tensor    # (B, MAX_CONSUMABLE_SLOTS, 3)
-    consumable_card_logits: torch.Tensor     # (B, MAX_CONSUMABLE_SLOTS, MAX_HAND_SIZE)
-    consumable_joker_logits: torch.Tensor    # (B, MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS)
-    shop_buy_logits: torch.Tensor            # (B, MAX_SHOP_ITEMS)
-    shop_sell_joker_logits: torch.Tensor     # (B, MAX_JOKER_SLOTS)
+    hand_count_logits: torch.Tensor  # (B, 2, 5), order: play, discard
+    hand_card_logits: torch.Tensor  # (B, 2, MAX_HAND_SIZE)
+    candidate_play_logits: torch.Tensor  # (B, MAX_PLAY_CANDIDATES)
+    candidate_discard_logits: torch.Tensor  # (B, MAX_DISCARD_CANDIDATES)
+    consumable_slot_logits: torch.Tensor  # (B, 3, MAX_CONSUMABLE_SLOTS), no/hand/joker
+    consumable_count_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS, 3)
+    consumable_card_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS, MAX_HAND_SIZE)
+    consumable_joker_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS)
+    shop_buy_logits: torch.Tensor  # (B, MAX_SHOP_ITEMS)
+    shop_sell_joker_logits: torch.Tensor  # (B, MAX_JOKER_SLOTS)
     shop_sell_consumable_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS)
-    pack_claim_logits: torch.Tensor          # (B, MAX_PACK_CARDS)
-    joker_move_logits: torch.Tensor | None = None  # (B, 56); optional for legacy test fixtures
-
-    def __post_init__(self) -> None:
-        if self.joker_move_logits is None:
-            self.joker_move_logits = self.macro_logits.new_zeros(
-                self.macro_logits.shape[0],
-                MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1),
-            )
+    pack_claim_logits: torch.Tensor  # (B, MAX_PACK_CARDS)
+    joker_move_logits: torch.Tensor  # (B, 56)
 
 
 class ActionGrammarHead(nn.Module):
@@ -210,8 +201,8 @@ class ActionGrammarHead(nn.Module):
         hand_card_logits = self.hand_card_head(hand_hidden).permute(0, 2, 1)
         hand_card_logits = hand_card_logits.masked_fill(hand_present.unsqueeze(1) <= 0, -1e8)
 
-        slot_tokens = backbone_out[:, CONSUMABLE_START:CONSUMABLE_START + MAX_CONSUMABLE_SLOTS]
-        joker_tokens = backbone_out[:, JOKER_START:JOKER_START + MAX_JOKER_SLOTS]
+        slot_tokens = backbone_out[:, CONSUMABLE_START : CONSUMABLE_START + MAX_CONSUMABLE_SLOTS]
+        joker_tokens = backbone_out[:, JOKER_START : JOKER_START + MAX_JOKER_SLOTS]
         slot_state = state.unsqueeze(1).expand(-1, MAX_CONSUMABLE_SLOTS, -1)
         consumable_count_logits = self.consumable_count_head(torch.cat([slot_tokens, slot_state], dim=-1))
 
@@ -222,13 +213,13 @@ class ActionGrammarHead(nn.Module):
         consumable_card_logits = consumable_card_logits.masked_fill(hand_present.unsqueeze(1) <= 0, -1e8)
         consumable_joker_logits = torch.einsum("bsc,bjc->bsj", slot_ctx, joker_ctx)
 
-        shop_tokens = backbone_out[:, SHOP_START:SHOP_START + MAX_SHOP_ITEMS]
+        shop_tokens = backbone_out[:, SHOP_START : SHOP_START + MAX_SHOP_ITEMS]
         shop_global = self.shop_global_head(state)
-        pack_tokens = backbone_out[:, SHOP_START:SHOP_START + MAX_PACK_CARDS]
+        pack_tokens = backbone_out[:, SHOP_START : SHOP_START + MAX_PACK_CARDS]
 
-        candidate_tokens = backbone_out[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
-        candidate_mask = attention_mask[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
-        candidate_kinds = tokens[:, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 0]
+        candidate_tokens = backbone_out[:, HAND_CANDIDATE_START : HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
+        candidate_mask = attention_mask[:, HAND_CANDIDATE_START : HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
+        candidate_kinds = tokens[:, HAND_CANDIDATE_START : HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 0]
         play_cand_mask = candidate_mask.bool() & candidate_kinds.eq(1)
         discard_cand_mask = candidate_mask.bool() & candidate_kinds.eq(2)
         candidate_scores = self.candidate_play_head(candidate_tokens).squeeze(-1)
@@ -264,7 +255,7 @@ class ActionGrammarHead(nn.Module):
             shop_sell_joker_logits=shop_global[:, :MAX_JOKER_SLOTS],
             shop_sell_consumable_logits=shop_global[
                 :,
-                MAX_JOKER_SLOTS:MAX_JOKER_SLOTS + MAX_CONSUMABLE_SLOTS,
+                MAX_JOKER_SLOTS : MAX_JOKER_SLOTS + MAX_CONSUMABLE_SLOTS,
             ],
             pack_claim_logits=self.pack_claim_head(pack_tokens).squeeze(-1),
             joker_move_logits=move_logits,
@@ -320,8 +311,8 @@ class ActionGrammarDistribution:
         # subset under the mask. eps > 0 gives the policy full support over hand
         # plays (the -1e8 floor for non-candidate actions becomes a finite
         # log(eps) + ar_logp), so the policy can finally express plays the
-        # candidate generator never proposed. eps = 0 reproduces the historical
-        # candidate-only behavior bit-for-bit (backward-compat escape hatch).
+        # candidate generator never proposed. eps = 0 selects the candidate-only
+        # ablation.
         self.hand_ar_mixture_eps = min(max(float(hand_ar_mixture_eps), 0.0), 1.0)
         self.macro_mask = _macro_valid_mask(self.action_mask)
         has_any = self.macro_mask.any(dim=-1, keepdim=True)
@@ -629,59 +620,6 @@ class ActionGrammarDistribution:
     def selected_prob(self, actions: torch.Tensor) -> torch.Tensor:
         return self.log_prob(actions).exp()
 
-    def kl_divergence(self, reference: ActionGrammarDistribution) -> torch.Tensor:
-        """Approximate KL(policy || reference) over grammar components."""
-        kl = _masked_kl(
-            self._t(self.output.macro_logits),
-            reference._t(reference.output.macro_logits),
-            self.macro_mask,
-        )
-        macro_probs = self.action_type_probs.detach()
-
-        play_count_mask = self._hand_count_mask(is_play=True)
-        discard_count_mask = self._hand_count_mask(is_play=False)
-        kl = kl + macro_probs[:, _PLAY] * _masked_kl(
-            self._t(self.output.hand_count_logits[:, 0]),
-            reference._t(reference.output.hand_count_logits[:, 0]),
-            play_count_mask,
-        )
-        kl = kl + macro_probs[:, _DISCARD] * _masked_kl(
-            self._t(self.output.hand_count_logits[:, 1]),
-            reference._t(reference.output.hand_count_logits[:, 1]),
-            discard_count_mask,
-        )
-        kl = kl + macro_probs[:, _CONSUMABLE_NO_TARGET] * _masked_kl(
-            self._t(self.output.consumable_slot_logits[:, 0]),
-            reference._t(reference.output.consumable_slot_logits[:, 0]),
-            self._consumable_no_target_slot_mask(),
-        )
-        kl = kl + macro_probs[:, _SHOP_BUY] * _masked_kl(
-            self._t(self.output.shop_buy_logits),
-            reference._t(reference.output.shop_buy_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
-        )
-        kl = kl + macro_probs[:, _SHOP_SELL_JOKER] * _masked_kl(
-            self._t(self.output.shop_sell_joker_logits),
-            reference._t(reference.output.shop_sell_joker_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_SELL_JOKER_START, ActionRange.SHOP_SELL_JOKER_END),
-        )
-        kl = kl + macro_probs[:, _SHOP_SELL_CONSUMABLE] * _masked_kl(
-            self._t(self.output.shop_sell_consumable_logits),
-            reference._t(reference.output.shop_sell_consumable_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_SELL_CONSUMABLE_START, ActionRange.SHOP_SELL_CONSUMABLE_END),
-        )
-        kl = kl + macro_probs[:, _PACK_CLAIM] * _masked_kl(
-            self._t(self.output.pack_claim_logits),
-            reference._t(reference.output.pack_claim_logits),
-            _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
-        )
-        kl = kl + macro_probs[:, _MOVE_JOKER] * _masked_kl(
-            self._t(self.output.joker_move_logits),
-            reference._t(reference.output.joker_move_logits),
-            _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
-        )
-        return kl.mean()
-
     def _t(self, logits: torch.Tensor) -> torch.Tensor:
         return logits / self.temperature
 
@@ -692,13 +630,6 @@ class ActionGrammarDistribution:
         start = ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START
         end = ActionRange.PLAY_SUBSET_END if is_play else ActionRange.DISCARD_SUBSET_END
         return _range_mask(self.action_mask, start, end)
-
-    def _hand_count_mask(self, is_play: bool) -> torch.Tensor:
-        return _subset_count_mask(
-            self._hand_valid_subset_mask(is_play),
-            _hand_subset_sizes(self.device),
-            max_count=5,
-        )
 
     def _hand_log_prob(
         self,
@@ -824,18 +755,14 @@ class ActionGrammarDistribution:
         fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=True)
         return torch.where(has_candidates, cand_actions, fallback)
 
-    def _candidate_distribution(
-        self, *, is_play: bool
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _candidate_distribution(self, *, is_play: bool) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Candidate-head distribution as (logits, valid_mask, mapped_actions).
 
         `valid_mask` is True for slots that are kind-matched, attention-active,
         and map to an action that is legal in the current action_mask. Sampler
         and log_prob both consume this so they agree on the support.
         """
-        cand_logits = self._t(
-            self.output.candidate_play_logits if is_play else self.output.candidate_discard_logits
-        )
+        cand_logits = self._t(self.output.candidate_play_logits if is_play else self.output.candidate_discard_logits)
         active = cand_logits > -1e7
 
         mapped_actions = self._candidate_slot_to_action(is_play=is_play)
@@ -850,13 +777,9 @@ class ActionGrammarDistribution:
         Returns: (B, HAND_CANDIDATE_MAX) long.
         """
         if self.tokens is None:
-            return torch.full(
-                (self.batch_size, HAND_CANDIDATE_MAX), -1, dtype=torch.long, device=self.device
-            )
+            return torch.full((self.batch_size, HAND_CANDIDATE_MAX), -1, dtype=torch.long, device=self.device)
 
-        card_vals = self.tokens[
-            :, HAND_CANDIDATE_START:HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 5:10
-        ].long()
+        card_vals = self.tokens[:, HAND_CANDIDATE_START : HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 5:10].long()
         active = card_vals > 0
         card_idx = (card_vals - 1).clamp(0, MAX_HAND_SIZE - 1)
         slot_bits_tensor = _slot_bits(self.device)
@@ -877,10 +800,7 @@ class ActionGrammarDistribution:
         if not has_candidates.any():
             return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
 
-        if greedy:
-            cand_idx = _masked_argmax(cand_logits, cand_valid)
-        else:
-            cand_idx = _sample_masked(cand_logits, cand_valid)
+        cand_idx = _masked_argmax(cand_logits, cand_valid) if greedy else _sample_masked(cand_logits, cand_valid)
 
         actions = mapped_actions.gather(1, cand_idx.unsqueeze(-1)).squeeze(-1)
         return torch.where(has_candidates, actions, torch.full_like(actions, -1))
@@ -1100,7 +1020,7 @@ class ActionGrammarDistribution:
 
 
 def _range_mask(action_mask: torch.Tensor, start: int | ActionRange, end: int | ActionRange) -> torch.Tensor:
-    return action_mask[:, int(start):int(end) + 1]
+    return action_mask[:, int(start) : int(end) + 1]
 
 
 def _macro_valid_mask(action_mask: torch.Tensor) -> torch.Tensor:
@@ -1201,14 +1121,6 @@ def _masked_entropy(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     return torch.where(mask.sum(dim=-1) > 1, entropy, torch.zeros_like(entropy))
 
 
-def _masked_kl(policy_logits: torch.Tensor, reference_logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    log_policy = _masked_log_softmax(policy_logits, mask)
-    log_reference = _masked_log_softmax(reference_logits, mask)
-    probs = log_policy.exp() * mask.to(policy_logits.dtype)
-    kl = (probs * (log_policy - log_reference)).sum(dim=-1)
-    return torch.where(mask.sum(dim=-1) > 1, kl, torch.zeros_like(kl))
-
-
 def _sample_masked(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     return torch.distributions.Categorical(logits=_masked_logits(logits, mask)).sample()
 
@@ -1223,10 +1135,7 @@ def _subset_count_mask(
     max_count: int,
 ) -> torch.Tensor:
     return torch.stack(
-        [
-            (valid_subset_mask & subset_sizes.eq(count).unsqueeze(0)).any(dim=-1)
-            for count in range(1, max_count + 1)
-        ],
+        [(valid_subset_mask & subset_sizes.eq(count).unsqueeze(0)).any(dim=-1) for count in range(1, max_count + 1)],
         dim=-1,
     )
 

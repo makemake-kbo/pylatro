@@ -118,9 +118,7 @@ def _infer_agent_config(payload: dict, device):
         return AgentConfig(**{k: v for k, v in stored.items() if k in valid})
 
     sd = payload["state_dict"]
-    layer_idxs = [
-        int(k.split(".")[2]) for k in sd if k.startswith("backbone.layers.") and k.split(".")[2].isdigit()
-    ]
+    layer_idxs = [int(k.split(".")[2]) for k in sd if k.startswith("backbone.layers.") and k.split(".")[2].isdigit()]
     n_layers = (max(layer_idxs) + 1) if layer_idxs else AgentConfig.n_layers
     d_model = int(sd["value_head.win_prob.weight"].shape[1])
     d_ff = int(sd["backbone.layers.0.ffn.0.weight"].shape[0])
@@ -218,7 +216,7 @@ def _render_state(env: BalatroEnv, info: dict) -> str:
         lines.append(f"Consumables: {cons}")
 
     sub_phase = env._sub_phase
-    if sub_phase in (SubPhase.CHOOSE_ACTION, SubPhase.SELECT_CARDS):
+    if sub_phase == SubPhase.CHOOSE_ACTION:
         lines.append(f"Hand: {_hand_str(state.hand_cards)}")
     elif sub_phase == SubPhase.SHOP:
         shop = state.shop
@@ -250,9 +248,7 @@ def _describe_action(env: BalatroEnv, action_id: int) -> str:
     at = decoded.action_type
 
     def cards_for(indices) -> str:
-        return " ".join(
-            _card_str(state.hand_cards[i]) for i in indices if i < len(state.hand_cards)
-        )
+        return " ".join(_card_str(state.hand_cards[i]) for i in indices if i < len(state.hand_cards))
 
     if at == ActionType.BLIND_PLAY:
         return f"Play blind ({state.blind_on_deck or 'Small'})"
@@ -275,9 +271,7 @@ def _describe_action(env: BalatroEnv, action_id: int) -> str:
         return f"Use {_slot_consumable(state, data, decoded.index)} on {cards_for(targets)}"
     if at == ActionType.USE_CONSUMABLE_JOKER:
         joker = (
-            _center_name(data, state.jokers[decoded.detail].center_key)
-            if decoded.detail < len(state.jokers)
-            else "?"
+            _center_name(data, state.jokers[decoded.detail].center_key) if decoded.detail < len(state.jokers) else "?"
         )
         return f"Use {_slot_consumable(state, data, decoded.index)} on {joker}"
     if at == ActionType.SHOP_BUY:
@@ -285,11 +279,7 @@ def _describe_action(env: BalatroEnv, action_id: int) -> str:
     if at == ActionType.SHOP_REROLL:
         return f"Reroll shop (${state.current_round.reroll_cost})"
     if at == ActionType.SHOP_SELL_JOKER:
-        joker = (
-            _center_name(data, state.jokers[decoded.index].center_key)
-            if decoded.index < len(state.jokers)
-            else "?"
-        )
+        joker = _center_name(data, state.jokers[decoded.index].center_key) if decoded.index < len(state.jokers) else "?"
         return f"Sell joker {joker}"
     if at == ActionType.SHOP_SELL_CONSUMABLE:
         return f"Sell {_slot_consumable(state, data, decoded.index)}"
@@ -306,9 +296,7 @@ def _describe_action(env: BalatroEnv, action_id: int) -> str:
         return "Skip pack"
     if at == ActionType.MOVE_JOKER:
         source = (
-            _center_name(data, state.jokers[decoded.index].center_key)
-            if decoded.index < len(state.jokers)
-            else "?"
+            _center_name(data, state.jokers[decoded.index].center_key) if decoded.index < len(state.jokers) else "?"
         )
         return f"Move joker {source} from {decoded.index + 1} to {decoded.detail + 1}"
     return str(at)
@@ -342,11 +330,7 @@ def _macro_type_probs(dist) -> list[tuple[str, float]]:
 
     probs = dist.action_type_probs[0].tolist()
     index_to_type = {idx: at for at, idx in ACTION_TYPE_TO_GRAMMAR_INDEX.items()}
-    rows = [
-        (index_to_type[idx].value, p)
-        for idx, p in enumerate(probs)
-        if idx in index_to_type and p > 1e-4
-    ]
+    rows = [(index_to_type[idx].value, p) for idx, p in enumerate(probs) if idx in index_to_type and p > 1e-4]
     rows.sort(key=lambda r: r[1], reverse=True)
     return rows
 
@@ -486,19 +470,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=None, help="Run seed (default: random).")
     parser.add_argument("--deck", default="red", help="Deck name or key (default: red).")
     parser.add_argument("--stake", default="white", help="Stake name or 1-8 (default: white).")
-    parser.add_argument(
-        "--temperature", type=float, default=1.0, help="Softmax temperature for the policy."
-    )
-    parser.add_argument(
-        "--sample", action="store_true", help="Sample actions instead of greedy argmax."
-    )
+    parser.add_argument("--temperature", type=float, default=1.0, help="Softmax temperature for the policy.")
+    parser.add_argument("--sample", action="store_true", help="Sample actions instead of greedy argmax.")
     parser.add_argument("--topk", type=int, default=5, help="How many alternative actions to show.")
     parser.add_argument("--auto", action="store_true", help="Auto-advance without waiting for input.")
     parser.add_argument("--delay", type=float, default=0.8, help="Seconds between auto steps.")
     parser.add_argument("--win-ante", type=int, default=None, help="Override victory ante.")
-    parser.add_argument(
-        "--max-steps", type=int, default=2000, help="No-progress step cap before truncation."
-    )
+    parser.add_argument("--max-steps", type=int, default=2000, help="No-progress step cap before truncation.")
     parser.add_argument("--device", default=None, help="torch device (default: cpu).")
     args = parser.parse_args(argv)
 

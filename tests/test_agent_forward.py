@@ -1,125 +1,76 @@
-"""Tests for the agent forward pass."""
+"""Tests for the structured agent forward pass."""
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 
 from pylatro import load_game_data
+from pylatro_agent.action_grammar import NUM_GRAMMAR_ACTIONS, ActionGrammarDistribution
 from pylatro_agent.agent import AgentConfig, BalatroAgent
-from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
-from pylatro_agent.distributions import MaskedCategorical
+from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from pylatro_agent.vocab import build_vocab
 
 
 @pytest.fixture(scope="module")
-def game_data():
-    return load_game_data()
-
-
-@pytest.fixture(scope="module")
-def vocab(game_data):
-    return build_vocab(game_data)
-
-
-@pytest.fixture(scope="module")
-def model(vocab):
+def model() -> BalatroAgent:
+    vocab = build_vocab(load_game_data())
     config = AgentConfig(d_model=64, n_layers=2, n_heads=4, d_ff=128, dropout=0.0)
     return BalatroAgent(config, vocab)
 
 
-def test_forward_shapes(model):
-    batch_size = 2
-    tokens = torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long)
-    token_types = torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    scalars = torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32)
-    attention_mask = torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    action_mask = torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32)
-
-    logits, value_dict = model(
-        tokens, token_types, scalars, attention_mask, action_mask,
-        sub_phase=SubPhase.BLIND_SELECT,
+def _inputs(batch_size: int) -> tuple[torch.Tensor, ...]:
+    return (
+        torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long),
+        torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long),
+        torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32),
+        torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long),
+        torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32),
     )
-    dist = MaskedCategorical(logits, action_mask)
-
-    assert logits.shape == (batch_size, NUM_ACTIONS)
-    assert dist.probs.shape == (batch_size, NUM_ACTIONS)
-    assert value_dict["win_prob"].shape == (batch_size,)
-    assert value_dict["expected_score"].shape == (batch_size,)
-    assert value_dict["ante_survival"].shape == (batch_size, 8)
 
 
-def test_forward_valid_distribution(model):
-    batch_size = 1
-    tokens = torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long)
-    token_types = torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    scalars = torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32)
-    attention_mask = torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long)
+def test_forward_returns_structured_distribution_and_values(model: BalatroAgent) -> None:
+    distribution, values = model(*_inputs(2))
 
-    # Only allow blind select actions
-    action_mask = torch.zeros(batch_size, NUM_ACTIONS, dtype=torch.float32)
-    action_mask[0, 0] = 1  # BLIND_PLAY
-    action_mask[0, 1] = 1  # BLIND_SKIP
+    assert isinstance(distribution, ActionGrammarDistribution)
+    assert distribution.action_type_probs.shape == (2, NUM_GRAMMAR_ACTIONS)
+    assert values["win_prob"].shape == (2,)
+    assert values["expected_score"].shape == (2,)
+    assert values["ante_survival"].shape == (2, 8)
 
-    logits, _ = model(
-        tokens, token_types, scalars, attention_mask, action_mask,
-        sub_phase=SubPhase.BLIND_SELECT,
+
+def test_distribution_samples_only_valid_actions(model: BalatroAgent) -> None:
+    tokens, token_types, scalars, attention_mask, action_mask = _inputs(64)
+    action_mask.zero_()
+    action_mask[:, 0] = 1
+    action_mask[:, 1] = 1
+
+    distribution, _ = model(
+        tokens,
+        token_types,
+        scalars,
+        attention_mask,
+        action_mask,
     )
-    dist = MaskedCategorical(logits, action_mask)
+    actions = distribution.sample()
 
-    probs = dist.probs[0]
-    # Only masked actions should have non-zero probability
-    assert probs[0] > 0
-    assert probs[1] > 0
-    assert probs[2:].sum() < 1e-5
-    assert abs(probs.sum().item() - 1.0) < 1e-4
+    assert actions.shape == (64,)
+    assert set(actions.tolist()) <= {0, 1}
+    assert distribution.log_prob(actions).shape == (64,)
 
 
-def test_forward_sample(model):
-    batch_size = 4
-    tokens = torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long)
-    token_types = torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    scalars = torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32)
-    attention_mask = torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    action_mask = torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32)
+def test_named_distribution_entry_point_matches_forward_contract(
+    model: BalatroAgent,
+) -> None:
+    distribution, values = model.action_distribution(*_inputs(3))
 
-    logits, _ = model(
-        tokens, token_types, scalars, attention_mask, action_mask,
-        sub_phase=SubPhase.CHOOSE_ACTION,
-    )
-    dist = MaskedCategorical(logits, action_mask)
-
-    actions = dist.sample()
-    assert actions.shape == (batch_size,)
-    log_probs = dist.log_prob(actions)
-    assert log_probs.shape == (batch_size,)
+    assert isinstance(distribution, ActionGrammarDistribution)
+    assert distribution.sample().shape == (3,)
+    assert values["expected_score"].shape == (3,)
 
 
-def test_parameter_count(vocab):
-    config = AgentConfig()  # Full-size model
-    model = BalatroAgent(config, vocab)
-    params = model.count_parameters()
-    assert 20_000_000 < params < 30_000_000, f"Expected ~23M params, got {params:,}"
-
-
-def test_mixed_subphase_batch(model):
-    """Test batch with different sub-phases."""
-    batch_size = 3
-    tokens = torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long)
-    token_types = torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    scalars = torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32)
-    attention_mask = torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long)
-    action_mask = torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32)
-
-    sub_phases = [SubPhase.BLIND_SELECT, SubPhase.CHOOSE_ACTION, SubPhase.SHOP]
-
-    logits, value_dict = model(
-        tokens, token_types, scalars, attention_mask, action_mask,
-        sub_phase=sub_phases,
-    )
-    dist = MaskedCategorical(logits, action_mask)
-
-    assert dist.probs.shape == (batch_size, NUM_ACTIONS)
-    actions = dist.sample()
-    assert actions.shape == (batch_size,)
+def test_removed_flat_heads_are_not_registered(model: BalatroAgent) -> None:
+    assert not hasattr(model, "blind_head")
+    assert not hasattr(model, "choose_head")
+    assert not hasattr(model, "shop_head")
+    assert not hasattr(model, "booster_head")

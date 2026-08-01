@@ -235,7 +235,6 @@ src/pylatro_agent/
 ├── constants.py          # Action layout, dimensions, sub-phases
 ├── embeddings.py         # Per-token-type embedding layers
 ├── backbone.py           # Transformer encoder
-├── action_heads.py       # Per-sub-phase action heads
 ├── value_head.py         # Win prob + expected score prediction
 ├── distributions.py      # Masked categorical distribution
 └── training/

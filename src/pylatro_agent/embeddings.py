@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 
@@ -28,7 +30,9 @@ from .constants import (
     VOUCHER_MAX,
     VOUCHER_START,
 )
-from .vocab import Vocab
+
+if TYPE_CHECKING:
+    from .vocab import Vocab
 
 
 class ObjEmbedding(nn.Module):
@@ -56,7 +60,7 @@ class MetaEmbedding(nn.Module):
         self.hands_proj = nn.Linear(1, d_model)
         self.discards_proj = nn.Linear(1, d_model)
         self.handsize_proj = nn.Linear(1, d_model)
-        self.phase_emb = nn.Embedding(6, d_model)
+        self.phase_emb = nn.Embedding(4, d_model)
 
     def forward(self, tokens: torch.Tensor, scalars: torch.Tensor) -> torch.Tensor:
         """tokens: (batch, META_COUNT, TOKEN_DIM), scalars: (batch, SCALAR_DIM)."""
@@ -74,10 +78,10 @@ class MetaEmbedding(nn.Module):
         out[:, 3] = self.blind_type_emb(bt.clamp(0, 3)) + self.boss_emb(boss.clamp(0, 34))
         target_context = torch.cat(
             [
-                scalars[:, 3:4],   # blind target
-                scalars[:, 8:9],   # current round score
+                scalars[:, 3:4],  # blind target
+                scalars[:, 8:9],  # current round score
                 scalars[:, 9:10],  # remaining score needed
-                scalars[:, 10:11], # blind progress ratio
+                scalars[:, 10:11],  # blind progress ratio
             ],
             dim=-1,
         )
@@ -85,7 +89,7 @@ class MetaEmbedding(nn.Module):
         out[:, 5] = self.hands_proj(scalars[:, 4:5])
         out[:, 6] = self.discards_proj(scalars[:, 5:6])
         out[:, 7] = self.handsize_proj(scalars[:, 6:7])
-        out[:, 8] = self.phase_emb(scalars[:, 7].long().clamp(0, 5))
+        out[:, 8] = self.phase_emb(scalars[:, 7].long().clamp(0, 3))
         return out
 
 
@@ -100,12 +104,7 @@ class DeckCardEmbedding(nn.Module):
         self.edition_emb = nn.Embedding(vocab.edition_size, d_model)
         self.seal_emb = nn.Embedding(vocab.seal_size, d_model)
         self.location_emb = nn.Embedding(4, d_model)
-        self.selected_emb = nn.Embedding(2, d_model)
         self.hand_slot_emb = hand_slot_emb
-        # Zero-init so checkpoints without this channel resume identically;
-        # PPO then learns to use it to see pending consumable hand targets.
-        self.pending_target_emb = nn.Embedding(2, d_model)
-        nn.init.zeros_(self.pending_target_emb.weight)
         self.proj = nn.Linear(d_model, d_model)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -116,15 +115,16 @@ class DeckCardEmbedding(nn.Module):
         ed = tokens[:, :, 3].clamp(0, self.edition_emb.num_embeddings - 1)
         seal = tokens[:, :, 4].clamp(0, self.seal_emb.num_embeddings - 1)
         loc = tokens[:, :, 5].clamp(0, 3)
-        sel = tokens[:, :, 9].clamp(0, 1)
         slot = tokens[:, :, 11].clamp(0, self.hand_slot_emb.num_embeddings - 1)
-        pending = tokens[:, :, 12].clamp(0, 1)
 
         h = (
-            self.rank_emb(rank) + self.suit_emb(suit) + self.enhancement_emb(enh)
-            + self.edition_emb(ed) + self.seal_emb(seal) + self.location_emb(loc)
-            + self.selected_emb(sel) + self.hand_slot_emb(slot)
-            + self.pending_target_emb(pending)
+            self.rank_emb(rank)
+            + self.suit_emb(suit)
+            + self.enhancement_emb(enh)
+            + self.edition_emb(ed)
+            + self.seal_emb(seal)
+            + self.location_emb(loc)
+            + self.hand_slot_emb(slot)
         )
         return self.proj(h)
 
@@ -162,10 +162,16 @@ class JokerEmbedding(nn.Module):
         perish_tally = tokens[:, :, 10].float().unsqueeze(-1)
 
         return (
-            self.id_emb(jid) + self.rarity_emb(rar) + self.edition_emb(ed)
-            + self.sell_proj(sell) + self.counter_proj(counter) + self.slot_emb(slot)
-            + self.eternal_emb(eternal) + self.perishable_emb(perishable)
-            + self.rental_emb(rental) + self.debuff_emb(debuff)
+            self.id_emb(jid)
+            + self.rarity_emb(rar)
+            + self.edition_emb(ed)
+            + self.sell_proj(sell)
+            + self.counter_proj(counter)
+            + self.slot_emb(slot)
+            + self.eternal_emb(eternal)
+            + self.perishable_emb(perishable)
+            + self.rental_emb(rental)
+            + self.debuff_emb(debuff)
             + self.perish_tally_proj(perish_tally)
         )
 
@@ -200,8 +206,11 @@ class ShopEmbedding(nn.Module):
         super().__init__()
         # Reuse joker/consumable/voucher/booster embeddings via a max-vocab embedding
         max_vocab = max(
-            vocab.joker_vocab_size, vocab.consumable_vocab_size,
-            vocab.voucher_vocab_size, vocab.booster_vocab_size, 2,
+            vocab.joker_vocab_size,
+            vocab.consumable_vocab_size,
+            vocab.voucher_vocab_size,
+            vocab.booster_vocab_size,
+            2,
         )
         self.item_emb = nn.Embedding(max_vocab, d_model)
         self.type_emb = nn.Embedding(6, d_model)
@@ -263,7 +272,13 @@ class BlindSelectEmbedding(nn.Module):
         mult = tokens[:, :, 2].float().unsqueeze(-1) / 10.0
         boss = tokens[:, :, 3].clamp(0, self.boss_emb.num_embeddings - 1)
         tag = tokens[:, :, 4].clamp(0, self.tag_emb.num_embeddings - 1)
-        return self.blind_type_emb(bt) + self.boss_emb(boss) + self.state_emb(st) + self.mult_proj(mult) + self.tag_emb(tag)
+        return (
+            self.blind_type_emb(bt)
+            + self.boss_emb(boss)
+            + self.state_emb(st)
+            + self.mult_proj(mult)
+            + self.tag_emb(tag)
+        )
 
 
 class HandLevelEmbedding(nn.Module):
@@ -367,11 +382,11 @@ class ContentEmbeddingLayer(nn.Module):
         out = torch.zeros(batch, MAX_SEQ_LEN, self.d_model, device=device)
 
         # OBJ (position 0)
-        out[:, OBJ_START:OBJ_START + 1] = self.obj_emb(tokens[:, OBJ_START:OBJ_START + 1])
+        out[:, OBJ_START : OBJ_START + 1] = self.obj_emb(tokens[:, OBJ_START : OBJ_START + 1])
 
         # META (positions 1-9)
-        meta_tokens = tokens[:, META_START:META_START + META_COUNT]
-        out[:, META_START:META_START + META_COUNT] = self.meta_emb(meta_tokens, scalars)
+        meta_tokens = tokens[:, META_START : META_START + META_COUNT]
+        out[:, META_START : META_START + META_COUNT] = self.meta_emb(meta_tokens, scalars)
 
         # DECK (positions 10-71)
         deck_end = DECK_START + DECK_MAX

@@ -8,7 +8,7 @@ from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import add_consumable, add_joker, load_game_data, populate_shop
 from pylatro.models import PackState, ShopCard
-from pylatro_agent.constants import MAX_HAND_SIZE, NUM_ACTIONS, TOKEN_DIM, ActionRange, SubPhase
+from pylatro_agent.constants import NUM_ACTIONS, TOKEN_DIM, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.training.ppo import _make_vectorized_envs
 from pylatro_agent.vocab import build_vocab
@@ -34,10 +34,8 @@ def test_env_reset(game_data, vocab):
     assert "scalars" in obs
     assert "attention_mask" in obs
     assert "action_mask" in obs
-    assert "selected_cards" in obs
     assert obs["tokens"].shape == (160, TOKEN_DIM)
     assert obs["action_mask"].shape == (NUM_ACTIONS,)
-    assert obs["selected_cards"].shape == (MAX_HAND_SIZE,)
     assert info["sub_phase"] == "blind_select"
 
 
@@ -188,47 +186,6 @@ def test_env_win_ante_override_is_applied_on_every_reset(game_data, vocab):
     assert env.state.win_ante == 3
 
 
-def test_env_reward_config_disables_heuristic_components(game_data, vocab):
-    """Sparse reward config should zero out heuristic-driven dense components."""
-    from pylatro_agent.reward import PPO_SPARSE_CONFIG
-
-    def _run_until_play(seed: int, reward_config):
-        from pylatro_agent.action import ActionType, decode_action
-
-        env = BalatroEnv(
-            seed=seed,
-            data=game_data,
-            vocab=vocab,
-            max_steps=200,
-            reward_config=reward_config,
-        )
-        env.reset()
-        info: dict = {}
-        for _ in range(50):
-            mask = env.action_masks()
-            valid = np.flatnonzero(mask)
-            play_idx = next(
-                (a for a in valid if decode_action(int(a)).action_type == ActionType.PLAY_SUBSET),
-                None,
-            )
-            action = int(play_idx) if play_idx is not None else int(valid[0])
-            _, _, terminated, truncated, info = env.step(action)
-            if decode_action(action).action_type == ActionType.PLAY_SUBSET:
-                return info
-            if terminated or truncated:
-                return info
-        return info
-
-    default_info = _run_until_play(123, None)
-    sparse_info = _run_until_play(123, PPO_SPARSE_CONFIG)
-    # Same seed → same trajectory up to the play. Heuristic components should
-    # show up in default but be zero in sparse.
-    if "reward_hand_top1_bonus" in default_info and default_info["reward_hand_top1_bonus"] > 0:
-        assert sparse_info["reward_hand_top1_bonus"] == 0.0
-    if "reward_hand_subset_bonus" in default_info and default_info["reward_hand_subset_bonus"] > 0:
-        assert sparse_info["reward_hand_subset_bonus"] == 0.0
-
-
 def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab)
     env.reset()
@@ -296,9 +253,7 @@ def test_env_play_subset_reports_progress(game_data, vocab):
     assert "counterfactual_call" not in info
 
 
-def test_default_legacy_play_skips_detailed_build_diagnostics_hot_path(
-    game_data, vocab, monkeypatch
-):
+def test_default_play_skips_detailed_build_diagnostics_hot_path(game_data, vocab, monkeypatch):
     import pylatro_agent.env as env_module
 
     calls = 0
@@ -408,9 +363,7 @@ def test_env_sell_joker_exposes_build_event_and_potential_diagnostics(game_data,
     assert "potential_delta_total" in info
 
 
-def test_env_counterfactual_replays_one_copied_play_without_mutating_live_state_twice(
-    game_data, vocab, monkeypatch
-):
+def test_env_counterfactual_replays_one_copied_play_without_mutating_live_state_twice(game_data, vocab, monkeypatch):
     from pylatro_agent import diagnostics as diagnostics_module
     from pylatro_agent.action import ActionType, decode_action
 
@@ -501,7 +454,7 @@ def test_env_hologram_scaling_reports_xmult_and_build_delta(game_data, vocab):
 
 
 def _first_valid(mask: np.ndarray, start: int, end: int) -> int:
-    valid = np.where(mask[start:end + 1] == 1)[0]
+    valid = np.where(mask[start : end + 1] == 1)[0]
     assert len(valid) > 0
     return start + int(valid[0])
 
@@ -516,7 +469,7 @@ def test_vector_env_uses_same_step_autoreset(game_data, vocab):
 
 
 def test_vector_env_carries_numeric_build_diagnostics_when_build_potential_enabled(game_data, vocab):
-    from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+    from pylatro_agent.reward import RewardConfig
 
     vec_env = _make_vectorized_envs(
         1,
@@ -524,7 +477,7 @@ def test_vector_env_carries_numeric_build_diagnostics_when_build_potential_enabl
         vocab,
         use_async=False,
         enable_teacher=False,
-        reward_config=PPO_V2_REWARD_CONFIG(build_curve_shaping=True),
+        reward_config=RewardConfig(enable_score_build_potential=True),
     )
 
     try:
@@ -554,12 +507,12 @@ def test_vector_env_passes_win_ante_override(game_data, vocab):
         vec_env.close()
 
 
-def test_async_vector_env_reset_matches_declared_selected_card_shape(game_data, vocab):
+def test_async_vector_env_reset_matches_declared_token_shape(game_data, vocab):
     vec_env = _make_vectorized_envs(2, game_data, vocab, use_async=True)
 
     try:
         obs, _info = vec_env.reset()
-        assert obs["selected_cards"].shape == (2, MAX_HAND_SIZE)
+        assert obs["tokens"].shape == (2, 160, TOKEN_DIM)
     finally:
         vec_env.close()
 

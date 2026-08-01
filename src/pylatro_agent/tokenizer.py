@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import cython
 import numpy as np
 
-from pylatro.models import (
-    ConsumableInstance,
-    JokerInstance,
-    RunState,
-    ShopCard,
-)
+if TYPE_CHECKING:
+    from pylatro.models import ConsumableInstance, JokerInstance, RunState, ShopCard
 
 from .constants import (
     BLIND_SELECT_MAX,
@@ -30,7 +26,6 @@ from .constants import (
     JOKER_MAX,
     JOKER_START,
     MAX_DISCARD_CANDIDATES,
-    MAX_HAND_SIZE,
     MAX_PACK_CARDS,
     MAX_PLAY_CANDIDATES,
     MAX_SEQ_LEN,
@@ -65,13 +60,11 @@ class RawObservation:
     scalars: np.ndarray  # (SCALAR_DIM,), float32
     attention_mask: np.ndarray  # (MAX_SEQ_LEN,), int8
     action_mask: np.ndarray  # (NUM_ACTIONS,), int8
-    selected_cards: np.ndarray  # (MAX_HAND_SIZE,), int8
 
 
 @dataclass
 class Tokenizer:
     vocab: Vocab
-    _selected: set[int] = field(default_factory=set)
 
     @cython.locals(
         pos=cython.int,
@@ -84,14 +77,11 @@ class Tokenizer:
         token_types=cython.char[:],
         attn_mask=cython.char[:],
         scalars=cython.float[:],
-        sel_cards=cython.char[:],
-        idx=cython.int,
     )
     def tokenize(
         self,
         state: RunState,
         sub_phase: SubPhase,
-        selected_cards: set[int] | None = None,
         action_mask: np.ndarray | None = None,
         round_score: int = 0,
     ) -> RawObservation:
@@ -101,11 +91,6 @@ class Tokenizer:
         token_types = np.full(MAX_SEQ_LEN, TokenType.PAD, dtype=np.int8)
         attn_mask = np.zeros(MAX_SEQ_LEN, dtype=np.int8)
         scalars = np.zeros(SCALAR_DIM, dtype=np.float32)
-        sel_cards = np.zeros(MAX_HAND_SIZE, dtype=np.int8)
-
-        if selected_cards is None:
-            selected_cards = set()
-
         _rank_to_id = RANK_TO_ID
         _suit_to_id = SUIT_TO_ID
         _enh_to_id = self.vocab.enhancement_to_id
@@ -163,19 +148,13 @@ class Tokenizer:
                 tokens[p, 2] = _enh_to_id.get(card.center_key, 0)
                 tokens[p, 3] = _edition_to_id.get(card.edition_key or "", 0)
                 tokens[p, 4] = _seal_to_id.get(card.seal or "", 0)
-                # deck token cols: 5=location, 9=selected, 11=hand_slot
+                # deck token cols: 5=location, 11=hand_slot
                 tokens[p, 5] = loc
                 tokens[p, 6] = card.debuff
                 tokens[p, 7] = card.face_down
                 tokens[p, 8] = min(card.perma_bonus // 5, 31)
-                tokens[p, 9] = 1 if loc == 0 and ci in selected_cards else 0
                 tokens[p, 10] = card.forced_selection
                 tokens[p, 11] = ci if loc == 0 else 0
-                # Slot 12 formerly held a "pending consumable target" flag
-                # for the old CONSUMABLE_TARGET sub-phase. With atomic
-                # consumable actions there is no pending state, keep the
-                # slot zeroed so the token layout stays stable.
-                tokens[p, 12] = 0
                 token_types[p] = TokenType.DECK
                 attn_mask[p] = 1
                 card_idx += 1
@@ -241,10 +220,6 @@ class Tokenizer:
                 token_types[pos] = TokenType.HAND_CANDIDATE
                 attn_mask[pos] = 1
 
-        for idx in selected_cards:
-            if idx < MAX_HAND_SIZE:
-                sel_cards[idx] = 1
-
         if action_mask is None:
             action_mask = np.ones(NUM_ACTIONS, dtype=np.int8)
 
@@ -254,7 +229,6 @@ class Tokenizer:
             scalars=np.asarray(scalars),
             attention_mask=np.asarray(attn_mask),
             action_mask=action_mask,
-            selected_cards=np.asarray(sel_cards),
         )
 
     @cython.locals(blind_type_id=cython.int, boss_id=cython.int)
@@ -286,16 +260,15 @@ class Tokenizer:
         scaling = min(state.stake, 3)
         base = get_blind_amount(ante, scaling)
         mult = blind.get("mult", 1)
-        return int(math.floor(base * mult))
+        return math.floor(base * mult)
 
     @cython.locals(sp_id=cython.int)
     def _sub_phase_id(self, sub_phase: SubPhase) -> int:
         return {
             SubPhase.BLIND_SELECT: 0,
             SubPhase.CHOOSE_ACTION: 1,
-            SubPhase.SELECT_CARDS: 2,
-            SubPhase.SHOP: 3,
-            SubPhase.BOOSTER_PACK: 4,
+            SubPhase.SHOP: 2,
+            SubPhase.BOOSTER_PACK: 3,
         }[sub_phase]
 
     @cython.locals(

@@ -22,6 +22,14 @@ def _tiny_model() -> torch.nn.Module:
     return torch.nn.Linear(4, 2)
 
 
+def test_raw_state_dict_checkpoint_is_rejected(tmp_path) -> None:
+    path = tmp_path / "raw_state_dict.pt"
+    torch.save(_tiny_model().state_dict(), path)
+
+    with pytest.raises(RuntimeError, match="Raw state dicts are unsupported"):
+        ckpt.load_checkpoint_payload(path, "cpu")
+
+
 def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
     model = _tiny_model()
     optimizer = _make_policy_optimizer(model.parameters(), lr=3e-4)
@@ -191,9 +199,9 @@ def test_pretrained_rejects_stale_reward_value_head_without_reinit(tmp_path) -> 
     )
 
 
-def test_pretrained_legacy_checkpoint_requires_value_head_reinit(tmp_path) -> None:
+def test_checkpoint_without_reward_metadata_requires_value_head_reinit(tmp_path) -> None:
     model = _tiny_model()
-    path = tmp_path / "legacy_weights.pt"
+    path = tmp_path / "weights_without_reward_metadata.pt"
     ckpt.save_checkpoint(model, path)
 
     with pytest.raises(RuntimeError, match="has no reward fingerprint"):
@@ -240,12 +248,12 @@ def test_strict_resume_rejects_win_ante_mismatch(tmp_path) -> None:
         )
 
 
-def test_strict_resume_rejects_legacy_full_checkpoint_without_reward_fingerprint(
+def test_strict_resume_rejects_full_checkpoint_without_reward_fingerprint(
     tmp_path,
 ) -> None:
     model = _tiny_model()
     optimizer = _make_policy_optimizer(model.parameters(), lr=1e-3)
-    path = tmp_path / "legacy_full.pt"
+    path = tmp_path / "full_without_reward_fingerprint.pt"
     ckpt.save_ppo_checkpoint(
         model,
         path,
@@ -322,17 +330,7 @@ def test_ppo_config_total_updates_field_exists() -> None:
     ("extra_args", "expected_build_potential"),
     [
         ([], False),
-        (["--reward-v2"], False),
-        (["--reward-v2", "--build-curve-shaping"], True),
-        (["--reward-v2", "--score-build-potential"], True),
-        (
-            [
-                "--reward-v2",
-                "--score-build-potential",
-                "--disable-score-build-potential",
-            ],
-            False,
-        ),
+        (["--score-build-potential"], True),
     ],
 )
 def test_train_cli_long_horizon_defaults_and_build_potential_flags(
@@ -373,10 +371,10 @@ def test_train_cli_long_horizon_defaults_and_build_potential_flags(
     assert config.gae_lambda == pytest.approx(0.97)
     assert config.reward_config is not None
     assert config.reward_config.gamma == pytest.approx(config.gamma)
-    assert config.reward_config.enable_build_curve_rewards is expected_build_potential
+    assert config.reward_config.enable_score_build_potential is expected_build_potential
 
 
-def test_train_cli_v2_passes_applicable_reward_scales(
+def test_train_cli_passes_reward_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import importlib.util
@@ -406,12 +404,9 @@ def test_train_cli_v2_passes_applicable_reward_scales(
             "ppo",
             "--device",
             "cpu",
-            "--reward-v2",
             "--planet-match-shaping",
             "--dense-reward-scale",
             "0.5",
-            "--progression-reward-scale",
-            "0.25",
             "--consumable-reward-scale",
             "0.2",
         ],
@@ -423,8 +418,8 @@ def test_train_cli_v2_passes_applicable_reward_scales(
     assert isinstance(config, PPOConfig)
     assert config.reward_config is not None
     assert config.reward_config.dense_reward_scale == pytest.approx(0.5)
-    assert config.reward_config.progression_reward_scale == pytest.approx(0.25)
     assert config.reward_config.consumable_reward_scale == pytest.approx(0.2)
+    assert config.reward_config.enable_planet_match_rewards is True
 
 
 def test_action_family_constants_are_exhaustive() -> None:

@@ -16,7 +16,6 @@ from pylatro_agent.constants import (
     HAND_CANDIDATE_START,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
-    MAX_DISCARD_CANDIDATES,
     MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
@@ -42,6 +41,10 @@ def _blank_output(batch_size: int) -> ActionGrammarOutput:
         shop_sell_joker_logits=torch.zeros(batch_size, MAX_JOKER_SLOTS),
         shop_sell_consumable_logits=torch.zeros(batch_size, MAX_CONSUMABLE_SLOTS),
         pack_claim_logits=torch.zeros(batch_size, MAX_PACK_CARDS),
+        joker_move_logits=torch.zeros(
+            batch_size,
+            MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1),
+        ),
     )
 
 
@@ -335,7 +338,10 @@ def test_head_produces_candidate_logits():
 
     output = model.action_grammar_head(
         model.backbone(model.embedding(tokens, token_types, scalars), padding_mask=(attn == 0)),
-        attn, tokens, token_types, scalars,
+        attn,
+        tokens,
+        token_types,
+        scalars,
     )
 
     assert output.candidate_play_logits.shape == (batch, HAND_CANDIDATE_MAX)
@@ -418,8 +424,6 @@ def test_mixture_normalizes_over_legal_hand_plays():
     regardless of which plays are legal — what matters is that the distribution
     over the legal set sums to 1.
     """
-    from pylatro_agent.subset_actions import HAND_SUBSETS
-
     # Take the first 8 play subsets as the legal set.
     play_actions = [encode_action(ActionType.PLAY_SUBSET, i) for i in range(8)]
     action_mask = torch.zeros(1, NUM_ACTIONS)
@@ -445,7 +449,7 @@ def test_mixture_normalizes_over_legal_hand_plays():
 
 def test_mixture_sampling_produces_non_candidate_plays():
     """Sampling with eps=0.1 yields >=1 non-candidate play on a strict-subset state."""
-    output, action_mask, tokens, cand_action, dist_action = _hand_state_with_candidates_and_distractor()
+    output, action_mask, tokens, _cand_action, dist_action = _hand_state_with_candidates_and_distractor()
 
     dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.1)
     torch.manual_seed(42)
@@ -522,8 +526,5 @@ def test_mixture_normalizes_with_candidates_present():
 
     for eps in (0.1, 0.5, 1.0):
         dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=eps)
-        total = sum(
-            math.exp(dist.log_prob(torch.tensor([a])).item())
-            for a in (cand_action, dist_action)
-        )
+        total = sum(math.exp(dist.log_prob(torch.tensor([a])).item()) for a in (cand_action, dist_action))
         assert abs(total - 1.0) < 1e-3, f"eps={eps}: sum={total}, expected ~1.0"

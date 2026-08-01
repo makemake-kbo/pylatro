@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from pylatro import can_use_consumable
 from pylatro.flow import _debuff_hand
-from pylatro.models import RunState
 from pylatro.scoring import get_poker_hand_info
+
+if TYPE_CHECKING:
+    from pylatro.models import RunState
 
 from .constants import (
     CONSUMABLE_ACTIONS_PER_SLOT,
@@ -37,23 +41,15 @@ from .subset_actions import (
 def compute_action_mask(
     state: RunState,
     sub_phase: SubPhase,
-    selected_cards: set[int] | None = None,
-    pending_action: str | None = None,
 ) -> np.ndarray:
     """Return a binary mask of shape (NUM_ACTIONS,) where 1 = valid."""
     mask = np.zeros(NUM_ACTIONS, dtype=np.int8)
-
-    if selected_cards is None:
-        selected_cards = set()
 
     if sub_phase == SubPhase.BLIND_SELECT:
         _mask_blind_select(mask, state)
 
     elif sub_phase == SubPhase.CHOOSE_ACTION:
         _mask_choose_action(mask, state)
-
-    elif sub_phase == SubPhase.SELECT_CARDS:
-        _mask_select_cards(mask, state, selected_cards, pending_action)
 
     elif sub_phase == SubPhase.SHOP:
         _mask_shop(mask, state)
@@ -87,10 +83,10 @@ def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
 
     if state.current_round.hands_left > 0 and hand_size > 0:
         play_subsets = _mask_debuffed_plays(state, legal_subsets.astype(np.int8))
-        mask[AR.PLAY_SUBSET_START:AR.PLAY_SUBSET_END + 1] = play_subsets
+        mask[AR.PLAY_SUBSET_START : AR.PLAY_SUBSET_END + 1] = play_subsets
 
     if state.current_round.discards_left > 0 and hand_size > 0:
-        mask[AR.DISCARD_SUBSET_START:AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
+        mask[AR.DISCARD_SUBSET_START : AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     _mask_consumable_flat(mask, state)
     _mask_joker_moves(mask, state)
@@ -200,17 +196,6 @@ def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
             for j in range(num_jokers):
                 if can_use_consumable(state, cons, hand_targets=(), joker_targets=(j,)):
                     mask[start + j] = 1
-
-
-def _mask_select_cards(
-    mask: np.ndarray,
-    state: RunState,
-    selected_cards: set[int],
-    pending_action: str | None,
-) -> None:
-    # The legacy select_cards phase is intentionally left empty. Hand selection
-    # now happens in one shot via exhaustive play/discard subset actions.
-    _ = (mask, state, selected_cards, pending_action)
 
 
 def _mask_shop(mask: np.ndarray, state: RunState) -> None:

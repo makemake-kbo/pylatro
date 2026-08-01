@@ -160,9 +160,7 @@ _MID_GAME_ANTE = 3
 
 _ANTE1_SKIP_TAGS = frozenset({"tag_economy", "tag_investment", "tag_rare"})
 
-_RETRIGGER_JOKER_KEYS = frozenset(
-    {"j_hanging_chad", "j_sock_and_buskin", "j_selzer", "j_mime", "j_dusk", "j_hack"}
-)
+_RETRIGGER_JOKER_KEYS = frozenset({"j_hanging_chad", "j_sock_and_buskin", "j_selzer", "j_mime", "j_dusk", "j_hack"})
 
 _COPY_JOKER_KEYS = frozenset({"j_blueprint", "j_brainstorm"})
 _MAX_JOKER_ORDER_CANDIDATES = 16
@@ -175,70 +173,70 @@ _MAX_JOKER_ORDER_CANDIDATES = 16
 # utility/economy and score no build-curve weight.
 _CHIPS_PROFILE_JOKER_KEYS = frozenset(
     {
-        "j_arrowhead",      # +50 chips per scored spade
-        "j_banner",         # +30 chips per remaining discard
-        "j_blue_joker",     # +2 chips per card left in deck
-        "j_bull",           # +2 chips per dollar
-        "j_castle",         # chips grow per discarded card of the daily suit
-        "j_hiker",          # permanently grows played cards' chips
-        "j_ice_cream",      # +100 chips, melting -5 per hand
-        "j_odd_todd",       # +31 chips per odd rank
-        "j_runner",         # chips grow per straight played
-        "j_scary_face",     # +30 chips per face card
-        "j_scholar",        # +20 chips +4 mult per ace
-        "j_square",         # chips grow per 4-card hand played
-        "j_stone",          # +25 chips per stone card in deck
-        "j_stuntman",       # +250 chips, -2 hand size
+        "j_arrowhead",  # +50 chips per scored spade
+        "j_banner",  # +30 chips per remaining discard
+        "j_blue_joker",  # +2 chips per card left in deck
+        "j_bull",  # +2 chips per dollar
+        "j_castle",  # chips grow per discarded card of the daily suit
+        "j_hiker",  # permanently grows played cards' chips
+        "j_ice_cream",  # +100 chips, melting -5 per hand
+        "j_odd_todd",  # +31 chips per odd rank
+        "j_runner",  # chips grow per straight played
+        "j_scary_face",  # +30 chips per face card
+        "j_scholar",  # +20 chips +4 mult per ace
+        "j_square",  # chips grow per 4-card hand played
+        "j_stone",  # +25 chips per stone card in deck
+        "j_stuntman",  # +250 chips, -2 hand size
         "j_walkie_talkie",  # +10 chips +4 mult per 10 or 4
-        "j_wee",            # chips grow per scored 2
+        "j_wee",  # chips grow per scored 2
     }
 )
 _MULT_PROFILE_JOKER_KEYS = frozenset(
     {
-        "j_abstract",       # +3 mult per joker owned
-        "j_bootstraps",     # +2 mult per $5 owned
-        "j_erosion",        # +4 mult per card below starting deck size
-        "j_even_steven",    # +4 mult per even rank
-        "j_fibonacci",      # +8 mult per A/2/3/5/8
-        "j_flash",          # +2 mult per shop reroll
-        "j_fortune_teller", # +1 mult per tarot used
+        "j_abstract",  # +3 mult per joker owned
+        "j_bootstraps",  # +2 mult per $5 owned
+        "j_erosion",  # +4 mult per card below starting deck size
+        "j_even_steven",  # +4 mult per even rank
+        "j_fibonacci",  # +8 mult per A/2/3/5/8
+        "j_flash",  # +2 mult per shop reroll
+        "j_fortune_teller",  # +1 mult per tarot used
         "j_gluttenous_joker",  # +3 mult per scored club
-        "j_greedy_joker",   # +3 mult per scored diamond
-        "j_green_joker",    # +1 mult per hand, -1 per discard
-        "j_gros_michel",    # +15 mult (may go extinct)
-        "j_half",           # +20 mult on hands of 3 or fewer cards
-        "j_lusty_joker",    # +3 mult per scored heart
-        "j_misprint",       # +0..23 random mult
+        "j_greedy_joker",  # +3 mult per scored diamond
+        "j_green_joker",  # +1 mult per hand, -1 per discard
+        "j_gros_michel",  # +15 mult (may go extinct)
+        "j_half",  # +20 mult on hands of 3 or fewer cards
+        "j_lusty_joker",  # +3 mult per scored heart
+        "j_misprint",  # +0..23 random mult
         "j_mystic_summit",  # +15 mult at 0 discards
-        "j_onyx_agate",     # +7 mult per scored club
-        "j_raised_fist",    # mult from lowest held rank
-        "j_red_card",       # +3 mult per pack skipped
-        "j_ride_the_bus",   # +1 mult per faceless consecutive hand
-        "j_shoot_the_moon", # +13 mult per queen held
-        "j_smiley",         # +5 mult per face card
-        "j_supernova",      # mult = times hand played
-        "j_trousers",       # +2 mult per two-pair played
-        "j_wrathful_joker", # +3 mult per scored spade
+        "j_onyx_agate",  # +7 mult per scored club
+        "j_raised_fist",  # mult from lowest held rank
+        "j_red_card",  # +3 mult per pack skipped
+        "j_ride_the_bus",  # +1 mult per faceless consecutive hand
+        "j_shoot_the_moon",  # +13 mult per queen held
+        "j_smiley",  # +5 mult per face card
+        "j_supernova",  # mult = times hand played
+        "j_trousers",  # +2 mult per two-pair played
+        "j_wrathful_joker",  # +3 mult per scored spade
     }
 )
 _XMULT_PROFILE_JOKER_KEYS = frozenset(
     {
-        "j_acrobat",          # x3 on final hand
-        "j_baseball",         # x1.5 per uncommon joker
-        "j_blueprint",        # copies the joker to its right (phase-neutral amplifier)
-        "j_brainstorm",       # copies the leftmost joker (phase-neutral amplifier)
-        "j_caino",            # xmult per face card destroyed
+        "j_acrobat",  # x3 on final hand
+        "j_baseball",  # x1.5 per uncommon joker
+        "j_blueprint",  # copies the joker to its right (phase-neutral amplifier)
+        "j_brainstorm",  # copies the leftmost joker (phase-neutral amplifier)
+        "j_caino",  # xmult per face card destroyed
         "j_drivers_license",  # x3 with 16+ enhanced cards
-        "j_flower_pot",       # x3 with all four suits
-        "j_hit_the_road",     # xmult per jack discarded this round
-        "j_idol",             # x2 per scored copy of the idol card
-        "j_lucky_cat",        # xmult grows per lucky trigger
-        "j_madness",          # xmult grows per blind (destroys jokers)
-        "j_photograph",       # first face card x2
-        "j_seeing_double",    # x2 with club + other suit
-        "j_stencil",          # x1 per empty joker slot
-        "j_triboulet",        # kings/queens x2
-        "j_yorick",           # xmult after discards
+        "j_flower_pot",  # x3 with all four suits
+        "j_hit_the_road",  # xmult per jack discarded this round
+        "j_idol",  # x2 per scored copy of the idol card
+        "j_lucky_cat",  # xmult grows per lucky trigger
+        "j_madness",  # xmult grows per blind (destroys jokers)
+        "j_photograph",  # first face card x2
+        "j_seeing_double",  # x2 with club + other suit
+        "j_stencil",  # x1 per empty joker slot
+        "j_triboulet",  # kings/queens x2
+        "j_yorick",  # xmult after discards
     }
 )
 
@@ -393,9 +391,18 @@ class HeuristicAgent:
 
         # number of played cards that contribute chips for each poker hand type
         _SCORING_COUNT = {
-            "High Card": 1, "Pair": 2, "Two Pair": 4, "Three of a Kind": 3,
-            "Straight": 5, "Flush": 5, "Full House": 5, "Four of a Kind": 4,
-            "Five of a Kind": 5, "Straight Flush": 5, "Flush Five": 5, "Flush House": 5,
+            "High Card": 1,
+            "Pair": 2,
+            "Two Pair": 4,
+            "Three of a Kind": 3,
+            "Straight": 5,
+            "Flush": 5,
+            "Full House": 5,
+            "Four of a Kind": 4,
+            "Five of a Kind": 5,
+            "Straight Flush": 5,
+            "Flush Five": 5,
+            "Flush House": 5,
         }
         n_scoring = _SCORING_COUNT.get(hand_type, len(cards))
 
@@ -507,9 +514,7 @@ class HeuristicAgent:
                     total_chips += ec
                 exm = extra.get("Xmult")
                 if isinstance(exm, (int, float)) and exm and exm > 1:
-                    if jname == "Cavendish" or (
-                        jname == "Card Sharp" and hand_info.get("played_this_round", 0) > 1
-                    ):
+                    if jname == "Cavendish" or (jname == "Card Sharp" and hand_info.get("played_this_round", 0) > 1):
                         x_mult_acc *= exm
                     elif jname == "Loyalty Card":
                         every = int(extra.get("every", 0) or 0)
@@ -654,7 +659,8 @@ class HeuristicAgent:
                     x_mult_acc *= xm
             elif jname == "Driver's License":
                 enhanced = sum(
-                    1 for c in state.deck_cards
+                    1
+                    for c in state.deck_cards
                     if (centers_get(c.center_key) or {}).get("effect") not in ("", None, "Base")
                 )
                 if enhanced >= 16:
@@ -703,10 +709,7 @@ class HeuristicAgent:
                     x_mult_acc *= xm
             elif jname == "Swashbuckler":
                 # +1 mult per dollar of total sell value of other jokers
-                sell_total = sum(
-                    int(jj.sell_cost or 0) for jj in state.jokers
-                    if jj is not j and not jj.debuff
-                )
+                sell_total = sum(int(jj.sell_cost or 0) for jj in state.jokers if jj is not j and not jj.debuff)
                 if sell_total > 0:
                     total_mult += sell_total
             elif jname == "Baseball Card":
@@ -720,16 +723,14 @@ class HeuristicAgent:
                     if cc.get("rarity") == 2 or cc.get("rarity") == "Uncommon":
                         count += 1
                 if count > 0:
-                    x_mult_acc *= xm ** count
+                    x_mult_acc *= xm**count
 
         return int(total_chips * total_mult * x_mult_acc)
 
     def _get_joker_names(self, state: RunState) -> frozenset[str]:
         keys = state.joker_keys
         if keys != self._joker_names_cache_key:
-            self._joker_names_cache = frozenset(
-                state.data.centers[k]["name"] for k in keys
-            )
+            self._joker_names_cache = frozenset(state.data.centers[k]["name"] for k in keys)
             self._joker_names_cache_key = keys
         return self._joker_names_cache
 
@@ -789,9 +790,20 @@ class HeuristicAgent:
             return self._main_type_cache_val
         best = "Pair"
         best_score = 1.0
-        for ht in ("Pair", "Two Pair", "Three of a Kind", "Full House",
-                    "Flush", "Straight", "High Card", "Four of a Kind",
-                    "Straight Flush", "Five of a Kind", "Flush House", "Flush Five"):
+        for ht in (
+            "Pair",
+            "Two Pair",
+            "Three of a Kind",
+            "Full House",
+            "Flush",
+            "Straight",
+            "High Card",
+            "Four of a Kind",
+            "Straight Flush",
+            "Five of a Kind",
+            "Flush House",
+            "Flush Five",
+        ):
             synergy = self._hand_type_synergy(state, ht)
             ht_info = state.hands.get(ht)
             played = ht_info.get("played", 0) if ht_info else 0
@@ -820,7 +832,7 @@ class HeuristicAgent:
             by_rank.setdefault(card.rank, []).append(i)
 
         if type_name == "Pair":
-            for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
+            for _rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 2:
                     pair = indices[:2]
                     pair_set = set(pair)
@@ -833,7 +845,7 @@ class HeuristicAgent:
 
         elif type_name == "Two Pair":
             pairs: list[int] = []
-            for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
+            for _rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 2 and len(pairs) < 4:
                     pairs.extend(indices[:2])
             if len(pairs) >= 4:
@@ -846,7 +858,7 @@ class HeuristicAgent:
                 return tuple(sorted(pairs + kickers[:1]))
 
         elif type_name == "Three of a Kind":
-            for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
+            for _rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 3:
                     trip = indices[:3]
                     trip_set = set(trip)
@@ -858,7 +870,7 @@ class HeuristicAgent:
                     return tuple(sorted(trip + kickers[:2]))
 
         elif type_name == "Four of a Kind":
-            for rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
+            for _rank, indices in sorted(by_rank.items(), key=lambda x: RANK_TO_NOMINAL.get(x[0], 0), reverse=True):
                 if len(indices) >= 4:
                     quad = indices[:4]
                     quad_set = set(quad)
@@ -880,7 +892,7 @@ class HeuristicAgent:
                         by_suit.setdefault(s, []).append(i)
                 else:
                     by_suit.setdefault(card.suit, []).append(i)
-            for suit, indices in by_suit.items():
+            for indices in by_suit.values():
                 unique = list(dict.fromkeys(indices))
                 if len(unique) >= 5:
                     unique.sort(key=lambda i: nominals[i], reverse=True)
@@ -895,8 +907,6 @@ class HeuristicAgent:
             action = self._blind_select(state, action_mask)
         elif sub_phase == SubPhase.CHOOSE_ACTION:
             action = self._choose_action(state, action_mask)
-        elif sub_phase == SubPhase.SELECT_CARDS:
-            action = self._random_valid(action_mask)
         elif sub_phase == SubPhase.SHOP:
             action = self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
@@ -1036,14 +1046,31 @@ class HeuristicAgent:
         if best_planet_action is not None:
             return best_planet_action
 
-        _BUFF_TAROTS = frozenset({
-            "The Magician", "The Empress", "The Hierophant", "The Lovers",
-            "The Chariot", "Justice", "Strength", "The Star", "The Moon",
-            "The Sun", "The World", "The Wheel of Fortune",
-        })
-        _DESTROY_TAROTS = frozenset({
-            "Death", "The Hanged Man", "The Devil", "The Tower", "Judgement",
-        })
+        _BUFF_TAROTS = frozenset(
+            {
+                "The Magician",
+                "The Empress",
+                "The Hierophant",
+                "The Lovers",
+                "The Chariot",
+                "Justice",
+                "Strength",
+                "The Star",
+                "The Moon",
+                "The Sun",
+                "The World",
+                "The Wheel of Fortune",
+            }
+        )
+        _DESTROY_TAROTS = frozenset(
+            {
+                "Death",
+                "The Hanged Man",
+                "The Devil",
+                "The Tower",
+                "Judgement",
+            }
+        )
 
         for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
             center = state.data.centers[cons.center_key]
@@ -1088,9 +1115,13 @@ class HeuristicAgent:
             and mask[ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)]
         )
 
-        if can_discard and hands_left > 1 and est_score * hands_left < target_remaining:
-            if not self._has_scaling_jokers(state):
-                return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
+        if (
+            can_discard
+            and hands_left > 1
+            and est_score * hands_left < target_remaining
+            and not self._has_scaling_jokers(state)
+        ):
+            return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
 
         if best_play:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
@@ -1100,51 +1131,14 @@ class HeuristicAgent:
         if can_discard:
             return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
 
-        valid_play = np.where(mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1] == 1)[0]
+        valid_play = np.where(mask[ActionRange.PLAY_SUBSET_START : ActionRange.PLAY_SUBSET_END + 1] == 1)[0]
         if len(valid_play) > 0:
             play_action = ActionRange.PLAY_SUBSET_START + int(valid_play[0])
             return self._play_or_reorder_jokers(state, mask, play_action)
-        valid_discard = np.where(mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1] == 1)[0]
+        valid_discard = np.where(mask[ActionRange.DISCARD_SUBSET_START : ActionRange.DISCARD_SUBSET_END + 1] == 1)[0]
         if len(valid_discard) > 0:
             return ActionRange.DISCARD_SUBSET_START + int(valid_discard[0])
         return self._random_valid(mask)
-
-    def _evaluate_hand_quality(self, state: RunState, hand: list[PlayingCard]) -> int:
-        quality_map = {
-            "Flush Five": 8,
-            "Flush House": 7,
-            "Five of a Kind": 6,
-            "Straight Flush": 5,
-            "Four of a Kind": 4,
-            "Full House": 3,
-            "Flush": 3,
-            "Straight": 3,
-            "Three of a Kind": 2,
-            "Two Pair": 2,
-            "Pair": 1,
-            "High Card": 0,
-        }
-        best = self._cached_best_hand(state, hand)
-        cards = [hand[i] for i in best]
-        quality_name = self._quick_hand_quality(state, cards)
-        base_quality = quality_map.get(quality_name, 0)
-
-        for j in state.jokers:
-            jc = state.data.centers.get(j.center_key, {})
-            jcfg = jc.get("config")
-            if not isinstance(jcfg, dict):
-                continue
-            jtype = jcfg.get("type", "")
-            if jtype == quality_name:
-                base_quality += 2
-                t_mult = jcfg.get("t_mult", 0) or 0
-                if t_mult >= 8:
-                    base_quality += 1
-                xmult = jcfg.get("Xmult", 0) or 0
-                if xmult > 1:
-                    base_quality += 2
-
-        return base_quality
 
     def _quick_hand_quality(self, state: RunState, cards: list[PlayingCard]) -> str:
         n = len(cards)
@@ -1253,10 +1247,7 @@ class HeuristicAgent:
 
         mult = config.get("mult")
         if isinstance(mult, (int, float)) and mult:
-            additive_mult_count = sum(
-                1 for j in state.jokers
-                if j.mult and j.mult > 0
-            )
+            additive_mult_count = sum(1 for j in state.jokers if j.mult and j.mult > 0)
             if additive_mult_count < 2:
                 score += mult * (11.0 if mid_game else 14.0)
             elif additive_mult_count < 4:
@@ -1270,7 +1261,9 @@ class HeuristicAgent:
         if isinstance(t_mult, (int, float)) and t_mult:
             if hand_type == main_type:
                 score += t_mult * 12.0
-            elif self._hand_type_synergy(state, hand_type) > 0 or (hand_type in _COMMITTED_TYPES and not has_main_synergy):
+            elif self._hand_type_synergy(state, hand_type) > 0 or (
+                hand_type in _COMMITTED_TYPES and not has_main_synergy
+            ):
                 score += t_mult * 6.0
             elif hand_type in _COMMITTED_TYPES:
                 score += t_mult * 2.0
@@ -1379,12 +1372,20 @@ class HeuristicAgent:
             score += self._score_copy_joker(state)
 
         _PER_CARD_JOKERS = {
-            "j_fibonacci": 10.0, "j_even_steven": 8.0, "j_odd_todd": 6.0,
-            "j_smiley": 8.0, "j_scary_face": 5.0, "j_scholar": 7.0,
-            "j_walkie_talkie": 6.0, "j_photograph": 26.0,
-            "j_greedy_joker": 8.0, "j_lusty_joker": 8.0,
-            "j_wrathful_joker": 8.0, "j_gluttenous_joker": 8.0,
-            "j_onyx_agate": 8.0, "j_arrowhead": 6.0,
+            "j_fibonacci": 10.0,
+            "j_even_steven": 8.0,
+            "j_odd_todd": 6.0,
+            "j_smiley": 8.0,
+            "j_scary_face": 5.0,
+            "j_scholar": 7.0,
+            "j_walkie_talkie": 6.0,
+            "j_photograph": 26.0,
+            "j_greedy_joker": 8.0,
+            "j_lusty_joker": 8.0,
+            "j_wrathful_joker": 8.0,
+            "j_gluttenous_joker": 8.0,
+            "j_onyx_agate": 8.0,
+            "j_arrowhead": 6.0,
         }
         if center_key in _PER_CARD_JOKERS:
             score += _PER_CARD_JOKERS[center_key]
@@ -1395,7 +1396,9 @@ class HeuristicAgent:
                 score += 25.0
 
         _HELD_CARD_JOKERS = {
-            "j_baron": 10.0, "j_shoot_the_moon": 6.0, "j_raised_fist": 3.0,
+            "j_baron": 10.0,
+            "j_shoot_the_moon": 6.0,
+            "j_raised_fist": 3.0,
         }
         if center_key in _HELD_CARD_JOKERS:
             score += _HELD_CARD_JOKERS[center_key]
@@ -1411,14 +1414,21 @@ class HeuristicAgent:
                 score += 18.0
 
         _RETRIGGER_JOKERS = {
-            "j_hanging_chad": 32.0, "j_sock_and_buskin": 38.0,
-            "j_selzer": 22.0, "j_mime": 22.0, "j_dusk": 18.0, "j_hack": 22.0,
+            "j_hanging_chad": 32.0,
+            "j_sock_and_buskin": 38.0,
+            "j_selzer": 22.0,
+            "j_mime": 22.0,
+            "j_dusk": 18.0,
+            "j_hack": 22.0,
         }
         if center_key in _RETRIGGER_JOKERS:
             score += _RETRIGGER_JOKERS[center_key]
             joker_keys = {j.center_key for j in state.jokers}
             if "j_photograph" in joker_keys and center_key in (
-                "j_hanging_chad", "j_sock_and_buskin", "j_dusk", "j_selzer"
+                "j_hanging_chad",
+                "j_sock_and_buskin",
+                "j_dusk",
+                "j_selzer",
             ):
                 score += 25.0
             if center_key == "j_hanging_chad" and "j_sock_and_buskin" in joker_keys:
@@ -1688,14 +1698,6 @@ class HeuristicAgent:
         def _best_of(indices_set: set[int]) -> float:
             return sum(RANK_TO_NOMINAL.get(hand[i].rank, 0) for i in indices_set)
 
-        def _suit_value(indices_set: set[int]) -> float:
-            v = 0.0
-            for i in indices_set:
-                for suit, bonus in suit_bonus.items():
-                    if hand[i].suit == suit:
-                        v += bonus
-            return v
-
         flush_suit: str | None = None
         flush_indices: list[int] | None = None
         for suit, idxs in by_suit.items():
@@ -1886,7 +1888,9 @@ class HeuristicAgent:
 
         main_type = self._get_main_hand_type(state)
         main_synergy = self._hand_type_synergy(state, main_type)
-        is_pair_type = main_type in ("Pair", "Two Pair", "Three of a Kind", "Full House", "Four of a Kind") and main_synergy > 0
+        is_pair_type = (
+            main_type in ("Pair", "Two Pair", "Three of a Kind", "Full House", "Four of a Kind") and main_synergy > 0
+        )
         is_flush_type = main_type == "Flush" and main_synergy > 0
         is_sf_type = main_type == "Straight Flush" and main_synergy > 0
         high_ranks = frozenset(("A", "K", "Q", "J", "T"))
@@ -1961,12 +1965,11 @@ class HeuristicAgent:
 
     def _has_scaling_jokers(self, state: RunState) -> bool:
         scaling_keys = _SCALING_JOKER_KEYS | {"j_obelisk", "j_cavendish"}
-        for j in state.jokers:
-            if j.center_key in scaling_keys:
-                return True
-        return False
+        return any(j.center_key in scaling_keys for j in state.jokers)
 
-    def _should_discard_for_draw(self, state: RunState, hand: list[PlayingCard], mask: np.ndarray) -> tuple[int, ...] | None:
+    def _should_discard_for_draw(
+        self, state: RunState, hand: list[PlayingCard], mask: np.ndarray
+    ) -> tuple[int, ...] | None:
         if state.current_round.discards_left <= 0 or state.current_round.hands_left < 2:
             return None
         best = self._cached_best_hand(state, hand)
@@ -1975,7 +1978,6 @@ class HeuristicAgent:
         quality_above_sf = {"Flush Five", "Flush House", "Five of a Kind", "Straight Flush"}
 
         main_type = self._get_main_hand_type(state)
-        main_synergy = self._hand_type_synergy(state, main_type)
 
         by_rank: dict[str, list[int]] = {}
         for i, card in enumerate(hand):
@@ -2011,7 +2013,7 @@ class HeuristicAgent:
 
         # Rule 1: Flush draw
         if best_quality not in quality_above_sf:
-            for suit, idxs in by_suit.items():
+            for idxs in by_suit.values():
                 unique = list(dict.fromkeys(idxs))
                 if len(unique) >= 4:
                     suit_set = set(unique)
@@ -2150,8 +2152,7 @@ class HeuristicAgent:
     ) -> int | None:
         play_action = self._joker_order_play_action
         if not (
-            int(ActionRange.PLAY_SUBSET_START) <= play_action <= int(ActionRange.PLAY_SUBSET_END)
-            and mask[play_action]
+            int(ActionRange.PLAY_SUBSET_START) <= play_action <= int(ActionRange.PLAY_SUBSET_END) and mask[play_action]
         ):
             self._joker_order_play_action = -1
             return None
@@ -2177,8 +2178,8 @@ class HeuristicAgent:
     ) -> int:
         trial = deepcopy(state, {id(state.data): state.data})
         if order is not None:
-            trial.jokers[:len(order)] = [trial.jokers[index] for index in order]
-            trial.joker_keys[:len(order)] = [trial.joker_keys[index] for index in order]
+            trial.jokers[: len(order)] = [trial.jokers[index] for index in order]
+            trial.joker_keys[: len(order)] = [trial.joker_keys[index] for index in order]
         elif source is not None and destination is not None:
             move_joker(trial, source, destination)
         return play_cards(trial, list(hand_indices)).score.total
@@ -2234,14 +2235,8 @@ class HeuristicAgent:
             add(tuple(canonical_noncopies))
             return candidates
 
-        blueprints = [
-            index for index in active_copies
-            if state.jokers[index].center_key == "j_blueprint"
-        ]
-        brainstorms = [
-            index for index in active_copies
-            if state.jokers[index].center_key == "j_brainstorm"
-        ]
+        blueprints = [index for index in active_copies if state.jokers[index].center_key == "j_blueprint"]
+        brainstorms = [index for index in active_copies if state.jokers[index].center_key == "j_brainstorm"]
         compatible_targets = [
             index
             for index in canonical_noncopies
@@ -2259,17 +2254,11 @@ class HeuristicAgent:
             add(tuple(canonical_noncopies + active_copies))
             return candidates
 
-        blueprint_assignments = (
-            product(compatible_targets, repeat=len(blueprints))
-            if blueprints
-            else [()]
-        )
+        blueprint_assignments = product(compatible_targets, repeat=len(blueprints)) if blueprints else [()]
         brainstorm_targets: list[int | None] = compatible_targets if brainstorms else [None]
 
         for blueprint_targets in blueprint_assignments:
-            grouped_blueprints: dict[int, list[int]] = {
-                target: [] for target in compatible_targets
-            }
+            grouped_blueprints: dict[int, list[int]] = {target: [] for target in compatible_targets}
             for blueprint, target in zip(blueprints, blueprint_targets, strict=True):
                 grouped_blueprints[target].append(blueprint)
 
@@ -2279,10 +2268,7 @@ class HeuristicAgent:
                     ordered_targets.remove(brainstorm_target)
                     ordered_targets.insert(0, brainstorm_target)
 
-                blocks = [
-                    [*grouped_blueprints.get(target, []), target]
-                    for target in ordered_targets
-                ]
+                blocks = [[*grouped_blueprints.get(target, []), target] for target in ordered_targets]
                 if brainstorms:
                     if self._is_xmult_joker(state, state.jokers[brainstorm_target]):
                         blocks.append(list(brainstorms))
@@ -2315,8 +2301,7 @@ class HeuristicAgent:
         if current == target:
             return None, current
         destination = next(
-            index for index, (actual, wanted) in enumerate(zip(current, target, strict=True))
-            if actual != wanted
+            index for index, (actual, wanted) in enumerate(zip(current, target, strict=True)) if actual != wanted
         )
         source = current.index(target[destination])
         action = encode_action(ActionType.MOVE_JOKER, source, destination)
@@ -2338,13 +2323,9 @@ class HeuristicAgent:
         if count < 2 or not hand_indices:
             return None
         has_copy_joker = any(
-            not joker.debuff and joker.center_key in _COPY_JOKER_KEYS
-            for joker in state.jokers[:count]
+            not joker.debuff and joker.center_key in _COPY_JOKER_KEYS for joker in state.jokers[:count]
         )
-        has_movable_xmult = any(
-            self._is_xmult_joker(state, joker)
-            for joker in state.jokers[:count]
-        )
+        has_movable_xmult = any(self._is_xmult_joker(state, joker) for joker in state.jokers[:count])
         if not has_copy_joker and not has_movable_xmult:
             return None
 
@@ -2428,9 +2409,8 @@ class HeuristicAgent:
             center = state.data.centers.get(item.center_key, {})
             cset = center.get("set", "")
             buy_now = bool(mask[action])
-            can_make_room = (
-                (cset == "Joker" and joker_slots_left == 0)
-                or (cset in ("Planet", "Tarot", "Spectral") and cons_slots_left == 0)
+            can_make_room = (cset == "Joker" and joker_slots_left == 0) or (
+                cset in ("Planet", "Tarot", "Spectral") and cons_slots_left == 0
             )
             if not buy_now and not can_make_room:
                 continue
@@ -2502,9 +2482,6 @@ class HeuristicAgent:
             return -1
 
         def _worst_joker_sell(skip_xmult: bool = True, prefer_economy: bool = False) -> tuple[int, int, int]:
-            worst_score = 1e9
-            worst_sell_action = -1
-            worst_sell_value = 0
             candidates = []
             for i, j in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
                 if j.eternal:
@@ -2579,9 +2556,7 @@ class HeuristicAgent:
                 return best_xmult_action
 
         # ═══ PRIORITY 4: Celestial pack, only after scoring joker or from ante 2 ═══
-        has_scoring_joker = any(
-            j.mult or j.t_mult for j in state.jokers if not j.debuff
-        )
+        has_scoring_joker = any(j.mult or j.t_mult for j in state.jokers if not j.debuff)
         if has_scoring_joker or ante >= 2:
             for i, item in enumerate(all_items):
                 action = ActionRange.SHOP_BUY_START + i
@@ -2624,12 +2599,14 @@ class HeuristicAgent:
                 return sell_act
 
         # ═══ PRIORITY 9: Strong scoring joker (x_mult, high mult, type synergy) ═══
-        save_xmult_slot = (no_xmult and joker_slots_left <= 2 and n_jokers >= 3
-                           and 3 <= ante <= 8)
+        save_xmult_slot = no_xmult and joker_slots_left <= 2 and n_jokers >= 3 and 3 <= ante <= 8
         joker_threshold = -10 if ante <= 1 else (-5 if ante <= 2 else (0 if ante <= 4 else 5))
-        if (best_joker_action >= 0 and joker_slots_left > 0
-                and best_joker_score > joker_threshold
-                and not (save_xmult_slot and best_joker_score <= 15)):
+        if (
+            best_joker_action >= 0
+            and joker_slots_left > 0
+            and best_joker_score > joker_threshold
+            and not (save_xmult_slot and best_joker_score <= 15)
+        ):
             item_idx = best_joker_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
                 item_cost = all_items[item_idx].cost
@@ -2647,8 +2624,7 @@ class HeuristicAgent:
                     return action
 
         # ═══ PRIORITY 10: Economy joker if cheap and we have room (NOT before ante 3) ═══
-        if (best_economy_action >= 0 and joker_slots_left > 0
-                and ante >= 3 and ante <= 5 and best_economy_score > 5):
+        if best_economy_action >= 0 and joker_slots_left > 0 and ante >= 3 and ante <= 5 and best_economy_score > 5:
             item_idx = best_economy_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items):
                 item_cost = all_items[item_idx].cost
@@ -2659,9 +2635,8 @@ class HeuristicAgent:
         # ═══ PRIORITY 11: Sell economy joker for strong scoring joker ═══
         if n_jokers > 0 and joker_slots_left == 0 and best_joker_action >= 0 and best_joker_score > 10:
             sell_act, sell_sc, _ = _worst_joker_sell(skip_xmult=True, prefer_economy=True)
-            if sell_act >= 0 and mask[sell_act]:
-                if best_joker_score - sell_sc > 8:
-                    return sell_act
+            if sell_act >= 0 and mask[sell_act] and best_joker_score - sell_sc > 8:
+                return sell_act
 
         # ═══ PRIORITY 12: Buffoon pack ═══
         if joker_slots_left > 0 and ante >= 2:
@@ -2692,7 +2667,7 @@ class HeuristicAgent:
         if cons_slots_left == 0:
             has_target = main_planet_action >= 0
             if not has_target:
-                for i, item in enumerate(all_items):
+                for item in all_items:
                     center = state.data.centers.get(item.center_key, {})
                     if center.get("set") == "Booster":
                         name = center.get("name", "")
@@ -2783,8 +2758,7 @@ class HeuristicAgent:
                     return action
 
         # ═══ PRIORITY 22: Buy any decent joker as last resort ═══
-        if (best_joker_action >= 0 and joker_slots_left > 0
-                and best_joker_score > 0):
+        if best_joker_action >= 0 and joker_slots_left > 0 and best_joker_score > 0:
             item_idx = best_joker_action - ActionRange.SHOP_BUY_START
             if item_idx < len(all_items) and dollars >= all_items[item_idx].cost:
                 return best_joker_action
@@ -2795,9 +2769,11 @@ class HeuristicAgent:
         # Otherwise, max-reroll while we stay above the interest cap.
         strong_engine = self._has_xmult_joker(state) and len(state.jokers) >= 4
         reroll_cap = 2 if strong_engine else (10 if ante >= _MID_GAME_ANTE else 6)
-        if (mask[ActionRange.SHOP_REROLL]
-                and joker_slots_left > 0
-                and state.current_round.reroll_cost_increase < reroll_cap):
+        if (
+            mask[ActionRange.SHOP_REROLL]
+            and joker_slots_left > 0
+            and state.current_round.reroll_cost_increase < reroll_cap
+        ):
             post_reroll = dollars - reroll_cost
             keeps_interest = post_reroll >= interest_threshold
             cheap_reroll = ante <= 2 and post_reroll >= 4
@@ -2901,7 +2877,6 @@ class HeuristicAgent:
             max_target_size = min(max_size, hand_size)
 
             if preferred_indices is not None:
-                pref_set = set(preferred_indices)
                 pref_and_valid = [i for i in preferred_indices if i < hand_size]
                 pref_max = min(len(pref_and_valid), max_target_size)
                 for target_size in range(pref_max, min_size - 1, -1):

@@ -22,8 +22,7 @@ from ..action import ActionType, decode_action
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
 from ..constants import NUM_ACTIONS
-from ..distributions import MaskedCategorical
-from ..reward import pretraining_outcome_value
+from ..reward import outcome_value
 from ..survival import compute_ante_survival_targets
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
@@ -83,13 +82,6 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
     return returns
 
 
-# Retained for unit tests; production inlines the equivalent at the BC-loss site (~219).
-def _masked_action_loss(logits: torch.Tensor, action_mask: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
-    """Return behavior-cloning NLL over the legal action support only."""
-    dist = MaskedCategorical(logits, action_mask)
-    return -dist.log_prob(actions).mean()
-
-
 def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor]):
     """Return the structured policy distribution, unwrapping DataParallel if present."""
     base_model = model.module if isinstance(model, nn.DataParallel) else model
@@ -108,10 +100,7 @@ def _action_type_dataset_stats(records: list[dict[str, Any]]) -> dict[str, Count
     valid_states: Counter = Counter()
     for record in records:
         chosen[_ACTION_ID_TO_TYPE[int(record["action"])]] += 1
-        valid_types = {
-            _ACTION_ID_TO_TYPE[int(action_id)]
-            for action_id in np.flatnonzero(record["obs"]["action_mask"])
-        }
+        valid_types = {_ACTION_ID_TO_TYPE[int(action_id)] for action_id in np.flatnonzero(record["obs"]["action_mask"])}
         valid_states.update(valid_types)
     return {"chosen": chosen, "valid_states": valid_states}
 
@@ -265,14 +254,10 @@ def train_supervised(
             action_loss = -(logp * bc_weights).sum() / bc_weights.sum().clamp(min=1e-6)
 
             # Value loss: BCE on win prediction + MSE on expected_score
-            win_loss = F.binary_cross_entropy(
-                value_dict["win_prob"], batch["won"].float()
-            )
+            win_loss = F.binary_cross_entropy(value_dict["win_prob"], batch["won"].float())
             # Train expected_score to predict approximate game return
             # This is CRITICAL, PPO uses expected_score as its value function
-            score_loss = F.mse_loss(
-                value_dict["expected_score"], batch["value_target"]
-            )
+            score_loss = F.mse_loss(value_dict["expected_score"], batch["value_target"])
             # Per-ante survival: BCE masked by observed antes.
             survival_mask = batch["ante_survival_mask"]
             survival_per_elem = F.binary_cross_entropy(
@@ -359,58 +344,58 @@ def train_supervised(
     return model
 
 
-def _collate_batch(
-    records: list[dict], device: torch.device, config: SupervisedConfig | None = None
-) -> dict[str, torch.Tensor]:
-    if config is None:
-        # Default config for backward-compat callers (weight=1 for all).
-        bc_weights = np.ones(len(records), dtype=np.float32)
-    else:
-        bc_weights = np.array(
-            [_outcome_weight(r, config) for r in records], dtype=np.float32
-        )
+def _collate_batch(records: list[dict], device: torch.device, config: SupervisedConfig) -> dict[str, torch.Tensor]:
+    bc_weights = np.array([_outcome_weight(record, config) for record in records], dtype=np.float32)
     return {
         "tokens": torch.tensor(
-            np.array([r["obs"]["tokens"] for r in records]), dtype=torch.long, device=device,
+            np.array([r["obs"]["tokens"] for r in records]),
+            dtype=torch.long,
+            device=device,
         ),
         "token_types": torch.tensor(
-            np.array([r["obs"]["token_types"] for r in records]), dtype=torch.long, device=device,
+            np.array([r["obs"]["token_types"] for r in records]),
+            dtype=torch.long,
+            device=device,
         ),
         "scalars": torch.tensor(
-            np.array([r["obs"]["scalars"] for r in records]), dtype=torch.float32, device=device,
+            np.array([r["obs"]["scalars"] for r in records]),
+            dtype=torch.float32,
+            device=device,
         ),
         "attention_mask": torch.tensor(
-            np.array([r["obs"]["attention_mask"] for r in records]), dtype=torch.long, device=device,
+            np.array([r["obs"]["attention_mask"] for r in records]),
+            dtype=torch.long,
+            device=device,
         ),
         "action_mask": torch.tensor(
-            np.array([r["obs"]["action_mask"] for r in records]), dtype=torch.float32, device=device,
+            np.array([r["obs"]["action_mask"] for r in records]),
+            dtype=torch.float32,
+            device=device,
         ),
         "actions": torch.tensor(
-            [r["action"] for r in records], dtype=torch.long, device=device,
+            [r["action"] for r in records],
+            dtype=torch.long,
+            device=device,
         ),
         "won": torch.tensor(
-            [float(r["won"]) for r in records], dtype=torch.float32, device=device,
+            [float(r["won"]) for r in records],
+            dtype=torch.float32,
+            device=device,
         ),
         "value_target": torch.tensor(
-            [
-                r.get(
-                    "return_target",
-                    pretraining_outcome_value(
-                        won=bool(r["won"]),
-                        ante=int(r.get("max_ante", 1)),
-                    ),
-                )
-                for r in records
-            ],
-            dtype=torch.float32, device=device,
+            [r["return_target"] for r in records],
+            dtype=torch.float32,
+            device=device,
         ),
         "ante_survival_target": torch.tensor(
             np.array([_survival_target(r)[0] for r in records]),
-            dtype=torch.float32, device=device,
+            dtype=torch.float32,
+            device=device,
         ),
         "ante_survival_mask": torch.tensor(
             np.array([_survival_target(r)[1] for r in records]),
-            dtype=torch.float32, device=device,
+            dtype=torch.float32,
+            device=device,
         ),
         "bc_weight": torch.tensor(bc_weights, dtype=torch.float32, device=device),
     }
@@ -419,7 +404,7 @@ def _collate_batch(
 def _outcome_weight(record: dict, config: SupervisedConfig) -> float:
     """AWR-style outcome weight: w = exp(beta * normalized_outcome), clamped.
 
-    normalized_outcome maps pretraining_outcome_value to [0, 1]. Applied to the
+    normalized_outcome maps outcome_value to [0, 1]. Applied to the
     BC NLL only, never to value/win/survival targets, so the critic stays
     unbiased while imitation tilts toward successful trajectories.
     """
@@ -427,9 +412,9 @@ def _outcome_weight(record: dict, config: SupervisedConfig) -> float:
 
     won = bool(record.get("won", False))
     max_ante = int(record.get("max_ante", 1))
-    outcome = pretraining_outcome_value(won=won, ante=max_ante)
-    min_outcome = pretraining_outcome_value(won=False, ante=1, stalled=True)
-    max_outcome = pretraining_outcome_value(won=True, ante=1)
+    outcome = outcome_value(won=won, ante=max_ante)
+    min_outcome = outcome_value(won=False, ante=1, stalled=True)
+    max_outcome = outcome_value(won=True, ante=1)
     span = max(max_outcome - min_outcome, 1e-6)
     normalized = (outcome - min_outcome) / span
     weight = math.exp(config.outcome_weight_beta * normalized)

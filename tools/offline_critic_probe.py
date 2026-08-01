@@ -29,7 +29,7 @@ import torch.nn.functional as F
 from pylatro import load_game_data
 from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.checkpoint import load_checkpoint_payload
-from pylatro_agent.reward import PPO_V2_REWARD_CONFIG
+from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
     _extract_step_info_value,
     _make_vectorized_envs,
@@ -98,11 +98,7 @@ def _split_episodes(
             dtype=np.int64,
         )
         rng.shuffle(group)
-        count = (
-            0
-            if len(group) <= 1
-            else min(len(group) - 1, max(1, round(len(group) * validation_fraction)))
-        )
+        count = 0 if len(group) <= 1 else min(len(group) - 1, max(1, round(len(group) * validation_fraction)))
         validation_episodes.extend(group[:count].tolist())
     validation_mask = np.isin(episode_ids, np.asarray(validation_episodes, dtype=np.int64))
     return np.flatnonzero(~validation_mask), np.flatnonzero(validation_mask)
@@ -119,13 +115,13 @@ def _collect_episodes(
 ) -> dict[str, Any]:
     data = load_game_data()
     vocab = build_vocab(data)
-    reward_config = PPO_V2_REWARD_CONFIG(
+    reward_config = RewardConfig(
         gamma=gamma,
-        win_ante=5,
-        planet_match_shaping=True,
+        potential_win_ante=5,
+        enable_planet_match_rewards=True,
         planet_unmatched_use_penalty_coeff=0.4,
         planet_unmatched_claim_penalty_coeff=0.4,
-        build_curve_shaping=True,
+        enable_score_build_potential=True,
     )
     vec_env = _make_vectorized_envs(
         num_envs,
@@ -143,9 +139,7 @@ def _collect_episodes(
     obs_buf.update(obs_dict)
 
     fields = ("tokens", "token_types", "scalars", "attention_mask")
-    episode_obs: list[dict[str, list[np.ndarray]]] = [
-        {field: [] for field in fields} for _ in range(num_envs)
-    ]
+    episode_obs: list[dict[str, list[np.ndarray]]] = [{field: [] for field in fields} for _ in range(num_envs)]
     episode_rewards: list[list[float]] = [[] for _ in range(num_envs)]
     flattened: dict[str, list[np.ndarray]] = {field: [] for field in fields}
     flat_rewards: list[np.ndarray] = []
@@ -181,12 +175,8 @@ def _collect_episodes(
                 if not dones[env_index]:
                     continue
                 attempted += 1
-                won = bool(
-                    _extract_step_info_value(infos, "won", env_index, done=True, default=False)
-                )
-                stalled = bool(
-                    _extract_step_info_value(infos, "stalled", env_index, done=True, default=False)
-                )
+                won = bool(_extract_step_info_value(infos, "won", env_index, done=True, default=False))
+                stalled = bool(_extract_step_info_value(infos, "stalled", env_index, done=True, default=False))
                 if stalled:
                     stalled_dropped += 1
                     episode_obs[env_index] = {field: [] for field in fields}
@@ -199,9 +189,7 @@ def _collect_episodes(
                         flattened[field].append(np.stack(episode_obs[env_index][field]))
                     flat_rewards.append(rewards_array)
                     flat_mc_returns.append(_discounted_returns(rewards_array, gamma))
-                    flat_episode_ids.append(
-                        np.full(len(rewards_array), episode_id, dtype=np.int64)
-                    )
+                    flat_episode_ids.append(np.full(len(rewards_array), episode_id, dtype=np.int64))
                     flat_wins.append(np.full(len(rewards_array), won, dtype=np.bool_))
                     episode_wins[episode_id] = won
                     completed += 1
@@ -245,15 +233,9 @@ def _cache_features(
         for start in range(0, total, batch_size):
             stop = min(total, start + batch_size)
             tokens = torch.as_tensor(dataset["tokens"][start:stop], dtype=torch.long, device=device)
-            token_types = torch.as_tensor(
-                dataset["token_types"][start:stop], dtype=torch.long, device=device
-            )
-            scalars = torch.as_tensor(
-                dataset["scalars"][start:stop], dtype=torch.float32, device=device
-            )
-            attention = torch.as_tensor(
-                dataset["attention_mask"][start:stop], dtype=torch.long, device=device
-            )
+            token_types = torch.as_tensor(dataset["token_types"][start:stop], dtype=torch.long, device=device)
+            scalars = torch.as_tensor(dataset["scalars"][start:stop], dtype=torch.float32, device=device)
+            attention = torch.as_tensor(dataset["attention_mask"][start:stop], dtype=torch.long, device=device)
             backbone = model.embedding(tokens, token_types, scalars)
             backbone = model.backbone(backbone, padding_mask=attention == 0)
             mask = attention.unsqueeze(-1).float()
@@ -276,7 +258,7 @@ def _predict_head(
     head.eval()
     with torch.no_grad():
         for start in range(0, len(indices), batch_size):
-            batch_indices = indices[start:start + batch_size]
+            batch_indices = indices[start : start + batch_size]
             batch = features[batch_indices].to(device)
             mask = torch.ones((len(batch_indices), 1), dtype=torch.long, device=device)
             value = head(batch.unsqueeze(1), mask)["expected_score"]
@@ -313,21 +295,16 @@ def _fit_head(
         rng.shuffle(shuffled)
         head.train()
         for start in range(0, len(shuffled), batch_size):
-            batch_indices = shuffled[start:start + batch_size]
+            batch_indices = shuffled[start : start + batch_size]
             batch_features = features[batch_indices].to(device)
-            batch_targets = torch.as_tensor(
-                targets[batch_indices], dtype=torch.float32, device=device
-            )
+            batch_targets = torch.as_tensor(targets[batch_indices], dtype=torch.float32, device=device)
             mask = torch.ones((len(batch_indices), 1), dtype=torch.long, device=device)
             output = head(batch_features.unsqueeze(1), mask)
             if value_bins > 0:
-                target_probabilities = hl_gauss_projection(
-                    batch_targets, head.bin_edges, head.hl_gauss_sigma
+                target_probabilities = hl_gauss_projection(batch_targets, head.bin_edges, head.hl_gauss_sigma)
+                loss = (
+                    -(target_probabilities * F.log_softmax(output["expected_score_logits"], dim=-1)).sum(dim=-1).mean()
                 )
-                loss = -(
-                    target_probabilities
-                    * F.log_softmax(output["expected_score_logits"], dim=-1)
-                ).sum(dim=-1).mean()
             else:
                 loss = F.mse_loss(output["expected_score"], batch_targets)
             optimizer.zero_grad()
@@ -340,9 +317,7 @@ def _fit_head(
             batch_size=batch_size,
             device=device,
         )
-        validation_mse = float(
-            np.mean((validation_predictions - targets[validation_indices]) ** 2)
-        )
+        validation_mse = float(np.mean((validation_predictions - targets[validation_indices]) ** 2))
         if validation_mse < best_mse:
             best_mse = validation_mse
             best_epoch = epoch
@@ -363,11 +338,7 @@ def _rank_correlation(left: np.ndarray, right: np.ndarray) -> float:
 def _prediction_metrics(targets: np.ndarray, predictions: np.ndarray) -> dict[str, float]:
     residual = targets - predictions
     target_variance = float(np.var(targets))
-    explained_variance = (
-        float("nan")
-        if target_variance <= 1e-12
-        else 1.0 - float(np.var(residual)) / target_variance
-    )
+    explained_variance = float("nan") if target_variance <= 1e-12 else 1.0 - float(np.var(residual)) / target_variance
     tail_cutoff = float(np.quantile(np.abs(targets), 0.9))
     tail = np.abs(targets) >= tail_cutoff
     return {
@@ -475,9 +446,7 @@ def _sil_gate_metrics(
         advantage_floor=advantage_floor,
     )
     gate_mass = float(gate.sum())
-    result["gate_weight_from_wins_fraction"] = (
-        float((gate[win_mask]).sum()) / gate_mass if gate_mass > 0.0 else 0.0
-    )
+    result["gate_weight_from_wins_fraction"] = float((gate[win_mask]).sum()) / gate_mass if gate_mass > 0.0 else 0.0
     if episode_ids is not None and gate_mass > 0.0:
         contributing = gate > 0.0
         result["unique_episodes_with_gate_mass"] = len(np.unique(episode_ids[contributing]))
@@ -516,8 +485,7 @@ def _aggregate_section(runs: list[dict[str, Any]], section: str) -> dict[str, An
                 values = [
                     float(run[section][key][sub_key])
                     for run in runs
-                    if sub_key in run[section][key]
-                    and np.isfinite(run[section][key][sub_key])
+                    if sub_key in run[section][key] and np.isfinite(run[section][key][sub_key])
                 ]
                 if values:
                     sub_result[sub_key] = {
@@ -544,9 +512,7 @@ def _aggregate_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Offline scalar versus HL-Gauss critic and SIL-gate probe."
-    )
+    parser = argparse.ArgumentParser(description="Offline scalar versus HL-Gauss critic and SIL-gate probe.")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--games", type=int, default=96)
@@ -649,9 +615,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     validation_episode_ids = dataset["episode_ids"][validation_indices]
 
     checkpoint_result = {
-        "critic": _prediction_metrics(
-            validation_targets, checkpoint_predictions[validation_indices]
-        ),
+        "critic": _prediction_metrics(validation_targets, checkpoint_predictions[validation_indices]),
         "sil_gate": _sil_gate_metrics(
             validation_mc,
             checkpoint_predictions[validation_indices],
@@ -744,9 +708,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     hl = result["aggregate"]["hl_gauss"]
     print(f"Dataset: {args.games} games, {result['dataset']['states']} states, {result['dataset']['wins']} wins")
     print(
-        "Held-out critic MSE: "
-        f"scalar={scalar['critic']['mse']['mean']:.4f}, "
-        f"HL-Gauss={hl['critic']['mse']['mean']:.4f}"
+        f"Held-out critic MSE: scalar={scalar['critic']['mse']['mean']:.4f}, HL-Gauss={hl['critic']['mse']['mean']:.4f}"
     )
     print(
         "Held-out explained variance: "

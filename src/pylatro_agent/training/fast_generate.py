@@ -19,7 +19,7 @@ import random
 import tempfile
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
@@ -34,10 +34,6 @@ from ..survival import compute_ante_survival_targets
 from ..tokenizer import Tokenizer
 from ..vocab import Vocab, build_vocab
 from .fast_runner import FastRunner, _blind_target
-
-if TYPE_CHECKING:
-    import numpy as np
-
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +69,6 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
     info = {
         "ante": state.round_resets.ante,
         "round_score": runner.round_score,
-        "blind_beaten": runner.phase == GamePhase.HAND_PLAY and runner._ctrl.blind_beaten(),
         "blind_on_deck": state.blind_on_deck or "",
         "blind_target": _blind_target(state),
         "hands_left": state.current_round.hands_left,
@@ -88,13 +83,10 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
         "consumable_keys": tuple(state.consumable_keys),
         "last_tarot_planet": state.last_tarot_planet or "",
         "shop_keys": tuple(item.center_key for item in shop_items),
-        "shop_item_details": tuple(_shop_item_detail(state, item) for item in shop_items),
         "pack_booster_key": state.pack.booster_key if state.pack is not None else "",
         "pack_card_keys": tuple(card.center_key for card in pack_cards),
         "pack_state_name": state.pack.state_name if state.pack is not None else "",
-        "pack_card_details": tuple(_pack_card_detail(state, card) for card in pack_cards),
         "pack_choices_remaining": pack_cr,
-        "blind_just_beaten": runner.blind_just_beaten,
         "progress_made": False,
         "steps_since_progress": runner.steps_since_progress,
         "stalled": stalled,
@@ -125,49 +117,11 @@ def _info_signature(info: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _pack_card_detail(state, card) -> dict[str, object]:
-    front_key = card.front_key or ""
-    front = state.data.cards.get(front_key, {}) if front_key else {}
-    return {
-        "center_key": card.center_key,
-        "front_key": front_key,
-        "rank": front_key[2:] if len(front_key) > 2 else "",
-        "suit": str(front.get("suit", "")),
-        "seal": card.seal or "",
-        "edition": card.edition or {},
-    }
-
-
-def _shop_item_detail(state, card) -> dict[str, object]:
-    center = state.data.centers.get(card.center_key, {})
-    return {
-        "center_key": card.center_key,
-        "card_type": getattr(card, "card_type", ""),
-        "pack_state_name": _pack_state_name_for_shop_card(center),
-    }
-
-
-def _pack_state_name_for_shop_card(center: dict) -> str:
-    name = str(center.get("name", ""))
-    if "Arcana" in name:
-        return "TAROT_PACK"
-    if "Celestial" in name:
-        return "PLANET_PACK"
-    if "Spectral" in name:
-        return "SPECTRAL_PACK"
-    if "Standard" in name:
-        return "STANDARD_PACK"
-    if "Buffoon" in name:
-        return "BUFFOON_PACK"
-    return ""
-
-
 def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray]:
     mask = runner.compute_mask()
     raw = tokenizer.tokenize(
         runner.state,
         runner.sub_phase,
-        selected_cards=runner.selected_cards,
         action_mask=mask.copy(),
         round_score=runner.round_score,
     )
@@ -177,7 +131,6 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
         "scalars": raw.scalars,
         "attention_mask": raw.attention_mask,
         "action_mask": raw.action_mask,
-        "selected_cards": raw.selected_cards,
     }
 
 
@@ -218,8 +171,6 @@ def _run_game_single_pass(
             runner.state,
             runner.sub_phase,
             mask,
-            selected_cards=runner.selected_cards,
-            pending_action=runner.pending_action,
             round_score=runner.round_score,
         )
 
@@ -245,7 +196,6 @@ def _run_game_single_pass(
             stalled = True
 
         curr_info["stalled"] = stalled
-        curr_info["blind_just_beaten"] = runner.blind_just_beaten
         curr_info["progress_made"] = progress_made
         curr_info["steps_since_progress"] = steps_since_progress
         decoded = decode_action(action)
@@ -258,14 +208,16 @@ def _run_game_single_pass(
             pre_score = evaluate_build(current_prev_info).estimated_score
             post_score = evaluate_build(curr_info).estimated_score
             ratio = max(post_score, 1.0) / max(pre_score, 1.0)
-            curr_info.update({
-                "joker_move_source": decoded.index,
-                "joker_move_destination": decoded.detail,
-                "joker_move_pre_score": pre_score,
-                "joker_move_post_score": post_score,
-                "joker_move_score_ratio": ratio,
-                "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
-            })
+            curr_info.update(
+                {
+                    "joker_move_source": decoded.index,
+                    "joker_move_destination": decoded.detail,
+                    "joker_move_pre_score": pre_score,
+                    "joker_move_post_score": post_score,
+                    "joker_move_score_ratio": ratio,
+                    "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
+                }
+            )
 
         action_diagnostics = _fast_action_diagnostics(state, decoded)
         curr_info.update(action_diagnostics)
@@ -306,8 +258,6 @@ def _run_game_fast_no_obs(
             runner.state,
             runner.sub_phase,
             mask,
-            selected_cards=runner.selected_cards,
-            pending_action=runner.pending_action,
             round_score=runner.round_score,
         )
         runner.step(action)
@@ -483,10 +433,7 @@ def _generate_batch(
     gamma: float,
     keep_below_threshold_ratio: float,
 ) -> list[dict[str, Any]]:
-    worker_args = [
-        (i * 1_000_000, min_ante, gamma, keep_below_threshold_ratio)
-        for i in range(num_workers)
-    ]
+    worker_args = [(i * 1_000_000, min_ante, gamma, keep_below_threshold_ratio) for i in range(num_workers)]
 
     stop_event = threading.Event()
 
@@ -557,7 +504,11 @@ def generate_training_data(
 
     if chunk_size <= 0 or chunk_size >= num_games:
         records = _generate_batch(
-            num_games, num_workers, min_ante, gamma, keep_below_threshold_ratio,
+            num_games,
+            num_workers,
+            min_ante,
+            gamma,
+            keep_below_threshold_ratio,
         )
         logger.info(
             "Fast-generated %d training records from %d requested games",
@@ -581,12 +532,17 @@ def generate_training_data(
             num_games,
         )
         records = _generate_batch(
-            this_chunk, num_workers, min_ante, gamma, keep_below_threshold_ratio,
+            this_chunk,
+            num_workers,
+            min_ante,
+            gamma,
+            keep_below_threshold_ratio,
         )
         total_records += len(records)
 
         chunk_fd, chunk_path = tempfile.mkstemp(
-            suffix=".pkl", prefix=f"pylatro_chunk_{chunk_idx}_",
+            suffix=".pkl",
+            prefix=f"pylatro_chunk_{chunk_idx}_",
         )
         with os.fdopen(chunk_fd, "wb") as f:
             pickle.dump(records, f, protocol=pickle.HIGHEST_PROTOCOL)

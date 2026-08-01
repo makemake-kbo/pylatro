@@ -9,11 +9,11 @@ from enum import IntEnum, StrEnum
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-TOKENIZER_VERSION = 3
+TOKENIZER_VERSION = 4
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
-TOKEN_DIM = 13
+TOKEN_DIM = 12
 SCALAR_DIM = 11  # continuous scalar features
 
 MAX_HAND_SIZE = 16
@@ -44,9 +44,7 @@ CONSUMABLE_JOKER_OFFSET = 1 + NUM_CONSUMABLE_HAND_SUBSETS
 # Base-game consumables whose only legal target is a single joker (no hand
 # cards). The mask / heuristic / fast runner all need to agree on this set;
 # keep the single source of truth here.
-JOKER_TARGET_CONSUMABLE_NAMES = frozenset(
-    {"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"}
-)
+JOKER_TARGET_CONSUMABLE_NAMES = frozenset({"The Wheel of Fortune", "Ectoplasm", "Hex", "Ankh"})
 
 # Consumables that require hand-card targets but do not declare
 # config.max_highlighted in game_data.json.
@@ -73,7 +71,6 @@ POKER_HAND_NAMES = (
 class SubPhase(StrEnum):
     BLIND_SELECT = "blind_select"
     CHOOSE_ACTION = "choose_action"
-    SELECT_CARDS = "select_cards"
     SHOP = "shop"
     BOOSTER_PACK = "booster_pack"
 
@@ -90,11 +87,7 @@ _DISCARD_SUBSET_END = _DISCARD_SUBSET_START + NUM_HAND_SUBSETS - 1
 #   [no_target (1), hand_subset (NUM_CONSUMABLE_HAND_SUBSETS), joker (MAX_JOKER_SLOTS)]
 # so slot k owns _CONSUMABLE_FLAT_START + k*CONSUMABLE_ACTIONS_PER_SLOT .. (next-1).
 _CONSUMABLE_FLAT_START = _DISCARD_SUBSET_END + 1
-_CONSUMABLE_FLAT_END = (
-    _CONSUMABLE_FLAT_START
-    + MAX_CONSUMABLE_SLOTS * CONSUMABLE_ACTIONS_PER_SLOT
-    - 1
-)
+_CONSUMABLE_FLAT_END = _CONSUMABLE_FLAT_START + MAX_CONSUMABLE_SLOTS * CONSUMABLE_ACTIONS_PER_SLOT - 1
 _SHOP_BUY_START = _CONSUMABLE_FLAT_END + 1
 _SHOP_BUY_END = _SHOP_BUY_START + MAX_SHOP_ITEMS - 1
 _SHOP_REROLL = _SHOP_BUY_END + 1
@@ -112,6 +105,7 @@ _MOVE_JOKER_END = _MOVE_JOKER_START + MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1) - 
 
 class ActionRange(IntEnum):
     """Starting index of each action group."""
+
     BLIND_PLAY = _BLIND_PLAY
     BLIND_SKIP = _BLIND_SKIP
     BLIND_REROLL = _BLIND_REROLL

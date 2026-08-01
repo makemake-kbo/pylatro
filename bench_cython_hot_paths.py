@@ -47,7 +47,6 @@ from pylatro_agent.training.fast_generate import (
 from pylatro_agent.training.fast_runner import (
     FastRunner,
     _blind_target,
-    _progress_signature,
 )
 from pylatro_agent.vocab import build_vocab
 
@@ -121,13 +120,6 @@ def _make_runner_at_blind_select(data, seed: int = 42):
     return FastRunner(seed, data)
 
 
-def _make_runner_at_select_cards(data, seed: int = 42):
-    runner = FastRunner(seed, data)
-    runner.step(ActionRange.BLIND_PLAY)
-    runner.step(ActionRange.PLAY_HAND)
-    return runner
-
-
 def _advance_to_shop(data, seed: int = 42):
     runner = FastRunner(seed, data)
     agent = HeuristicAgent()
@@ -137,13 +129,7 @@ def _advance_to_shop(data, seed: int = 42):
         if runner.sub_phase == SubPhase.SHOP:
             return runner
         mask = runner.compute_mask()
-        action = agent.select_action(
-            runner.state,
-            runner.sub_phase,
-            mask,
-            selected_cards=runner.selected_cards,
-            pending_action=runner.pending_action,
-        )
+        action = agent.select_action(runner.state, runner.sub_phase, mask)
         runner.step(action)
     return runner
 
@@ -153,13 +139,7 @@ def _play_one_game(agent, data, seed: int) -> int:
     steps = 0
     while not runner.done:
         mask = runner.compute_mask()
-        action = agent.select_action(
-            runner.state,
-            runner.sub_phase,
-            mask,
-            selected_cards=runner.selected_cards,
-            pending_action=runner.pending_action,
-        )
+        action = agent.select_action(runner.state, runner.sub_phase, mask)
         runner.step(action)
         steps += 1
     return steps
@@ -249,11 +229,6 @@ def bench_compute_mask(data) -> BenchGroup:
     r.name = "compute_mask()  [CHOOSE_ACTION]"
     g.results.append(r)
 
-    runner_cards = _make_runner_at_select_cards(data)
-    r = _bench(lambda: runner_cards.compute_mask(), 5000)
-    r.name = "compute_mask()  [SELECT_CARDS]"
-    g.results.append(r)
-
     runner_shop = _advance_to_shop(data)
     if runner_shop.sub_phase == SubPhase.SHOP:
         r = _bench(lambda: runner_shop.compute_mask(), 5000)
@@ -271,14 +246,8 @@ def bench_fast_runner_internals(data) -> BenchGroup:
 
     runner = _make_runner_at_choose_action(data)
     state = runner.state
-    ctrl_phase = runner.phase
-    sub_phase = runner.sub_phase
-    round_score = runner.round_score
 
-    r = _bench(
-        lambda: _progress_signature(state, ctrl_phase, sub_phase, round_score),
-        10000,
-    )
+    r = _bench(runner._progress_signature, 10000)
     r.name = "_progress_signature()"
     g.results.append(r)
 
@@ -314,13 +283,7 @@ def bench_heuristic(data) -> BenchGroup:
     mask_blind = runner_blind.compute_mask()
 
     r = _bench(
-        lambda: agent.select_action(
-            runner_blind.state,
-            SubPhase.BLIND_SELECT,
-            mask_blind,
-            selected_cards=set(),
-            pending_action=None,
-        ),
+        lambda: agent.select_action(runner_blind.state, SubPhase.BLIND_SELECT, mask_blind),
         5000,
     )
     r.name = "select_action()  [BLIND_SELECT]"
@@ -330,13 +293,7 @@ def bench_heuristic(data) -> BenchGroup:
     mask_action = runner_action.compute_mask()
 
     r = _bench(
-        lambda: agent.select_action(
-            runner_action.state,
-            SubPhase.CHOOSE_ACTION,
-            mask_action,
-            selected_cards=set(),
-            pending_action=None,
-        ),
+        lambda: agent.select_action(runner_action.state, SubPhase.CHOOSE_ACTION, mask_action),
         5000,
     )
     r.name = "select_action()  [CHOOSE_ACTION]"
@@ -352,8 +309,8 @@ def bench_heuristic(data) -> BenchGroup:
     r.name = "_find_worst_cards()  [3 discards]"
     g.results.append(r)
 
-    r = _bench(lambda: agent._evaluate_hand_quality(runner_action.state, hand), 2000)
-    r.name = "_evaluate_hand_quality()"
+    r = _bench(lambda: agent._quick_hand_quality(runner_action.state, hand), 2000)
+    r.name = "_quick_hand_quality()"
     g.results.append(r)
 
     agent2 = HeuristicAgent()
@@ -534,13 +491,7 @@ def _bench_filter_pass(agent, data, min_ante, iterations, warmup):
         steps = 0
         while not runner.done:
             mask = runner.compute_mask()
-            action = agent.select_action(
-                runner.state,
-                runner.sub_phase,
-                mask,
-                selected_cards=runner.selected_cards,
-                pending_action=runner.pending_action,
-            )
+            action = agent.select_action(runner.state, runner.sub_phase, mask)
             runner.step(action)
             steps += 1
         games_run += 1
@@ -590,13 +541,7 @@ def bench_per_step_breakdown(data) -> BenchGroup:
     g.results.append(r)
 
     r = _bench(
-        lambda: agent.select_action(
-            state,
-            SubPhase.CHOOSE_ACTION,
-            mask_arr,
-            selected_cards=set(),
-            pending_action=None,
-        ),
+        lambda: agent.select_action(state, SubPhase.CHOOSE_ACTION, mask_arr),
         5000,
     )
     r.name = "2. select_action()  [CHOOSE_ACTION]"
@@ -622,7 +567,7 @@ def bench_per_step_breakdown(data) -> BenchGroup:
     r.name = "6. _capture_info()"
     g.results.append(r)
 
-    r = _bench(lambda: _progress_signature(state, runner.phase, runner.sub_phase, 0), 5000)
+    r = _bench(runner._progress_signature, 5000)
     r.name = "7. _progress_signature()"
     g.results.append(r)
 

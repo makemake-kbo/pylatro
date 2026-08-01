@@ -21,7 +21,6 @@ from pylatro_agent.survival import DEFAULT_MAX_ANTES
 from pylatro_agent.training.sil import (
     EpisodeReplayBuffer,
     SILEpisodeTracker,
-    WinEpisodeBuffer,
     sil_percentile_gate,
 )
 
@@ -58,9 +57,7 @@ def _run_episode(
         rewards = rng.random(num_envs).astype(np.float32)
         tracker.record_step(obs, actions, rewards, teacher_forced)
         recorded.append((obs, int(actions[env_idx])))
-    tracker.finish_episode(
-        env_idx, won=won, stalled=stalled, final_ante=final_ante, buffer=buffer
-    )
+    tracker.finish_episode(env_idx, won=won, stalled=stalled, final_ante=final_ante, buffer=buffer)
     return recorded
 
 
@@ -74,9 +71,7 @@ def test_wins_and_ordinary_losses_enter_replay() -> None:
     buffer = EpisodeReplayBuffer(capacity_episodes=4)
     tracker = SILEpisodeTracker(num_envs=1)
 
-    recorded = _run_episode(
-        tracker, buffer, env_idx=0, steps=3, won=True, rng=rng, num_envs=1
-    )
+    recorded = _run_episode(tracker, buffer, env_idx=0, steps=3, won=True, rng=rng, num_envs=1)
     assert buffer.num_episodes == 1
     assert buffer.num_transitions == 3
     assert buffer.episodes_added_total == 1
@@ -100,9 +95,7 @@ def test_stalled_episodes_are_dropped() -> None:
     buffer = EpisodeReplayBuffer(capacity_episodes=4)
     tracker = SILEpisodeTracker(num_envs=1)
 
-    _run_episode(
-        tracker, buffer, env_idx=0, steps=5, won=False, stalled=True, rng=rng, num_envs=1
-    )
+    _run_episode(tracker, buffer, env_idx=0, steps=5, won=False, stalled=True, rng=rng, num_envs=1)
     assert buffer.num_episodes == 0
     assert buffer.stalled_episodes_dropped_total == 1
     assert buffer.episodes_added_total == 0
@@ -139,17 +132,13 @@ def test_tracker_separates_envs_across_shared_steps() -> None:
     tracker = SILEpisodeTracker(num_envs=2)
 
     for _ in range(4):
-        tracker.record_step(
-            _make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2), rng.random(2).astype(np.float32)
-        )
+        tracker.record_step(_make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2), rng.random(2).astype(np.float32))
     tracker.finish_episode(0, won=True, stalled=False, final_ante=1, buffer=buffer)
     assert buffer.num_episodes == 1
     assert buffer.num_transitions == 4
 
     for _ in range(2):
-        tracker.record_step(
-            _make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2), rng.random(2).astype(np.float32)
-        )
+        tracker.record_step(_make_obs(2, rng), rng.integers(0, NUM_ACTIONS, size=2), rng.random(2).astype(np.float32))
     tracker.finish_episode(1, won=False, stalled=False, final_ante=2, buffer=buffer)
     assert buffer.num_episodes == 2
     assert buffer.num_transitions == 4 + 6
@@ -179,10 +168,6 @@ def test_buffer_fifo_eviction() -> None:
     assert buffer._episodes[1]["episode_id"] == 2
 
 
-def test_win_episode_buffer_is_alias_for_back_compat() -> None:
-    assert WinEpisodeBuffer is EpisodeReplayBuffer
-
-
 # ---------------------------------------------------------------------------
 # 6-8: episode-uniform bounded sampling
 # ---------------------------------------------------------------------------
@@ -190,9 +175,7 @@ def test_win_episode_buffer_is_alias_for_back_compat() -> None:
 
 def _fill_episode(buffer: EpisodeReplayBuffer, steps: int, won: bool, rng) -> None:
     tracker = SILEpisodeTracker(num_envs=1)
-    _run_episode(
-        tracker, buffer, env_idx=0, steps=steps, won=won, rng=rng, num_envs=1
-    )
+    _run_episode(tracker, buffer, env_idx=0, steps=steps, won=won, rng=rng, num_envs=1)
 
 
 def test_sample_batch_shapes_and_dtypes() -> None:
@@ -343,9 +326,7 @@ def test_gate_opens_near_open_percentile_and_saturates_near_saturation() -> None
 
 def test_critic_overvalued_rows_get_zero_gate() -> None:
     adv = np.asarray([-5.0, -1.0, 0.5, 3.0, 10.0])
-    gate, _ = sil_percentile_gate(
-        adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.25
-    )
+    gate, _ = sil_percentile_gate(adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.25)
     assert gate[0] == 0.0
     assert gate[1] == 0.0
 
@@ -353,9 +334,7 @@ def test_critic_overvalued_rows_get_zero_gate() -> None:
 def test_sub_floor_positive_advantages_get_zero_gate() -> None:
     # Floor 0.25: small positive advantages below the open threshold get zero.
     adv = np.asarray([0.05, 0.1, 0.2, 1.0, 5.0])
-    gate, info = sil_percentile_gate(
-        adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.25
-    )
+    gate, info = sil_percentile_gate(adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.25)
     # numpy linear-interp: p80=1.8, so open_threshold = max(0.25, 1.8) = 1.8.
     assert info["open_threshold"] == pytest.approx(1.8)
     # Everything at or below 1.0 is sub-threshold -> zero gate.
@@ -368,18 +347,14 @@ def test_sub_floor_positive_advantages_get_zero_gate() -> None:
 def test_floor_raises_open_threshold_above_percentile() -> None:
     # When p80 is below the floor, the floor dominates.
     adv = np.asarray([0.0, 0.05, 0.1, 0.15, 0.2])
-    _, info = sil_percentile_gate(
-        adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.5
-    )
+    _, info = sil_percentile_gate(adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.5)
     assert info["open_threshold"] == pytest.approx(0.5)
 
 
 def test_degenerate_percentile_range_produces_no_signal() -> None:
     # All advantages identical -> q_saturation == q_open, degenerate span -> zero.
     adv = np.asarray([2.0, 2.0, 2.0, 2.0])
-    gate, _ = sil_percentile_gate(
-        adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.25
-    )
+    gate, _ = sil_percentile_gate(adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.25)
     assert np.all(gate == 0.0)
 
 
@@ -398,9 +373,7 @@ def test_gate_low_signal_batch_does_not_manufacture_top_tail() -> None:
     # All advantages below the floor: gate must stay all-zero even though the
     # 95th percentile exists numerically. open_threshold = max(floor, p95).
     adv = np.asarray([0.0, 0.01, 0.02, 0.03, 0.04])
-    gate, _ = sil_percentile_gate(
-        adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.5
-    )
+    gate, _ = sil_percentile_gate(adv, open_percentile=80.0, saturation_percentile=95.0, advantage_floor=0.5)
     assert np.all(gate == 0.0)
 
 
@@ -415,9 +388,7 @@ def test_teacher_forced_rows_excluded_by_default() -> None:
     tracker = SILEpisodeTracker(num_envs=1)
     # Mark every step teacher-forced.
     tf = np.asarray([True], dtype=bool)
-    _run_episode(
-        tracker, buffer, env_idx=0, steps=6, won=True, rng=rng, num_envs=1, teacher_forced=tf
-    )
+    _run_episode(tracker, buffer, env_idx=0, steps=6, won=True, rng=rng, num_envs=1, teacher_forced=tf)
     # Episode is retained in replay...
     assert buffer.num_episodes == 1
     # ...but has no eligible rows under the default teacher filter.
@@ -506,9 +477,7 @@ def test_sil_coeff_monotonic_without_resume_rewind() -> None:
         assert now <= prev + 1e-12
         prev = now
     # Continuity at resume boundary.
-    assert resolve_sil_coeff(cfg, 300_000, schedule_total_steps=original_horizon) == pytest.approx(
-        coeff_at_resume
-    )
+    assert resolve_sil_coeff(cfg, 300_000, schedule_total_steps=original_horizon) == pytest.approx(coeff_at_resume)
 
 
 def test_sil_coeff_floor_clamped_to_coeff() -> None:
@@ -592,28 +561,6 @@ def test_config_validation() -> None:
     _validate_ppo_config(PPOConfig(sil_logical_minibatches_per_update=2))
 
 
-def test_resolve_sil_objective_deprecated_compatibility() -> None:
-    from pylatro_agent.training.ppo import resolve_sil_objective
-
-    # Defaults.
-    assert resolve_sil_objective(None, None) == "advantage"
-    # Explicit objective wins when no deprecated flag.
-    assert resolve_sil_objective("winning_bc", None) == "winning_bc"
-    # Deprecated negative form -> winning_bc.
-    assert resolve_sil_objective(None, True) == "winning_bc"
-    # Deprecated positive form -> advantage.
-    assert resolve_sil_objective(None, False) == "advantage"
-    # Explicit winning_bc agrees with the deprecated negative flag.
-    assert resolve_sil_objective("winning_bc", True) == "winning_bc"
-    # Explicit advantage agrees with the deprecated positive flag.
-    assert resolve_sil_objective("advantage", False) == "advantage"
-    # Contradiction -> rejected (an explicit objective cannot be overridden).
-    with pytest.raises(ValueError, match="conflicts"):
-        resolve_sil_objective("advantage", True)
-    with pytest.raises(ValueError, match="conflicts"):
-        resolve_sil_objective("winning_bc", False)
-
-
 def test_seed_training_rngs_repeats_all_process_rngs() -> None:
     from pylatro_agent.training.ppo import _seed_training_rngs
 
@@ -674,9 +621,7 @@ def test_checkpoint_records_training_seed(
 
 class _SilDist:
     def __init__(self, logits: torch.Tensor, action_mask: torch.Tensor) -> None:
-        self.dist = torch.distributions.Categorical(
-            logits=logits.masked_fill(action_mask <= 0, -1e8)
-        )
+        self.dist = torch.distributions.Categorical(logits=logits.masked_fill(action_mask <= 0, -1e8))
 
     def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
         return self.dist.log_prob(actions)
@@ -1070,10 +1015,7 @@ def test_no_kl_breach_path_trains_normally() -> None:
     assert not stats.kl_rollback
     assert stats.stop_reason == "none"
     assert stats.ppo_minibatches_processed == [8]
-    assert any(
-        not torch.equal(value, before[key])
-        for key, value in model.state_dict().items()
-    )
+    assert any(not torch.equal(value, before[key]) for key, value in model.state_dict().items())
 
 
 def test_sil_shares_optimizer_step_with_ppo() -> None:

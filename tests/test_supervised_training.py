@@ -14,8 +14,8 @@ import pytest
 import torch
 
 from pylatro import load_game_data
-from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from pylatro_agent.action import ActionType, encode_action
+from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.training import fast_generate
@@ -30,7 +30,6 @@ from pylatro_agent.training.supervised import (
     _action_type_dataset_stats,
     _collate_batch,
     _discounted_returns,
-    _masked_action_loss,
     train_supervised,
 )
 from pylatro_agent.vocab import build_vocab
@@ -79,8 +78,6 @@ class TestFastRunnerTermination:
                 runner.state,
                 runner.sub_phase,
                 mask,
-                selected_cards=runner.selected_cards,
-                pending_action=runner.pending_action,
             )
             runner.step(action)
             steps += 1
@@ -100,8 +97,6 @@ class TestFastRunnerTermination:
                 runner.state,
                 runner.sub_phase,
                 mask,
-                selected_cards=runner.selected_cards,
-                pending_action=runner.pending_action,
             )
             runner.step(action)
             steps += 1
@@ -121,8 +116,6 @@ class TestFastRunnerTermination:
                     runner.state,
                     runner.sub_phase,
                     mask,
-                    selected_cards=runner.selected_cards,
-                    pending_action=runner.pending_action,
                 )
                 runner.step(action)
                 steps += 1
@@ -183,9 +176,7 @@ class TestFastNoObs:
         assert max_ante_fast == max_ante_single, (
             f"Fast ({max_ante_fast}) and single ({max_ante_single}) max_ante disagree"
         )
-        assert won_fast == won_single, (
-            f"Fast ({won_fast}) and single ({won_single}) won disagree"
-        )
+        assert won_fast == won_single, f"Fast ({won_fast}) and single ({won_single}) won disagree"
 
 
 # ── ETA formatting tests ──
@@ -225,7 +216,11 @@ class TestETAFormatting:
 class TestDataGeneration:
     def test_generate_single_worker_min_ante_1(self, game_data, vocab):
         records = fast_generate.generate_training_data(
-            3, data=game_data, vocab=vocab, min_ante=1, num_workers=1,
+            3,
+            data=game_data,
+            vocab=vocab,
+            min_ante=1,
+            num_workers=1,
         )
         assert len(records) > 0
         for rec in records:
@@ -235,14 +230,22 @@ class TestDataGeneration:
 
     def test_generate_two_workers_min_ante_1(self, game_data, vocab):
         records = fast_generate.generate_training_data(
-            5, data=game_data, vocab=vocab, min_ante=1, num_workers=2,
+            5,
+            data=game_data,
+            vocab=vocab,
+            min_ante=1,
+            num_workers=2,
         )
         assert len(records) > 0
 
     def test_generate_completes_quickly(self, game_data, vocab):
         t0 = time.monotonic()
         records = fast_generate.generate_training_data(
-            5, data=game_data, vocab=vocab, min_ante=1, num_workers=1,
+            5,
+            data=game_data,
+            vocab=vocab,
+            min_ante=1,
+            num_workers=1,
         )
         elapsed = time.monotonic() - t0
         assert elapsed < 30, f"Generation took {elapsed:.1f}s, expected < 30s"
@@ -272,6 +275,7 @@ class TestCollation:
                 },
             ],
             torch.device("cpu"),
+            SupervisedConfig(),
         )
         assert batch["tokens"].shape == (2, MAX_SEQ_LEN, TOKEN_DIM)
         assert batch["token_types"].shape == (2, MAX_SEQ_LEN)
@@ -297,32 +301,9 @@ class TestCollation:
                 }
             ],
             torch.device("cpu"),
+            SupervisedConfig(),
         )
         assert batch["value_target"].tolist() == [-0.25]
-
-    def test_collate_batch_falls_back_to_legacy_value_target(self):
-        batch = _collate_batch(
-            [
-                {
-                    "obs": _dummy_obs(),
-                    "action": 0,
-                    "won": False,
-                    "max_ante": 3,
-                }
-            ],
-            torch.device("cpu"),
-        )
-        assert batch["value_target"].tolist() == [-7.0]
-
-    def test_masked_action_loss_ignores_invalid_logits(self):
-        logits = torch.tensor([[0.0, 100.0, -5.0]], dtype=torch.float32)
-        action_mask = torch.tensor([[1.0, 0.0, 1.0]], dtype=torch.float32)
-        actions = torch.tensor([0], dtype=torch.long)
-
-        loss = _masked_action_loss(logits, action_mask, actions)
-
-        expected = -torch.log_softmax(torch.tensor([[0.0, -5.0]]), dim=-1)[0, 0]
-        assert loss.item() == pytest.approx(expected.item())
 
     def test_action_type_dataset_stats_separates_chosen_from_valid(self):
         obs = _dummy_obs()

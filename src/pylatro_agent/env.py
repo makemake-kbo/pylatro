@@ -8,12 +8,12 @@ import gymnasium
 import numpy as np
 from gymnasium import spaces
 
-from pylatro import GameData, get_blind_amount, load_game_data
+from pylatro import GameData, load_game_data
 from pylatro.instances import move_joker
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
-from .constants import MAX_HAND_SIZE, MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
+from .constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, SubPhase
 from .diagnostics import (
     action_diagnostics as _shared_action_diagnostics,
 )
@@ -28,8 +28,6 @@ from .masks import compute_action_mask
 from .reward import (
     DEFAULT_REWARD_CONFIG,
     RewardConfig,
-    RewardFn,
-    default_reward,
     default_reward_components,
 )
 from .shop_eval import capture_build_features, evaluate_build
@@ -41,8 +39,8 @@ from .vocab import Vocab, build_vocab
 class BalatroEnv(gymnasium.Env):
     """Gymnasium environment for Balatro.
 
-    Each step() is one atomic decision. The environment tracks sub-phases
-    beyond GamePhase to handle multi-step actions like card selection.
+    Each ``step()`` executes one complete atomic decision. Sub-phases identify
+    which family of atomic actions is currently legal.
     """
 
     metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
@@ -52,9 +50,7 @@ class BalatroEnv(gymnasium.Env):
         seed: int | None = None,
         stake: int = 1,
         deck_key: str = "b_red",
-        objective: str = "win",
         max_steps: int = 2000,
-        reward_fn: RewardFn | None = None,
         reward_config: RewardConfig | None = None,
         data: GameData | None = None,
         vocab: Vocab | None = None,
@@ -68,14 +64,12 @@ class BalatroEnv(gymnasium.Env):
         self._tokenizer = Tokenizer(vocab=self._vocab)
         self._stake = stake
         self._deck_key = deck_key
-        self._objective = objective
         self._max_steps = max_steps
         # Override the run's victory threshold for curriculum training. None
         # uses the engine default (win_ante=8). Lower values let PPO see
         # frequent wins early so it can bootstrap a value signal, the
         # heuristic teacher only wins ~1% at ante 8 but ~39% at ante 4.
         self._win_ante_override = win_ante
-        self._reward_fn = reward_fn or default_reward
         self._reward_config = reward_config or DEFAULT_REWARD_CONFIG
         self._seed = seed
         self._initial_seed_pending = seed is not None
@@ -86,22 +80,12 @@ class BalatroEnv(gymnasium.Env):
 
         self._controller: GameController | None = None
         self._sub_phase = SubPhase.BLIND_SELECT
-        self._step_count = 0
         self._steps_since_progress = 0
-
-        # Multi-step state (only used by the legacy SELECT_CARDS flow; the
-        # consumable flow is now atomic, every consumable action commits
-        # slot + targets in one env.step() so no pending state is needed).
-        self._selected_cards: set[int] = set()
-        self._pending_action: str | None = None  # "play" or "discard"
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
-        self._round_score: int = 0
-        self._blind_just_beaten: bool = False
-
-        # Heuristic teacher for distillation. One instance per env (process)
-        #, the cache is per-instance and keyed on hand+joker signature, so
+        # Heuristic teacher for distillation. One instance per env (process);
+        # the cache is per-instance and keyed on hand+joker signature, so
         # parallel envs are isolated naturally. When nothing consumes teacher
         # labels (no distillation, DAgger, or teacher-forced rollouts) the
         # caller disables it: the teacher runs twice per step and is pure
@@ -109,14 +93,15 @@ class BalatroEnv(gymnasium.Env):
         self._teacher = HeuristicAgent() if enable_teacher else None
 
         # Gymnasium spaces
-        self.observation_space = spaces.Dict({
-            "tokens": spaces.Box(0, 32767, (MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
-            "token_types": spaces.Box(0, 10, (MAX_SEQ_LEN,), dtype=np.int8),
-            "scalars": spaces.Box(-np.inf, np.inf, (SCALAR_DIM,), dtype=np.float32),
-            "attention_mask": spaces.Box(0, 1, (MAX_SEQ_LEN,), dtype=np.int8),
-            "action_mask": spaces.Box(0, 1, (NUM_ACTIONS,), dtype=np.int8),
-            "selected_cards": spaces.Box(0, 1, (MAX_HAND_SIZE,), dtype=np.int8),
-        })
+        self.observation_space = spaces.Dict(
+            {
+                "tokens": spaces.Box(0, 32767, (MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
+                "token_types": spaces.Box(0, 10, (MAX_SEQ_LEN,), dtype=np.int8),
+                "scalars": spaces.Box(-np.inf, np.inf, (SCALAR_DIM,), dtype=np.float32),
+                "attention_mask": spaces.Box(0, 1, (MAX_SEQ_LEN,), dtype=np.int8),
+                "action_mask": spaces.Box(0, 1, (NUM_ACTIONS,), dtype=np.int8),
+            }
+        )
         self.action_space = spaces.Discrete(NUM_ACTIONS)
 
     @property
@@ -145,12 +130,7 @@ class BalatroEnv(gymnasium.Env):
             self._controller.state.win_ante = int(self._win_ante_override)
 
         self._sub_phase = SubPhase.BLIND_SELECT
-        self._step_count = 0
         self._steps_since_progress = 0
-        self._selected_cards = set()
-        self._pending_action = None
-        self._round_score = 0
-        self._blind_just_beaten = False
         self._play_diagnostic_count = 0
         self._prev_info = self._capture_state_info()
 
@@ -164,10 +144,7 @@ class BalatroEnv(gymnasium.Env):
         assert self._controller is not None and self._controller.state is not None
 
         self._prev_info = self._capture_state_info()
-        self._step_count += 1
-        self._blind_just_beaten = False
         pre_sub_phase = self._sub_phase
-        pre_selected_count = len(self._selected_cards)
 
         # Query the heuristic teacher with the pre-action mask + state.
         # Used by PPO for distillation; -1 sentinel means "no valid teacher".
@@ -213,6 +190,7 @@ class BalatroEnv(gymnasium.Env):
             # Invalid action, log and give small penalty, but don't terminate.
             # Masking should prevent this; if it happens it's a bug to investigate.
             import logging
+
             logging.getLogger(__name__).warning(f"Action {action} raised {type(e).__name__}: {e}")
             reward = -1.0
             obs = self._build_obs()
@@ -232,7 +210,6 @@ class BalatroEnv(gymnasium.Env):
         won = self._controller.phase == GamePhase.GAME_WON
         state = self._controller.state
         curr_info = self._capture_state_info()
-        curr_info["blind_just_beaten"] = self._blind_just_beaten
         curr_info["hands_left"] = state.current_round.hands_left
         curr_info["action_type"] = decoded.action_type
         curr_info["action_index"] = decoded.index
@@ -243,14 +220,16 @@ class BalatroEnv(gymnasium.Env):
             pre_score = evaluate_build(self._prev_info).estimated_score
             post_score = evaluate_build(curr_info).estimated_score
             ratio = max(post_score, 1.0) / max(pre_score, 1.0)
-            action_diagnostics.update({
-                "joker_move_source": decoded.index,
-                "joker_move_destination": decoded.detail,
-                "joker_move_pre_score": pre_score,
-                "joker_move_post_score": post_score,
-                "joker_move_score_ratio": ratio,
-                "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
-            })
+            action_diagnostics.update(
+                {
+                    "joker_move_source": decoded.index,
+                    "joker_move_destination": decoded.detail,
+                    "joker_move_pre_score": pre_score,
+                    "joker_move_post_score": post_score,
+                    "joker_move_score_ratio": ratio,
+                    "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
+                }
+            )
 
         event_diagnostics = step_event_diagnostics(self._prev_info, curr_info, decoded)
         action_diagnostics.update(event_diagnostics)
@@ -264,14 +243,9 @@ class BalatroEnv(gymnasium.Env):
             )
 
         # Detailed leave-one-out build diagnostics are expensive. When score-build
-        # potential is active they also provide the cache consumed by the reward,
-        # so compute them on every transition. Otherwise sample only actual build/
-        # shop events; ordinary hand plays in the default legacy reward stay off
-        # this hot path.
-        score_build_potential_enabled = (
-            self._reward_config.enable_potential_shaping
-            and self._reward_config.enable_build_curve_rewards
-        )
+        # potential is active they also provide the cache consumed by the reward;
+        # otherwise compute them only for actual build/shop events.
+        score_build_potential_enabled = self._reward_config.enable_score_build_potential
         build_event_actions = {
             ActionType.SHOP_BUY,
             ActionType.SHOP_REROLL,
@@ -308,30 +282,23 @@ class BalatroEnv(gymnasium.Env):
         else:
             curr_info["stalled"] = False
 
-        # Surface action diagnostics to the reward fn so per-step regret
-        # signals (hand_play_candidate_value_ratio, planet_use_main_hand_match,
-        # ...) can be turned into reward components.
+        # Surface action diagnostics used by optional reward components.
         curr_info.update(action_diagnostics)
 
-        reward_components: dict[str, float] = {}
-        if self._reward_fn is default_reward:
-            reward_components = default_reward_components(
-                state, self._prev_info, curr_info, terminated, won, self._reward_config
-            )
-            reward = reward_components["total"]
-        else:
-            reward = self._reward_fn(state, self._prev_info, curr_info, terminated, won)
+        reward_components = default_reward_components(
+            state, self._prev_info, curr_info, terminated, won, self._reward_config
+        )
+        reward = reward_components["total"]
 
         obs = self._build_obs()
         info = {
             "sub_phase": self._sub_phase,
             "pre_sub_phase": pre_sub_phase,
-            "pre_selected_count": pre_selected_count,
             "ante": state.round_resets.ante,
             "blind_on_deck": state.blind_on_deck or "",
             "boss_key": state.round_resets.blind_choices.get("Boss", "") or "",
             "dollars": state.dollars,
-            "round_score": self._round_score,
+            "round_score": self._controller.round_score,
             "won": won,
             "progress_made": progress_made,
             "steps_since_progress": self._steps_since_progress,
@@ -374,8 +341,6 @@ class BalatroEnv(gymnasium.Env):
         return compute_action_mask(
             self._controller.state,
             self._sub_phase,
-            selected_cards=self._selected_cards,
-            pending_action=self._pending_action,
         )
 
     def _execute_action(self, decoded) -> Any:
@@ -388,7 +353,6 @@ class BalatroEnv(gymnasium.Env):
             blind_type = state.blind_on_deck or "Small"
             ctrl.select_blind(blind_type)
             self._sub_phase = SubPhase.CHOOSE_ACTION
-            self._round_score = 0
 
         elif at == ActionType.BLIND_SKIP:
             ctrl.skip_blind()
@@ -404,9 +368,7 @@ class BalatroEnv(gymnasium.Env):
             if any(idx >= len(state.hand_cards) for idx in indices):
                 raise IndexError(f"Play subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
             result = ctrl.play_selected(list(indices))
-            self._round_score += result.score.total
             if ctrl.blind_beaten():
-                self._blind_just_beaten = True
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
                     return result
@@ -488,9 +450,8 @@ class BalatroEnv(gymnasium.Env):
         return self._tokenizer.tokenize(
             state,
             self._sub_phase,
-            selected_cards=self._selected_cards,
             action_mask=mask,
-            round_score=self._round_score,
+            round_score=self._controller.round_score,
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
@@ -500,7 +461,6 @@ class BalatroEnv(gymnasium.Env):
             "scalars": obs.scalars,
             "attention_mask": obs.attention_mask,
             "action_mask": obs.action_mask,
-            "selected_cards": obs.selected_cards,
         }
 
     def _action_diagnostics(self, decoded) -> dict[str, Any]:
@@ -522,11 +482,10 @@ class BalatroEnv(gymnasium.Env):
         pack_cards = state.pack.cards if state.pack is not None else ()
         info = {
             "ante": state.round_resets.ante,
-            "round_score": self._round_score,
-            "blind_beaten": self._controller.blind_beaten() if self._controller.phase == GamePhase.HAND_PLAY else False,
+            "round_score": self._controller.round_score,
             "blind_on_deck": state.blind_on_deck or "",
             "boss_key": state.round_resets.blind_choices.get("Boss", "") or "",
-            "blind_target": self._blind_target(state),
+            "blind_target": self._controller.blind_target(),
             "hands_left": state.current_round.hands_left,
             "discards_left": state.current_round.discards_left,
             "dollars": state.dollars,
@@ -539,29 +498,19 @@ class BalatroEnv(gymnasium.Env):
             "consumable_keys": tuple(state.consumable_keys),
             "last_tarot_planet": state.last_tarot_planet or "",
             "shop_keys": tuple(item.center_key for item in shop_items),
-            "shop_item_details": tuple(_shop_item_detail(state, item) for item in shop_items),
             "pack_booster_key": state.pack.booster_key if state.pack is not None else "",
             "pack_card_keys": tuple(card.center_key for card in pack_cards),
             "pack_state_name": state.pack.state_name if state.pack is not None else "",
-            "pack_card_details": tuple(_pack_card_detail(state, card) for card in pack_cards),
             "pack_choices_remaining": pack_choices_remaining,
         }
         info.update(capture_build_features(state))
         return info
 
-    def _blind_target(self, state) -> int:
-        blind = state.round_resets.blind
-        if blind is None:
-            return 0
-        base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
-        mult = blind.get("mult", 1)
-        return int(base * mult)
-
     def _progress_signature(self, info: dict[str, Any]) -> tuple[Any, ...]:
         """Return a compact snapshot used to detect meaningful game progress.
 
-        Transient sub-phases are intentionally excluded so the agent cannot avoid
-        the inactivity limit by entering and cancelling target-selection flows.
+        Sub-phases are excluded because the surrounding state already captures
+        every meaningful form of progress.
         """
         return (
             info.get("ante", 0),
@@ -597,40 +546,3 @@ def _phase_to_sub_phase(phase: GamePhase, current: SubPhase) -> SubPhase:
     if phase == GamePhase.SHOP:
         return SubPhase.SHOP
     return current
-
-
-def _pack_card_detail(state, card) -> dict[str, object]:
-    front_key = card.front_key or ""
-    front = state.data.cards.get(front_key, {}) if front_key else {}
-    return {
-        "center_key": card.center_key,
-        "front_key": front_key,
-        "rank": front_key[2:] if len(front_key) > 2 else "",
-        "suit": str(front.get("suit", "")),
-        "seal": card.seal or "",
-        "edition": card.edition or {},
-    }
-
-
-def _shop_item_detail(state, card) -> dict[str, object]:
-    center = state.data.centers.get(card.center_key, {})
-    return {
-        "center_key": card.center_key,
-        "card_type": getattr(card, "card_type", ""),
-        "pack_state_name": _pack_state_name_for_shop_card(center),
-    }
-
-
-def _pack_state_name_for_shop_card(center: dict) -> str:
-    name = str(center.get("name", ""))
-    if "Arcana" in name:
-        return "TAROT_PACK"
-    if "Celestial" in name:
-        return "PLANET_PACK"
-    if "Spectral" in name:
-        return "SPECTRAL_PACK"
-    if "Standard" in name:
-        return "STANDARD_PACK"
-    if "Buffoon" in name:
-        return "BUFFOON_PACK"
-    return ""

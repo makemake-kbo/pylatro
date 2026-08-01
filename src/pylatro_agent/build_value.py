@@ -85,12 +85,8 @@ _MATCHED_HAND_TYPES: dict[str, frozenset[str]] = {
     "Four of a Kind": frozenset({"Four of a Kind", "Three of a Kind", "Pair"}),
     "Straight Flush": frozenset({"Straight Flush", "Straight", "Flush"}),
     "Five of a Kind": frozenset({"Five of a Kind", "Four of a Kind", "Three of a Kind", "Pair"}),
-    "Flush House": frozenset(
-        {"Flush House", "Full House", "Flush", "Three of a Kind", "Two Pair", "Pair"}
-    ),
-    "Flush Five": frozenset(
-        {"Flush Five", "Five of a Kind", "Four of a Kind", "Flush", "Three of a Kind", "Pair"}
-    ),
+    "Flush House": frozenset({"Flush House", "Full House", "Flush", "Three of a Kind", "Two Pair", "Pair"}),
+    "Flush Five": frozenset({"Flush Five", "Five of a Kind", "Four of a Kind", "Flush", "Three of a Kind", "Pair"}),
 }
 
 
@@ -128,26 +124,6 @@ class BuildValueEstimate:
     modeled_effects: tuple[str, ...]
     unmodeled_effects: tuple[str, ...]
     channels: ScoreChannels
-
-    @property
-    def score_per_hand(self) -> float:
-        return self.representative_score_per_hand
-
-    @property
-    def marginal_score_ratios(self) -> tuple[float, ...]:
-        return self.joker_marginal_score_ratios
-
-    @property
-    def ordered_joker_marginal_score_ratios(self) -> tuple[float, ...]:
-        return self.joker_marginal_score_ratios
-
-    @property
-    def baseline_score_per_hand(self) -> float:
-        return self.no_joker_baseline_score
-
-    @property
-    def score_channels(self) -> ScoreChannels:
-        return self.channels
 
 
 @dataclass
@@ -213,8 +189,7 @@ def _representative_hand(info: Mapping[str, Any]) -> tuple[str, Mapping[str, Any
         levels = _mapping(info.get("hand_levels"))
         counts = _mapping(info.get("hand_play_counts"))
         details = {
-            name: {"level": levels.get(name, 1), "played": counts.get(name, 0)}
-            for name in set(levels) | set(counts)
+            name: {"level": levels.get(name, 1), "played": counts.get(name, 0)} for name in set(levels) | set(counts)
         }
 
     played = [(name, hand) for name, hand in details.items() if _number(_mapping(hand).get("played")) > 0]
@@ -622,9 +597,7 @@ def _score_pass(
             modeled.append(marker)
     if smeared:
         modeled.extend(
-            (i, "smeared_suits")
-            for i, joker in enumerate(jokers)
-            if str(joker.get("key") or "") == "j_smeared"
+            (i, "smeared_suits") for i, joker in enumerate(jokers) if str(joker.get("key") or "") == "j_smeared"
         )
     for index in range(len(jokers)):
         joker = _effective_joker(jokers, index)
@@ -803,11 +776,3 @@ def estimate_build_value(
         unmodeled_effects=unmodeled_effects,
         channels=full.channels,
     )
-
-
-def evaluate_build_value(
-    info: Mapping[str, Any],
-    jokers: Sequence[Mapping[str, Any]] | None = None,
-) -> BuildValueEstimate:
-    """Compatibility alias for callers that prefer ``evaluate_*`` naming."""
-    return estimate_build_value(info, jokers)

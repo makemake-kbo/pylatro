@@ -45,19 +45,6 @@ class RolloutBuffer:
         self.terminated = np.zeros(self.total_size, dtype=np.bool_)
         self.truncated = np.zeros(self.total_size, dtype=np.bool_)
         self.bootstrap_values = np.zeros(self.total_size, dtype=np.float32)
-        # Heuristic teacher action per step. -1 = no valid teacher (skipped
-        # in distillation loss).
-        self.teacher_actions = np.full(self.total_size, -1, dtype=np.int64)
-        # Per-step distillation weight. >1 on steps where the agent's
-        # play diverged from the heuristic on a high-stakes decision
-        # (out-of-candidates hand subset, mismatched planet use). Default
-        # 1.0 keeps the baseline distillation strength unchanged.
-        self.distill_weights = np.ones(self.total_size, dtype=np.float32)
-        # True when the env executed the heuristic action instead of the
-        # sampled policy action. These rows are off-policy for PPO's clipped
-        # objective, but still valid for teacher imitation and value learning.
-        self.teacher_forced = np.zeros(self.total_size, dtype=np.bool_)
-
         # Computed after rollout
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
         self.returns = np.zeros(self.total_size, dtype=np.float32)
@@ -82,21 +69,11 @@ class RolloutBuffer:
         terminated: np.ndarray,
         truncated: np.ndarray,
         bootstrap_values: np.ndarray | None = None,
-        teacher_actions: np.ndarray | None = None,
-        distill_weights: np.ndarray | None = None,
-        teacher_forced: np.ndarray | None = None,
     ) -> None:
         """Store one timestep for all environments at once (vectorized)."""
         indices = np.arange(self.num_envs) * self.rollout_length + step
         if bootstrap_values is None:
             bootstrap_values = np.zeros(self.num_envs, dtype=np.float32)
-        if teacher_actions is None:
-            teacher_actions = np.full(self.num_envs, -1, dtype=np.int64)
-        if distill_weights is None:
-            distill_weights = np.ones(self.num_envs, dtype=np.float32)
-        if teacher_forced is None:
-            teacher_forced = np.zeros(self.num_envs, dtype=np.bool_)
-
         self.tokens[indices] = obs["tokens"]
         self.token_types[indices] = obs["token_types"]
         self.scalars[indices] = obs["scalars"]
@@ -109,9 +86,6 @@ class RolloutBuffer:
         self.terminated[indices] = terminated
         self.truncated[indices] = truncated
         self.bootstrap_values[indices] = bootstrap_values
-        self.teacher_actions[indices] = teacher_actions
-        self.distill_weights[indices] = distill_weights
-        self.teacher_forced[indices] = teacher_forced
 
         self._step_counts[:] = step + 1
 
@@ -252,9 +226,6 @@ class RolloutBuffer:
                 "returns": torch.as_tensor(self.returns[idx], device=device),
                 "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
                 "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
-                "teacher_actions": torch.as_tensor(self.teacher_actions[idx], device=device),
-                "distill_weights": torch.as_tensor(self.distill_weights[idx], device=device),
-                "teacher_forced": torch.as_tensor(self.teacher_forced[idx], device=device),
             }
 
             if pin_memory and device.type == "cpu":

@@ -20,12 +20,9 @@ from pylatro_agent.training.ppo import (
     _ppo_terminal_flags,
     _record_action_diagnostics,
     _RolloutMetrics,
-    _run_dagger_bc_update,
     _run_ppo_update,
-    _scheduled_teacher_rollout_prob,
     _smoothed_entropy_signal,
     _validate_ppo_config,
-    _write_rollout_scalars,
 )
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
 
@@ -117,19 +114,11 @@ def _make_signal_buffer(
     *,
     actions: list[int],
     advantages: list[float],
-    teacher_actions: list[int] | None = None,
-    teacher_forced: list[bool] | None = None,
 ) -> RolloutBuffer:
     buffer = RolloutBuffer(num_envs=1, rollout_length=len(actions), gamma=0.99, gae_lambda=0.95)
     obs = _dummy_obs(num_envs=1)
     old_log_prob = np.array([math.log(0.5)], dtype=np.float32)
     for step, action in enumerate(actions):
-        teacher = None
-        if teacher_actions is not None:
-            teacher = np.array([teacher_actions[step]], dtype=np.int64)
-        forced = None
-        if teacher_forced is not None:
-            forced = np.array([teacher_forced[step]], dtype=np.bool_)
         buffer.add_batch(
             step=step,
             obs=obs,
@@ -139,8 +128,6 @@ def _make_signal_buffer(
             log_probs=old_log_prob,
             terminated=np.array([False]),
             truncated=np.array([False]),
-            teacher_actions=teacher,
-            teacher_forced=forced,
         )
     buffer.advantages[: len(actions)] = np.asarray(advantages, dtype=np.float32)
     buffer.returns[: len(actions)] = 0.0
@@ -218,7 +205,6 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
     buffer = _make_signal_buffer(
         actions=[good_action, bad_action],
         advantages=[1.0, -1.0],
-        teacher_actions=[-1, -1],
     )
     config = PPOConfig(
         ppo_epochs=8,
@@ -227,7 +213,6 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
         entropy_coeff=0.0,
         value_loss_coeff=0.0,
         survival_loss_coeff=0.0,
-        heuristic_distill_coeff=0.0,
         target_kl=None,
         rollout_temperature=1.0,
     )
@@ -243,7 +228,6 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
         buffer=buffer,
         return_rms=None,
         entropy_coeff=0.0,
-        distill_coeff=0.0,
         config=config,
         accum_steps=1,
         effective_batch_size=2,
@@ -259,146 +243,6 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
     assert min(stats.approx_kls) >= 0.0
 
 
-def test_heuristic_distillation_increases_teacher_action_probability_without_advantage() -> None:
-    teacher_action = int(ActionRange.SHOP_LEAVE)
-    sampled_action = int(ActionRange.SHOP_REROLL)
-    model = _TinyPpoModel()
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    buffer = _make_signal_buffer(
-        actions=[sampled_action, sampled_action],
-        advantages=[0.0, 0.0],
-        teacher_actions=[teacher_action, teacher_action],
-    )
-    config = PPOConfig(
-        ppo_epochs=8,
-        mini_batch_size=2,
-        clip_epsilon=0.2,
-        entropy_coeff=0.0,
-        value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
-        target_kl=None,
-        rollout_temperature=1.0,
-    )
-
-    obs = _dummy_obs(num_envs=1)
-    action_mask = torch.as_tensor(obs["action_mask"])
-    with torch.no_grad():
-        before = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)[teacher_action].item()
-
-    stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        distill_coeff=1.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-    )
-
-    with torch.no_grad():
-        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
-    assert probs[teacher_action].item() > before
-    assert probs[teacher_action].item() > probs[sampled_action].item()
-    assert stats.distill_losses[0] > stats.distill_losses[-1]
-
-
-def test_teacher_forced_samples_do_not_drive_ppo_policy_loss() -> None:
-    good_action = int(ActionRange.SHOP_LEAVE)
-    bad_action = int(ActionRange.SHOP_REROLL)
-    model = _TinyPpoModel()
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    buffer = _make_signal_buffer(
-        actions=[good_action, bad_action],
-        advantages=[1.0, -1.0],
-        teacher_actions=[-1, -1],
-        teacher_forced=[True, True],
-    )
-    config = PPOConfig(
-        ppo_epochs=8,
-        mini_batch_size=2,
-        clip_epsilon=0.2,
-        entropy_coeff=0.0,
-        value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
-        heuristic_distill_coeff=0.0,
-        target_kl=None,
-        rollout_temperature=1.0,
-    )
-
-    before = model.logits.detach().clone()
-    stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        distill_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-    )
-
-    assert torch.allclose(model.logits.detach(), before)
-    assert stats.on_policy_fractions
-    assert max(stats.on_policy_fractions) == 0.0
-
-
-def test_dagger_bc_update_increases_teacher_action_probability() -> None:
-    teacher_action = int(ActionRange.SHOP_LEAVE)
-    sampled_action = int(ActionRange.SHOP_REROLL)
-    model = _TinyPpoModel()
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    buffer = _make_signal_buffer(
-        actions=[sampled_action, sampled_action],
-        advantages=[0.0, 0.0],
-        teacher_actions=[teacher_action, teacher_action],
-        teacher_forced=[True, True],
-    )
-    config = PPOConfig(
-        ppo_epochs=1,
-        mini_batch_size=2,
-        clip_epsilon=0.2,
-        entropy_coeff=0.0,
-        value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
-        target_kl=None,
-        rollout_temperature=1.0,
-        dagger_bc_epochs=4,
-        dagger_bc_coeff=1.0,
-        dagger_bc_lr_mult=3.0,
-    )
-
-    obs = _dummy_obs(num_envs=1)
-    action_mask = torch.as_tensor(obs["action_mask"])
-    with torch.no_grad():
-        before = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)[teacher_action].item()
-
-    losses, _matches = _run_dagger_bc_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        coeff=1.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-    )
-
-    with torch.no_grad():
-        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
-    assert probs[teacher_action].item() > before
-    assert probs[teacher_action].item() > probs[sampled_action].item()
-    assert losses[0] > losses[-1]
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(0.1)
-
-
 def test_critic_updates_trunk_false_routes_value_loss_to_value_head_only() -> None:
     action = int(ActionRange.SHOP_LEAVE)
     model = _TinyDecoupledCriticModel()
@@ -407,7 +251,7 @@ def test_critic_updates_trunk_false_routes_value_loss_to_value_head_only() -> No
     # under any critic_updates_trunk setting.
     torch.nn.init.constant_(model.value_head.weight, 0.5)
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0], teacher_actions=[-1, -1])
+    buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0])
     buffer.returns[:2] = 10.0
     config = PPOConfig(
         ppo_epochs=1,
@@ -429,7 +273,6 @@ def test_critic_updates_trunk_false_routes_value_loss_to_value_head_only() -> No
         buffer=buffer,
         return_rms=None,
         entropy_coeff=0.0,
-        distill_coeff=0.0,
         config=config,
         accum_steps=1,
         effective_batch_size=2,
@@ -473,32 +316,9 @@ def test_ppo_config_allows_disabled_target_kl() -> None:
     _validate_ppo_config(PPOConfig(target_kl=None))
 
 
-def test_ppo_config_rejects_teacher_rollout_prob_outside_unit_interval() -> None:
-    with pytest.raises(ValueError, match="teacher_rollout_prob"):
-        _validate_ppo_config(PPOConfig(teacher_rollout_prob=1.1))
-
-
-def test_teacher_rollout_schedule_warms_up_then_decays() -> None:
-    config = PPOConfig(
-        teacher_rollout_prob=1.0,
-        teacher_rollout_final_prob=0.25,
-        teacher_rollout_warmup_fraction=0.2,
-        teacher_rollout_decay_fraction=0.5,
-    )
-
-    assert _scheduled_teacher_rollout_prob(config, 0.1) == pytest.approx(1.0)
-    assert _scheduled_teacher_rollout_prob(config, 0.45) == pytest.approx(0.625)
-    assert _scheduled_teacher_rollout_prob(config, 0.9) == pytest.approx(0.25)
-
-
 def test_ppo_config_rejects_negative_counterfactual_interval() -> None:
     with pytest.raises(ValueError, match="counterfactual_diagnostic_interval"):
         _validate_ppo_config(PPOConfig(counterfactual_diagnostic_interval=-1))
-
-
-def test_ppo_config_rejects_nonpositive_dagger_lr_multiplier() -> None:
-    with pytest.raises(ValueError, match="dagger_bc_lr_mult"):
-        _validate_ppo_config(PPOConfig(dagger_bc_lr_mult=0.0))
 
 
 def test_mean_normalized_entropy_is_one_for_uniform_binary_policy() -> None:
@@ -716,152 +536,6 @@ def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_sig
     assert rm.counterfactual_representative_realized_abs_gaps == pytest.approx([0.1])
 
 
-def test_write_rollout_scalars_emits_actionable_joker_diagnostic_tags() -> None:
-    class Writer:
-        def __init__(self) -> None:
-            self.values: dict[str, float] = {}
-
-        def add_scalar(self, tag: str, value: float, _step: int) -> None:
-            self.values[tag] = float(value)
-
-    rm = _RolloutMetrics()
-    rm.done_flags = [1.0]
-    rm.shop_offered_joker_counts["j_hologram"] = 2
-    rm.shop_bought_joker_counts["j_hologram"] = 1
-    rm.shop_sold_joker_counts["j_joker"] = 1
-    rm.joker_marginal_ratios["j_hologram"].append(1.5)
-    rm.joker_modeled_fractions["j_hologram"].append(1.0)
-    rm.build_values["build_post_estimated_score"].append(150.0)
-    rm.build_values["build_post_required_score"].append(120.0)
-    rm.build_values["build_post_readiness"].append(1.25)
-    rm.build_values["build_post_score_gain_ratio"].append(2.0)
-    rm.build_values["build_post_modeled_fraction"].append(1.0)
-    rm.potential_values["post_total"].append(0.6)
-    rm.potential_values["delta_total"].append(0.2)
-    rm.joker_churn_count = 1
-    rm.hologram_scaling_counts.append(1.0)
-    rm.hologram_x_mult_deltas.append(0.25)
-    rm.hologram_build_score_deltas.append(50.0)
-    rm.counterfactual_calls = 1
-    rm.counterfactual_representative_realized_abs_gaps.append(0.1)
-
-    writer = Writer()
-    _write_rollout_scalars(writer, 7, rm)
-
-    assert writer.values["shop/offered_joker/j_hologram_count"] == 2.0
-    assert writer.values["shop/bought_joker/j_hologram_count"] == 1.0
-    assert writer.values["shop/sold_joker/j_joker_count"] == 1.0
-    assert writer.values["joker/marginal_ratio/j_hologram_mean"] == pytest.approx(1.5)
-    assert writer.values["build/estimated_score_mean"] == pytest.approx(150.0)
-    assert writer.values["build/readiness_mean"] == pytest.approx(1.25)
-    assert writer.values["potential/post_total_mean"] == pytest.approx(0.6)
-    assert writer.values["joker/churn_per_episode"] == pytest.approx(1.0)
-    assert writer.values["joker/hologram_x_mult_delta_mean"] == pytest.approx(0.25)
-    assert writer.values["counterfactual/calls"] == 1.0
-    assert writer.values["counterfactual/representative_vs_realized_abs_log_ratio_gap_mean"] == pytest.approx(0.1)
-
-
-def test_terminal_fraction_uses_dense_difference_before_absolute_sums() -> None:
-    class Writer:
-        def __init__(self) -> None:
-            self.values: dict[str, float] = {}
-
-        def add_scalar(self, tag: str, value: float, _step: int) -> None:
-            self.values[tag] = float(value)
-
-    rm = _RolloutMetrics()
-    rm.reward_component_values["reward_total"] = [6.0, -6.0]
-    rm.reward_component_values["reward_terminal"] = [10.0, -10.0]
-    writer = Writer()
-
-    _write_rollout_scalars(writer, 1, rm)
-
-    assert writer.values["reward/terminal_abs_sum"] == pytest.approx(20.0)
-    assert writer.values["reward/dense_abs_sum"] == pytest.approx(8.0)
-    assert writer.values["reward/terminal_signed_sum"] == pytest.approx(0.0)
-    assert writer.values["reward/dense_signed_sum"] == pytest.approx(0.0)
-    assert writer.values["reward/terminal_fraction_of_return"] == pytest.approx(20.0 / 28.0)
-
-
-def test_dagger_before_ppo_inflates_kl_beyond_target() -> None:
-    """Regression test: DAgger BC updates the model before PPO runs,
-    making old_log_probs stale and inflating the KL ratio.
-
-    When DAgger runs first, the model changes and PPO's importance
-    ratio diverges from 1.0, causing approx_kl >> target_kl and
-    early stopping after 1 mini-batch. With the fix (PPO first),
-    KL stays near 0 because old_log_probs are fresh."""
-    teacher_action = int(ActionRange.SHOP_LEAVE)
-    sampled_action = int(ActionRange.SHOP_REROLL)
-    model = _TinyPpoModel()
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    buffer = _make_signal_buffer(
-        actions=[sampled_action, sampled_action],
-        advantages=[1.0, -1.0],
-        teacher_actions=[teacher_action, teacher_action],
-        teacher_forced=[False, False],
-    )
-    config = PPOConfig(
-        ppo_epochs=4,
-        mini_batch_size=2,
-        clip_epsilon=0.2,
-        entropy_coeff=0.0,
-        value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
-        heuristic_distill_coeff=0.0,
-        target_kl=0.03,
-        rollout_temperature=1.0,
-        dagger_bc_epochs=4,
-        dagger_bc_coeff=1.0,
-        dagger_bc_lr_mult=3.0,
-    )
-    device = torch.device("cpu")
-
-    ppo_stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        distill_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=device,
-        use_pin_memory=False,
-    )
-
-    assert ppo_stats.approx_kls, "PPO should produce at least one KL measurement"
-    mean_kl = float(np.mean(ppo_stats.approx_kls))
-    assert mean_kl < 0.1, (
-        f"PPO KL after running BEFORE DAgger should be small, got {mean_kl:.4f}. "
-        "If DAgger ran first, old_log_probs would be stale and KL would be huge."
-    )
-    assert ppo_stats.ppo_minibatches_processed
-    total_minibatches = int(np.sum(ppo_stats.ppo_minibatches_processed))
-    assert total_minibatches >= 2, (
-        f"PPO should process multiple mini-batches when KL is controlled, got {total_minibatches}"
-    )
-
-    _run_dagger_bc_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        coeff=config.dagger_bc_coeff,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=device,
-        use_pin_memory=False,
-    )
-
-    obs = _dummy_obs(num_envs=1)
-    action_mask = torch.as_tensor(obs["action_mask"])
-    with torch.no_grad():
-        probs = torch.softmax(model.logits.masked_fill(action_mask[0] <= 0, -1e8), dim=-1)
-    assert probs[teacher_action].item() > probs[sampled_action].item()
-
-
 def test_on_policy_advantage_diagnostics_populated() -> None:
     good_action = int(ActionRange.SHOP_LEAVE)
     bad_action = int(ActionRange.SHOP_REROLL)
@@ -870,8 +544,6 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
     buffer = _make_signal_buffer(
         actions=[good_action, bad_action],
         advantages=[1.0, -1.0],
-        teacher_actions=[-1, -1],
-        teacher_forced=[False, False],
     )
     config = PPOConfig(
         ppo_epochs=1,
@@ -880,7 +552,6 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
         entropy_coeff=0.0,
         value_loss_coeff=0.0,
         survival_loss_coeff=0.0,
-        heuristic_distill_coeff=0.0,
         target_kl=None,
         rollout_temperature=1.0,
     )
@@ -891,7 +562,6 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
         buffer=buffer,
         return_rms=None,
         entropy_coeff=0.0,
-        distill_coeff=0.0,
         config=config,
         accum_steps=1,
         effective_batch_size=2,
@@ -940,7 +610,7 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     config = _freeze_test_config(critic_updates_trunk=True)
 
     # 1) Unfrozen update with signal: builds Adam momentum on policy params.
-    warm_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[-1, -1])
+    warm_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0])
     warm_buffer.returns[:2] = 5.0
     _run_ppo_update(
         model=model,
@@ -948,7 +618,6 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
         buffer=warm_buffer,
         return_rms=None,
         entropy_coeff=0.0,
-        distill_coeff=0.0,
         config=config,
         accum_steps=1,
         effective_batch_size=2,
@@ -966,7 +635,7 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
 
     # 2) Frozen update with a large value error that would move the trunk if
     #    the critic loss leaked past the value head.
-    frozen_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, -1.0], teacher_actions=[-1, -1])
+    frozen_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, -1.0])
     frozen_buffer.returns[:2] = 10.0
     _run_ppo_update(
         model=model,
@@ -974,7 +643,6 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
         buffer=frozen_buffer,
         return_rms=None,
         entropy_coeff=0.0,
-        distill_coeff=0.0,
         config=config,
         accum_steps=1,
         effective_batch_size=2,
@@ -991,64 +659,3 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     assert torch.equal(policy_state_after["exp_avg"], exp_avg_before)
 
 
-def test_frozen_update_skips_teacher_pass_and_reports_zero_distill_stats() -> None:
-    """During critic warmup the teacher log_prob pass is skipped entirely, so
-    distillation stats read as zeros even when labels are present and the
-    coefficient is nonzero (e.g. a resumed run mid-anneal)."""
-    action = int(ActionRange.SHOP_LEAVE)
-    teacher = int(ActionRange.SHOP_REROLL)
-    model = _TinyDecoupledCriticModel()
-    torch.nn.init.constant_(model.value_head.weight, 0.5)
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    config = _freeze_test_config(heuristic_distill_coeff=0.5)
-    buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher])
-    buffer.returns[:2] = 10.0
-
-    policy_before = model.policy_head.weight.detach().clone()
-    stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        distill_coeff=0.5,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-        policy_loss_scale=0.0,
-    )
-
-    assert torch.equal(model.policy_head.weight.detach(), policy_before)
-    assert stats.distill_losses and all(v == 0.0 for v in stats.distill_losses)
-    assert all(v == 0.0 for v in stats.teacher_label_present_fractions)
-
-
-def test_disabled_distillation_skips_teacher_diagnostics() -> None:
-    """With distill_coeff=0 the (expensive) teacher log_prob pass is skipped;
-    diagnostics report zeros instead of scanning labels that cannot
-    contribute to the objective."""
-    action = int(ActionRange.SHOP_LEAVE)
-    teacher = int(ActionRange.SHOP_REROLL)
-    model = _TinyPpoModel()
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    config = _freeze_test_config(value_loss_coeff=0.0, heuristic_distill_coeff=0.0)
-    buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0], teacher_actions=[teacher, teacher])
-
-    stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        distill_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-    )
-
-    assert all(v == 0.0 for v in stats.distill_losses)
-    assert all(v == 0.0 for v in stats.teacher_label_present_fractions)

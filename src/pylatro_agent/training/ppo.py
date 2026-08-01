@@ -26,7 +26,7 @@ from ..diagnostics import (
     MAX_DIAGNOSTIC_SHOP_JOKERS,
 )
 from ..env import BalatroEnv
-from ..reward import _COMPONENT_GROUP, DEFAULT_REWARD_CONFIG, REWARD_INFO_KEYS, RewardConfig
+from ..reward import DEFAULT_REWARD_CONFIG, REWARD_INFO_KEYS, RewardConfig
 from ..survival import compute_ante_survival_targets
 from ..value_head import hl_gauss_projection
 from ..vocab import Vocab, build_vocab
@@ -75,34 +75,6 @@ _ACTION_TYPES = tuple(ActionType)
 _ACTION_TYPE_TO_INDEX = {action_type: idx for idx, action_type in enumerate(_ACTION_TYPES)}
 _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
     [_ACTION_TYPE_TO_INDEX[decode_action(action_id).action_type] for action_id in range(NUM_ACTIONS)],
-    dtype=torch.long,
-)
-
-# Coarse action families used to break down *unreachable* teacher labels, so a
-# distillation run can tell whether the heuristic teacher is unreachable because
-# it picks hand subsets the structured policy can't represent, shop/pack items,
-# or blind selections.
-_ACTION_FAMILY_NAMES = ("play_subset", "use_consumable", "shop", "pack", "blind", "move_joker")
-_ACTION_TYPE_TO_FAMILY: dict[ActionType, int] = {
-    ActionType.BLIND_PLAY: 4,
-    ActionType.BLIND_SKIP: 4,
-    ActionType.BLIND_REROLL: 4,
-    ActionType.PLAY_SUBSET: 0,
-    ActionType.DISCARD_SUBSET: 0,
-    ActionType.USE_CONSUMABLE_NO_TARGET: 1,
-    ActionType.USE_CONSUMABLE_HAND_SUBSET: 1,
-    ActionType.USE_CONSUMABLE_JOKER: 1,
-    ActionType.SHOP_BUY: 2,
-    ActionType.SHOP_REROLL: 2,
-    ActionType.SHOP_SELL_JOKER: 2,
-    ActionType.SHOP_SELL_CONSUMABLE: 2,
-    ActionType.SHOP_LEAVE: 2,
-    ActionType.PACK_CLAIM: 3,
-    ActionType.PACK_SKIP: 3,
-    ActionType.MOVE_JOKER: 5,
-}
-_ACTION_ID_TO_FAMILY = torch.tensor(
-    [_ACTION_TYPE_TO_FAMILY[decode_action(action_id).action_type] for action_id in range(NUM_ACTIONS)],
     dtype=torch.long,
 )
 
@@ -220,7 +192,6 @@ def _make_env(
     max_no_progress_steps: int,
     win_ante: int | None,
     reward_config: RewardConfig | None = None,
-    enable_teacher: bool = True,
     counterfactual_diagnostic_interval: int = 0,
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
@@ -234,7 +205,7 @@ def _make_env(
             max_steps=max_no_progress_steps,
             win_ante=win_ante,
             reward_config=reward_config,
-            enable_teacher=enable_teacher,
+            enable_teacher=False,
             counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
         )
 
@@ -251,7 +222,6 @@ def _make_vectorized_envs(
     win_ante: int | None = None,
     reward_config: RewardConfig | None = None,
     env_seed_base: int = 0,
-    enable_teacher: bool = True,
     counterfactual_diagnostic_interval: int = 0,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
@@ -266,7 +236,6 @@ def _make_vectorized_envs(
             max_no_progress_steps,
             win_ante,
             reward_config,
-            enable_teacher=enable_teacher,
             counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
         )
         for i in range(num_envs)
@@ -346,26 +315,6 @@ class PPOConfig:
     # corruption window the first time rms.std deviates from 1, which is enough to wreck a
     # pretrained policy. Keep the value head in raw reward space.
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
-    # Continuous distillation from the heuristic teacher. At each step the
-    # env emits HeuristicAgent.select_action(...) into info["teacher_action"];
-    # PPO adds a NLL term -log pi(a_teacher | s) under the structured
-    # ActionGrammarDistribution to its loss. Replaces the previous
-    # frozen-reference KL anchor, denser per-state supervision and no extra
-    # forward pass through a second model.
-    heuristic_distill_coeff: float = 0.3
-    heuristic_distill_min: float = 0.0  # Phase 4: was 0.03; a nonzero floor anchors the policy to the heuristic forever
-    # During curriculum smoke/training, execute the heuristic action with this
-    # probability when the env exposes one. The transition still stores the
-    # policy log-prob of that action, so PPO and distillation both train on the
-    # successful trajectory instead of waiting for a sampled policy to stumble
-    # into sparse wins. Keep at 0.0 for strictly on-policy PPO.
-    teacher_rollout_prob: float = 0.0
-    # Optional linear schedule for teacher_rollout_prob. When final_prob is
-    # set, keep teacher_rollout_prob fixed through warmup_fraction, then
-    # linearly anneal it to final_prob over decay_fraction of training.
-    teacher_rollout_final_prob: float | None = None
-    teacher_rollout_warmup_fraction: float = 0.0
-    teacher_rollout_decay_fraction: float = 1.0
     # Sharpens the on-policy distribution for both rollout sampling and PPO loss
     # computation. The BC-pretrained policy at temperature=1 has chosen_action_prob ≈ 0.5
     # over ~250 valid actions per state, which means a 30-step sampled episode has ~0.5^30
@@ -382,12 +331,6 @@ class PPOConfig:
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
     survival_loss_coeff: float = 0.05
-    # Optional DAgger-style behavior cloning pass over the freshly collected
-    # online states before each PPO update. This uses teacher labels only and
-    # does not treat teacher-forced actions as on-policy PPO samples.
-    dagger_bc_epochs: int = 0
-    dagger_bc_coeff: float = 1.0
-    dagger_bc_lr_mult: float = 1.0
     # When True, the critic loss is included in the main backward pass so
     # value gradients flow through the shared trunk (the PPO default for
     # shared-backbone models). With the flag off, a 2-layer ValueHead must fit
@@ -396,15 +339,6 @@ class PPOConfig:
     # return scale). Value-gradient-through-trunk is controlled by
     # value_loss_coeff=0.25 initially; halve it if policy KL becomes erratic.
     critic_updates_trunk: bool = True
-    # Linear decay schedule for heuristic distillation. When set, the
-    # distill coefficient linearly decays from heuristic_distill_coeff
-    # to heuristic_distill_min over this fraction of total training.
-    # After the decay completes, distillation is permanently at min.
-    # Set to None to disable decay (keep constant distill weight).
-    # To run a true no-teacher fine-tune phase, also set
-    # heuristic_distill_min=0.0.
-    # The teacher is a useful warmup prior but should not remain the ceiling.
-    distill_decay_fraction: float | None = 0.5
     # Optional reward settings threaded through BalatroEnv. None uses the
     # default potential-based reward configuration.
     reward_config: "RewardConfig | None" = None
@@ -427,7 +361,7 @@ class PPOConfig:
     hand_ar_mixture_eps: float = 0.1
     # Phase 3.2: frozen-policy critic warmup. For the first ``critic_warmup_updates``
     # PPO updates, collect rollouts with the (sampling) policy but train *only*
-    # the critic (+survival head) on GAE returns; policy/distill/entropy losses
+    # the critic (+survival head) on GAE returns; policy/entropy losses
     # are multiplied by 0. After a reward-function change, advantages are garbage
     # until the critic tracks the new return distribution; warming it up
     # on-policy removes the window in which PPO earnestly optimizes noise.
@@ -443,11 +377,8 @@ class PPOConfig:
     # (e.g. a --win-ante bump), otherwise no best-eval checkpoint is ever
     # written until the harder task beats the old task's record.
     reset_best_eval: bool = False
-    # Re-anchor the fraction-of-training anneal schedules (heuristic distill,
-    # teacher-rollout prob) to THIS leg's recomputed total_timesteps instead of
-    # the horizon persisted in the checkpoint. Without this flag, resumed runs
-    # keep the original horizon so an already-decayed coefficient can never
-    # climb back when num_envs or the update target grows.
+    # Re-anchor fraction-of-training anneal schedules to this leg's recomputed
+    # total_timesteps instead of the horizon persisted in the checkpoint.
     reset_schedules: bool = False
     # Self-imitation (SIL-as-BC) on the agent's own winning episodes. Wins at
     # high win-ante targets are too sparse for on-policy PPO (a handful per
@@ -456,7 +387,7 @@ class PPOConfig:
     # function — only genuine wins enter the buffer, so there is nothing to
     # farm. The NLL term is added to the PPO minibatch objective (single
     # backward per minibatch) so the coefficient trades off directly against
-    # the policy/entropy/distill terms; a separate optimizer pass would let
+    # the policy/entropy terms; a separate optimizer pass would let
     # Adam's gradient renormalization largely cancel the coefficient. Riding
     # inside the PPO loop also puts SIL movement under the target-kl guard.
     # 0.0 disables. The buffer is in-memory only; it refills over the first
@@ -506,11 +437,6 @@ class PPOConfig:
     # PPO epoch, and attempted groups count even when their gate is empty so
     # training does not keep resampling for a favorable batch.
     sil_logical_minibatches_per_update: int = 1
-    # Whether teacher-forced transitions contribute to the SIL actor loss. False
-    # by default: the episode stays in replay but teacher-forced rows are
-    # excluded from the loss and from gate-percentile calibration. Distinct from
-    # PPO's own teacher masking and heuristic distillation.
-    sil_include_teacher_forced: bool = False
     # Resume-safe linear decay for the SIL coefficient. Decays monotonically
     # from ``sil_coeff`` to ``sil_coeff_final`` over ``sil_decay_fraction`` of
     # the pinned schedule horizon; never rewinds on resume.
@@ -540,23 +466,6 @@ class _UpdateStats:
     approx_kls: list[float]
     valid_action_counts: list[float]
     valid_action_type_counts: list[float]
-    distill_losses: list[float]
-    distill_losses_weighted: list[float] = field(default_factory=list)
-    teacher_match_fractions: list[float] = field(default_factory=list)
-    distill_weight_means: list[float] = field(default_factory=list)
-    teacher_reachable_fractions: list[float] = field(default_factory=list)
-    teacher_unreachable_fractions: list[float] = field(default_factory=list)
-    teacher_lp_mean_reachable: list[float] = field(default_factory=list)
-    # ``label_present`` is the fraction of all steps where the env emitted a
-    # teacher label. ``action_mask_valid`` is, of those labels, how many are
-    # legal under the step's action mask; ``reachable`` is the subset that also
-    # has a finite policy log-prob above the -1e8 floor.
-    teacher_label_present_fractions: list[float] = field(default_factory=list)
-    teacher_action_mask_valid_fractions: list[float] = field(default_factory=list)
-    # Breakdown of unreachable (present-but-not-reachable) teacher labels by
-    # action family, so distillation diagnostics can tell hand-subset
-    # mismatches apart from shop/pack/blind unreachability.
-    teacher_unreachable_family_fractions: dict[str, list[float]] = field(default_factory=dict)
     on_policy_fractions: list[float] = field(default_factory=list)
     on_policy_advantage_means: list[float] = field(default_factory=list)
     on_policy_advantage_stds: list[float] = field(default_factory=list)
@@ -587,8 +496,6 @@ class _UpdateStats:
     sil_unique_episodes_sampleds: list[int] = field(default_factory=list)
     sil_max_samples_from_one_episodes: list[int] = field(default_factory=list)
     sil_sample_win_fractions: list[float] = field(default_factory=list)
-    sil_replay_teacher_forced_fractions: list[float] = field(default_factory=list)
-    sil_teacher_forced_filtered_fractions: list[float] = field(default_factory=list)
     sil_logical_minibatches_attempted: int = 0
     sil_logical_minibatches_applied: int = 0
     sil_grad_actor_norm_weighted: float | None = None
@@ -655,7 +562,6 @@ class _RolloutMetrics:
     steps_since_progress: list[float] = field(default_factory=list)
     chosen_action_probs: list[float] = field(default_factory=list)
     max_action_probs: list[float] = field(default_factory=list)
-    teacher_rollout_used: list[float] = field(default_factory=list)
     done_flags: list[float] = field(default_factory=list)
     terminated_flags: list[float] = field(default_factory=list)
     truncated_flags: list[float] = field(default_factory=list)
@@ -789,22 +695,8 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("target_kl_max must be positive when set")
     if config.min_minibatch_fraction is not None and not 0.0 <= config.min_minibatch_fraction <= 1.0:
         raise ValueError("min_minibatch_fraction must be between 0 and 1")
-    if not 0.0 <= config.teacher_rollout_prob <= 1.0:
-        raise ValueError("teacher_rollout_prob must be between 0 and 1")
-    if config.teacher_rollout_final_prob is not None and not 0.0 <= config.teacher_rollout_final_prob <= 1.0:
-        raise ValueError("teacher_rollout_final_prob must be between 0 and 1")
-    if not 0.0 <= config.teacher_rollout_warmup_fraction <= 1.0:
-        raise ValueError("teacher_rollout_warmup_fraction must be between 0 and 1")
-    if not 0.0 <= config.teacher_rollout_decay_fraction <= 1.0:
-        raise ValueError("teacher_rollout_decay_fraction must be between 0 and 1")
     if config.action_type_entropy_scale < 0.0:
         raise ValueError("action_type_entropy_scale must be non-negative")
-    if config.dagger_bc_epochs < 0:
-        raise ValueError("dagger_bc_epochs must be non-negative")
-    if config.dagger_bc_coeff < 0.0:
-        raise ValueError("dagger_bc_coeff must be non-negative")
-    if config.dagger_bc_lr_mult <= 0.0:
-        raise ValueError("dagger_bc_lr_mult must be positive")
     if config.sil_coeff < 0.0:
         raise ValueError("sil_coeff must be non-negative")
     if config.sil_buffer_episodes <= 0:
@@ -856,68 +748,12 @@ def _validate_ppo_config(config: PPOConfig) -> None:
             )
 
 
-def resolve_distill_coeff(
-    config: "PPOConfig",
-    total_steps: int,
-    schedule_total_steps: int | None = None,
-) -> float:
-    """Return the heuristic-teacher distillation coefficient at ``total_steps``.
-
-    Semantics:
-
-    * ``heuristic_distill_coeff <= 0`` -> distillation is fully disabled (returns 0.0).
-      This makes ``--heuristic-distill-coeff 0.0`` an explicit "turn it off" switch
-      regardless of ``--heuristic-distill-min``.
-    * Otherwise the coefficient linearly decays from ``heuristic_distill_coeff``
-      toward a floor over ``distill_decay_fraction`` of training (defaulting to
-      the full run when ``None``).
-    * The floor is clamped to ``min(heuristic_distill_min, heuristic_distill_coeff)``
-      so a misconfigured floor that exceeds the start value cannot silently pin
-      distillation above the requested starting coefficient; a warning is logged
-      the first time that condition is seen.
-    * ``schedule_total_steps`` pins the anneal horizon independently of
-      ``config.total_timesteps``. Resume recomputes ``total_timesteps`` from the
-      current ``num_envs``/update target, so annealing against it rewinds an
-      already-decayed coefficient whenever those grow (a resumed 8->32-env run
-      revived a fully-decayed teacher at coeff ~0.164). The train loop passes
-      the horizon captured at the original run's start; ``None`` uses the
-      current run's configured horizon.
-    """
-    if config.heuristic_distill_coeff <= 0.0:
-        return 0.0
-
-    floor = min(config.heuristic_distill_min, config.heuristic_distill_coeff)
-    if floor < config.heuristic_distill_min and not getattr(resolve_distill_coeff, "_floor_clamp_warned", False):
-        # Only log on the first call so we don't spam the training loop.
-        logger.warning(
-            "heuristic_distill_min=%.4f exceeds heuristic_distill_coeff=%.4f; "
-            "clamping the distillation floor to %.4f. Set --heuristic-distill-min "
-            "<= --heuristic-distill-coeff to remove this warning.",
-            config.heuristic_distill_min,
-            config.heuristic_distill_coeff,
-            floor,
-        )
-        resolve_distill_coeff._floor_clamp_warned = True  # type: ignore[attr-defined]
-
-    decay_fraction = config.distill_decay_fraction if config.distill_decay_fraction is not None else 1.0
-    horizon = schedule_total_steps if schedule_total_steps is not None else config.total_timesteps
-    decay_steps = max(1, int(horizon * decay_fraction))
-    progress = min(1.0, total_steps / decay_steps)
-
-    return max(
-        floor,
-        config.heuristic_distill_coeff - (config.heuristic_distill_coeff - floor) * progress,
-    )
-
-
 def resolve_sil_coeff(
     config: "PPOConfig",
     total_steps: int,
     schedule_total_steps: int | None = None,
 ) -> float:
     """Return the runtime SIL coefficient at ``total_steps``.
-
-    Mirrors the distillation schedule semantics so the two stay consistent:
 
     * ``sil_coeff <= 0`` -> SIL is fully disabled (returns 0.0). This is the
       exact no-SIL switch.
@@ -928,7 +764,7 @@ def resolve_sil_coeff(
     * ``schedule_total_steps`` pins the anneal horizon independently of
       ``config.total_timesteps`` so resume with a different env count does not
       rewind an already-decayed coefficient. The train loop passes the same
-      pinned horizon used by ``resolve_distill_coeff``.
+      pinned horizon used by the training run.
     """
     if config.sil_coeff <= 0.0:
         return 0.0
@@ -955,8 +791,8 @@ def _resolve_schedule_total_steps(config: "PPOConfig", resume_state: dict | None
         return config.total_timesteps
     if config.reset_schedules:
         logger.warning(
-            "reset_schedules: re-anchoring anneal schedules (distill coeff, "
-            "teacher-rollout prob) to this leg's horizon of %d steps. Already-"
+            "reset_schedules: re-anchoring anneal schedules to this leg's "
+            "horizon of %d steps. Already-"
             "decayed coefficients will climb back toward their start values.",
             config.total_timesteps,
         )
@@ -975,63 +811,10 @@ def _resolve_schedule_total_steps(config: "PPOConfig", resume_state: dict | None
     logger.warning(
         "Checkpoint predates schedule_total_steps; anneal schedules re-derive "
         "from this leg's total_timesteps=%d. If num_envs or the update target "
-        "grew, previously-decayed coefficients (heuristic distill, teacher-"
-        "rollout prob) will REWIND — pass --heuristic-distill-coeff 0.0 unless "
-        "teacher re-anchoring is intended.",
+        "grew, previously-decayed coefficients will rewind.",
         config.total_timesteps,
     )
     return config.total_timesteps
-
-
-def _teacher_reachability_mask(
-    teacher: torch.Tensor,
-    teacher_lp: torch.Tensor,
-    action_mask: torch.Tensor,
-) -> torch.Tensor:
-    """Return a float tensor marking which teacher actions can safely drive distillation.
-
-    A teacher action is "reachable" when ALL of:
-      * the env actually emitted one (``teacher >= 0``);
-      * the slot itself is legal under the current step's action_mask;
-      * the policy distribution reports a finite log-prob above the
-        ``-1e8`` floor used by ``ActionGrammarDistribution.log_prob`` for
-        out-of-candidates slots.
-
-    The third condition is what protects us from the historical blow-up where
-    the heuristic teacher picked a valid raw hand action that the structured
-    policy cannot represent in its candidate-hand slots, ``log_prob`` returned
-    ``-1e8``, and the resulting NLL term dominated the PPO loss with values in
-    the 17M-21M range.
-    """
-    teacher_in_range = (teacher >= 0) & (teacher < NUM_ACTIONS)
-    teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
-    teacher_valid_under_mask = teacher_in_range & (action_mask.gather(1, teacher_safe.unsqueeze(-1)).squeeze(-1).bool())
-    teacher_reachable = teacher_valid_under_mask & torch.isfinite(teacher_lp) & (teacher_lp > -1e7)
-    return teacher_reachable.float()
-
-
-def _safe_distill_loss(
-    teacher_lp: torch.Tensor,
-    reachable: torch.Tensor,
-    distill_weights: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute a reachability-masked distillation NLL plus the weighted version.
-
-    The raw teacher log-prob is clamped at ``-50`` before negation so even an
-    extremely unlikely-but-reachable teacher action contributes a bounded
-    gradient (~= 50) instead of an unbounded one. Without this clamp a single
-    very-low-probability teacher action could still spike the loss into the
-    tens of millions when the structured distribution is sharply concentrated
-    elsewhere.
-
-    Returns ``(distill_loss, distill_loss_weighted)`` where the weighted variant
-    folds in the runtime ``distill_coeff``-scaled weight for diagnostics only.
-    """
-    valid_count = reachable.sum().clamp(min=1.0)
-    teacher_lp_for_loss = teacher_lp.clamp_min(-50.0)
-    distill_loss = -(teacher_lp_for_loss * reachable * distill_weights).sum() / valid_count
-    distill_loss_weighted = distill_loss  # caller scales by distill_coeff for the loss term
-    return distill_loss, distill_loss_weighted
 
 
 @dataclass
@@ -1075,14 +858,11 @@ def _evaluate_rollout_kl(
     with torch.no_grad():
         for batch in batches:
             dist, _ = _grammar_distribution(model, batch, temperature=temperature)
-            on_policy = ~batch["teacher_forced"].bool()
-            sample_count = int(on_policy.sum().item())
-            if sample_count == 0:
-                continue
+            sample_count = int(batch["actions"].numel())
             new_log_probs = dist.log_prob(batch["actions"])
             log_ratio = new_log_probs - batch["old_log_probs"]
             ratio = torch.exp(log_ratio)
-            kl = ((ratio - 1.0) - log_ratio)[on_policy].mean().item()
+            kl = ((ratio - 1.0) - log_ratio).mean().item()
             aggregate.add(kl, sample_count)
             minibatch_max = max(minibatch_max, kl)
     return aggregate.mean, minibatch_max, aggregate.samples
@@ -1094,7 +874,6 @@ def _run_ppo_update(
     buffer: RolloutBuffer,
     return_rms: "RunningMeanStd | None",
     entropy_coeff: float,
-    distill_coeff: float,
     config: PPOConfig,
     accum_steps: int,
     effective_batch_size: int,
@@ -1135,9 +914,6 @@ def _run_ppo_update(
         approx_kls=[],
         valid_action_counts=[],
         valid_action_type_counts=[],
-        distill_losses=[],
-        teacher_match_fractions=[],
-        distill_weight_means=[],
         on_policy_fractions=[],
     )
     stats.actual_lr = float(optimizer.param_groups[0]["lr"])
@@ -1208,8 +984,6 @@ def _run_ppo_update(
                         ("unique_episodes_sampled", stats.sil_unique_episodes_sampleds),
                         ("max_samples_from_one_episode", stats.sil_max_samples_from_one_episodes),
                         ("sample_win_fraction", stats.sil_sample_win_fractions),
-                        ("replay_teacher_forced_fraction", stats.sil_replay_teacher_forced_fractions),
-                        ("teacher_forced_filtered_fraction", stats.sil_teacher_forced_filtered_fractions),
                     ):
                         if key in sil_result.diagnostics:
                             value = sil_result.diagnostics[key]
@@ -1234,19 +1008,13 @@ def _run_ppo_update(
             # once over the full rollout in buffer.normalize_advantages();
             # per-mini-batch normalization would let rare terminals
             # dominate their batch and crush others to noise.
-            on_policy = ~batch["teacher_forced"].bool()
-            on_policy_count = on_policy.float().sum()
+            on_policy_count = torch.as_tensor(float(batch["actions"].numel()), device=device)
             log_ratio = new_log_probs - batch["old_log_probs"]
             ratio = torch.exp(log_ratio)
             advantages = batch["advantages"]
             surr1 = ratio * advantages
             surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
-            ppo_loss_per_state = -torch.min(surr1, surr2)
-            if on_policy_count.item() > 0:
-                policy_loss = (ppo_loss_per_state * on_policy.float()).sum() / on_policy_count
-            else:
-                # differentiable zero: keeps params in the graph when a minibatch has no on-policy rows
-                policy_loss = new_log_probs.sum() * 0.0
+            policy_loss = -torch.min(surr1, surr2).mean()
 
             # Value loss (normalize targets so critic trains in unit-variance space)
             returns_target = batch["returns"]
@@ -1275,86 +1043,6 @@ def _run_ppo_update(
                 reduction="none",
             )
             survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
-
-            # Heuristic distillation: NLL of the teacher action under the
-            # current structured distribution. Replaces the frozen-reference
-            # KL anchor; per-state supervision rather than a snapshot
-            # comparison. Sentinel -1 means "no valid teacher this step".
-            #
-            # Reachability masking: the heuristic teacher occasionally picks
-            # a hand action that is legal in the raw env but is not one of
-            # the candidate-hand slots the structured distribution emits.
-            # ActionGrammarDistribution.log_prob returns the -1e8 floor for
-            # those slots; naively including them in the NLL average produced
-            # distill_loss values in the 17M-21M range that dominated PPO.
-            # We drop those rows from the loss and log the skipped fraction
-            # so the silent-label-drop is visible in TensorBoard.
-            #
-            # The teacher log_prob is a full second grammar evaluation per
-            # minibatch, so it only runs when distillation can actually
-            # contribute to this update's objective.
-            distill_loss: torch.Tensor | None = None
-            teacher_match = 0.0
-            distill_weight_mean = 0.0
-            teacher_label_present_fraction = 0.0
-            teacher_action_mask_valid_fraction = 0.0
-            teacher_reachable_fraction = 0.0
-            teacher_unreachable_fraction = 0.0
-            teacher_lp_mean_reachable = 0.0
-            unreachable_family_fracs: dict[str, float] = {fam_name: 0.0 for fam_name in _ACTION_FAMILY_NAMES}
-            distill_loss_weighted_value = 0.0
-            if distill_coeff > 0.0 and not policy_frozen:
-                teacher = batch["teacher_actions"]
-                teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
-                teacher_lp = dist.log_prob(teacher_safe)
-                reachable = _teacher_reachability_mask(teacher, teacher_lp, batch["action_mask"])
-                reachable_count = reachable.sum().clamp(min=1.0)
-                distill_weights = batch["distill_weights"]
-                # Per-step weighting: regret signals (out-of-candidates,
-                # mismatched planet use) up-weight teacher NLL on those steps
-                # so distillation pressure concentrates where the policy
-                # diverged from the heuristic on a high-stakes decision.
-                distill_loss, _ = _safe_distill_loss(teacher_lp, reachable, distill_weights)
-                with torch.no_grad():
-                    policy_choice = dist.mode() if hasattr(dist, "mode") else batch["actions"]
-                    teacher_match = (
-                        ((policy_choice == teacher_safe).float() * reachable).sum() / reachable_count
-                    ).item()
-                    distill_weight_mean = ((distill_weights * reachable).sum() / reachable_count).item()
-
-                    # Diagnostics: how often did the teacher produce a label
-                    # at all, how often was it reachable, and what was the
-                    # mean reachable log-prob. The unreachable fraction is the
-                    # key metric for spotting -1e8 floor contamination.
-                    teacher_present_bool = teacher >= 0
-                    teacher_present = teacher_present_bool.float()
-                    teacher_present_count = teacher_present.sum().clamp(min=1.0)
-                    # "label present" = fraction of ALL steps with a teacher label.
-                    teacher_label_present_fraction = (teacher_present.sum() / max(1.0, float(teacher.numel()))).item()
-                    # "action mask valid" = of the present labels, how many are
-                    # legal under the current step's action_mask.
-                    teacher_safe_t = teacher.clamp(0, NUM_ACTIONS - 1)
-                    teacher_mask_valid = (
-                        teacher_present_bool
-                        & batch["action_mask"].gather(1, teacher_safe_t.unsqueeze(-1)).squeeze(-1).bool()
-                    )
-                    teacher_action_mask_valid_fraction = (
-                        teacher_mask_valid.float().sum() / teacher_present_count
-                    ).item()
-                    teacher_reachable_fraction = (reachable.sum() / teacher_present_count).item()
-                    teacher_unreachable_fraction = 1.0 - teacher_reachable_fraction
-                    teacher_lp_mean_reachable = ((teacher_lp * reachable).sum() / reachable_count).item()
-                    # Break the *unreachable* (present-but-not-reachable) labels
-                    # down by action family so distillation diagnostics can tell
-                    # hand-subset mismatches from shop/pack/blind unreachability.
-                    unreachable_mask = teacher_present_bool & (~reachable.bool())
-                    unreachable_denom = unreachable_mask.float().sum().clamp(min=1.0)
-                    family_ids = _ACTION_ID_TO_FAMILY.to(device=teacher.device)[teacher_safe_t]
-                    for fam_idx, fam_name in enumerate(_ACTION_FAMILY_NAMES):
-                        unreachable_family_fracs[fam_name] = (
-                            (unreachable_mask & (family_ids == fam_idx)).float().sum() / unreachable_denom
-                        ).item()
-                    distill_loss_weighted_value = float(distill_loss.item()) * distill_coeff
 
             critic_loss = config.value_loss_coeff * value_loss + config.survival_loss_coeff * survival_loss
 
@@ -1387,8 +1075,6 @@ def _run_ppo_update(
                 policy_objective_loss = policy_loss - entropy_coeff * (
                     normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy
                 )
-                if distill_loss is not None:
-                    policy_objective_loss = policy_objective_loss + distill_coeff * distill_loss
                 # SIL is no longer folded into per-microbatch policy_objective_loss:
                 # it is sampled once per attempted logical group (see the group
                 # start block above) and backwarded there with full weight, so
@@ -1426,29 +1112,14 @@ def _run_ppo_update(
                 optimizer.zero_grad()
 
             with torch.no_grad():
-                on_policy_fraction = (on_policy_count / max(1, int(on_policy.numel()))).item()
-                if on_policy_count.item() > 0:
-                    on_policy_float = on_policy.float()
-                    clip_frac = (
-                        (((ratio - 1.0).abs() > config.clip_epsilon).float() * on_policy_float).sum() / on_policy_count
-                    ).item()
-                    approx_kl = ((((ratio - 1.0) - log_ratio) * on_policy_float).sum() / on_policy_count).item()
-                else:
-                    clip_frac = 0.0
-                    approx_kl = 0.0
+                on_policy_fraction = 1.0
+                clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
+                approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
                 valid_action_count_mean = valid_action_counts.float().mean().item()
-                if on_policy_count.item() > 0:
-                    on_policy_adv = advantages[on_policy]
-                    stats.on_policy_advantage_means.append(on_policy_adv.mean().item())
-                    stats.on_policy_advantage_stds.append(on_policy_adv.std().item())
-                    stats.on_policy_positive_advantage_fractions.append((on_policy_adv > 0).float().mean().item())
-                    on_policy_returns = batch["returns"][on_policy]
-                    stats.on_policy_return_means.append(on_policy_returns.mean().item())
-                else:
-                    stats.on_policy_advantage_means.append(0.0)
-                    stats.on_policy_advantage_stds.append(0.0)
-                    stats.on_policy_positive_advantage_fractions.append(0.0)
-                    stats.on_policy_return_means.append(0.0)
+                stats.on_policy_advantage_means.append(advantages.mean().item())
+                stats.on_policy_advantage_stds.append(advantages.std().item())
+                stats.on_policy_positive_advantage_fractions.append((advantages > 0).float().mean().item())
+                stats.on_policy_return_means.append(batch["returns"].mean().item())
             stats.policy_losses.append(policy_loss.item())
             stats.value_losses.append(value_loss.item())
             stats.value_mses.append(value_mse.item())
@@ -1460,17 +1131,6 @@ def _run_ppo_update(
             stats.approx_kls.append(approx_kl)
             stats.valid_action_counts.append(valid_action_count_mean)
             stats.valid_action_type_counts.append(valid_action_type_count_mean)
-            stats.distill_losses.append(0.0 if distill_loss is None else distill_loss.item())
-            stats.distill_losses_weighted.append(distill_loss_weighted_value)
-            stats.teacher_match_fractions.append(teacher_match)
-            stats.distill_weight_means.append(distill_weight_mean)
-            stats.teacher_label_present_fractions.append(teacher_label_present_fraction)
-            stats.teacher_action_mask_valid_fractions.append(teacher_action_mask_valid_fraction)
-            stats.teacher_reachable_fractions.append(teacher_reachable_fraction)
-            stats.teacher_unreachable_fractions.append(teacher_unreachable_fraction)
-            stats.teacher_lp_mean_reachable.append(teacher_lp_mean_reachable)
-            for fam_name, frac in unreachable_family_fracs.items():
-                stats.teacher_unreachable_family_fractions.setdefault(fam_name, []).append(frac)
             stats.on_policy_fractions.append(on_policy_fraction)
             minibatches_processed += 1
             on_policy_samples = int(on_policy_count.item())
@@ -1532,77 +1192,6 @@ def _run_ppo_update(
 
     stats.ppo_minibatches_processed.append(minibatches_processed)
     return stats
-
-
-def _run_dagger_bc_update(
-    model: nn.Module,
-    optimizer: Adam,
-    buffer: RolloutBuffer,
-    coeff: float,
-    config: PPOConfig,
-    accum_steps: int,
-    effective_batch_size: int,
-    device: torch.device,
-    use_pin_memory: bool,
-) -> tuple[list[float], list[float]]:
-    """Run online behavior cloning over the rollout states using teacher labels."""
-    if config.dagger_bc_epochs <= 0 or coeff <= 0.0:
-        return [], []
-
-    model.eval()
-    losses: list[float] = []
-    teacher_matches: list[float] = []
-    original_lrs = [float(group["lr"]) for group in optimizer.param_groups]
-
-    try:
-        if config.dagger_bc_lr_mult != 1.0:
-            for group, lr in zip(optimizer.param_groups, original_lrs, strict=True):
-                group["lr"] = lr * config.dagger_bc_lr_mult
-
-        for _epoch in range(config.dagger_bc_epochs):
-            batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
-            optimizer.zero_grad()
-            for i, batch in enumerate(batches):
-                teacher = batch["teacher_actions"]
-                teacher_present = (teacher >= 0).float()
-                if teacher_present.sum().item() <= 0:
-                    continue
-
-                dist, _value_dict = _grammar_distribution(
-                    model,
-                    batch,
-                    temperature=config.rollout_temperature,
-                )
-                teacher_safe = teacher.clamp(0, NUM_ACTIONS - 1)
-                teacher_lp = dist.log_prob(teacher_safe)
-                # Mirror the PPO update's reachability mask so DAgger BC
-                # also ignores -1e8 floor rows from candidate-hand mismatches.
-                reachable = _teacher_reachability_mask(teacher, teacher_lp, batch["action_mask"])
-                if reachable.sum().item() <= 0:
-                    continue
-                distill_weights = batch["distill_weights"]
-                bc_loss, _ = _safe_distill_loss(teacher_lp, reachable, distill_weights)
-                (coeff * bc_loss).div(accum_steps).backward()
-
-                if (i + 1) % accum_steps == 0 or (i + 1) == len(batches):
-                    nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-                    optimizer.step()
-                    optimizer.zero_grad()
-
-                with torch.no_grad():
-                    reachable_count = reachable.sum().clamp(min=1.0)
-                    if hasattr(dist, "mode"):
-                        mode = dist.mode()
-                        teacher_match = (((mode == teacher_safe).float() * reachable).sum() / reachable_count).item()
-                    else:
-                        teacher_match = float("nan")
-                losses.append(bc_loss.item())
-                teacher_matches.append(teacher_match)
-    finally:
-        for group, lr in zip(optimizer.param_groups, original_lrs, strict=True):
-            group["lr"] = lr
-
-    return losses, teacher_matches
 
 
 def _value_in_raw_units(values: torch.Tensor, return_rms: "RunningMeanStd | None") -> torch.Tensor:
@@ -1673,22 +1262,17 @@ def _compute_sil_group_loss(
         device,
         samples_per_episode=config.sil_samples_per_episode,
         only_wins=winning_bc,
-        include_teacher_forced=config.sil_include_teacher_forced,
     )
     if sampled is None:
         return empty
 
     n_sampled = int(sampled["actions"].shape[0])
-    teacher_flags = sampled.get("teacher_forced_flags")
-    n_teacher_forced_in_batch = int((teacher_flags > 0.5).sum().item()) if teacher_flags is not None else 0
     diagnostics["samples"] = float(n_sampled)
     if "episode_ids" in sampled:
         episode_ids_np = sampled["episode_ids"].detach().cpu().numpy()
         unique_ids, counts = np.unique(episode_ids_np, return_counts=True)
         diagnostics["unique_episodes_sampled"] = float(len(unique_ids))
         diagnostics["max_samples_from_one_episode"] = float(int(counts.max()) if counts.size else 0)
-    if teacher_flags is not None:
-        diagnostics["replay_teacher_forced_fraction"] = float(n_teacher_forced_in_batch / max(1, n_sampled))
     outcomes = sampled.get("episode_outcomes")
     if outcomes is not None:
         diagnostics["sample_win_fraction"] = float(outcomes.mean().item())
@@ -1747,11 +1331,6 @@ def _compute_sil_group_loss(
                 diagnostics["gate_weight_from_wins_fraction"] = float((gate_np * win_flags).sum() / gate_mass)
             else:
                 diagnostics["gate_weight_from_wins_fraction"] = 0.0
-        if teacher_flags is not None and n_sampled > 0:
-            # Fraction of sampled rows filtered out by the teacher-forced rule.
-            tf_np = teacher_flags.detach().float().cpu().numpy()
-            filtered = float((tf_np > 0.5).sum()) if not config.sil_include_teacher_forced else 0.0
-            diagnostics["teacher_forced_filtered_fraction"] = filtered / n_sampled
 
     return _SILGroupResult(loss=loss, diagnostics=diagnostics)
 
@@ -1812,271 +1391,6 @@ def _sil_grad_diagnostics(
         "ppo_actor_grad_cosine": cosine,
         "grad_diagnostic_valid": 1.0,
     }
-
-
-def _scheduled_teacher_rollout_prob(config: PPOConfig, progress: float) -> float:
-    """Return the teacher-forcing probability for the current training progress."""
-    start = float(config.teacher_rollout_prob)
-    final = config.teacher_rollout_final_prob
-    if final is None:
-        return start
-
-    progress = min(max(float(progress), 0.0), 1.0)
-    warmup = float(config.teacher_rollout_warmup_fraction)
-    if progress <= warmup:
-        return start
-
-    decay = float(config.teacher_rollout_decay_fraction)
-    if decay <= 0.0:
-        return float(final)
-
-    anneal_progress = min(max((progress - warmup) / decay, 0.0), 1.0)
-    return start + (float(final) - start) * anneal_progress
-
-
-def _write_rollout_scalars(writer, update_count: int, rm: "_RolloutMetrics") -> None:
-    """Write the rollout-collected metrics for one update to TensorBoard."""
-    writer.add_scalar("debug/chosen_action_prob_mean", _safe_mean(rm.chosen_action_probs), update_count)
-    # This is the max ACTION-TYPE probability (over the grammar's action-type
-    # distribution), not a true flat-action max.
-    writer.add_scalar("debug/max_action_type_prob_mean", _safe_mean(rm.max_action_probs), update_count)
-    writer.add_scalar("debug/teacher_rollout_used_fraction", _safe_mean(rm.teacher_rollout_used), update_count)
-    writer.add_scalar("debug/step_reward_mean", _safe_mean(rm.step_rewards), update_count)
-    writer.add_scalar("rollout/progress_rate", _safe_mean(rm.progress_flags), update_count)
-    writer.add_scalar("rollout/steps_since_progress_mean", _safe_mean(rm.steps_since_progress), update_count)
-    if rm.steps_since_progress:
-        writer.add_scalar(
-            "rollout/steps_since_progress_max",
-            float(np.max(rm.steps_since_progress)),
-            update_count,
-        )
-    writer.add_scalar("rollout/done_rate", _safe_mean(rm.done_flags), update_count)
-    writer.add_scalar("rollout/terminated_rate", _safe_mean(rm.terminated_flags), update_count)
-    writer.add_scalar("rollout/truncated_rate", _safe_mean(rm.truncated_flags), update_count)
-    writer.add_scalar("subphase/choose_action_fraction", _safe_mean(rm.pre_choose_action_flags), update_count)
-    total_play_discard = rm.play_subset_count + rm.discard_subset_count
-    if total_play_discard > 0:
-        writer.add_scalar("hand_choice/play_fraction", rm.play_subset_count / total_play_discard, update_count)
-        writer.add_scalar("hand_choice/discard_fraction", rm.discard_subset_count / total_play_discard, update_count)
-    else:
-        writer.add_scalar("hand_choice/play_fraction", float("nan"), update_count)
-        writer.add_scalar("hand_choice/discard_fraction", float("nan"), update_count)
-    total_action_count = sum(rm.action_type_counts.values())
-    if total_action_count > 0:
-        for action_type in ActionType:
-            writer.add_scalar(
-                f"actions/{action_type.value}_fraction",
-                rm.action_type_counts[action_type.value] / total_action_count,
-                update_count,
-            )
-
-    writer.add_scalar("hand/play_observed_count", float(len(rm.hand_play_observed)), update_count)
-    writer.add_scalar("hand/not_in_candidates_fraction", _safe_mean(rm.hand_play_not_in_candidates), update_count)
-    writer.add_scalar("hand/in_candidates_fraction", _safe_mean(rm.hand_play_in_candidates), update_count)
-    writer.add_scalar("hand/top1_match_fraction", _safe_mean(rm.hand_play_top1), update_count)
-    writer.add_scalar("hand/top3_match_fraction", _safe_mean(rm.hand_play_top3), update_count)
-    writer.add_scalar("hand/candidate_value_ratio_mean", _safe_mean(rm.hand_play_value_ratios), update_count)
-    _write_counter_fractions(writer, "hand/chosen", rm.hand_chosen_counts, update_count)
-    _write_counter_fractions(writer, "hand/best", rm.hand_best_counts, update_count)
-
-    writer.add_scalar("planet/use_count", float(len(rm.planet_use_observed)), update_count)
-    writer.add_scalar("planet/use_played_hand_fraction", _safe_mean(rm.planet_use_played_hand), update_count)
-    writer.add_scalar("planet/use_play_share_mean", _safe_mean(rm.planet_use_play_share), update_count)
-    writer.add_scalar("planet/use_main_hand_match_fraction", _safe_mean(rm.planet_use_main_hand_match), update_count)
-    # Unmatched / not-played fractions expose the planet-churn pathology
-    # directly: a rising unmatched fraction with falling match fraction means
-    # the policy is engaging with planets that do not align with its build.
-    use_unmatched = [0.0 if v else 1.0 for v in rm.planet_use_main_hand_match]
-    claim_unmatched = [0.0 if v else 1.0 for v in rm.planet_claim_main_hand_match]
-    use_not_played = [0.0 if v else 1.0 for v in rm.planet_use_played_hand]
-    claim_not_played = [0.0 if v else 1.0 for v in rm.planet_claim_played_hand]
-    writer.add_scalar("planet/use_unmatched_fraction", _safe_mean(use_unmatched), update_count)
-    writer.add_scalar("planet/claim_unmatched_fraction", _safe_mean(claim_unmatched), update_count)
-    writer.add_scalar("planet/use_not_played_hand_fraction", _safe_mean(use_not_played), update_count)
-    writer.add_scalar("planet/claim_not_played_hand_fraction", _safe_mean(claim_not_played), update_count)
-    episode_count = max(int(sum(rm.done_flags)), 1)
-    writer.add_scalar("planet/use_count_per_episode", float(len(rm.planet_use_observed)) / episode_count, update_count)
-    writer.add_scalar(
-        "planet/claim_count_per_episode",
-        float(len(rm.planet_claim_observed)) / episode_count,
-        update_count,
-    )
-    _write_counter_fractions(writer, "planet/use_key", rm.planet_use_key_counts, update_count)
-
-    writer.add_scalar("planet/claim_count", float(len(rm.planet_claim_observed)), update_count)
-    writer.add_scalar("planet/claim_played_hand_fraction", _safe_mean(rm.planet_claim_played_hand), update_count)
-    writer.add_scalar("planet/claim_play_share_mean", _safe_mean(rm.planet_claim_play_share), update_count)
-    writer.add_scalar(
-        "planet/claim_main_hand_match_fraction",
-        _safe_mean(rm.planet_claim_main_hand_match),
-        update_count,
-    )
-    _write_counter_fractions(writer, "planet/claim_key", rm.planet_claim_key_counts, update_count)
-
-    writer.add_scalar("pack/planet_skip_fraction", _safe_mean(rm.planet_pack_skip), update_count)
-    _write_counter_fractions(writer, "pack/skip_state", rm.pack_skip_state_counts, update_count)
-
-    episode_count = max(int(sum(rm.done_flags)), 1)
-    for prefix, counter in (
-        ("shop/offered_joker", rm.shop_offered_joker_counts),
-        ("shop/bought_joker", rm.shop_bought_joker_counts),
-        ("shop/sold_joker", rm.shop_sold_joker_counts),
-        ("joker/acquired", rm.joker_acquired_id_counts),
-        ("joker/removed", rm.joker_removed_id_counts),
-    ):
-        _write_counter_counts(writer, prefix, counter, update_count)
-        _write_counter_fractions(writer, prefix, counter, update_count)
-
-    for center, values in rm.joker_marginal_ratios.items():
-        writer.add_scalar(
-            f"joker/marginal_ratio/{_sanitize_tag_part(str(center))}_mean",
-            _safe_mean(values),
-            update_count,
-        )
-    for center, values in rm.joker_modeled_fractions.items():
-        writer.add_scalar(
-            f"joker/modeled_fraction/{_sanitize_tag_part(str(center))}_mean",
-            _safe_mean(values),
-            update_count,
-        )
-
-    for metric, values in rm.build_values.items():
-        writer.add_scalar(f"build/{metric}_mean", _safe_mean(values), update_count)
-    for metric in (
-        "estimated_score",
-        "required_score",
-        "readiness",
-        "score_gain_ratio",
-        "modeled_fraction",
-    ):
-        values = rm.build_values.get(f"build_post_{metric}")
-        if values:
-            writer.add_scalar(f"build/{metric}_mean", _safe_mean(values), update_count)
-    for metric, values in rm.potential_values.items():
-        writer.add_scalar(f"potential/{metric}_mean", _safe_mean(values), update_count)
-
-    writer.add_scalar("joker/acquired_count", float(rm.joker_acquired_count), update_count)
-    writer.add_scalar("joker/removed_count", float(rm.joker_removed_count), update_count)
-    writer.add_scalar("joker/turnover_count", float(rm.joker_turnover_count), update_count)
-    writer.add_scalar("joker/churn_count", float(rm.joker_churn_count), update_count)
-    writer.add_scalar("joker/churn_per_episode", float(rm.joker_churn_count) / episode_count, update_count)
-    writer.add_scalar("joker/replacement_event_count", float(rm.joker_replacement_events), update_count)
-    writer.add_scalar(
-        "joker/hologram_scaling_count",
-        float(np.sum(rm.hologram_scaling_counts)),
-        update_count,
-    )
-    writer.add_scalar(
-        "joker/hologram_scaling_count_per_episode",
-        float(np.sum(rm.hologram_scaling_counts)) / episode_count,
-        update_count,
-    )
-    writer.add_scalar(
-        "joker/hologram_x_mult_delta_mean",
-        _safe_mean(rm.hologram_x_mult_deltas) if rm.hologram_x_mult_deltas else 0.0,
-        update_count,
-    )
-    writer.add_scalar(
-        "joker/hologram_x_mult_delta_sum",
-        float(np.sum(rm.hologram_x_mult_deltas)),
-        update_count,
-    )
-    writer.add_scalar(
-        "joker/hologram_build_score_delta_mean",
-        _safe_mean(rm.hologram_build_score_deltas) if rm.hologram_build_score_deltas else 0.0,
-        update_count,
-    )
-
-    writer.add_scalar("counterfactual/calls", float(rm.counterfactual_calls), update_count)
-    writer.add_scalar("counterfactual/failures", float(rm.counterfactual_failures), update_count)
-    writer.add_scalar(
-        "counterfactual/failure_fraction",
-        rm.counterfactual_failures / rm.counterfactual_calls if rm.counterfactual_calls else 0.0,
-        update_count,
-    )
-    writer.add_scalar(
-        "counterfactual/representative_vs_realized_abs_log_ratio_gap_mean",
-        _safe_mean(rm.counterfactual_representative_realized_abs_gaps),
-        update_count,
-    )
-    writer.add_scalar(
-        "counterfactual/representative_vs_realized_log_ratio_gap_mean",
-        _safe_mean(rm.counterfactual_representative_realized_signed_gaps),
-        update_count,
-    )
-    _write_counter_counts(writer, "counterfactual/focal_joker", rm.counterfactual_focal_counts, update_count)
-
-    for component_name, component_values in rm.reward_component_values.items():
-        writer.add_scalar(
-            f"reward/{component_name.removeprefix('reward_')}_mean",
-            _safe_mean(component_values),
-            update_count,
-        )
-
-    # Per-step dense shaping total = total reward minus the terminal component.
-    # Means are linear over the same per-step samples, so this is the mean of
-    # (total - terminal). Lets us confirm the dense_reward_scale ablation drops
-    # dense shaping roughly proportionally while reward/terminal_mean (logged
-    # once by the per-component loop above) is unchanged.
-    total_vals = rm.reward_component_values.get("reward_total")
-    terminal_vals = rm.reward_component_values.get("reward_terminal")
-    if total_vals:
-        dense_total_mean = _safe_mean(total_vals) - (_safe_mean(terminal_vals) if terminal_vals else 0.0)
-        writer.add_scalar("reward/dense_total_mean", dense_total_mean, update_count)
-
-    # Episode-level fraction of return magnitude contributed by the terminal
-    # outcome: abs(terminal_sum) / (abs(terminal_sum) + abs(dense_sum)). This is
-    # the quantity training targets (> 0.5). Per-step means (logged above) cannot
-    # answer "how much of what the agent optimizes is winning", because terminal
-    # rewards fire on ~1 step while dense shaping fires on every step; the
-    # episode-level magnitude ratio is the correct measure. ~0.13 in recover_v3.
-    if total_vals and terminal_vals:
-        total_arr = np.asarray(total_vals, dtype=np.float64)
-        terminal_arr = np.asarray(terminal_vals, dtype=np.float64)
-        dense_arr = total_arr - terminal_arr
-        terminal_signed_sum = float(np.sum(terminal_arr))
-        dense_signed_sum = float(np.sum(dense_arr))
-        terminal_abs_sum = float(np.sum(np.abs(terminal_arr)))
-        dense_abs_sum = float(np.sum(np.abs(dense_arr)))
-        writer.add_scalar("reward/terminal_signed_sum", terminal_signed_sum, update_count)
-        writer.add_scalar("reward/dense_signed_sum", dense_signed_sum, update_count)
-        writer.add_scalar("reward/terminal_abs_sum", terminal_abs_sum, update_count)
-        writer.add_scalar("reward/dense_abs_sum", dense_abs_sum, update_count)
-        denom = terminal_abs_sum + dense_abs_sum
-        if denom > 1e-9:
-            writer.add_scalar(
-                "reward/terminal_fraction_of_return",
-                terminal_abs_sum / denom,
-                update_count,
-            )
-
-    # Reward group totals, surface how much shaping comes from already-solved
-    # local hand play vs strategic shop/joker/economy signal, so a run can be
-    # diagnosed when local play drowns out the strategic loop.
-    group_sums: defaultdict = defaultdict(float)
-    for name, vals in rm.reward_component_values.items():
-        component = name.removeprefix("reward_")
-        if component == "total":
-            continue
-        group = _COMPONENT_GROUP.get(component)
-        if group is None:
-            continue
-        group_sums[group] += _safe_mean(vals)
-    for group, value in group_sums.items():
-        writer.add_scalar(f"reward/group_{group}_total_mean", value, update_count)
-
-
-def _write_counter_fractions(writer, prefix: str, counter: Counter, update_count: int) -> None:
-    total = sum(counter.values())
-    if total <= 0:
-        return
-    for key, count in counter.items():
-        writer.add_scalar(f"{prefix}/{_sanitize_tag_part(str(key))}_fraction", count / total, update_count)
-
-
-def _write_counter_counts(writer, prefix: str, counter: Counter, update_count: int) -> None:
-    for key, count in counter.items():
-        writer.add_scalar(f"{prefix}/{_sanitize_tag_part(str(key))}_count", float(count), update_count)
 
 
 def _save_checkpoint(
@@ -2261,35 +1575,6 @@ def _ppo_terminal_flags(
     ppo_terminated = np.asarray(terminated, dtype=np.bool_) | stalled
     ppo_truncated = np.asarray(truncated, dtype=np.bool_) & ~ppo_terminated
     return ppo_terminated, ppo_truncated, stalled
-
-
-_REGRET_DISTILL_WEIGHT_MAX = 3.0
-
-
-def _compute_distill_weight(infos: dict, env_idx: int, *, done: bool) -> float:
-    """Return a per-step distillation weight in [1.0, _REGRET_DISTILL_WEIGHT_MAX].
-
-    Weights >1 amplify the teacher-NLL gradient on steps where the agent
-    diverged from the heuristic on a high-stakes decision: an
-    out-of-candidates hand subset, a low-ratio in-candidates play, or a
-    mismatched planet use. Steps without diagnostics keep weight 1.0.
-    """
-    weight = 1.0
-    action_type = _extract_step_info_value(infos, "action_type", env_idx, done=done, default="")
-    if action_type == "play_subset":
-        if bool(_extract_step_info_value(infos, "hand_play_not_in_candidates", env_idx, done=done, default=False)):
-            weight = max(weight, _REGRET_DISTILL_WEIGHT_MAX)
-        else:
-            ratio = _extract_step_info_value(infos, "hand_play_candidate_value_ratio", env_idx, done=done, default=None)
-            if ratio is not None:
-                gap = max(0.0, 1.0 - float(ratio))
-                weight = max(weight, 1.0 + (_REGRET_DISTILL_WEIGHT_MAX - 1.0) * gap)
-    planet_used = bool(_extract_step_info_value(infos, "planet_use_observed", env_idx, done=done, default=False))
-    if planet_used:
-        match = bool(_extract_step_info_value(infos, "planet_use_main_hand_match", env_idx, done=done, default=False))
-        if not match:
-            weight = max(weight, _REGRET_DISTILL_WEIGHT_MAX)
-    return weight
 
 
 def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *, done: bool) -> None:
@@ -2786,18 +2071,6 @@ def train_ppo(
                 "--critic-warmup-min-ev 0 so the random head converges before "
                 "the policy trains on its advantages."
             )
-    if config.heuristic_distill_coeff > 0.0:
-        floor = min(config.heuristic_distill_min, config.heuristic_distill_coeff)
-        logger.info(
-            "Heuristic distillation active (coeff=%.4f, floor=%.4f)",
-            config.heuristic_distill_coeff,
-            floor,
-        )
-    else:
-        logger.info(
-            "Heuristic distillation disabled (coeff=%.4f <= 0); ppo/distill_coeff will be 0.0 for the whole run.",
-            config.heuristic_distill_coeff,
-        )
     logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)", config.rollout_temperature)
     # Discount-horizon diagnostic for explicit low-gamma overrides. At
     # gamma=0.99 a terminal reward is discounted to ~0.22 at 150 steps and
@@ -2813,24 +2086,6 @@ def train_ppo(
             effective_win_ante,
             config.gamma**300,
         )
-    if config.teacher_rollout_prob > 0.0:
-        logger.info("Teacher-guided rollout probability: %.3f", config.teacher_rollout_prob)
-    if config.teacher_rollout_final_prob is not None:
-        logger.info(
-            "Teacher-guided rollout schedule: %.3f -> %.3f after warmup %.2f over decay %.2f",
-            config.teacher_rollout_prob,
-            config.teacher_rollout_final_prob,
-            config.teacher_rollout_warmup_fraction,
-            config.teacher_rollout_decay_fraction,
-        )
-    if config.dagger_bc_epochs > 0 and config.dagger_bc_coeff > 0.0:
-        logger.info(
-            "Online DAgger BC active (epochs=%d, coeff=%.4f, lr_mult=%.2f)",
-            config.dagger_bc_epochs,
-            config.dagger_bc_coeff,
-            config.dagger_bc_lr_mult,
-        )
-
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
     if use_multi_gpu:
         model = nn.DataParallel(model)
@@ -2860,20 +2115,6 @@ def train_ppo(
     if resume_state is not None:
         env_seed_base += int(resume_state.get("update_count", 0)) * 1_000_003
     logger.info("Env seed base for this leg: %d", env_seed_base)
-    # The heuristic teacher runs twice per env step; skip it entirely when no
-    # training objective consumes its labels (distillation, DAgger BC, or
-    # teacher-forced rollouts). Envs then emit the -1 "no teacher" sentinel.
-    teacher_needed = (
-        config.heuristic_distill_coeff > 0.0
-        or (config.dagger_bc_epochs > 0 and config.dagger_bc_coeff > 0.0)
-        or config.teacher_rollout_prob > 0.0
-        or (config.teacher_rollout_final_prob or 0.0) > 0.0
-    )
-    if not teacher_needed:
-        logger.info(
-            "Heuristic teacher disabled in training envs (no distill/DAgger/"
-            "teacher-forcing consumers); teacher metrics will read 0/-1."
-        )
     vec_env = _make_vectorized_envs(
         config.num_envs,
         data,
@@ -2884,17 +2125,12 @@ def train_ppo(
         win_ante=config.win_ante,
         reward_config=config.reward_config,
         env_seed_base=env_seed_base,
-        enable_teacher=teacher_needed,
         counterfactual_diagnostic_interval=config.counterfactual_diagnostic_interval,
     )
-    obs_dict, reset_info = vec_env.reset()
+    obs_dict, _reset_info = vec_env.reset()
     # Pre-allocate obs tensors for batched inference
     obs_buf = _ObsBuffer(config.num_envs, device)
     obs_buf.update(obs_dict)
-    teacher_action_buf = np.asarray(
-        [int(_extract_vector_info_value(reset_info, "teacher_action", idx, -1)) for idx in range(config.num_envs)],
-        dtype=np.int64,
-    )
 
     from torch.utils.tensorboard import SummaryWriter
 
@@ -3038,8 +2274,8 @@ def train_ppo(
                 update_count,
                 planned_updates,
             )
-    # Anneal horizon for fraction-of-training schedules (distill coeff,
-    # teacher-rollout prob). Resolved AFTER the resume block finalizes
+    # Anneal horizon for fraction-of-training schedules. Resolved after resume
+    # finalizes
     # total_timesteps, persisted in every checkpoint so later legs keep the
     # original horizon regardless of num_envs/update-target changes.
     schedule_total_steps = _resolve_schedule_total_steps(config, resume_state)
@@ -3065,8 +2301,6 @@ def train_ppo(
     # Phase 6: rolling win_rate/ep_reward history for the correlation acceptance
     # criterion (corr > 0.5). Currently ~0/negative because dense shaping is
     # farmable independent of winning.
-    _rolling_win_rates: list[float] = []
-    _rolling_ep_rewards: list[float] = []
     # Best-eval tracking for ppo_best_eval.pt selection. On resume, carry the
     # saved best forward so the resumed run keeps the prior best unless it beats it.
     best_eval_win_rate: float | None = None
@@ -3111,9 +2345,6 @@ def train_ppo(
             )
             env_episode_start_step[:] = 0
             rm = _RolloutMetrics()
-            rollout_progress = total_steps / max(1, schedule_total_steps)
-            teacher_rollout_prob_now = _scheduled_teacher_rollout_prob(config, rollout_progress)
-
             # === Collect rollouts (vectorized) ===
             model.eval()
             for step in range(config.rollout_length):
@@ -3127,23 +2358,6 @@ def train_ppo(
                         temperature=config.rollout_temperature,
                     )
                     actions = dist.sample()
-                    use_teacher = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
-                    if teacher_rollout_prob_now > 0.0:
-                        teacher_actions_t = torch.as_tensor(teacher_action_buf, dtype=torch.long, device=device)
-                        teacher_valid = (
-                            (teacher_actions_t >= 0)
-                            & (teacher_actions_t < NUM_ACTIONS)
-                            & obs_buf.action_mask.gather(
-                                1,
-                                teacher_actions_t.clamp(0, NUM_ACTIONS - 1).unsqueeze(-1),
-                            )
-                            .squeeze(-1)
-                            .bool()
-                        )
-                        use_teacher = (
-                            torch.rand(config.num_envs, device=device) < teacher_rollout_prob_now
-                        ) & teacher_valid
-                        actions = torch.where(use_teacher, teacher_actions_t, actions)
                     log_probs = dist.log_prob(actions)
                     values = value_dict["expected_score"]
                     chosen_action_probs = dist.selected_prob(actions)
@@ -3156,7 +2370,6 @@ def train_ppo(
                     values_np = return_rms.denormalize(values_np)
                 chosen_action_probs_np = chosen_action_probs.cpu().numpy()
                 max_action_probs_np = max_action_probs.cpu().numpy()
-                use_teacher_np = use_teacher.cpu().numpy()
 
                 # Step all envs at once
                 next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
@@ -3167,25 +2380,6 @@ def train_ppo(
                     infos,
                 )
                 bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
-                teacher_actions_np = np.asarray(
-                    [
-                        int(
-                            _extract_step_info_value(
-                                infos, "teacher_action", env_idx, done=bool(dones[env_idx]), default=-1
-                            )
-                        )
-                        for env_idx in range(config.num_envs)
-                    ],
-                    dtype=np.int64,
-                )
-                distill_weights_np = np.asarray(
-                    [
-                        _compute_distill_weight(infos, env_idx, done=bool(dones[env_idx]))
-                        for env_idx in range(config.num_envs)
-                    ],
-                    dtype=np.float32,
-                )
-
                 if np.any(ppo_truncated) and "final_obs" in infos:
                     final_obs_arr = infos["final_obs"]
                     truncated_indices = [idx for idx in np.where(ppo_truncated)[0] if final_obs_arr[idx] is not None]
@@ -3211,18 +2405,13 @@ def train_ppo(
                     terminated=ppo_terminated,
                     truncated=ppo_truncated,
                     bootstrap_values=bootstrap_values_np,
-                    teacher_actions=teacher_actions_np,
-                    distill_weights=distill_weights_np,
-                    teacher_forced=use_teacher_np,
                 )
                 if sil_tracker is not None:
                     # Same pre-step obs the rollout buffer stores; the tracker
                     # copies compactly so the shared _ObsBuffer arrays are safe
                     # to overwrite next step. Rewards feed the return-to-go
-                    # used for SIL advantage gating. The teacher-forced mask is
-                    # recorded so SIL can exclude those rows from the actor loss
-                    # by default (distinct from PPO's own teacher masking).
-                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np, rewards, use_teacher_np)
+                    # used for SIL advantage gating.
+                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np, rewards)
 
                 # Track per-env episode stats
                 env_ep_reward += rewards
@@ -3230,7 +2419,6 @@ def train_ppo(
                 rm.step_rewards.extend(rewards.astype(np.float64).tolist())
                 rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
                 rm.max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
-                rm.teacher_rollout_used.extend(use_teacher_np.astype(np.float64).tolist())
                 rm.done_flags.extend(dones.astype(np.float64).tolist())
                 rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
                 rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
@@ -3331,32 +2519,6 @@ def train_ppo(
 
                 # Update obs buffer with new observations
                 obs_buf.update(next_obs_dict)
-                next_teacher_actions = np.asarray(
-                    [
-                        int(
-                            _extract_step_info_value(
-                                infos,
-                                "next_teacher_action",
-                                env_idx,
-                                done=bool(dones[env_idx]),
-                                default=-1,
-                            )
-                        )
-                        for env_idx in range(config.num_envs)
-                    ],
-                    dtype=np.int64,
-                )
-                if np.any(dones):
-                    for done_idx in np.where(dones)[0]:
-                        reset_teacher = _extract_vector_info_value(
-                            infos,
-                            "teacher_action",
-                            int(done_idx),
-                            _MISSING,
-                        )
-                        if reset_teacher is not _MISSING:
-                            next_teacher_actions[int(done_idx)] = int(reset_teacher)
-                teacher_action_buf = next_teacher_actions
                 total_steps += config.num_envs
 
             # Bootstrap values for GAE
@@ -3431,11 +2593,6 @@ def train_ppo(
                     config.critic_warmup_min_ev,
                 )
 
-            # Resolve the distillation coefficient via the shared helper so the
-            # schedule semantics (zero-disables, floor clamp, decay window) are
-            # consistent across the train loop, the test suite, and any future
-            # call sites. See resolve_distill_coeff for the full contract.
-            distill_coeff_now = resolve_distill_coeff(config, total_steps, schedule_total_steps=schedule_total_steps)
             # SIL coefficient uses the same pinned schedule horizon so it decays
             # monotonically to sil_coeff_final without rewinding on resume.
             sil_coeff_now = resolve_sil_coeff(config, total_steps, schedule_total_steps=schedule_total_steps)
@@ -3456,7 +2613,6 @@ def train_ppo(
                 buffer=buffer,
                 return_rms=return_rms,
                 entropy_coeff=entropy_coeff,
-                distill_coeff=distill_coeff_now,
                 config=config,
                 accum_steps=accum_steps,
                 effective_batch_size=effective_batch_size,
@@ -3468,28 +2624,8 @@ def train_ppo(
                 grad_diagnostics_due=sil_grad_diagnostics_due,
             )
 
-            if update_stats.kl_rollback:
-                # Keep the rejected update atomic: do not apply a subsequent
-                # policy mutation or advance a controller from rejected stats.
-                dagger_losses, dagger_teacher_match_fractions = [], []
-            else:
-                dagger_losses, dagger_teacher_match_fractions = _run_dagger_bc_update(
-                    model=model,
-                    optimizer=optimizer,
-                    buffer=buffer,
-                    # DAgger BC trains the policy, so it must respect the critic
-                    # warmup freeze or the "frozen" policy drifts anyway.
-                    coeff=0.0 if in_critic_warmup else config.dagger_bc_coeff,
-                    config=config,
-                    accum_steps=accum_steps,
-                    effective_batch_size=effective_batch_size,
-                    device=device,
-                    use_pin_memory=use_pin_memory,
-                )
-
             update_policy_losses = update_stats.policy_losses
             update_value_losses = update_stats.value_losses
-            update_survival_losses = update_stats.survival_losses
             update_entropies = update_stats.entropies
             update_normalized_entropies = update_stats.normalized_entropies
             update_action_type_entropies = update_stats.action_type_entropies
@@ -3497,10 +2633,6 @@ def train_ppo(
             update_approx_kls = update_stats.approx_kls
             update_valid_action_counts = update_stats.valid_action_counts
             update_valid_action_type_counts = update_stats.valid_action_type_counts
-            update_distill_losses = update_stats.distill_losses
-            update_teacher_match_fractions = update_stats.teacher_match_fractions
-            update_distill_weight_means = update_stats.distill_weight_means
-            update_on_policy_fractions = update_stats.on_policy_fractions
 
             # Track the normalized entropy signal every update, even with fixed entropy.
             mean_normalized_entropy = float(np.mean(update_normalized_entropies))
@@ -3529,93 +2661,23 @@ def train_ppo(
             # returns are never normalized); under HL-Gauss value_loss is
             # cross-entropy so this is the run-over-run comparable series.
             writer.add_scalar("ppo/value_mse", np.mean(update_stats.value_mses), update_count)
-            writer.add_scalar("ppo/survival_loss", np.mean(update_survival_losses), update_count)
-            writer.add_scalar("ppo/entropy", mean_entropy, update_count)
             writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
             writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
             writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
             writer.add_scalar("ppo/approx_kl", update_stats.running_kl, update_count)
-            writer.add_scalar("ppo/full_kl", update_stats.full_kl, update_count)
             writer.add_scalar(
                 "ppo/kl_rollback_event",
                 1.0 if update_stats.kl_rollback else 0.0,
                 update_count,
             )
             writer.add_scalar("ppo/actual_lr", update_stats.actual_lr, update_count)
-            for reason in ("none", "soft_kl", "hard_kl"):
-                writer.add_scalar(
-                    f"ppo/stop_reason_{reason}",
-                    1.0 if update_stats.stop_reason == reason else 0.0,
-                    update_count,
-                )
-            writer.add_scalar("ppo/distill_loss", float(np.mean(update_distill_losses)), update_count)
-            writer.add_scalar("ppo/distill_coeff", float(distill_coeff_now), update_count)
             if sil_buffer is not None:
-                writer.add_scalar("sil/buffer_episodes", float(sil_buffer.num_episodes), update_count)
-                writer.add_scalar("sil/buffer_transitions", float(sil_buffer.num_transitions), update_count)
                 writer.add_scalar("sil/buffer_win_fraction", float(sil_buffer.win_fraction), update_count)
-                writer.add_scalar(
-                    "sil/episodes_added_total",
-                    float(sil_buffer.episodes_added_total),
-                    update_count,
-                )
-                writer.add_scalar(
-                    "sil/stalled_episodes_dropped_total",
-                    float(sil_buffer.stalled_episodes_dropped_total),
-                    update_count,
-                )
-                writer.add_scalar(
-                    "sil/overflow_episodes_dropped_total",
-                    float(sil_buffer.overflow_episodes_dropped_total),
-                    update_count,
-                )
                 writer.add_scalar("sil/coeff", float(sil_coeff_now), update_count)
-                writer.add_scalar(
-                    "sil/logical_minibatches_attempted",
-                    float(update_stats.sil_logical_minibatches_attempted),
-                    update_count,
-                )
-                writer.add_scalar(
-                    "sil/logical_minibatches_applied",
-                    float(update_stats.sil_logical_minibatches_applied),
-                    update_count,
-                )
-                if update_stats.sil_losses:
-                    writer.add_scalar("sil/loss", float(np.mean(update_stats.sil_losses)), update_count)
                 if update_stats.sil_losses_weighted:
                     writer.add_scalar(
                         "sil/loss_weighted",
                         float(np.mean(update_stats.sil_losses_weighted)),
-                        update_count,
-                    )
-                if update_stats.sil_advantage_means:
-                    writer.add_scalar(
-                        "sil/advantage_mean",
-                        float(np.mean(update_stats.sil_advantage_means)),
-                        update_count,
-                    )
-                if update_stats.sil_advantage_p50s:
-                    writer.add_scalar(
-                        "sil/advantage_p50",
-                        float(np.mean(update_stats.sil_advantage_p50s)),
-                        update_count,
-                    )
-                if update_stats.sil_advantage_p80s:
-                    writer.add_scalar(
-                        "sil/advantage_p80",
-                        float(np.mean(update_stats.sil_advantage_p80s)),
-                        update_count,
-                    )
-                if update_stats.sil_advantage_p95s:
-                    writer.add_scalar(
-                        "sil/advantage_p95",
-                        float(np.mean(update_stats.sil_advantage_p95s)),
-                        update_count,
-                    )
-                if update_stats.sil_advantage_p99s:
-                    writer.add_scalar(
-                        "sil/advantage_p99",
-                        float(np.mean(update_stats.sil_advantage_p99s)),
                         update_count,
                     )
                 if update_stats.sil_gate_means:
@@ -3624,173 +2686,13 @@ def train_ppo(
                         float(np.mean(update_stats.sil_gate_means)),
                         update_count,
                     )
-                if update_stats.sil_gate_open_thresholds:
-                    writer.add_scalar(
-                        "sil/gate_open_threshold",
-                        float(np.mean(update_stats.sil_gate_open_thresholds)),
-                        update_count,
-                    )
-                if update_stats.sil_gate_saturation_thresholds:
-                    writer.add_scalar(
-                        "sil/gate_saturation_threshold",
-                        float(np.mean(update_stats.sil_gate_saturation_thresholds)),
-                        update_count,
-                    )
-                if update_stats.sil_gate_positive_fractions:
-                    writer.add_scalar(
-                        "sil/gate_positive_fraction",
-                        float(np.mean(update_stats.sil_gate_positive_fractions)),
-                        update_count,
-                    )
-                if update_stats.sil_gate_saturation_fractions:
-                    writer.add_scalar(
-                        "sil/gate_saturation_fraction",
-                        float(np.mean(update_stats.sil_gate_saturation_fractions)),
-                        update_count,
-                    )
-                if update_stats.sil_noise_floor_rejected_fractions:
-                    writer.add_scalar(
-                        "sil/noise_floor_rejected_fraction",
-                        float(np.mean(update_stats.sil_noise_floor_rejected_fractions)),
-                        update_count,
-                    )
-                if update_stats.sil_gate_weight_from_wins_fractions:
-                    writer.add_scalar(
-                        "sil/gate_weight_from_wins_fraction",
-                        float(np.mean(update_stats.sil_gate_weight_from_wins_fractions)),
-                        update_count,
-                    )
-                if update_stats.sil_samples_counts:
-                    writer.add_scalar(
-                        "sil/samples",
-                        float(np.mean(update_stats.sil_samples_counts)),
-                        update_count,
-                    )
-                if update_stats.sil_unique_episodes_sampleds:
-                    writer.add_scalar(
-                        "sil/unique_episodes_sampled",
-                        float(np.mean(update_stats.sil_unique_episodes_sampleds)),
-                        update_count,
-                    )
-                if update_stats.sil_max_samples_from_one_episodes:
-                    writer.add_scalar(
-                        "sil/max_samples_from_one_episode",
-                        float(np.mean(update_stats.sil_max_samples_from_one_episodes)),
-                        update_count,
-                    )
-                if update_stats.sil_sample_win_fractions:
-                    writer.add_scalar(
-                        "sil/sample_win_fraction",
-                        float(np.mean(update_stats.sil_sample_win_fractions)),
-                        update_count,
-                    )
-                if update_stats.sil_replay_teacher_forced_fractions:
-                    writer.add_scalar(
-                        "sil/replay_teacher_forced_fraction",
-                        float(np.mean(update_stats.sil_replay_teacher_forced_fractions)),
-                        update_count,
-                    )
-                if update_stats.sil_teacher_forced_filtered_fractions:
-                    writer.add_scalar(
-                        "sil/teacher_forced_filtered_fraction",
-                        float(np.mean(update_stats.sil_teacher_forced_filtered_fractions)),
-                        update_count,
-                    )
                 if update_stats.sil_grad_diagnostic_valid:
-                    writer.add_scalar(
-                        "sil/actor_grad_norm_weighted",
-                        float(update_stats.sil_grad_actor_norm_weighted),
-                        update_count,
-                    )
-                    writer.add_scalar(
-                        "sil/ppo_actor_grad_norm",
-                        float(update_stats.sil_grad_ppo_actor_norm),
-                        update_count,
-                    )
                     writer.add_scalar(
                         "sil/ppo_actor_grad_norm_ratio",
                         float(update_stats.sil_grad_ppo_actor_norm_ratio),
                         update_count,
                     )
-                    writer.add_scalar(
-                        "sil/ppo_actor_grad_cosine",
-                        float(update_stats.sil_grad_ppo_actor_grad_cosine),
-                        update_count,
-                    )
-                writer.add_scalar(
-                    "sil/grad_diagnostic_valid",
-                    1.0 if update_stats.sil_grad_diagnostic_valid else 0.0,
-                    update_count,
-                )
-            if update_stats.distill_losses_weighted:
-                writer.add_scalar(
-                    "ppo/distill_loss_weighted",
-                    float(np.mean(update_stats.distill_losses_weighted)),
-                    update_count,
-                )
-            if update_stats.teacher_label_present_fractions:
-                writer.add_scalar(
-                    "ppo/teacher_label_present_fraction",
-                    float(np.mean(update_stats.teacher_label_present_fractions)),
-                    update_count,
-                )
-                writer.add_scalar(
-                    "ppo/teacher_action_mask_valid_fraction",
-                    float(np.mean(update_stats.teacher_action_mask_valid_fractions)),
-                    update_count,
-                )
-                writer.add_scalar(
-                    "ppo/teacher_reachable_fraction",
-                    float(np.mean(update_stats.teacher_reachable_fractions)),
-                    update_count,
-                )
-                writer.add_scalar(
-                    "ppo/teacher_unreachable_fraction",
-                    float(np.mean(update_stats.teacher_unreachable_fractions)),
-                    update_count,
-                )
-                # Unreachable-by-family breakdown.
-                for fam_name in _ACTION_FAMILY_NAMES:
-                    fam_vals = update_stats.teacher_unreachable_family_fractions.get(fam_name)
-                    if fam_vals:
-                        writer.add_scalar(
-                            f"ppo/teacher_unreachable/{fam_name}_fraction",
-                            float(np.mean(fam_vals)),
-                            update_count,
-                        )
-                writer.add_scalar(
-                    "ppo/teacher_lp_mean_reachable",
-                    float(np.mean(update_stats.teacher_lp_mean_reachable)),
-                    update_count,
-                )
-            writer.add_scalar("ppo/on_policy_fraction", float(np.mean(update_on_policy_fractions)), update_count)
-            writer.add_scalar(
-                "ppo/on_policy_advantage_mean",
-                float(np.mean(update_stats.on_policy_advantage_means)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/on_policy_advantage_std",
-                float(np.mean(update_stats.on_policy_advantage_stds)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/on_policy_positive_advantage_fraction",
-                float(np.mean(update_stats.on_policy_positive_advantage_fractions)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/on_policy_return_mean",
-                float(np.mean(update_stats.on_policy_return_means)),
-                update_count,
-            )
             minibatches_processed = int(np.sum(update_stats.ppo_minibatches_processed))
-            writer.add_scalar("ppo/minibatches_processed", minibatches_processed, update_count)
-            writer.add_scalar(
-                "ppo/samples_processed",
-                update_stats.ppo_samples_processed,
-                update_count,
-            )
             # Target-KL early stopping can halt an update after far fewer minibatches
             # than expected; without this it is invisible. Expected = full passes over
             # the rollout for every PPO epoch.
@@ -3800,102 +2702,16 @@ def train_ppo(
             if n_samples > 0:
                 minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
                 minibatches_expected = minibatches_per_epoch * config.ppo_epochs
-                writer.add_scalar("ppo/minibatches_expected", minibatches_expected, update_count)
                 minibatch_fraction = min(1.0, minibatches_processed / minibatches_expected)
                 writer.add_scalar("ppo/minibatch_fraction", minibatch_fraction, update_count)
-                writer.add_scalar(
-                    "ppo/early_stop_fraction",
-                    1.0 if minibatches_processed < minibatches_expected else 0.0,
-                    update_count,
-                )
-            # Trust-region statistics: capture once so both the TensorBoard
-            # ppo/stop_reason_* scalars and the console diagnostic warnings
-            # below use identical values for this update.
+            # Trust-region extrema feed the console diagnostic warnings below.
             kl_p95 = float(np.percentile(update_approx_kls, 95)) if update_approx_kls else 0.0
             kl_max = float(np.max(update_approx_kls)) if update_approx_kls else 0.0
             clip_frac_max = float(np.max(update_clip_fracs)) if update_clip_fracs else 0.0
-            writer.add_scalar("ppo/stop_reason_kl_p95", kl_p95, update_count)
-            writer.add_scalar("ppo/stop_reason_kl_max", kl_max, update_count)
-            if update_approx_kls and config.target_kl is not None:
-                writer.add_scalar(
-                    "ppo/early_stop_kl",
-                    1.0 if kl_max > config.target_kl else 0.0,
-                    update_count,
-                )
-            if update_clip_fracs:
-                writer.add_scalar("ppo/clip_fraction_max", clip_frac_max, update_count)
-            writer.add_scalar("debug/teacher_rollout_prob", teacher_rollout_prob_now, update_count)
-            writer.add_scalar(
-                "dagger/bc_loss",
-                float(np.mean(dagger_losses)) if dagger_losses else float("nan"),
-                update_count,
-            )
-            writer.add_scalar(
-                "dagger/teacher_match_fraction",
-                float(np.nanmean(dagger_teacher_match_fractions)) if dagger_teacher_match_fractions else float("nan"),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/teacher_match_fraction",
-                float(np.mean(update_teacher_match_fractions)),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/distill_weight_mean",
-                float(np.mean(update_distill_weight_means)),
-                update_count,
-            )
-            writer.add_scalar("ppo/valid_action_count_mean", np.mean(update_valid_action_counts), update_count)
             writer.add_scalar(
                 "ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count
             )
             writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
-            # Entropy-controller saturation flags: 1.0 when entropy_coeff is
-            # pinned at its min/max clamp, so an adaptive run can be diagnosed
-            # when the controller has run out of room (e.g. permanently at max
-            # because the policy is too deterministic even at max entropy).
-            writer.add_scalar(
-                "ppo/entropy_coeff_at_min",
-                1.0 if config.adaptive_entropy and entropy_coeff <= config.alpha_min + 1e-9 else 0.0,
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/entropy_coeff_at_max",
-                1.0 if config.adaptive_entropy and entropy_coeff >= config.alpha_max - 1e-9 else 0.0,
-                update_count,
-            )
-            writer.add_scalar("ppo/entropy_bonus", entropy_coeff * mean_normalized_entropy, update_count)
-            writer.add_scalar(
-                "ppo/action_type_entropy_bonus",
-                entropy_coeff * config.action_type_entropy_scale * np.mean(update_action_type_entropies),
-                update_count,
-            )
-            writer.add_scalar(
-                "ppo/entropy_bonus_total",
-                entropy_coeff
-                * (mean_normalized_entropy + config.action_type_entropy_scale * np.mean(update_action_type_entropies)),
-                update_count,
-            )
-            writer.add_scalar("ppo/entropy_bonus_raw", entropy_coeff * mean_entropy, update_count)
-            writer.add_scalar("ppo/entropy_signal", entropy_signal_ema, update_count)
-            writer.add_scalar("ppo/entropy_target_error", entropy_signal_ema - config.target_entropy, update_count)
-            writer.add_scalar("ppo/total_steps", total_steps, update_count)
-            dense_scale = config.reward_config.dense_reward_scale if config.reward_config is not None else 1.0
-            writer.add_scalar("reward/dense_scale", float(dense_scale), update_count)
-            _write_rollout_scalars(writer, update_count, rm)
-
-            if return_rms is not None:
-                writer.add_scalar("ppo/return_norm_mean", return_rms.mean, update_count)
-                writer.add_scalar("ppo/return_norm_std", return_rms.std, update_count)
-
-            flat_returns = buffer._flat_returns
-            if len(flat_returns) > 0:
-                writer.add_scalar("debug/returns_mean", float(np.mean(flat_returns)), update_count)
-                writer.add_scalar("debug/returns_std", float(np.std(flat_returns)), update_count)
-                flat_adv = buffer._flat_advantages
-                writer.add_scalar("debug/advantages_mean", float(np.mean(flat_adv)), update_count)
-                writer.add_scalar("debug/advantages_std", float(np.std(flat_adv)), update_count)
-
             # Release the rollout buffer before the eval/checkpoint memory peak.
             # The buffer holds the full rollout's observation/action_mask arrays
             # (the largest host allocation in the loop) and is not read again until
@@ -3915,62 +2731,10 @@ def train_ppo(
                 recent = episode_rewards[-100:]
                 recent_wins = episode_wins[-100:]
                 recent_stalls = episode_stalls[-100:]
-                writer.add_scalar("rollout/ep_reward_mean", np.mean(recent), update_count)
-                writer.add_scalar("rollout/ep_length_mean", np.mean(episode_lengths[-100:]), update_count)
-                writer.add_scalar("rollout/win_rate", np.mean(recent_wins), update_count)
-                writer.add_scalar("rollout/stall_rate", np.mean(recent_stalls), update_count)
-                writer.add_scalar("rollout/episodes_total", len(episode_rewards), update_count)
-                # Where episodes end: mean ante reached, plus the loss-only
-                # distribution (wins excluded so the "wall" ante stands out).
-                recent_antes = episode_antes[-100:]
-                writer.add_scalar("rollout/ante_reached_mean", float(np.mean(recent_antes)), update_count)
-                loss_antes = [ante for ante, won in zip(recent_antes, recent_wins, strict=True) if not won]
-                if loss_antes:
-                    for bucket in range(1, 9):
-                        writer.add_scalar(
-                            f"rollout/loss_ante/{bucket}_fraction",
-                            float(np.mean([a == bucket for a in loss_antes])),
-                            update_count,
-                        )
-                # Boss-aware death diagnostics: ante-1 death rate, The Hook's
-                # share of those deaths, and Hook boss-blind lethality overall
-                # (the early-death surcharge targets exactly these).
-                recent_losses = [
-                    (a, boss, blind)
-                    for a, w, boss, blind in zip(
-                        recent_antes,
-                        recent_wins,
-                        episode_end_bosses[-100:],
-                        episode_end_blinds[-100:],
-                        strict=True,
-                    )
-                    if not w
-                ]
-                ante1_losses = [x for x in recent_losses if x[0] <= 1]
-                writer.add_scalar("rollout/ante1_death_rate", len(ante1_losses) / len(recent_wins), update_count)
-                if ante1_losses:
-                    writer.add_scalar(
-                        "rollout/ante1_hook_death_share",
-                        float(np.mean([boss == "bl_hook" for _, boss, _ in ante1_losses])),
-                        update_count,
-                    )
-                hook_boss_deaths = sum(1 for _, boss, blind in recent_losses if boss == "bl_hook" and blind == "Boss")
-                writer.add_scalar("rollout/hook_boss_death_rate", hook_boss_deaths / len(recent_wins), update_count)
                 recent_reward_mean = float(np.mean(recent))
                 recent_length_mean = float(np.mean(episode_lengths[-100:]))
                 recent_win_rate = float(np.mean(recent_wins))
                 recent_stall_rate = float(np.mean(recent_stalls))
-                # Phase 6: track rolling win_rate/ep_reward for the correlation
-                # acceptance criterion (they are currently decoupled because
-                # dense shaping is farmable independent of winning).
-                _rolling_win_rates.append(recent_win_rate)
-                _rolling_ep_rewards.append(recent_reward_mean)
-                if len(_rolling_win_rates) > 100:
-                    _rolling_win_rates = _rolling_win_rates[-100:]
-                    _rolling_ep_rewards = _rolling_ep_rewards[-100:]
-                if len(_rolling_win_rates) >= 5:
-                    corr = float(np.corrcoef(_rolling_win_rates, _rolling_ep_rewards)[0, 1])
-                    writer.add_scalar("rollout/win_rate_ep_reward_corr", corr, update_count)
             else:
                 recent_reward_mean = float("nan")
                 recent_length_mean = float("nan")
@@ -3979,7 +2743,7 @@ def train_ppo(
 
             should_checkpoint = update_count % config.checkpoint_interval == 0 or update_count == planned_updates
             if should_checkpoint:
-                # Make sure all preceding scalars (rollout, distill, etc.)
+                # Make sure all preceding scalars
                 # land on disk before the checkpoint save, which is itself
                 # a long sync that could crash if memory is tight.
                 writer.flush()
@@ -4092,9 +2856,6 @@ def train_ppo(
                         update_count,
                         best_path,
                     )
-                writer.add_scalar("eval/best_win_rate", best_eval_win_rate, update_count)
-                writer.add_scalar("eval/best_update", best_eval_update, update_count)
-                writer.add_scalar("checkpoint/is_best_eval", 1.0 if is_best else 0.0, update_count)
                 # eval runs `eval_games` full games in-process; release the
                 # forward-pass allocations it cached before the next rollout.
                 if device.type == "mps":
@@ -4129,36 +2890,6 @@ def train_ppo(
             # log_interval (the same gate as the progress line above) so the
             # log stays readable when a condition is persistently true.
             mean_policy_loss = float(np.mean(update_policy_losses))
-            if update_stats.distill_losses_weighted and mean_policy_loss > 0.0:
-                mean_distill_weighted = float(np.mean(update_stats.distill_losses_weighted))
-                if mean_distill_weighted > 10.0 * mean_policy_loss:
-                    logger.warning(
-                        "ppo/distill_loss_weighted=%.4f is >10x ppo/policy_loss=%.4f "
-                        "at update %d; distillation is dominating the policy gradient. "
-                        "Check ppo/teacher_unreachable_fraction and consider lowering "
-                        "--heuristic-distill-coeff.",
-                        mean_distill_weighted,
-                        mean_policy_loss,
-                        update_count,
-                    )
-
-            if update_stats.teacher_reachable_fractions:
-                mean_reachable = float(np.mean(update_stats.teacher_reachable_fractions))
-                # Only warn when there are actually teacher labels in the
-                # batch (i.e. teacher_label_present_fraction > 0.1). A batch
-                # with no teacher labels trivially has reachability 0.
-                mean_teacher_present = float(np.mean(update_stats.teacher_label_present_fractions))
-                if mean_teacher_present > 0.1 and mean_reachable < 0.95:
-                    logger.warning(
-                        "ppo/teacher_reachable_fraction=%.3f (<0.95) at update %d; "
-                        "%.1f%% of teacher labels were dropped as unreachable. "
-                        "Inspect hand/not_in_candidates_fraction to see if the "
-                        "structured policy is missing hand slots the heuristic uses.",
-                        mean_reachable,
-                        update_count,
-                        (1.0 - mean_reachable) * 100.0,
-                    )
-
             if update_stats.ppo_minibatches_processed:
                 minibatches_done = int(np.sum(update_stats.ppo_minibatches_processed))
                 # minibatches_expected and minibatch_fraction were captured

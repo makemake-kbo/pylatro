@@ -116,8 +116,8 @@ def main():
         "--reset-schedules",
         action="store_true",
         help=(
-            "With --resume: re-anchor the fraction-of-training anneal schedules (heuristic "
-            "distill coeff, teacher-rollout prob) to this leg's recomputed horizon instead of "
+            "With --resume: re-anchor fraction-of-training anneal schedules to this leg's "
+            "recomputed horizon instead of "
             "the horizon saved in the checkpoint. Already-decayed coefficients will climb back "
             "toward their start values. Default: keep the original horizon so schedules never rewind."
         ),
@@ -326,83 +326,6 @@ def main():
         type=float,
         default=0.997,
         help="PPO discount factor for returns and reward potential shaping (default: 0.997)",
-    )
-    parser.add_argument(
-        "--heuristic-distill-coeff",
-        type=float,
-        default=0.3,
-        help=(
-            "Initial coefficient for the heuristic-teacher distillation loss "
-            "(NLL of HeuristicAgent.select_action under the policy). Decays "
-            "linearly to --heuristic-distill-min over total_timesteps. "
-            "Set to <= 0 to disable distillation entirely. Default: 0.3."
-        ),
-    )
-    parser.add_argument(
-        "--heuristic-distill-min",
-        type=float,
-        default=0.0,
-        help=(
-            "Floor for the distillation coefficient after linear decay (default: 0.0). "
-            "A nonzero floor anchors the policy to the heuristic forever. "
-            "Ignored when --heuristic-distill-coeff <= 0. Clamped to the start "
-            "coefficient if it would otherwise exceed it."
-        ),
-    )
-    parser.add_argument(
-        "--teacher-rollout-prob",
-        type=float,
-        default=0.0,
-        help=(
-            "Probability of executing the heuristic action during PPO rollout collection "
-            "when available. Useful for curriculum/DAgger-style smoke runs; default keeps "
-            "strict sampled-policy rollouts."
-        ),
-    )
-    parser.add_argument(
-        "--teacher-rollout-final-prob",
-        type=float,
-        default=None,
-        help=(
-            "Optional final teacher rollout probability. When set, teacher rollout probability "
-            "linearly anneals from --teacher-rollout-prob after warmup."
-        ),
-    )
-    parser.add_argument(
-        "--teacher-rollout-warmup-fraction",
-        type=float,
-        default=0.0,
-        help="Fraction of training to keep initial teacher rollout probability before annealing (default: 0.0).",
-    )
-    parser.add_argument(
-        "--teacher-rollout-decay-fraction",
-        type=float,
-        default=1.0,
-        help="Fraction of training used to anneal teacher rollout probability to final prob (default: 1.0).",
-    )
-    parser.add_argument(
-        "--dagger-bc-epochs",
-        type=int,
-        default=0,
-        help=(
-            "Online DAgger behavior-cloning epochs over each PPO rollout before the PPO update. "
-            "Teacher-forced samples are imitation-only for policy learning. Default: 0."
-        ),
-    )
-    parser.add_argument(
-        "--dagger-bc-coeff",
-        type=float,
-        default=1.0,
-        help="Multiplier for the online DAgger BC loss (default: 1.0).",
-    )
-    parser.add_argument(
-        "--dagger-bc-lr-mult",
-        type=float,
-        default=1.0,
-        help=(
-            "Temporary learning-rate multiplier used only during online DAgger BC updates. "
-            "Useful for a strong imitation phase while keeping PPO LR conservative. Default: 1.0."
-        ),
     )
     parser.add_argument(
         "--dense-reward-scale",
@@ -617,15 +540,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--sil-include-teacher-forced",
-        action="store_true",
-        help=(
-            "Include teacher-forced transitions in the SIL actor loss. By "
-            "default the episode stays in replay but teacher-forced rows are "
-            "excluded from the loss and from gate calibration."
-        ),
-    )
-    parser.add_argument(
         "--sil-coeff-final",
         type=float,
         default=0.0,
@@ -798,16 +712,7 @@ def main():
                 action_type_entropy_scale=args.action_type_entropy_scale,
                 gamma=args.gamma,
                 async_envs=not args.sync_envs,
-                heuristic_distill_coeff=args.heuristic_distill_coeff,
-                heuristic_distill_min=args.heuristic_distill_min,
                 reset_schedules=args.reset_schedules,
-                teacher_rollout_prob=args.teacher_rollout_prob,
-                teacher_rollout_final_prob=args.teacher_rollout_final_prob,
-                teacher_rollout_warmup_fraction=args.teacher_rollout_warmup_fraction,
-                teacher_rollout_decay_fraction=args.teacher_rollout_decay_fraction,
-                dagger_bc_epochs=args.dagger_bc_epochs,
-                dagger_bc_coeff=args.dagger_bc_coeff,
-                dagger_bc_lr_mult=args.dagger_bc_lr_mult,
                 rollout_temperature=args.rollout_temperature,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
@@ -827,7 +732,6 @@ def main():
                 sil_gate_saturation_percentile=args.sil_gate_saturation_percentile,
                 sil_samples_per_episode=args.sil_samples_per_episode,
                 sil_logical_minibatches_per_update=args.sil_logical_minibatches_per_update,
-                sil_include_teacher_forced=args.sil_include_teacher_forced,
                 sil_coeff_final=args.sil_coeff_final,
                 sil_decay_fraction=args.sil_decay_fraction,
                 sil_grad_diagnostics_interval=args.sil_grad_diagnostics_interval,

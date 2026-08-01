@@ -7,7 +7,6 @@ import torch
 from pylatro_agent import checkpoint as ckpt
 from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
-    _ACTION_FAMILY_NAMES,
     PPOConfig,
     RunningMeanStd,
     _apply_lr_override,
@@ -421,11 +420,3 @@ def test_train_cli_passes_reward_options(
     assert config.reward_config.consumable_reward_scale == pytest.approx(0.2)
     assert config.reward_config.enable_planet_match_rewards is True
 
-
-def test_action_family_constants_are_exhaustive() -> None:
-    from pylatro_agent.action import ActionType
-    from pylatro_agent.training.ppo import _ACTION_TYPE_TO_FAMILY
-
-    # Every action type maps to one of the named families.
-    for action_type in ActionType:
-        assert _ACTION_TYPE_TO_FAMILY[action_type] < len(_ACTION_FAMILY_NAMES)

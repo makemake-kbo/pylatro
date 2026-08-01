@@ -476,7 +476,6 @@ def test_vector_env_carries_numeric_build_diagnostics_when_build_potential_enabl
         game_data,
         vocab,
         use_async=False,
-        enable_teacher=False,
         reward_config=RewardConfig(enable_score_build_potential=True),
     )
 

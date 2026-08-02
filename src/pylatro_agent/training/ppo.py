@@ -569,6 +569,9 @@ class _RolloutMetrics:
     hand_best_counts: Counter = field(default_factory=Counter)
     planet_use_key_counts: Counter = field(default_factory=Counter)
     planet_claim_key_counts: Counter = field(default_factory=Counter)
+    consumable_use_set_counts: Counter = field(default_factory=Counter)
+    consumable_claim_set_counts: Counter = field(default_factory=Counter)
+    consumable_buy_set_counts: Counter = field(default_factory=Counter)
     pack_skip_state_counts: Counter = field(default_factory=Counter)
     step_rewards: list[float] = field(default_factory=list)
     progress_flags: list[float] = field(default_factory=list)
@@ -578,6 +581,7 @@ class _RolloutMetrics:
     done_flags: list[float] = field(default_factory=list)
     terminated_flags: list[float] = field(default_factory=list)
     truncated_flags: list[float] = field(default_factory=list)
+    completed_episode_antes: list[int] = field(default_factory=list)
     reward_component_values: defaultdict = field(default_factory=lambda: defaultdict(list))
     pre_choose_action_flags: list[float] = field(default_factory=list)
     hand_play_observed: list[float] = field(default_factory=list)
@@ -1618,6 +1622,14 @@ def _ppo_terminal_flags(
 
 def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *, done: bool) -> None:
     """Aggregate optional env-provided decision-quality diagnostics."""
+    for info_key, counter in (
+        ("consumable_use_set", rm.consumable_use_set_counts),
+        ("pack_claim_set", rm.consumable_claim_set_counts),
+        ("shop_bought_consumable_set", rm.consumable_buy_set_counts),
+    ):
+        consumable_set = _extract_step_info_value(infos, info_key, env_idx, done=done, default="")
+        if consumable_set:
+            counter[str(consumable_set)] += 1
     if _extract_step_info_value(infos, "hand_play_observed", env_idx, done=done, default=False):
         rm.hand_play_observed.append(1.0)
         not_in_candidates = bool(
@@ -2558,6 +2570,7 @@ def train_ppo(
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)
                     episode_antes.append(ep_ante)
+                    rm.completed_episode_antes.append(ep_ante)
                     episode_end_bosses.append(
                         str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
                     )
@@ -2635,6 +2648,56 @@ def train_ppo(
                 if var_returns > 1e-9:
                     explained_variance = 1.0 - float(np.var(flat_returns - buffer._flat_values)) / var_returns
             writer.add_scalar("ppo/explained_variance", explained_variance, update_count + 1)
+            rollout_step = update_count + 1
+            writer.add_scalar("rollout/step_reward_mean", float(np.mean(rm.step_rewards)), rollout_step)
+            writer.add_scalar("rollout/reward_mean", float(np.mean(rm.step_rewards)), rollout_step)
+            writer.add_scalar("rollout/chosen_action_prob_mean", float(np.mean(rm.chosen_action_probs)), rollout_step)
+            writer.add_scalar("rollout/max_action_prob_mean", float(np.mean(rm.max_action_probs)), rollout_step)
+            writer.add_scalar("rollout/done_rate", float(np.mean(rm.done_flags)), rollout_step)
+            writer.add_scalar("rollout/progress_rate", float(np.mean(rm.progress_flags)), rollout_step)
+            writer.add_scalar("rollout/completed_episodes", float(np.sum(rm.done_flags)), rollout_step)
+            if rm.completed_episode_antes:
+                writer.add_scalar(
+                    "rollout/mean_ante_reached",
+                    float(np.mean(rm.completed_episode_antes)),
+                    rollout_step,
+                )
+            if episode_rewards:
+                writer.add_scalar("rollout/episode_reward_mean", float(np.mean(episode_rewards)), rollout_step)
+                writer.add_scalar("rollout/episode_length_mean", float(np.mean(episode_lengths)), rollout_step)
+                writer.add_scalar("rollout/win_rate", float(np.mean(episode_wins)), rollout_step)
+                writer.add_scalar("rollout/stall_rate", float(np.mean(episode_stalls)), rollout_step)
+                writer.add_scalar("rollout/final_ante_mean", float(np.mean(episode_antes)), rollout_step)
+            hand_total = sum(rm.hand_chosen_counts.values())
+            if hand_total:
+                for hand_name, count in rm.hand_chosen_counts.items():
+                    tag_name = str(hand_name).lower().replace(" ", "_")
+                    writer.add_scalar(f"rollout/hands_played/{tag_name}", count / hand_total, rollout_step)
+            steps_per_thousand = max(len(rm.step_rewards) / 1000.0, 1e-9)
+            for consumable_set in ("Planet", "Tarot"):
+                tag_name = consumable_set.lower()
+                writer.add_scalar(
+                    f"rollout/shop_buys/{tag_name}_per_1k_steps",
+                    rm.consumable_buy_set_counts[consumable_set] / steps_per_thousand,
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    f"rollout/pack_claims/{tag_name}_per_1k_steps",
+                    rm.consumable_claim_set_counts[consumable_set] / steps_per_thousand,
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    f"rollout/uses/{tag_name}_per_1k_steps",
+                    rm.consumable_use_set_counts[consumable_set] / steps_per_thousand,
+                    rollout_step,
+                )
+            for component_name, values in rm.reward_component_values.items():
+                if values:
+                    writer.add_scalar(
+                        f"rollout/reward_components/{component_name}",
+                        float(np.mean(values)),
+                        rollout_step,
+                    )
 
             # Phase 3.2: determine whether this update is in critic-warmup
             # (policy frozen, only critic + survival train). Unfreezing is
@@ -2741,6 +2804,7 @@ def train_ppo(
             mean_entropy = float(np.mean(update_entropies))
             writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
             writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
+            writer.add_scalar("ppo/entropy_raw", mean_entropy, update_count)
             # Return-unit MSE regardless of head mode (raw under HL-Gauss, where
             # returns are never normalized); under HL-Gauss value_loss is
             # cross-entropy so this is the run-over-run comparable series.

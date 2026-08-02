@@ -175,20 +175,29 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
         if decoded.index >= len(state.consumables):
             return {}
         center_key = _center_key(state.consumables[decoded.index])
-        if _center_set(state, center_key) != "Planet":
-            return {}
-        return _planet_diagnostics(state, center_key, prefix="planet_use")
+        center_set = _center_set(state, center_key)
+        diagnostics = {
+            "consumable_use_set": center_set,
+            "consumable_use_key": center_key,
+        }
+        if center_set == "Planet":
+            diagnostics.update(_planet_diagnostics(state, center_key, prefix="planet_use"))
+        return diagnostics
 
     if decoded.action_type == ActionType.PACK_CLAIM:
         if state.pack is None or decoded.index >= len(state.pack.cards):
             return {}
         center_key = _center_key(state.pack.cards[decoded.index])
-        if _center_set(state, center_key) != "Planet":
-            return {}
-        diagnostics = _planet_diagnostics(state, center_key, prefix="planet_claim")
-        diagnostics["planet_claim_best_available"] = _is_best_planet_in_pack(
-            state, decoded.index
-        )
+        center_set = _center_set(state, center_key)
+        diagnostics = {
+            "pack_claim_set": center_set,
+            "pack_claim_key": center_key,
+        }
+        if center_set == "Planet":
+            diagnostics.update(_planet_diagnostics(state, center_key, prefix="planet_claim"))
+            diagnostics["planet_claim_best_available"] = _is_best_planet_in_pack(
+                state, decoded.index
+            )
         return diagnostics
 
     if decoded.action_type == ActionType.PACK_SKIP and state.pack is not None:
@@ -267,6 +276,9 @@ def step_event_diagnostics(
             card = shop_cards[decoded.index]
             if isinstance(card, dict) and card.get("set") == "Joker":
                 diagnostics["shop_bought_joker_id"] = str(card.get("key") or "")
+            if isinstance(card, dict) and card.get("set") in {"Planet", "Tarot"}:
+                diagnostics["shop_bought_consumable_set"] = str(card.get("set") or "")
+                diagnostics["shop_bought_consumable_id"] = str(card.get("key") or "")
 
     if decoded.action_type == ActionType.SHOP_SELL_JOKER:
         joker_details = tuple(prev_info.get("joker_details") or ())

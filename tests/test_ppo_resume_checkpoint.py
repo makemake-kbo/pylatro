@@ -29,6 +29,17 @@ def test_raw_state_dict_checkpoint_is_rejected(tmp_path) -> None:
         ckpt.load_checkpoint_payload(path, "cpu")
 
 
+def test_tokenizer_v5_is_allowed_only_for_compatible_pretrained_load(tmp_path) -> None:
+    path = tmp_path / "tokenizer_v5.pt"
+    torch.save({"tokenizer_version": 5, "state_dict": _tiny_model().state_dict()}, path)
+
+    with pytest.raises(RuntimeError, match="tokenizer_version=5"):
+        ckpt.load_checkpoint_payload(path, "cpu")
+
+    blob = ckpt.load_checkpoint_payload(path, "cpu", allow_compatible_tokenizer=True)
+    assert blob["tokenizer_version"] == 5
+
+
 def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
     model = _tiny_model()
     optimizer = _make_policy_optimizer(model.parameters(), lr=3e-4)
@@ -419,4 +430,3 @@ def test_train_cli_passes_reward_options(
     assert config.reward_config.dense_reward_scale == pytest.approx(0.5)
     assert config.reward_config.consumable_reward_scale == pytest.approx(0.2)
     assert config.reward_config.enable_planet_match_rewards is True
-

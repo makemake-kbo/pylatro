@@ -117,6 +117,19 @@ def test_tokenize_includes_round_score_context(run_state, vocab):
     assert obs.scalars[10] == pytest.approx(min(125.0 / max(blind_target, 1.0), 1.0))
 
 
+def test_tokenize_includes_explicit_immediate_risk_context(run_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    obs = tok.tokenize(
+        run_state,
+        SubPhase.CHOOSE_ACTION,
+        clear_probability=0.7,
+        immediate_death_probability=0.3,
+    )
+
+    assert obs.scalars[11] == pytest.approx(0.7)
+    assert obs.scalars[12] == pytest.approx(0.3)
+
+
 def test_hand_candidates_emitted_in_choose_action(run_state, vocab):
     tok = Tokenizer(vocab=vocab)
     obs = tok.tokenize(run_state, SubPhase.CHOOSE_ACTION)

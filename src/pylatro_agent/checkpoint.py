@@ -50,6 +50,8 @@ def save_checkpoint(
 def load_checkpoint_payload(
     path: str | Path,
     device: torch.device | str,
+    *,
+    allow_compatible_tokenizer: bool = False,
 ) -> dict[str, Any]:
     """Load a checkpoint and verify its tokenizer version.
 
@@ -74,12 +76,18 @@ def load_checkpoint_payload(
             "retrain with the current tokenizer."
         )
     saved_version = blob.get("tokenizer_version")
-    if saved_version != TOKENIZER_VERSION:
+    append_only_compatible = allow_compatible_tokenizer and saved_version == 5 and TOKENIZER_VERSION == 6
+    if saved_version != TOKENIZER_VERSION and not append_only_compatible:
         raise RuntimeError(
             f"Checkpoint {path} was saved with tokenizer_version="
             f"{saved_version!r}, but current TOKENIZER_VERSION="
             f"{TOKENIZER_VERSION}. Observation format has changed; "
             "retrain or pin the tokenizer version."
+        )
+    if append_only_compatible:
+        logger.warning(
+            "Loading tokenizer_version=5 checkpoint into append-only tokenizer_version=6; "
+            "the new immediate-risk embedding remains freshly initialized."
         )
     return blob
 

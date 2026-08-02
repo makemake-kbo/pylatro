@@ -131,10 +131,17 @@ def _load_model(model_path: str, vocab, device):
     from .agent import BalatroAgent
     from .checkpoint import load_checkpoint_payload
 
-    payload = load_checkpoint_payload(model_path, device)
+    payload = load_checkpoint_payload(model_path, device, allow_compatible_tokenizer=True)
     config = _infer_agent_config(payload, device)
     model = BalatroAgent(config, vocab).to(device)
-    result = model.load_state_dict(payload["state_dict"], strict=False)
+    state_dict = payload["state_dict"]
+    current = model.state_dict()
+    compatible = {
+        key: value
+        for key, value in state_dict.items()
+        if key in current and current[key].shape == value.shape
+    }
+    result = model.load_state_dict(compatible, strict=False)
     # bin_centers/bin_edges are non-persistent config buffers, expected missing.
     missing = [k for k in result.missing_keys if not k.startswith("value_head.bin_")]
     if missing:

@@ -98,6 +98,8 @@ class Tokenizer:
         action_mask: np.ndarray | None = None,
         round_score: int = 0,
         history: PlayHistoryTracker | None = None,
+        clear_probability: float | None = None,
+        immediate_death_probability: float | None = None,
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -142,6 +144,14 @@ class Tokenizer:
         scalars[8] = sign_log(round_score_f)
         scalars[9] = sign_log(score_remaining)
         scalars[10] = min(round_score_f / max(blind_target, 1.0), 1.0)
+        if clear_probability is None or immediate_death_probability is None:
+            from .risk import capture_state_risk
+
+            risk = capture_state_risk(state, round_score)
+            clear_probability = risk.clear_probability
+            immediate_death_probability = risk.immediate_death_probability
+        scalars[11] = min(max(float(clear_probability), 0.0), 1.0)
+        scalars[12] = min(max(float(immediate_death_probability), 0.0), 1.0)
 
         pos = DECK_START
         hand_cards = state.hand_cards

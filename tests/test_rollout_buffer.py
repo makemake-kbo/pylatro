@@ -63,6 +63,15 @@ def test_rollout_buffer_stops_bootstrap_on_termination() -> None:
     np.testing.assert_allclose(buffer.returns[0], 1.0, rtol=1e-6)
 
 
+def test_rollout_buffer_labels_completed_episode_win_probability() -> None:
+    buffer = RolloutBuffer(num_envs=1, rollout_length=3)
+
+    buffer.set_episode_outcome(env_idx=0, start_step=1, end_step=2, won=True)
+
+    np.testing.assert_array_equal(buffer.win_probability_targets, [0.0, 1.0, 1.0])
+    np.testing.assert_array_equal(buffer.win_probability_masks, [0.0, 1.0, 1.0])
+
+
 def test_rollout_buffer_truncation_does_not_leak_gae_across_episode_boundary() -> None:
     buffer = RolloutBuffer(num_envs=1, rollout_length=3, gamma=0.99, gae_lambda=0.95)
     buffer.add_batch(
@@ -103,5 +112,4 @@ def test_rollout_buffer_truncation_does_not_leak_gae_across_episode_boundary() -
 
     np.testing.assert_allclose(buffer.advantages[0], 1.3159475, rtol=1e-6)
     np.testing.assert_allclose(buffer.advantages[1], 1.295, rtol=1e-6)
-
 

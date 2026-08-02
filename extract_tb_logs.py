@@ -5,11 +5,16 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 # Target tags
 SCALAR_TAGS = [
     'rollout/ep_reward_mean', 'rollout/ep_length_mean',
+    'rollout/episode_reward_mean', 'rollout/episode_length_mean',
+    'rollout/win_rate', 'rollout/final_ante_mean', 'eval/win_rate',
+    'recent_100/win_rate', 'recent_100/final_ante_mean',
     'reward/terminal_mean', 'reward/score_progress_mean', 'reward/pressure_progress_mean',
     'reward/blind_clear_mean', 'reward/ante_bonus_mean', 'reward/idle_penalty_mean',
     'reward/consumable_targeted_use_mean',
     'ppo/entropy_normalized', 'ppo/entropy_coeff', 'ppo/approx_kl', 'ppo/clip_fraction',
-    'ppo/value_loss', 'ppo/policy_loss',
+    'ppo/value_loss', 'ppo/policy_loss', 'ppo/survival_loss',
+    'ppo/win_probability_loss', 'ppo/explained_variance', 'ppo/actual_lr',
+    'ppo/minibatch_fraction', 'ppo/critic_warmup_active',
     'debug/chosen_action_prob_mean', 'debug/returns_mean', 'debug/returns_std',
     'actions/use_consumable_hand_subset_fraction', 'actions/use_consumable_joker_fraction',
     'actions/use_consumable_no_target_fraction',
@@ -30,6 +35,16 @@ SCALAR_TAGS = [
     'strategy/potential/planet_option_value_mean',
     'strategy/potential/seal_value_mean', 'strategy/potential/joker_search_option_mean',
     'strategy/potential/standard_pack_search_option_mean',
+    'strategy/risk/clear_probability_mean',
+    'strategy/risk/immediate_death_probability_mean',
+    'shop/joker_offers_per_1k_steps', 'shop/joker_buys_per_1k_steps',
+    'shop/joker_sells_per_1k_steps', 'shop/unsafe_leave_fraction',
+    'shop/unsafe_can_reroll_fraction', 'shop/missed_confident_upgrade_fraction',
+    'shop/full_weak_leave_fraction', 'shop/best_confident_upgrade_delta_mean',
+    'joker/replacements_per_episode', 'critic/shop_survival_brier',
+    'critic/shop_survival_prediction_mean', 'critic/shop_survival_outcome_mean',
+    'rollout/reward_components/reward_danger_reroll_bonus',
+    'rollout/reward_components/reward_joker_upgrade_bonus',
 ]
 
 SCALAR_PREFIXES = [

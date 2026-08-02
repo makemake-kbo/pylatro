@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from .build_value import BuildValueEstimate, estimate_build_value
 from .hand_plan import estimate_hand_plans
 from .heuristic import _SCALING_JOKER_KEYS
+from .risk import best_confident_joker_rescue, estimate_clear_risk
 from .strategy_value import estimate_strategy_value
 
 if TYPE_CHECKING:
@@ -46,7 +47,11 @@ class RewardConfig:
     potential_w_tarot_option: float = 0.20
     potential_w_planet_option: float = 0.25
     potential_w_seals: float = 1.25
-    potential_w_joker_search: float = 0.25
+    # Visible shop rescue is diagnostic-only in the potential.  A positive
+    # option potential would become an implicit penalty when the policy leaves
+    # or rerolls, and our counterfactual model is not complete enough to punish
+    # a declined offer.  Realized, confidence-gated upgrades are rewarded below.
+    potential_w_joker_search: float = 0.0
     potential_w_standard_pack_search: float = 0.50
     potential_build_cap: float = 2.0
     potential_readiness_saturation: float = 1.5
@@ -54,7 +59,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 4
+REWARD_MODEL_VERSION = 5
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -112,6 +117,7 @@ PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
 PLANET_UNMATCHED_MIN_PROGRESS = 0.25
 JOKER_UPGRADE_BONUS = 0.40
+DANGER_REROLL_BONUS = 0.20
 VALUE_TAROT_BONUS = 1.20
 
 _BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
@@ -127,6 +133,7 @@ REWARD_COMPONENT_NAMES = (
     "planet_unmatched_claim_penalty",
     "tarot_value_bonus",
     "joker_upgrade_bonus",
+    "danger_reroll_bonus",
     "joker_move",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
@@ -141,6 +148,7 @@ _COMPONENT_GROUP = {
     "planet_unmatched_claim_penalty": "consumable",
     "tarot_value_bonus": "consumable",
     "joker_upgrade_bonus": "shop",
+    "danger_reroll_bonus": "shop",
     "joker_move": "joker_move",
 }
 
@@ -483,17 +491,45 @@ def _apply_joker_upgrade_reward(
     if not curr_info.get("shop_bought_joker_id"):
         return
     try:
-        before = estimate_hand_plans(prev_info)
-        after = estimate_hand_plans(curr_info)
+        after_build = _build_value_estimate(curr_info)
+        before_risk = estimate_clear_risk(prev_info)
+        after_risk = estimate_clear_risk(curr_info)
     except (KeyError, OverflowError, TypeError, ValueError):
         return
-    if before is None or after is None:
+    if after_build is None:
         return
-    before_strength = max(before.best.utility / 1.32, 0.05)
-    after_strength = max(after.best.utility / 1.32, 0.0)
-    relative_gain = (after_strength - before_strength) / before_strength
-    if relative_gain > 0.0:
-        components["joker_upgrade_bonus"] = JOKER_UPGRADE_BONUS * min(relative_gain, 1.0)
+    acquired_key = str(curr_info.get("shop_bought_joker_id") or "")
+    acquired = [item for item in after_build.joker_marginals if str(item.key) == acquired_key]
+    confidence = max((float(item.modeled_effect_fraction) for item in acquired), default=0.0)
+    if confidence < 0.75:
+        return
+    baseline_probability = float(
+        curr_info.get("joker_upgrade_baseline_clear_probability", before_risk.clear_probability)
+    )
+    probability_gain = after_risk.clear_probability - baseline_probability
+    if probability_gain > 0.0:
+        components["joker_upgrade_bonus"] = JOKER_UPGRADE_BONUS * min(probability_gain / 0.25, 1.0)
+
+
+def _apply_danger_reroll_reward(
+    prev_info: dict,
+    curr_info: dict,
+    components: dict[str, float],
+) -> None:
+    """Give a small positive-only search signal when the next blind is unsafe."""
+
+    if str(curr_info.get("action_type", "")) != "shop_reroll":
+        return
+    risk = estimate_clear_risk(prev_info)
+    if risk.immediate_death_probability <= 0.35:
+        return
+    rescue = best_confident_joker_rescue(prev_info)
+    if rescue is not None and rescue.clear_probability_delta >= 0.10:
+        # A known rescue was already visible.  Do not punish the reroll, but do
+        # not pay the blind-search bonus either.
+        return
+    urgency = min((risk.immediate_death_probability - 0.35) / 0.65, 1.0)
+    components["danger_reroll_bonus"] = DANGER_REROLL_BONUS * urgency
 
 
 def _apply_value_tarot_reward(
@@ -560,6 +596,7 @@ def default_reward_components(
     if config.enable_score_build_potential:
         _apply_value_tarot_reward(prev_info, curr_info, components)
         _apply_joker_upgrade_reward(prev_info, curr_info, components)
+        _apply_danger_reroll_reward(prev_info, curr_info, components)
 
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
@@ -578,6 +615,7 @@ def default_reward_components(
     ):
         components[name] *= consumable_scale
     components["joker_upgrade_bonus"] *= dense_scale
+    components["danger_reroll_bonus"] *= dense_scale
 
     components["total"] = sum(components.values())
     return components

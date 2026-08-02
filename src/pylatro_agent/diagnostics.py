@@ -19,6 +19,7 @@ from pylatro.instances import remove_joker
 from .action import ActionType
 from .hand_candidates import generate_hand_candidates
 from .hand_plan import estimate_hand_plans
+from .risk import best_confident_joker_rescue
 from .shop_eval import BuildEval, capture_build_features, evaluate_build
 from .subset_actions import subset_indices
 
@@ -368,6 +369,29 @@ def step_event_diagnostics(
             list(after_offers),
             limit=MAX_DIAGNOSTIC_SHOP_JOKERS,
         )
+
+    if decoded.action_type == ActionType.SHOP_LEAVE:
+        clear_probability = float(prev_info.get("clear_probability", 0.0) or 0.0)
+        unsafe = clear_probability < 0.65
+        reroll_cost = max(float(prev_info.get("reroll_cost", 0) or 0), 0.0)
+        can_reroll = bool(prev_info.get("free_rerolls", 0)) or float(prev_info.get("dollars", 0) or 0) >= reroll_cost
+        rescue = best_confident_joker_rescue(prev_info)
+        diagnostics.update(
+            {
+                "shop_leave_observed": True,
+                "shop_unsafe_leave": unsafe,
+                "shop_unsafe_can_reroll": bool(unsafe and can_reroll),
+                "shop_missed_confident_upgrade": bool(
+                    rescue is not None and rescue.clear_probability_delta >= 0.10
+                ),
+                "shop_leave_clear_probability": clear_probability,
+                "shop_leave_joker_full_weak": bool(
+                    prev_info.get("joker_full") and prev_info.get("weak_confident_joker")
+                ),
+            }
+        )
+        if rescue is not None:
+            diagnostics["shop_best_confident_upgrade_delta"] = rescue.clear_probability_delta
 
     return diagnostics
 

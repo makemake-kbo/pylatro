@@ -155,7 +155,7 @@ uv run python train.py ppo \
   --planet-unmatched-use-penalty-coeff 0.25 \
   --planet-unmatched-claim-penalty-coeff 0.10 \
   --entropy-coeff 0.01 \
-  --reinit-value-head --critic-warmup-updates 15 --critic-warmup-min-ev 0
+  --reinit-value-head --critic-warmup-updates 15 --critic-warmup-min-ev 0.4
 ```
 
 `--score-build-potential` uses draw reliability and projected score to value Pair
@@ -165,7 +165,13 @@ only with a dedicated synergy Joker; Full House is not a strategic target. The
 same bounded potential strongly values Blue/Purple seals, Tarot
 deck fixing and money generation, score-improving Joker replacements, and
 midgame Standard-pack searches when scoring is already safe. Planet shaping
-rewards only these viable plans. A conservative fixed entropy bonus, low learning
+rewards only these viable plans. Tokenizer v6 also exposes a conservative,
+boss-aware chance of clearing the immediate blind. Banked cash is valuable only
+when that chance is credible; unsafe rerolls and realized, confidently modeled
+Joker upgrades get positive-only credit, with no penalty for declining an offer.
+The win and ante-survival heads are trained during PPO and the compact TensorBoard
+shop/terminal metrics expose dying with money, weak full Joker slots, and
+last-shop survival calibration. A conservative fixed entropy bonus, low learning
 rate, and hard KL guard protect the pretrained policy. Reinitialize the value head
 when adding these rewards to a checkpoint trained with different reward semantics.
 

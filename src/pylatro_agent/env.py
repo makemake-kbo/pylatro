@@ -44,6 +44,7 @@ from .reward import (
     RewardConfig,
     default_reward_components,
 )
+from .risk import estimate_clear_risk, weakest_confident_joker
 from .shop_eval import capture_build_features, evaluate_build
 from .subset_actions import consumable_subset_indices, subset_indices
 from .tokenizer import RawObservation, Tokenizer
@@ -99,6 +100,10 @@ class BalatroEnv(gymnasium.Env):
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
+        # A Joker replacement is a two-action transaction (sell, then buy).
+        # Preserve the pre-sale safety baseline so the realized purchase reward
+        # compares the complete old and new rosters rather than new-vs-empty.
+        self._joker_replacement_clear_baseline: float | None = None
         # Heuristic teacher for distillation. One instance per env (process);
         # the cache is per-instance and keyed on hand+joker signature, so
         # parallel envs are isolated naturally. When nothing consumes teacher
@@ -178,10 +183,11 @@ class BalatroEnv(gymnasium.Env):
         self._sub_phase = SubPhase.BLIND_SELECT
         self._steps_since_progress = 0
         self._play_diagnostic_count = 0
+        self._joker_replacement_clear_baseline = None
         self._history.reset()
         self._prev_info = self._capture_state_info()
 
-        obs = self._build_obs()
+        obs = self._build_obs(self._prev_info)
         return self._obs_to_dict(obs), {
             "sub_phase": self._sub_phase,
             "teacher_action": self._current_teacher_action(),
@@ -240,7 +246,7 @@ class BalatroEnv(gymnasium.Env):
 
             logging.getLogger(__name__).warning(f"Action {action} raised {type(e).__name__}: {e}")
             reward = -1.0
-            obs = self._build_obs()
+            obs = self._build_obs(self._prev_info)
             info = {
                 "sub_phase": self._sub_phase,
                 "error": str(e),
@@ -280,6 +286,23 @@ class BalatroEnv(gymnasium.Env):
 
         event_diagnostics = step_event_diagnostics(self._prev_info, curr_info, decoded)
         action_diagnostics.update(event_diagnostics)
+        if (
+            decoded.action_type == ActionType.SHOP_SELL_JOKER
+            and action_diagnostics.get("shop_sold_joker_id")
+            and self._joker_replacement_clear_baseline is None
+        ):
+            self._joker_replacement_clear_baseline = float(
+                self._prev_info.get("clear_probability", 0.0) or 0.0
+            )
+        elif decoded.action_type == ActionType.SHOP_BUY and action_diagnostics.get("shop_bought_joker_id"):
+            if self._joker_replacement_clear_baseline is not None:
+                curr_info["joker_upgrade_baseline_clear_probability"] = (
+                    self._joker_replacement_clear_baseline
+                )
+                action_diagnostics["joker_replacement_sequence"] = True
+            self._joker_replacement_clear_baseline = None
+        elif decoded.action_type == ActionType.SHOP_LEAVE:
+            self._joker_replacement_clear_baseline = None
         if counterfactual_probe is not None:
             actual_score = float(action_result.score.total)
             action_diagnostics.update(
@@ -337,7 +360,7 @@ class BalatroEnv(gymnasium.Env):
         )
         reward = reward_components["total"]
 
-        obs = self._build_obs()
+        obs = self._build_obs(curr_info)
         info = {
             "sub_phase": self._sub_phase,
             "pre_sub_phase": pre_sub_phase,
@@ -347,6 +370,14 @@ class BalatroEnv(gymnasium.Env):
             "dollars": state.dollars,
             "round_score": self._controller.round_score,
             "blind_target": curr_info.get("blind_target", 0.0),
+            "clear_probability": curr_info.get("clear_probability", 0.0),
+            "immediate_death_probability": curr_info.get("immediate_death_probability", 1.0),
+            "risk_model_confidence": curr_info.get("risk_model_confidence", 0.0),
+            "risk_score_margin": curr_info.get("risk_score_margin", 0.0),
+            "joker_count": curr_info.get("joker_count", 0),
+            "joker_limit": curr_info.get("joker_limit", 0),
+            "joker_full": curr_info.get("joker_full", False),
+            "weak_confident_joker": curr_info.get("weak_confident_joker", False),
             "won": won,
             "progress_made": progress_made,
             "steps_since_progress": self._steps_since_progress,
@@ -511,15 +542,18 @@ class BalatroEnv(gymnasium.Env):
         elif at == ActionType.MOVE_JOKER:
             move_joker(state, decoded.index, decoded.detail)
 
-    def _build_obs(self) -> RawObservation:
+    def _build_obs(self, state_info: dict | None = None) -> RawObservation:
         state = self._controller.state
         mask = self.action_masks()
+        risk_info = state_info if state_info is not None else self._capture_state_info()
         return self._tokenizer.tokenize(
             state,
             self._sub_phase,
             action_mask=mask,
             round_score=self._controller.round_score,
             history=self._history,
+            clear_probability=float(risk_info.get("clear_probability", 0.0) or 0.0),
+            immediate_death_probability=float(risk_info.get("immediate_death_probability", 1.0) or 0.0),
         )
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
@@ -586,6 +620,23 @@ class BalatroEnv(gymnasium.Env):
             "pack_choices_remaining": pack_choices_remaining,
         }
         info.update(capture_build_features(state))
+        risk = estimate_clear_risk(info)
+        weakest = weakest_confident_joker(info)
+        joker_count = len(info.get("joker_details") or ())
+        joker_limit = max(int(info.get("joker_limit", 5) or 5), 0)
+        info.update(
+            {
+                "clear_probability": risk.clear_probability,
+                "immediate_death_probability": risk.immediate_death_probability,
+                "risk_model_confidence": risk.model_confidence,
+                "risk_score_margin": risk.score_margin,
+                "risk_hand_type": risk.hand_type,
+                "joker_count": joker_count,
+                "joker_full": joker_count >= joker_limit,
+                "weak_confident_joker": bool(weakest is not None and weakest[0] <= 1.05),
+                "weakest_confident_joker_ratio": float(weakest[0]) if weakest is not None else 0.0,
+            }
+        )
         return info
 
     def _progress_signature(self, info: dict[str, Any]) -> tuple[Any, ...]:

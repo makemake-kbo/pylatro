@@ -64,6 +64,12 @@ class MetaEmbedding(nn.Module):
         self.blind_type_emb = nn.Embedding(4, d_model)
         self.boss_emb = nn.Embedding(35, d_model)  # 35 = fixed cap on boss vocab
         self.target_proj = nn.Linear(4, d_model)
+        self.risk_proj = nn.Linear(2, d_model)
+        # Tokenizer v6 appends risk features to a v5-compatible policy.  A zero
+        # start preserves the loaded policy exactly; PPO can learn how much to
+        # trust the estimator after critic warmup unfreezes the actor.
+        nn.init.zeros_(self.risk_proj.weight)
+        nn.init.zeros_(self.risk_proj.bias)
         self.hands_proj = nn.Linear(1, d_model)
         self.discards_proj = nn.Linear(1, d_model)
         self.handsize_proj = nn.Linear(1, d_model)
@@ -92,7 +98,12 @@ class MetaEmbedding(nn.Module):
             ],
             dim=-1,
         )
-        out[:, 4] = self.target_proj(target_context)
+        risk_context = (
+            scalars[:, 11:13]
+            if scalars.shape[1] >= 13
+            else scalars.new_zeros((batch, 2))
+        )
+        out[:, 4] = self.target_proj(target_context) + self.risk_proj(risk_context)
         out[:, 5] = self.hands_proj(scalars[:, 4:5])
         out[:, 6] = self.discards_proj(scalars[:, 5:6])
         out[:, 7] = self.handsize_proj(scalars[:, 6:7])

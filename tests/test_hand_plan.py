@@ -12,6 +12,7 @@ from pylatro_agent.reward import (
     default_reward_components,
     state_potential_breakdown,
 )
+from pylatro_agent.risk import best_confident_joker_rescue, estimate_clear_risk
 
 RANKS = ("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A")
 SUITS = ("Spades", "Hearts", "Clubs", "Diamonds")
@@ -253,8 +254,11 @@ def test_hermit_and_temperance_receive_large_realized_value_bonus() -> None:
 
 
 def test_deck_fixing_and_gold_cards_raise_persistent_value() -> None:
-    base = _snapshot(_standard_deck())
-    rank_fixed = _snapshot(_standard_deck() + [_card("A", "Spades") for _ in range(5)])
+    base = _snapshot(_standard_deck(), blind_target=100.0)
+    rank_fixed = _snapshot(
+        _standard_deck() + [_card("A", "Spades") for _ in range(5)],
+        blind_target=100.0,
+    )
     gold = deepcopy(base)
     gold["deck_stats"]["gold_count"] = 3
     config = RewardConfig(enable_score_build_potential=True)
@@ -335,7 +339,7 @@ def test_standard_pack_search_requires_midgame_scoring_readiness() -> None:
 
 
 def test_joker_search_only_values_score_improving_offers() -> None:
-    base = _snapshot(_standard_deck(), blind_target=2_000.0)
+    base = _snapshot(_standard_deck(), blind_target=800.0)
     good = deepcopy(base)
     good["shop_cards"] = (
         {"key": "j_strong", "set": "Joker", "cost": 5, "joker": _joker("j_strong", x_mult=4.0)},
@@ -344,26 +348,33 @@ def test_joker_search_only_values_score_improving_offers() -> None:
     bad["shop_cards"] = (
         {"key": "j_blank", "set": "Joker", "cost": 5, "joker": _joker("j_blank")},
     )
-    config = RewardConfig(enable_score_build_potential=True)
+    good_rescue = best_confident_joker_rescue(good)
+    bad_rescue = best_confident_joker_rescue(bad)
 
-    assert state_potential_breakdown(good, config)["joker_search_option"] > 0.0
-    assert state_potential_breakdown(bad, config)["joker_search_option"] == 0.0
+    assert good_rescue is not None and good_rescue.clear_probability_delta > 0.0
+    assert bad_rescue is None or bad_rescue.clear_probability_delta == 0.0
+    # Visible offers stay diagnostic-only so leaving or rerolling cannot create
+    # an implicit negative potential reward.
+    config = RewardConfig(enable_score_build_potential=True)
+    assert state_potential_breakdown(good, config)["joker_search_option"] == 0.0
 
 
 def test_full_joker_slots_value_replacing_a_weak_joker() -> None:
-    info = _snapshot(_standard_deck(), blind_target=2_000.0)
+    info = _snapshot(_standard_deck(), blind_target=800.0)
     info["joker_limit"] = 1
     info["joker_details"] = (_joker("j_weak", mult=1.0),)
     info["shop_cards"] = (
         {"key": "j_strong", "set": "Joker", "cost": 5, "joker": _joker("j_strong", x_mult=4.0)},
     )
-    config = RewardConfig(enable_score_build_potential=True)
+    rescue = best_confident_joker_rescue(info)
 
-    assert state_potential_breakdown(info, config)["joker_search_option"] > 0.0
+    assert rescue is not None
+    assert rescue.clear_probability_delta > 0.0
+    assert rescue.removed_key == "j_weak"
 
 
 def test_buying_score_improving_joker_beats_bad_purchase() -> None:
-    before = _snapshot(_standard_deck(), blind_target=2_000.0)
+    before = _snapshot(_standard_deck(), blind_target=800.0)
     good_joker = _joker("j_strong", x_mult=4.0)
     bad_joker = _joker("j_blank")
     before["shop_cards"] = (
@@ -399,6 +410,43 @@ def test_buying_score_improving_joker_beats_bad_purchase() -> None:
     assert good["joker_upgrade_bonus"] > 0.0
     assert bad["joker_upgrade_bonus"] == 0.0
     assert good["total"] > bad["total"]
+
+
+def test_two_step_joker_replacement_uses_the_pre_sale_roster_baseline() -> None:
+    config = RewardConfig(enable_score_build_potential=True)
+    state = SimpleNamespace(win_ante=4, round_resets=SimpleNamespace(ante=3))
+    empty = _snapshot(_standard_deck(), blind_target=400.0)
+
+    old = deepcopy(empty)
+    old["joker_details"] = (_joker("j_old", x_mult=2.0),)
+    upgrade = deepcopy(empty)
+    upgrade.update(
+        {
+            "joker_details": (_joker("j_upgrade", x_mult=2.5),),
+            "shop_bought_joker_id": "j_upgrade",
+            "joker_upgrade_baseline_clear_probability": estimate_clear_risk(old).clear_probability,
+            "progress_made": True,
+            "action_type": "shop_buy",
+        }
+    )
+
+    strong_old = deepcopy(empty)
+    strong_old["joker_details"] = (_joker("j_strong_old", x_mult=2.5),)
+    downgrade = deepcopy(empty)
+    downgrade.update(
+        {
+            "joker_details": (_joker("j_downgrade", x_mult=2.0),),
+            "shop_bought_joker_id": "j_downgrade",
+            "joker_upgrade_baseline_clear_probability": estimate_clear_risk(strong_old).clear_probability,
+            "progress_made": True,
+            "action_type": "shop_buy",
+        }
+    )
+
+    upgrade_reward = default_reward_components(state, empty, upgrade, False, False, config)
+    downgrade_reward = default_reward_components(state, empty, downgrade, False, False, config)
+    assert upgrade_reward["joker_upgrade_bonus"] > 0.0
+    assert downgrade_reward["joker_upgrade_bonus"] == 0.0
 
 
 def test_potential_remains_bounded_with_multiple_strategic_assets() -> None:

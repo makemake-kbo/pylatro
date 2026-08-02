@@ -98,6 +98,10 @@ class RolloutBuffer:
         # unfinished episodes contribute nothing to the survival loss.
         self.ante_survival_targets = np.zeros((self.total_size, DEFAULT_MAX_ANTES), dtype=np.float32)
         self.ante_survival_masks = np.zeros((self.total_size, DEFAULT_MAX_ANTES), dtype=np.float32)
+        # Episode-win target for the long-horizon win-probability head.  PPO
+        # previously left this head stale (and random after value-head reinit).
+        self.win_probability_targets = np.zeros(self.total_size, dtype=np.float32)
+        self.win_probability_masks = np.zeros(self.total_size, dtype=np.float32)
 
         # Write pointer per env
         self._step_counts = np.zeros(num_envs, dtype=np.int64)
@@ -160,6 +164,22 @@ class RolloutBuffer:
         hi = base + end_step + 1
         self.ante_survival_targets[lo:hi] = target
         self.ante_survival_masks[lo:hi] = mask
+
+    def set_episode_outcome(
+        self,
+        env_idx: int,
+        start_step: int,
+        end_step: int,
+        *,
+        won: bool,
+    ) -> None:
+        """Fill the completed episode's win-probability target and mask."""
+
+        base = env_idx * self.rollout_length
+        lo = base + start_step
+        hi = base + end_step + 1
+        self.win_probability_targets[lo:hi] = float(won)
+        self.win_probability_masks[lo:hi] = 1.0
 
     def compute_returns_and_advantages(self, last_values: np.ndarray | list[float]) -> None:
         """Compute GAE advantages per env, storing into pre-allocated arrays.
@@ -300,6 +320,8 @@ class RolloutBuffer:
                 "returns": torch.as_tensor(self.returns[idx], device=device),
                 "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
                 "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
+                "win_probability_target": torch.as_tensor(self.win_probability_targets[idx], device=device),
+                "win_probability_mask": torch.as_tensor(self.win_probability_masks[idx], device=device),
             }
 
             if pin_memory and device.type == "cpu":

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from pylatro_agent import reward as reward_module
 from pylatro_agent.build_value import BuildValueEstimate, JokerMarginal, ScoreChannels
 from pylatro_agent.reward import (
     ANTE_PROGRESS_VALUE,
@@ -121,6 +122,32 @@ def test_checkpoint_metadata_contains_complete_reward_identity() -> None:
         "reward_model_version": REWARD_MODEL_VERSION,
         "reward_fingerprint": reward_config_fingerprint(config),
     }
+
+
+def test_danger_reroll_signal_is_positive_only_and_skips_visible_rescue(monkeypatch) -> None:
+    monkeypatch.setattr(
+        reward_module,
+        "estimate_clear_risk",
+        lambda info: SimpleNamespace(immediate_death_probability=0.80),
+    )
+    monkeypatch.setattr(reward_module, "best_confident_joker_rescue", lambda info: None)
+    components = {"danger_reroll_bonus": 0.0}
+
+    reward_module._apply_danger_reroll_reward({}, {"action_type": "shop_reroll"}, components)
+
+    assert components["danger_reroll_bonus"] > 0.0
+
+    components["danger_reroll_bonus"] = 0.0
+    monkeypatch.setattr(
+        reward_module,
+        "best_confident_joker_rescue",
+        lambda info: SimpleNamespace(clear_probability_delta=0.20),
+    )
+    reward_module._apply_danger_reroll_reward({}, {"action_type": "shop_reroll"}, components)
+    assert components["danger_reroll_bonus"] == 0.0
+
+    reward_module._apply_danger_reroll_reward({}, {"action_type": "shop_leave"}, components)
+    assert components["danger_reroll_bonus"] == 0.0
 
 
 @pytest.mark.parametrize(

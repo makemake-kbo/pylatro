@@ -8,6 +8,7 @@ from math import log1p
 from typing import Any
 
 from .hand_plan import HandPlanEstimate, estimate_hand_plans
+from .risk import best_confident_joker_rescue, estimate_clear_risk
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,8 @@ class StrategyValue:
     seals: float
     joker_search: float
     pack_search: float
+    clear_probability: float
+    immediate_death_probability: float
 
 
 _TAROT_OPTION_UNITS = {
@@ -119,48 +122,27 @@ def _seal_value(info: Mapping[str, Any], plans: HandPlanEstimate) -> float:
     return _clip01(units / 1.55)
 
 
-def _economy_value(info: Mapping[str, Any]) -> float:
+def _economy_value(info: Mapping[str, Any], clear_probability: float) -> float:
     dollars = max(float(info.get("dollars", 0) or 0), 0.0)
     deck = _mapping(info.get("deck_stats"))
     gold_cards = max(int(deck.get("gold_count", 0) or 0), 0)
     cash = log1p(min(dollars, 50.0)) / log1p(50.0)
     persistent_gold = _clip01(gold_cards / 3.0)
-    return _clip01(0.72 * cash + 0.28 * persistent_gold)
+    # Interest and banked cash have no future value if the next blind kills the
+    # run.  Preserve economy normally once the build is safe, but smoothly
+    # remove the incentive to die holding money below 80% modeled clear chance.
+    safety_gate = _clip01((clear_probability - 0.50) / 0.30)
+    return _clip01((0.72 * cash + 0.28 * persistent_gold) * safety_gate)
 
 
 def _joker_search_value(info: Mapping[str, Any], current: HandPlanEstimate) -> float:
-    dollars = max(float(info.get("dollars", 0) or 0), 0.0)
-    owned = tuple(joker for joker in (info.get("joker_details") or ()) if isinstance(joker, Mapping))
-    limit = max(int(info.get("joker_limit", 5) or 5), 0)
-    current_strength = max(_plan_strength(current), 1e-4)
     underpowered = _clip01((1.15 - current.best.readiness_ratio) / 0.65)
     if underpowered <= 0.0:
         return 0.0
-
-    best_gain = 0.0
-    for card in info.get("shop_cards") or ():
-        if not isinstance(card, Mapping) or card.get("set") != "Joker":
-            continue
-        if float(card.get("cost", 0) or 0) > dollars:
-            continue
-        offer = card.get("joker")
-        if not isinstance(offer, Mapping):
-            continue
-        rosters: list[tuple[Mapping[str, Any], ...]] = []
-        if len(owned) < limit or bool(_mapping(offer.get("edition")).get("negative")):
-            rosters.append((*owned, offer))
-        else:
-            for index, joker in enumerate(owned):
-                if joker.get("eternal"):
-                    continue
-                rosters.append((*owned[:index], offer, *owned[index + 1 :]))
-        for roster in rosters:
-            candidate = _hand_plans(info, roster)
-            if candidate is None:
-                continue
-            gain = (_plan_strength(candidate) - current_strength) / current_strength
-            best_gain = max(best_gain, gain)
-    return underpowered * _clip01(best_gain / 0.75)
+    rescue = best_confident_joker_rescue(info)
+    if rescue is None:
+        return 0.0
+    return underpowered * _clip01(rescue.clear_probability_delta / 0.25)
 
 
 def _standard_pack_search_value(
@@ -211,14 +193,17 @@ def estimate_strategy_value(info: Mapping[str, Any], *, win_ante: int) -> Strate
     if plans is None:
         return None
     best = plans.best
+    risk = estimate_clear_risk(info)
     return StrategyValue(
         plans=plans,
         hand_plan_quality=_plan_strength(plans),
         readiness=best.draw_reliability * _clip01(best.readiness_ratio / 1.25),
-        economy=_economy_value(info),
+        economy=_economy_value(info, risk.clear_probability),
         tarot_option=_tarot_option(info),
         planet_option=_planet_option(info, plans),
         seals=_seal_value(info, plans),
         joker_search=_joker_search_value(info, plans),
         pack_search=_standard_pack_search_value(info, plans, win_ante=win_ante),
+        clear_probability=risk.clear_probability,
+        immediate_death_probability=risk.immediate_death_probability,
     )

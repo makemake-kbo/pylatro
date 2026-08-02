@@ -9,12 +9,13 @@ from enum import IntEnum, StrEnum
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-TOKENIZER_VERSION = 5
+TOKENIZER_VERSION = 6
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = 12
-SCALAR_DIM = 11  # continuous scalar features
+SCALAR_DIM = 13  # continuous scalar features, including immediate clear/death risk
+LEGACY_POLICY_SCALAR_DIM = 11  # v5 action-head input; risk enters through META embedding
 
 # Played-hand history.  The tracker presents rounds oldest-to-newest, with the
 # active blind in the final slot.  History lives in side-channel arrays and is

@@ -31,6 +31,7 @@ from .constants import (
     HAND_CANDIDATE_MAX,
     HAND_CANDIDATE_START,
     JOKER_START,
+    LEGACY_POLICY_SCALAR_DIM,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
     MAX_HAND_SIZE,
@@ -39,7 +40,6 @@ from .constants import (
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
     NUM_CONSUMABLE_HAND_SUBSETS,
-    SCALAR_DIM,
     SHOP_START,
     ActionRange,
     TokenType,
@@ -143,7 +143,9 @@ class ActionGrammarHead(nn.Module):
             nn.GELU(),
         )
         self.scalar_proj = nn.Sequential(
-            nn.Linear(SCALAR_DIM, 32),
+            # Preserve the tokenizer-v5 policy head exactly. Tokenizer-v6 risk
+            # enters through the META target token and is learned from there.
+            nn.Linear(LEGACY_POLICY_SCALAR_DIM, 32),
             nn.GELU(),
         )
         self.macro_head = nn.Linear(state_dim, NUM_GRAMMAR_ACTIONS)
@@ -189,7 +191,13 @@ class ActionGrammarHead(nn.Module):
         batch = backbone_out.shape[0]
         full_mask = attention_mask.unsqueeze(-1).to(backbone_out.dtype)
         global_pool = (backbone_out * full_mask).sum(1) / full_mask.sum(1).clamp(min=1)
-        state = torch.cat([self.global_proj(global_pool), self.scalar_proj(scalars)], dim=-1)
+        state = torch.cat(
+            [
+                self.global_proj(global_pool),
+                self.scalar_proj(scalars[:, :LEGACY_POLICY_SCALAR_DIM]),
+            ],
+            dim=-1,
+        )
 
         hand_ctx, hand_present = self._gather_hand_slots(
             backbone_out,

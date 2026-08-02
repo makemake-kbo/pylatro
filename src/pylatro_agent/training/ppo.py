@@ -145,7 +145,7 @@ def _load_checkpoint_compatible(
     from ..checkpoint import load_checkpoint_payload
     from ..reward import reward_config_fingerprint
 
-    payload = load_checkpoint_payload(checkpoint_path, device)
+    payload = load_checkpoint_payload(checkpoint_path, device, allow_compatible_tokenizer=True)
     if active_reward_config is not None:
         saved_fingerprint = payload.get("reward_fingerprint")
         active_fingerprint = reward_config_fingerprint(active_reward_config)
@@ -343,7 +343,11 @@ class PPOConfig:
     # Weight on the ante_survival auxiliary BCE loss. Small by default ,
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
-    survival_loss_coeff: float = 0.05
+    survival_loss_coeff: float = 0.10
+    # Long-horizon episode outcome calibration.  This head existed in the
+    # architecture but PPO never trained it, leaving it stale/random after a
+    # reward-driven value-head reset.
+    win_probability_loss_coeff: float = 0.05
     # When True, the critic loss is included in the main backward pass so
     # value gradients flow through the shared trunk (the PPO default for
     # shared-backbone models). With the flag off, a 2-layer ValueHead must fit
@@ -472,6 +476,7 @@ class _UpdateStats:
     # normalize_returns is incompatible with the HL-Gauss head.
     value_mses: list[float]
     survival_losses: list[float]
+    win_probability_losses: list[float]
     entropies: list[float]
     normalized_entropies: list[float]
     action_type_entropies: list[float]
@@ -589,6 +594,9 @@ class _RolloutMetrics:
     completed_episode_antes: list[int] = field(default_factory=list)
     terminal_loss_antes: list[int] = field(default_factory=list)
     terminal_loss_score_ratios: list[float] = field(default_factory=list)
+    terminal_loss_dollars: list[float] = field(default_factory=list)
+    terminal_loss_cash_ge_10: list[float] = field(default_factory=list)
+    terminal_loss_joker_full_weak: list[float] = field(default_factory=list)
     terminal_loss_blind_counts: Counter = field(default_factory=Counter)
     terminal_boss_loss_counts: Counter = field(default_factory=Counter)
     terminal_loss_last_play_top1: list[float] = field(default_factory=list)
@@ -613,6 +621,17 @@ class _RolloutMetrics:
     shop_offered_joker_counts: Counter = field(default_factory=Counter)
     shop_bought_joker_counts: Counter = field(default_factory=Counter)
     shop_sold_joker_counts: Counter = field(default_factory=Counter)
+    clear_probabilities: list[float] = field(default_factory=list)
+    immediate_death_probabilities: list[float] = field(default_factory=list)
+    shop_leave_flags: list[float] = field(default_factory=list)
+    shop_unsafe_leave_flags: list[float] = field(default_factory=list)
+    shop_unsafe_can_reroll_flags: list[float] = field(default_factory=list)
+    shop_missed_upgrade_flags: list[float] = field(default_factory=list)
+    shop_leave_full_weak_flags: list[float] = field(default_factory=list)
+    shop_best_upgrade_deltas: list[float] = field(default_factory=list)
+    shop_survival_predictions: list[float] = field(default_factory=list)
+    shop_survival_outcomes: list[float] = field(default_factory=list)
+    shop_survival_briers: list[float] = field(default_factory=list)
     joker_marginal_ratios: defaultdict = field(default_factory=lambda: defaultdict(list))
     joker_modeled_fractions: defaultdict = field(default_factory=lambda: defaultdict(list))
     build_values: defaultdict = field(default_factory=lambda: defaultdict(list))
@@ -682,6 +701,18 @@ def _write_terminal_loss_metrics(writer, rm: _RolloutMetrics, step: int, *, win_
         writer.add_scalar(
             "terminal/loss_score_ratio_p50",
             float(np.median(rm.terminal_loss_score_ratios)),
+            step,
+        )
+    if rm.terminal_loss_dollars:
+        writer.add_scalar("terminal/loss_cash_mean", float(np.mean(rm.terminal_loss_dollars)), step)
+        writer.add_scalar(
+            "terminal/loss_cash_ge_10_fraction",
+            float(np.mean(rm.terminal_loss_cash_ge_10)),
+            step,
+        )
+        writer.add_scalar(
+            "terminal/loss_joker_full_weak_fraction",
+            float(np.mean(rm.terminal_loss_joker_full_weak)),
             step,
         )
     if rm.terminal_loss_last_play_top1:
@@ -805,6 +836,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("rollout_temperature must be positive")
     if config.entropy_coeff < 0.0:
         raise ValueError("entropy_coeff must be non-negative")
+    if config.survival_loss_coeff < 0.0:
+        raise ValueError("survival_loss_coeff must be non-negative")
+    if config.win_probability_loss_coeff < 0.0:
+        raise ValueError("win_probability_loss_coeff must be non-negative")
     if config.target_kl is not None and config.target_kl <= 0.0:
         raise ValueError("target_kl must be positive when set")
     if config.target_kl_p95 is not None and config.target_kl_p95 <= 0.0:
@@ -1025,6 +1060,7 @@ def _run_ppo_update(
         value_losses=[],
         value_mses=[],
         survival_losses=[],
+        win_probability_losses=[],
         entropies=[],
         normalized_entropies=[],
         action_type_entropies=[],
@@ -1162,7 +1198,24 @@ def _run_ppo_update(
             )
             survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
 
-            critic_loss = config.value_loss_coeff * value_loss + config.survival_loss_coeff * survival_loss
+            if "win_prob" in value_dict:
+                win_mask = batch["win_probability_mask"]
+                win_bce = F.binary_cross_entropy(
+                    value_dict["win_prob"],
+                    batch["win_probability_target"],
+                    reduction="none",
+                )
+                win_probability_loss = (win_bce * win_mask).sum() / win_mask.sum().clamp(min=1.0)
+            else:
+                # Lightweight test/ablation models may intentionally omit this
+                # auxiliary head; the production agent always exposes it.
+                win_probability_loss = value_loss.new_zeros(())
+
+            critic_loss = (
+                config.value_loss_coeff * value_loss
+                + config.survival_loss_coeff * survival_loss
+                + config.win_probability_loss_coeff * win_probability_loss
+            )
 
             if policy_frozen:
                 # Phase 3.2 critic warmup: a TRUE policy freeze. Never backward
@@ -1242,6 +1295,7 @@ def _run_ppo_update(
             stats.value_losses.append(value_loss.item())
             stats.value_mses.append(value_mse.item())
             stats.survival_losses.append(survival_loss.item())
+            stats.win_probability_losses.append(win_probability_loss.item())
             stats.entropies.append(entropy.item())
             stats.normalized_entropies.append(normalized_entropy.item())
             stats.action_type_entropies.append(normalized_action_type_entropy.item())
@@ -1697,6 +1751,14 @@ def _ppo_terminal_flags(
 
 def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *, done: bool) -> None:
     """Aggregate optional env-provided decision-quality diagnostics."""
+    if _extract_step_info_value(
+        infos,
+        "joker_replacement_sequence",
+        env_idx,
+        done=done,
+        default=False,
+    ):
+        rm.joker_replacement_events += 1
     for info_key, counter in (
         ("consumable_use_set", rm.consumable_use_set_counts),
         ("pack_claim_set", rm.consumable_claim_set_counts),
@@ -1708,6 +1770,53 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
     claimed_seal = _extract_step_info_value(infos, "pack_claim_seal", env_idx, done=done, default="")
     if claimed_seal:
         rm.pack_claim_seal_counts[str(claimed_seal)] += 1
+    if _extract_step_info_value(infos, "shop_leave_observed", env_idx, done=done, default=False):
+        rm.shop_leave_flags.append(1.0)
+        rm.shop_unsafe_leave_flags.append(
+            float(_extract_step_info_value(infos, "shop_unsafe_leave", env_idx, done=done, default=False))
+        )
+        rm.shop_unsafe_can_reroll_flags.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "shop_unsafe_can_reroll",
+                    env_idx,
+                    done=done,
+                    default=False,
+                )
+            )
+        )
+        rm.shop_missed_upgrade_flags.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "shop_missed_confident_upgrade",
+                    env_idx,
+                    done=done,
+                    default=False,
+                )
+            )
+        )
+        rm.shop_leave_full_weak_flags.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "shop_leave_joker_full_weak",
+                    env_idx,
+                    done=done,
+                    default=False,
+                )
+            )
+        )
+        upgrade_delta = _extract_step_info_value(
+            infos,
+            "shop_best_confident_upgrade_delta",
+            env_idx,
+            done=done,
+            default=None,
+        )
+        if upgrade_delta is not None:
+            rm.shop_best_upgrade_deltas.append(float(upgrade_delta))
     rm.purple_seal_tarots_generated += int(
         _extract_step_info_value(
             infos,
@@ -2239,7 +2348,11 @@ def train_ppo(
         else:
             from ..checkpoint import load_checkpoint_payload
 
-            loaded_cfg = load_checkpoint_payload(pretrained_path, "cpu").get("agent_config") or {}
+            loaded_cfg = load_checkpoint_payload(
+                pretrained_path,
+                "cpu",
+                allow_compatible_tokenizer=True,
+            ).get("agent_config") or {}
         loaded_bins = int(loaded_cfg.get("value_bins", 0) or 0)
         if resume_path and loaded_bins != agent_config.value_bins:
             raise ValueError(
@@ -2526,6 +2639,11 @@ def train_ppo(
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
+    # Calibrate the survival prediction shown at the most recent shop leave.
+    # These persist across rollout boundaries because an episode often spans
+    # several PPO updates.
+    env_last_shop_survival_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
+    env_last_shop_ante = np.zeros(config.num_envs, dtype=np.int64)
     # Per-env start step within the current rollout for the current episode.
     # Reset to 0 at each rollout, advanced past every `done` step so the
     # buffer can retroactively fill ante-survival targets for completed
@@ -2576,6 +2694,17 @@ def train_ppo(
                     values_np = return_rms.denormalize(values_np)
                 chosen_action_probs_np = chosen_action_probs.cpu().numpy()
                 max_action_probs_np = max_action_probs.cpu().numpy()
+                pre_scalars = obs_buf._np_scalars
+                rm.clear_probabilities.extend(pre_scalars[:, 11].astype(np.float64).tolist())
+                rm.immediate_death_probabilities.extend(pre_scalars[:, 12].astype(np.float64).tolist())
+                survival_np = value_dict["ante_survival"].cpu().numpy()
+                for env_idx, action_id in enumerate(actions_np):
+                    if _action_type_name(int(action_id)) != ActionType.SHOP_LEAVE.value:
+                        continue
+                    shop_ante = max(round(float(pre_scalars[env_idx, 2])), 1)
+                    survival_index = min(shop_ante - 1, survival_np.shape[1] - 1)
+                    env_last_shop_survival_pred[env_idx] = float(survival_np[env_idx, survival_index])
+                    env_last_shop_ante[env_idx] = shop_ante
 
                 # Step all envs at once
                 next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
@@ -2698,6 +2827,28 @@ def train_ppo(
                     rm.completed_episode_antes.append(ep_ante)
                     if not ep_won and not ep_stalled:
                         rm.terminal_loss_antes.append(ep_ante)
+                        terminal_dollars = float(
+                            _extract_step_info_value(infos, "dollars", i, done=True, default=0.0) or 0.0
+                        )
+                        terminal_full_weak = bool(
+                            _extract_step_info_value(
+                                infos,
+                                "joker_full",
+                                i,
+                                done=True,
+                                default=False,
+                            )
+                            and _extract_step_info_value(
+                                infos,
+                                "weak_confident_joker",
+                                i,
+                                done=True,
+                                default=False,
+                            )
+                        )
+                        rm.terminal_loss_dollars.append(terminal_dollars)
+                        rm.terminal_loss_cash_ge_10.append(float(terminal_dollars >= 10.0))
+                        rm.terminal_loss_joker_full_weak.append(float(terminal_full_weak))
                         end_blind = str(
                             _extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or ""
                         ).lower()
@@ -2726,6 +2877,15 @@ def train_ppo(
                         )
                         if last_play_value_ratio is not None:
                             rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
+                    if np.isfinite(env_last_shop_survival_pred[i]):
+                        if not ep_stalled:
+                            prediction = float(env_last_shop_survival_pred[i])
+                            outcome = float(ep_won or ep_ante > int(env_last_shop_ante[i]))
+                            rm.shop_survival_predictions.append(prediction)
+                            rm.shop_survival_outcomes.append(outcome)
+                            rm.shop_survival_briers.append((prediction - outcome) ** 2)
+                        env_last_shop_survival_pred[i] = np.nan
+                        env_last_shop_ante[i] = 0
                     if sil_tracker is not None and sil_buffer is not None:
                         # Insert wins and ordinary completed losses; drop only
                         # episodes the environment itself flags as
@@ -2749,6 +2909,12 @@ def train_ppo(
                             end_step=step,
                             target=surv_target,
                             mask=surv_mask,
+                        )
+                        buffer.set_episode_outcome(
+                            env_idx=int(i),
+                            start_step=int(env_episode_start_step[i]),
+                            end_step=step,
+                            won=ep_won,
                         )
                     env_episode_start_step[i] = step + 1
                     env_ep_reward[i] = 0.0
@@ -2807,6 +2973,60 @@ def train_ppo(
             writer.add_scalar("rollout/completed_episodes", float(np.sum(rm.done_flags)), rollout_step)
             _write_rollout_episode_metrics(writer, rm, rollout_step)
             _write_terminal_loss_metrics(writer, rm, rollout_step, win_ante=effective_win_ante)
+            if rm.clear_probabilities:
+                writer.add_scalar(
+                    "strategy/risk/clear_probability_mean",
+                    float(np.mean(rm.clear_probabilities)),
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "strategy/risk/immediate_death_probability_mean",
+                    float(np.mean(rm.immediate_death_probabilities)),
+                    rollout_step,
+                )
+            if rm.shop_leave_flags:
+                writer.add_scalar(
+                    "shop/unsafe_leave_fraction",
+                    float(np.mean(rm.shop_unsafe_leave_flags)),
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "shop/unsafe_can_reroll_fraction",
+                    float(np.mean(rm.shop_unsafe_can_reroll_flags)),
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "shop/missed_confident_upgrade_fraction",
+                    float(np.mean(rm.shop_missed_upgrade_flags)),
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "shop/full_weak_leave_fraction",
+                    float(np.mean(rm.shop_leave_full_weak_flags)),
+                    rollout_step,
+                )
+            if rm.shop_best_upgrade_deltas:
+                writer.add_scalar(
+                    "shop/best_confident_upgrade_delta_mean",
+                    float(np.mean(rm.shop_best_upgrade_deltas)),
+                    rollout_step,
+                )
+            if rm.shop_survival_briers:
+                writer.add_scalar(
+                    "critic/shop_survival_brier",
+                    float(np.mean(rm.shop_survival_briers)),
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "critic/shop_survival_prediction_mean",
+                    float(np.mean(rm.shop_survival_predictions)),
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "critic/shop_survival_outcome_mean",
+                    float(np.mean(rm.shop_survival_outcomes)),
+                    rollout_step,
+                )
             if episode_rewards:
                 writer.add_scalar(
                     "recent_100/episode_reward_mean", float(np.mean(episode_rewards[-100:])), rollout_step
@@ -2823,6 +3043,33 @@ def train_ppo(
                     tag_name = str(hand_name).lower().replace(" ", "_")
                     writer.add_scalar(f"rollout/hands_played/{tag_name}", count / hand_total, rollout_step)
             steps_per_thousand = max(len(rm.step_rewards) / 1000.0, 1e-9)
+            writer.add_scalar(
+                "shop/joker_offers_per_1k_steps",
+                sum(rm.shop_offered_joker_counts.values()) / steps_per_thousand,
+                rollout_step,
+            )
+            writer.add_scalar(
+                "shop/joker_buys_per_1k_steps",
+                sum(rm.shop_bought_joker_counts.values()) / steps_per_thousand,
+                rollout_step,
+            )
+            writer.add_scalar(
+                "shop/joker_sells_per_1k_steps",
+                sum(rm.shop_sold_joker_counts.values()) / steps_per_thousand,
+                rollout_step,
+            )
+            completed_episodes = len(rm.completed_episode_rewards)
+            if completed_episodes:
+                writer.add_scalar(
+                    "joker/replacements_per_episode",
+                    rm.joker_replacement_events / completed_episodes,
+                    rollout_step,
+                )
+                writer.add_scalar(
+                    "joker/churn_per_episode",
+                    rm.joker_churn_count / completed_episodes,
+                    rollout_step,
+                )
             for consumable_set in ("Planet", "Tarot"):
                 tag_name = consumable_set.lower()
                 writer.add_scalar(
@@ -3010,6 +3257,12 @@ def train_ppo(
             # returns are never normalized); under HL-Gauss value_loss is
             # cross-entropy so this is the run-over-run comparable series.
             writer.add_scalar("ppo/value_mse", np.mean(update_stats.value_mses), update_count)
+            writer.add_scalar("ppo/survival_loss", np.mean(update_stats.survival_losses), update_count)
+            writer.add_scalar(
+                "ppo/win_probability_loss",
+                np.mean(update_stats.win_probability_losses),
+                update_count,
+            )
             writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
             writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
             writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)

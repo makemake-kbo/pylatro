@@ -24,6 +24,7 @@ from pylatro_agent.training.ppo import (
     _smoothed_entropy_signal,
     _validate_ppo_config,
     _write_rollout_episode_metrics,
+    _write_terminal_loss_metrics,
 )
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
 
@@ -468,6 +469,55 @@ def test_rollout_episode_metrics_skip_empty_rollouts() -> None:
             raise AssertionError("empty rollouts must not emit episode metrics")
 
     _write_rollout_episode_metrics(_Writer(), _RolloutMetrics(), step=1)
+
+
+def test_terminal_loss_metrics_are_compact_and_numeric() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        terminal_loss_antes=[2, 3, 3],
+        terminal_loss_score_ratios=[0.25, 0.5, 0.75],
+        terminal_loss_blind_counts={"small": 1, "big": 0, "boss": 2},
+        terminal_boss_loss_counts={"bl_hook": 2},
+        terminal_loss_last_play_top1=[1.0, 0.0],
+        terminal_loss_last_play_value_ratios=[1.0, 0.5],
+    )
+    writer = _Writer()
+
+    _write_terminal_loss_metrics(writer, rm, step=9, win_ante=4)
+
+    assert writer.scalars["terminal/loss_count"] == (3.0, 9)
+    assert writer.scalars["terminal/loss_ante_mean"] == pytest.approx((8 / 3, 9))
+    assert writer.scalars["terminal/loss_ante/1_fraction"] == (0.0, 9)
+    assert writer.scalars["terminal/loss_ante/2_fraction"] == pytest.approx((1 / 3, 9))
+    assert writer.scalars["terminal/loss_ante/3_fraction"] == pytest.approx((2 / 3, 9))
+    assert writer.scalars["terminal/loss_ante/4_fraction"] == (0.0, 9)
+    assert writer.scalars["terminal/loss_blind/small_fraction"] == pytest.approx((1 / 3, 9))
+    assert writer.scalars["terminal/loss_blind/boss_fraction"] == pytest.approx((2 / 3, 9))
+    assert writer.scalars["terminal/loss_score_ratio_mean"] == (0.5, 9)
+    assert writer.scalars["terminal/loss_score_ratio_p50"] == (0.5, 9)
+    assert writer.scalars["terminal/loss_last_play/top1_fraction"] == (0.5, 9)
+    assert writer.scalars["terminal/loss_last_play/value_ratio_mean"] == (0.75, 9)
+    assert writer.scalars["terminal/boss_loss/bl_hook_count"] == (2.0, 9)
+
+
+def test_terminal_loss_metrics_emit_only_zero_count_without_losses() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    writer = _Writer()
+    _write_terminal_loss_metrics(writer, _RolloutMetrics(), step=3, win_ante=4)
+
+    assert writer.scalars == {"terminal/loss_count": (0.0, 3)}
 
 
 def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:

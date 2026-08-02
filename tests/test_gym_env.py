@@ -525,3 +525,4 @@ def test_env_step_info_carries_boss_key(game_data, vocab):
 
     assert info["boss_key"].startswith("bl_")
     assert info["boss_key"] in game_data.blinds
+    assert info["blind_target"] > 0

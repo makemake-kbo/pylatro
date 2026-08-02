@@ -346,6 +346,7 @@ class BalatroEnv(gymnasium.Env):
             "boss_key": state.round_resets.blind_choices.get("Boss", "") or "",
             "dollars": state.dollars,
             "round_score": self._controller.round_score,
+            "blind_target": curr_info.get("blind_target", 0.0),
             "won": won,
             "progress_made": progress_made,
             "steps_since_progress": self._steps_since_progress,

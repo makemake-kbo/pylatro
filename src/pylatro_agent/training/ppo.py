@@ -586,6 +586,12 @@ class _RolloutMetrics:
     completed_episode_wins: list[float] = field(default_factory=list)
     completed_episode_stalls: list[float] = field(default_factory=list)
     completed_episode_antes: list[int] = field(default_factory=list)
+    terminal_loss_antes: list[int] = field(default_factory=list)
+    terminal_loss_score_ratios: list[float] = field(default_factory=list)
+    terminal_loss_blind_counts: Counter = field(default_factory=Counter)
+    terminal_boss_loss_counts: Counter = field(default_factory=Counter)
+    terminal_loss_last_play_top1: list[float] = field(default_factory=list)
+    terminal_loss_last_play_value_ratios: list[float] = field(default_factory=list)
     reward_component_values: defaultdict = field(default_factory=lambda: defaultdict(list))
     pre_choose_action_flags: list[float] = field(default_factory=list)
     hand_play_observed: list[float] = field(default_factory=list)
@@ -644,6 +650,48 @@ def _write_rollout_episode_metrics(writer, rm: _RolloutMetrics, step: int) -> No
     }
     for tag, values in metrics.items():
         writer.add_scalar(f"rollout/{tag}", float(np.mean(values)), step)
+
+
+def _write_terminal_loss_metrics(writer, rm: _RolloutMetrics, step: int, *, win_ante: int) -> None:
+    """Write a compact, numeric diagnosis of non-stall episode losses."""
+    loss_count = len(rm.terminal_loss_antes)
+    writer.add_scalar("terminal/loss_count", float(loss_count), step)
+    if not loss_count:
+        return
+
+    writer.add_scalar("terminal/loss_ante_mean", float(np.mean(rm.terminal_loss_antes)), step)
+    for ante in range(1, win_ante + 1):
+        fraction = rm.terminal_loss_antes.count(ante) / loss_count
+        writer.add_scalar(f"terminal/loss_ante/{ante}_fraction", fraction, step)
+    for blind in ("small", "big", "boss"):
+        fraction = rm.terminal_loss_blind_counts[blind] / loss_count
+        writer.add_scalar(f"terminal/loss_blind/{blind}_fraction", fraction, step)
+
+    if rm.terminal_loss_score_ratios:
+        writer.add_scalar(
+            "terminal/loss_score_ratio_mean",
+            float(np.mean(rm.terminal_loss_score_ratios)),
+            step,
+        )
+        writer.add_scalar(
+            "terminal/loss_score_ratio_p50",
+            float(np.median(rm.terminal_loss_score_ratios)),
+            step,
+        )
+    if rm.terminal_loss_last_play_top1:
+        writer.add_scalar(
+            "terminal/loss_last_play/top1_fraction",
+            float(np.mean(rm.terminal_loss_last_play_top1)),
+            step,
+        )
+    if rm.terminal_loss_last_play_value_ratios:
+        writer.add_scalar(
+            "terminal/loss_last_play/value_ratio_mean",
+            float(np.mean(rm.terminal_loss_last_play_value_ratios)),
+            step,
+        )
+    for boss_key, count in rm.terminal_boss_loss_counts.items():
+        writer.add_scalar(f"terminal/boss_loss/{boss_key}_count", float(count), step)
 
 
 def _unwrap_model(model: nn.Module) -> nn.Module:
@@ -2383,10 +2431,6 @@ def train_ppo(
     episode_wins: list[bool] = []
     episode_stalls: list[bool] = []
     episode_antes: list[int] = []
-    # Boss on deck + blind being fought when the episode ended (loss diagnosis:
-    # The Hook alone caused 59% of greedy ante-1 deaths pre-surcharge).
-    episode_end_bosses: list[str] = []
-    episode_end_blinds: list[str] = []
     # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
     _low_minibatch_streak = 0
     # Phase 3.2: latch set once explained variance clears critic_warmup_min_ev;
@@ -2598,12 +2642,36 @@ def train_ppo(
                     rm.completed_episode_wins.append(float(ep_won))
                     rm.completed_episode_stalls.append(float(ep_stalled))
                     rm.completed_episode_antes.append(ep_ante)
-                    episode_end_bosses.append(
-                        str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
-                    )
-                    episode_end_blinds.append(
-                        str(_extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or "")
-                    )
+                    if not ep_won and not ep_stalled:
+                        rm.terminal_loss_antes.append(ep_ante)
+                        end_blind = str(
+                            _extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or ""
+                        ).lower()
+                        rm.terminal_loss_blind_counts[end_blind] += 1
+                        if end_blind == "boss":
+                            boss_key = str(
+                                _extract_step_info_value(infos, "boss_key", i, done=True, default="") or ""
+                            )
+                            if boss_key:
+                                rm.terminal_boss_loss_counts[boss_key] += 1
+                        blind_target = float(
+                            _extract_step_info_value(infos, "blind_target", i, done=True, default=0.0) or 0.0
+                        )
+                        round_score = float(
+                            _extract_step_info_value(infos, "round_score", i, done=True, default=0.0) or 0.0
+                        )
+                        if blind_target > 0.0:
+                            rm.terminal_loss_score_ratios.append(round_score / blind_target)
+                        last_play_top1 = _extract_step_info_value(
+                            infos, "hand_play_top1", i, done=True, default=None
+                        )
+                        if last_play_top1 is not None:
+                            rm.terminal_loss_last_play_top1.append(float(bool(last_play_top1)))
+                        last_play_value_ratio = _extract_step_info_value(
+                            infos, "hand_play_candidate_value_ratio", i, done=True, default=None
+                        )
+                        if last_play_value_ratio is not None:
+                            rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
                     if sil_tracker is not None and sil_buffer is not None:
                         # Insert wins and ordinary completed losses; drop only
                         # episodes the environment itself flags as
@@ -2684,6 +2752,7 @@ def train_ppo(
             writer.add_scalar("rollout/progress_rate", float(np.mean(rm.progress_flags)), rollout_step)
             writer.add_scalar("rollout/completed_episodes", float(np.sum(rm.done_flags)), rollout_step)
             _write_rollout_episode_metrics(writer, rm, rollout_step)
+            _write_terminal_loss_metrics(writer, rm, rollout_step, win_ante=effective_win_ante)
             if episode_rewards:
                 writer.add_scalar(
                     "recent_100/episode_reward_mean", float(np.mean(episode_rewards[-100:])), rollout_step

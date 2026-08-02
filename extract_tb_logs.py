@@ -28,6 +28,7 @@ SCALAR_TAGS = [
 SCALAR_PREFIXES = [
     'shop/offered_joker/', 'shop/bought_joker/', 'shop/sold_joker/',
     'joker/marginal_ratio/', 'joker/modeled_fraction/',
+    'terminal/',
 ]
 
 run_path = sys.argv[1]

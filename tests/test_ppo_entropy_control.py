@@ -23,6 +23,7 @@ from pylatro_agent.training.ppo import (
     _run_ppo_update,
     _smoothed_entropy_signal,
     _validate_ppo_config,
+    _write_rollout_episode_metrics,
 )
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
 
@@ -432,6 +433,43 @@ def test_extract_step_info_value_uses_live_info_for_nonterminal_steps() -> None:
     assert _extract_step_info_value(infos, "progress_made", 1, done=False) is False
 
 
+def test_rollout_episode_metrics_are_not_lifetime_averages() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        completed_episode_rewards=[-5.0, -3.0],
+        completed_episode_lengths=[40, 80],
+        completed_episode_wins=[0.0, 1.0],
+        completed_episode_stalls=[1.0, 0.0],
+        completed_episode_antes=[2, 4],
+    )
+    writer = _Writer()
+
+    _write_rollout_episode_metrics(writer, rm, step=7)
+
+    assert writer.scalars == {
+        "rollout/episode_reward_mean": (-4.0, 7),
+        "rollout/episode_length_mean": (60.0, 7),
+        "rollout/win_rate": (0.5, 7),
+        "rollout/stall_rate": (0.5, 7),
+        "rollout/final_ante_mean": (3.0, 7),
+        "rollout/mean_ante_reached": (3.0, 7),
+    }
+
+
+def test_rollout_episode_metrics_skip_empty_rollouts() -> None:
+    class _Writer:
+        def add_scalar(self, *_args) -> None:
+            raise AssertionError("empty rollouts must not emit episode metrics")
+
+    _write_rollout_episode_metrics(_Writer(), _RolloutMetrics(), step=1)
+
+
 def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     rm = _RolloutMetrics()
     infos = {
@@ -657,5 +695,3 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     policy_state_after = optimizer.state[model.policy_head.weight]
     assert int(policy_state_after["step"]) == steps_before
     assert torch.equal(policy_state_after["exp_avg"], exp_avg_before)
-
-

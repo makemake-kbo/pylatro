@@ -139,6 +139,32 @@ uv run python train.py ppo \
   --envs 8 --steps 500000 --device mps
 ```
 
+For a run that explicitly learns to seek and use Tarots and Planets, enable
+build-aware shaping, Planet alignment, and conservative exploration:
+
+```bash
+uv run python train.py ppo \
+  --pretrained checkpoints/supervised/supervised_epoch10.pt \
+  --envs 16 --rollout-length 256 --batch 352 --ppo-epochs 4 \
+  --updates 2000 --device cuda --win-ante 6 --hl-gauss \
+  --gamma 0.997 --lr 1e-5 --clip-eps 0.1 \
+  --target-kl 0.03 --target-kl-max 0.15 \
+  --dense-reward-scale 0.25 \
+  --score-build-potential \
+  --planet-match-shaping \
+  --planet-unmatched-use-penalty-coeff 0.25 \
+  --planet-unmatched-claim-penalty-coeff 0.10 \
+  --entropy-coeff 0.01 \
+  --reinit-value-head --critic-warmup-updates 15 --critic-warmup-min-ev 0
+```
+
+`--score-build-potential` supplies immediate credit for useful Tarot-driven deck
+and build improvements. Planet shaping rewards leveling hands the run actually
+uses and mildly discourages irrelevant choices. A conservative fixed entropy
+bonus avoids destabilizing a pretrained policy, while the lower learning rate
+and hard KL guard limit destructive PPO updates. Reinitialize the value head
+when adding these rewards to a checkpoint trained with different reward semantics.
+
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 
 #### Monitoring

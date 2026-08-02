@@ -581,6 +581,10 @@ class _RolloutMetrics:
     done_flags: list[float] = field(default_factory=list)
     terminated_flags: list[float] = field(default_factory=list)
     truncated_flags: list[float] = field(default_factory=list)
+    completed_episode_rewards: list[float] = field(default_factory=list)
+    completed_episode_lengths: list[int] = field(default_factory=list)
+    completed_episode_wins: list[float] = field(default_factory=list)
+    completed_episode_stalls: list[float] = field(default_factory=list)
     completed_episode_antes: list[int] = field(default_factory=list)
     reward_component_values: defaultdict = field(default_factory=lambda: defaultdict(list))
     pre_choose_action_flags: list[float] = field(default_factory=list)
@@ -623,6 +627,23 @@ class _RolloutMetrics:
     counterfactual_focal_counts: Counter = field(default_factory=Counter)
     play_subset_count: int = 0
     discard_subset_count: int = 0
+
+
+def _write_rollout_episode_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
+    """Log episode outcomes completed in this rollout, never lifetime means."""
+    if not rm.completed_episode_rewards:
+        return
+    metrics = {
+        "episode_reward_mean": rm.completed_episode_rewards,
+        "episode_length_mean": rm.completed_episode_lengths,
+        "win_rate": rm.completed_episode_wins,
+        "stall_rate": rm.completed_episode_stalls,
+        "final_ante_mean": rm.completed_episode_antes,
+        # Retain the clearer alias introduced for ante diagnostics.
+        "mean_ante_reached": rm.completed_episode_antes,
+    }
+    for tag, values in metrics.items():
+        writer.add_scalar(f"rollout/{tag}", float(np.mean(values)), step)
 
 
 def _unwrap_model(model: nn.Module) -> nn.Module:
@@ -2562,14 +2583,20 @@ def train_ppo(
 
                 # Handle completed episodes (vectorized envs auto-reset)
                 for i in np.where(dones)[0]:
-                    episode_rewards.append(float(env_ep_reward[i]))
-                    episode_lengths.append(int(env_ep_length[i]))
+                    ep_reward = float(env_ep_reward[i])
+                    ep_length = int(env_ep_length[i])
                     ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
                     ep_stalled = bool(stalled_flags[i])
                     ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+                    episode_rewards.append(ep_reward)
+                    episode_lengths.append(ep_length)
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)
                     episode_antes.append(ep_ante)
+                    rm.completed_episode_rewards.append(ep_reward)
+                    rm.completed_episode_lengths.append(ep_length)
+                    rm.completed_episode_wins.append(float(ep_won))
+                    rm.completed_episode_stalls.append(float(ep_stalled))
                     rm.completed_episode_antes.append(ep_ante)
                     episode_end_bosses.append(
                         str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
@@ -2656,18 +2683,17 @@ def train_ppo(
             writer.add_scalar("rollout/done_rate", float(np.mean(rm.done_flags)), rollout_step)
             writer.add_scalar("rollout/progress_rate", float(np.mean(rm.progress_flags)), rollout_step)
             writer.add_scalar("rollout/completed_episodes", float(np.sum(rm.done_flags)), rollout_step)
-            if rm.completed_episode_antes:
-                writer.add_scalar(
-                    "rollout/mean_ante_reached",
-                    float(np.mean(rm.completed_episode_antes)),
-                    rollout_step,
-                )
+            _write_rollout_episode_metrics(writer, rm, rollout_step)
             if episode_rewards:
-                writer.add_scalar("rollout/episode_reward_mean", float(np.mean(episode_rewards)), rollout_step)
-                writer.add_scalar("rollout/episode_length_mean", float(np.mean(episode_lengths)), rollout_step)
-                writer.add_scalar("rollout/win_rate", float(np.mean(episode_wins)), rollout_step)
-                writer.add_scalar("rollout/stall_rate", float(np.mean(episode_stalls)), rollout_step)
-                writer.add_scalar("rollout/final_ante_mean", float(np.mean(episode_antes)), rollout_step)
+                writer.add_scalar(
+                    "recent_100/episode_reward_mean", float(np.mean(episode_rewards[-100:])), rollout_step
+                )
+                writer.add_scalar(
+                    "recent_100/episode_length_mean", float(np.mean(episode_lengths[-100:])), rollout_step
+                )
+                writer.add_scalar("recent_100/win_rate", float(np.mean(episode_wins[-100:])), rollout_step)
+                writer.add_scalar("recent_100/stall_rate", float(np.mean(episode_stalls[-100:])), rollout_step)
+                writer.add_scalar("recent_100/final_ante_mean", float(np.mean(episode_antes[-100:])), rollout_step)
             hand_total = sum(rm.hand_chosen_counts.values())
             if hand_total:
                 for hand_name, count in rm.hand_chosen_counts.items():
@@ -3037,7 +3063,6 @@ def train_ppo(
             # buried in TensorBoard. Each warning is rate-limited by
             # log_interval (the same gate as the progress line above) so the
             # log stays readable when a condition is persistently true.
-            mean_policy_loss = float(np.mean(update_policy_losses))
             if update_stats.ppo_minibatches_processed:
                 minibatches_done = int(np.sum(update_stats.ppo_minibatches_processed))
                 # minibatches_expected and minibatch_fraction were captured

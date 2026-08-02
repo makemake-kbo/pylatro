@@ -10,7 +10,9 @@ from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from .build_value import BuildValueEstimate, estimate_build_value
+from .hand_plan import estimate_hand_plans
 from .heuristic import _SCALING_JOKER_KEYS
+from .strategy_value import estimate_strategy_value
 
 if TYPE_CHECKING:
     from pylatro.models import RunState
@@ -40,13 +42,19 @@ class RewardConfig:
     potential_w_build_quality: float = 0.88
     potential_w_readiness: float = 0.40
     potential_w_scaling_option: float = 0.22
-    potential_build_cap: float = 1.5
+    potential_w_economy: float = 0.30
+    potential_w_tarot_option: float = 0.20
+    potential_w_planet_option: float = 0.25
+    potential_w_seals: float = 1.25
+    potential_w_joker_search: float = 0.25
+    potential_w_standard_pack_search: float = 0.50
+    potential_build_cap: float = 2.0
     potential_readiness_saturation: float = 1.5
 
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 3
+REWARD_MODEL_VERSION = 4
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -103,6 +111,8 @@ IDLE_PENALTY_CAP = 0.02
 PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
 PLANET_UNMATCHED_MIN_PROGRESS = 0.25
+JOKER_UPGRADE_BONUS = 0.40
+VALUE_TAROT_BONUS = 1.20
 
 _BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
 _FOOL_PROTECT_TARGETS = {"c_death", "c_hermit", "c_temperance"}
@@ -115,6 +125,8 @@ REWARD_COMPONENT_NAMES = (
     "planet_played_hand_bonus",
     "planet_unmatched_use_penalty",
     "planet_unmatched_claim_penalty",
+    "tarot_value_bonus",
+    "joker_upgrade_bonus",
     "joker_move",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
@@ -127,6 +139,8 @@ _COMPONENT_GROUP = {
     "planet_played_hand_bonus": "consumable",
     "planet_unmatched_use_penalty": "consumable",
     "planet_unmatched_claim_penalty": "consumable",
+    "tarot_value_bonus": "consumable",
+    "joker_upgrade_bonus": "shop",
     "joker_move": "joker_move",
 }
 
@@ -259,12 +273,23 @@ def _visible_scaling_opportunity(
 def _build_potential_components(
     info: Mapping[str, Any],
     config: RewardConfig,
-) -> tuple[float, float, float]:
+) -> dict[str, float]:
+    names = (
+        "realized_build_quality",
+        "scaling_option_value",
+        "readiness",
+        "economy",
+        "tarot_option_value",
+        "planet_option_value",
+        "seal_value",
+        "joker_search_option",
+        "standard_pack_search_option",
+    )
     if not config.enable_score_build_potential:
-        return 0.0, 0.0, 0.0
+        return dict.fromkeys(names, 0.0)
     estimate = _build_value_estimate(info)
     if estimate is None:
-        return 0.0, 0.0, 0.0
+        return dict.fromkeys(names, 0.0)
 
     ante = max(int(info.get("ante", 1) or 1), 1)
     baseline = max(float(estimate.no_joker_baseline_score), 1.0)
@@ -279,14 +304,38 @@ def _build_potential_components(
         multiplier = _early_chip_marginal_multiplier(ratio, ante)
         chip_extra_gain += math.log(ratio) * (multiplier - 1.0)
 
-    readiness_ratio = max(float(estimate.readiness_ratio), 0.0)
-    readiness_gate = min(readiness_ratio, 1.0)
-    quality_fraction = (1.0 - math.exp(-(score_gain + chip_extra_gain))) * readiness_gate
-    realized_quality = max(config.potential_w_build_quality, 0.0) * quality_fraction
+    try:
+        strategy = estimate_strategy_value(info, win_ante=max(int(config.potential_win_ante), 2))
+    except (KeyError, OverflowError, TypeError, ValueError):
+        strategy = None
+    if strategy is None:
+        readiness_ratio = max(float(estimate.readiness_ratio), 0.0)
+        readiness_gate = min(readiness_ratio, 1.0)
+        quality_fraction = (1.0 - math.exp(-(score_gain + chip_extra_gain))) * readiness_gate
+        saturation = max(config.potential_readiness_saturation, 1e-6)
+        readiness_fraction = min(readiness_ratio / saturation, 1.0)
+        economy_fraction = tarot_fraction = planet_fraction = seal_fraction = joker_search_fraction = 0.0
+        pack_search_fraction = 0.0
+    else:
+        # Only draw-reliable plans participate. Two Pair requires a dedicated
+        # synergy Joker, Full House stays absent, and kind hands require fixing.
+        quality_fraction = strategy.hand_plan_quality
+        readiness_fraction = strategy.readiness
+        economy_fraction = strategy.economy
+        tarot_fraction = strategy.tarot_option
+        planet_fraction = strategy.planet_option
+        seal_fraction = strategy.seals
+        joker_search_fraction = strategy.joker_search
+        pack_search_fraction = strategy.pack_search
 
-    saturation = max(config.potential_readiness_saturation, 1e-6)
-    readiness_fraction = min(readiness_ratio / saturation, 1.0)
+    realized_quality = max(config.potential_w_build_quality, 0.0) * quality_fraction
     readiness = max(config.potential_w_readiness, 0.0) * readiness_fraction
+    economy = max(config.potential_w_economy, 0.0) * economy_fraction
+    tarot_option = max(config.potential_w_tarot_option, 0.0) * tarot_fraction
+    planet_option = max(config.potential_w_planet_option, 0.0) * planet_fraction
+    seal_value = max(config.potential_w_seals, 0.0) * seal_fraction
+    joker_search = max(config.potential_w_joker_search, 0.0) * joker_search_fraction
+    pack_search = max(config.potential_w_standard_pack_search, 0.0) * pack_search_fraction
 
     win_ante = max(int(config.potential_win_ante), 2)
     remaining_antes = max(win_ante - ante, 0)
@@ -300,14 +349,23 @@ def _build_potential_components(
                 option_units += runway * (0.25 + 0.75 * opportunity)
     option_value = max(config.potential_w_scaling_option, 0.0) * min(option_units, 1.0)
 
-    build_sum = realized_quality + option_value + readiness
+    components = {
+        "realized_build_quality": realized_quality,
+        "scaling_option_value": option_value,
+        "readiness": readiness,
+        "economy": economy,
+        "tarot_option_value": tarot_option,
+        "planet_option_value": planet_option,
+        "seal_value": seal_value,
+        "joker_search_option": joker_search,
+        "standard_pack_search_option": pack_search,
+    }
+    build_sum = sum(components.values())
     build_cap = max(config.potential_build_cap, 0.0)
     if build_sum > build_cap and build_sum > 0.0:
         scale = build_cap / build_sum
-        realized_quality *= scale
-        option_value *= scale
-        readiness *= scale
-    return realized_quality, option_value, readiness
+        components = {name: value * scale for name, value in components.items()}
+    return components
 
 
 def state_potential_breakdown(info: dict, config: RewardConfig) -> dict[str, float]:
@@ -327,14 +385,12 @@ def state_potential_breakdown(info: dict, config: RewardConfig) -> dict[str, flo
     macro_fraction = max(0.0, min((ante - 1 + blind_index / 3.0) / macro_denom, 1.0))
     ante_progress = w_ante * macro_fraction
 
-    realized_quality, option_value, readiness = _build_potential_components(info, config)
-    total = blind_progress + ante_progress + realized_quality + option_value + readiness
+    build = _build_potential_components(info, config)
+    total = blind_progress + ante_progress + sum(build.values())
     return {
         "blind_progress": blind_progress,
         "ante_progress": ante_progress,
-        "realized_build_quality": realized_quality,
-        "scaling_option_value": option_value,
-        "readiness": readiness,
+        **build,
         "total": total,
     }
 
@@ -371,17 +427,36 @@ def _apply_planet_match_rewards(
     *,
     win_ante: int,
 ) -> None:
+    try:
+        plans = estimate_hand_plans(prev_info)
+    except (KeyError, OverflowError, TypeError, ValueError):
+        plans = None
     for prefix in ("planet_use", "planet_claim"):
         if not curr_info.get(f"{prefix}_observed", False):
             continue
-        if curr_info.get(f"{prefix}_played_hand", False):
-            share = float(curr_info.get(f"{prefix}_play_share", 1.0) or 0.0)
-            components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS * share
-        if curr_info.get(f"{prefix}_main_hand_match", False):
-            components["planet_match_bonus"] += PLANET_MATCH_BONUS
+        hand_type = str(curr_info.get(f"{prefix}_hand_type", "") or "")
+        plan = plans.for_hand(hand_type) if plans is not None else None
+        if plan is not None and plan.draw_reliability >= 0.20:
+            viability = 0.4 + 0.6 * min(max(plan.readiness_ratio, 0.0) / 0.8, 1.0)
+            components["planet_match_bonus"] += PLANET_MATCH_BONUS * plan.draw_reliability * viability
+            if plans is not None and hand_type == plans.best.hand_type:
+                components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS
             continue
 
-        share_weight = 1.0 - float(curr_info.get(f"{prefix}_play_share", 0.0) or 0.0)
+        # Backward-compatible fallback for old serialized diagnostics without a
+        # deck snapshot. New rollouts always take the plan-aware branch above.
+        if plans is None and curr_info.get(f"{prefix}_main_hand_match", False):
+            components["planet_match_bonus"] += PLANET_MATCH_BONUS
+            if curr_info.get(f"{prefix}_played_hand", False):
+                share = float(curr_info.get(f"{prefix}_play_share", 1.0) or 0.0)
+                components["planet_played_hand_bonus"] += PLANET_PLAYED_HAND_BONUS * share
+            continue
+
+        share_weight = (
+            1.0 - float(curr_info.get(f"{prefix}_play_share", 0.0) or 0.0)
+            if plans is None
+            else 1.0 - (plan.draw_reliability if plan is not None else 0.0)
+        )
         ante = int(curr_info.get("ante", 1) or 1)
         progress = max(
             _clip((ante - 1) / max(win_ante - 1, 1), 0.0, 1.0),
@@ -398,6 +473,42 @@ def _apply_planet_match_rewards(
             weight = 0.0 if best_available and not _has_protected_fool(prev_info) else share_weight
         if coeff > 0.0 and weight > 0.0:
             components[component] -= coeff * weight
+
+
+def _apply_joker_upgrade_reward(
+    prev_info: dict,
+    curr_info: dict,
+    components: dict[str, float],
+) -> None:
+    if not curr_info.get("shop_bought_joker_id"):
+        return
+    try:
+        before = estimate_hand_plans(prev_info)
+        after = estimate_hand_plans(curr_info)
+    except (KeyError, OverflowError, TypeError, ValueError):
+        return
+    if before is None or after is None:
+        return
+    before_strength = max(before.best.utility / 1.32, 0.05)
+    after_strength = max(after.best.utility / 1.32, 0.0)
+    relative_gain = (after_strength - before_strength) / before_strength
+    if relative_gain > 0.0:
+        components["joker_upgrade_bonus"] = JOKER_UPGRADE_BONUS * min(relative_gain, 1.0)
+
+
+def _apply_value_tarot_reward(
+    prev_info: dict,
+    curr_info: dict,
+    components: dict[str, float],
+) -> None:
+    key = str(curr_info.get("consumable_use_key") or "")
+    if not key and curr_info.get("pack_claim_set") == "Tarot":
+        key = str(curr_info.get("pack_claim_key") or "")
+    if key not in {"c_hermit", "c_temperance"}:
+        return
+    payout = max(float(curr_info.get("dollars", 0) or 0) - float(prev_info.get("dollars", 0) or 0), 0.0)
+    if payout > 0.0:
+        components["tarot_value_bonus"] = VALUE_TAROT_BONUS * min(payout / 10.0, 1.0)
 
 
 def default_reward_components(
@@ -446,6 +557,10 @@ def default_reward_components(
             win_ante=win_ante,
         )
 
+    if config.enable_score_build_potential:
+        _apply_value_tarot_reward(prev_info, curr_info, components)
+        _apply_joker_upgrade_reward(prev_info, curr_info, components)
+
     if not curr_info.get("progress_made", False):
         idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
         idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
@@ -459,8 +574,10 @@ def default_reward_components(
         "planet_played_hand_bonus",
         "planet_unmatched_use_penalty",
         "planet_unmatched_claim_penalty",
+        "tarot_value_bonus",
     ):
         components[name] *= consumable_scale
+    components["joker_upgrade_bonus"] *= dense_scale
 
     components["total"] = sum(components.values())
     return components

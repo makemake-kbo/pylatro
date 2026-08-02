@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from pylatro import get_blind_amount
+from pylatro.runtime import consumable_limit, joker_limit
 
 from .build_value import BuildValueEstimate, estimate_build_value
 from .heuristic import (
@@ -173,8 +174,29 @@ def _consumable_summary(center: dict, key: str, live) -> dict[str, Any]:
         "key": key,
         "name": center.get("name", ""),
         "set": center.get("set", ""),
+        "effect": center.get("effect", ""),
         "sell_cost": int(getattr(live, "sell_cost", 0) or 0),
         "hand_type": (cfg.get("hand_type") or cfg.get("type") or "") if isinstance(cfg, dict) else "",
+    }
+
+
+def _pack_card_summary(state: RunState, item, index: int) -> dict[str, Any]:
+    """Serialize the actual contents of an open pack, including seals."""
+    center = state.data.centers.get(item.center_key, {})
+    front = state.data.cards.get(item.front_key, {}) if item.front_key else {}
+    cfg = _config_dict(center.get("config"))
+    return {
+        "index": index,
+        "key": item.center_key,
+        "name": center.get("name", ""),
+        "set": center.get("set", ""),
+        "effect": center.get("effect", ""),
+        "rank": str(item.front_key[2] if item.front_key else front.get("value") or ""),
+        "suit": str(front.get("suit") or ""),
+        "enhancement": str(center.get("effect", "") or "") if item.center_key != "c_base" else "",
+        "seal": str(getattr(item, "seal", "") or ""),
+        "edition": deepcopy(getattr(item, "edition", None)) if getattr(item, "edition", None) else {},
+        "hand_type": cfg.get("hand_type") or cfg.get("type") or "",
     }
 
 
@@ -303,6 +325,11 @@ def capture_build_features(state: RunState) -> dict[str, Any]:
     centers = state.data.centers
 
     shop_items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+    pack_items = state.pack.cards if state.pack is not None else ()
+    round_active = any(value == "Current" for value in state.round_resets.blind_states.values())
+    hands_available = state.current_round.hands_left if round_active else state.round_resets.hands
+    discards_available = state.current_round.discards_left if round_active else state.round_resets.discards
+    hand_size = state.current_round.hand_size if round_active else state.starting_params.hand_size
 
     return {
         "joker_details": tuple(_joker_summary(centers.get(j.center_key, {}), j.center_key, j) for j in state.jokers),
@@ -333,10 +360,14 @@ def capture_build_features(state: RunState) -> dict[str, Any]:
             "castle_card": deepcopy(state.current_round.castle_card),
             "mail_card": deepcopy(state.current_round.mail_card),
         },
-        "hands_available": max(1, state.current_round.hands_left or state.round_resets.hands),
-        "hand_size": int(state.current_round.hand_size or state.starting_params.hand_size),
+        "hands_available": max(1, hands_available),
+        "discards_available": max(0, discards_available),
+        "hand_size": int(hand_size),
+        "joker_limit": joker_limit(state),
+        "consumable_limit": consumable_limit(state),
         "blind_target": _upcoming_blind_target(state),
         "shop_cards": tuple(_shop_card_summary(state, item, i) for i, item in enumerate(shop_items)),
+        "pack_card_details": tuple(_pack_card_summary(state, item, i) for i, item in enumerate(pack_items)),
     }
 
 

@@ -776,3 +776,25 @@ def estimate_build_value(
         unmodeled_effects=unmodeled_effects,
         channels=full.channels,
     )
+
+
+def estimate_hand_score(
+    info: Mapping[str, Any],
+    hand_type: str,
+    jokers: Sequence[Mapping[str, Any]] | None = None,
+) -> float:
+    """Estimate one explicit poker hand instead of the historical main hand.
+
+    Strategic reward shaping uses this public wrapper to compare only hands the
+    captured deck can draw reliably.  Keeping the score model here ensures shop
+    counterfactuals and the ordinary build evaluator use identical joker logic.
+    """
+    details = _mapping(info.get("hand_details"))
+    detail = _mapping(details.get(hand_type))
+    owned = tuple(jokers if jokers is not None else (info.get("joker_details") or ()))
+    return _score_pass(
+        info,
+        owned,
+        hand_type=str(hand_type),
+        hand_detail=detail,
+    ).score

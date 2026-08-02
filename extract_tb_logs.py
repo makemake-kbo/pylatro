@@ -22,13 +22,21 @@ SCALAR_TAGS = [
     'joker/churn_per_episode', 'joker/hologram_scaling_count_per_episode',
     'joker/hologram_x_mult_delta_mean', 'joker/hologram_build_score_delta_mean',
     'counterfactual/calls', 'counterfactual/failure_fraction',
-    'counterfactual/representative_vs_realized_abs_log_ratio_gap_mean'
+    'counterfactual/representative_vs_realized_abs_log_ratio_gap_mean',
+    'strategy/hand_plan/reliability_mean', 'strategy/hand_plan/readiness_mean',
+    'strategy/seals/purple_tarots_generated_per_1k_steps',
+    'strategy/seals/blue_planets_generated_per_1k_steps',
+    'strategy/potential/economy_mean', 'strategy/potential/tarot_option_value_mean',
+    'strategy/potential/planet_option_value_mean',
+    'strategy/potential/seal_value_mean', 'strategy/potential/joker_search_option_mean',
+    'strategy/potential/standard_pack_search_option_mean',
 ]
 
 SCALAR_PREFIXES = [
     'shop/offered_joker/', 'shop/bought_joker/', 'shop/sold_joker/',
     'joker/marginal_ratio/', 'joker/modeled_fraction/',
     'terminal/',
+    'strategy/hand_plan/', 'strategy/seals/claims/',
 ]
 
 run_path = sys.argv[1]

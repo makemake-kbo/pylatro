@@ -348,11 +348,9 @@ def main():
         type=float,
         default=0.0,
         help=(
-            "Per-step penalty coefficient for using a planet whose hand is not the "
-            "main played hand, weighted by (1 - play_share) so leveling a strong "
-            "secondary hand is nearly free, and ramped by ante progress toward "
-            "win_ante so early pivot planning (leveling a hand you intend to play) "
-            "is not taxed. Defaults to 0.0 (disabled). Default: 0.0."
+            "Per-step penalty coefficient for using a planet whose hand is not a "
+            "draw-reliable scoring plan. The penalty is weighted by the plan's "
+            "reliability deficit and ante progress. Default: 0.0 (disabled)."
         ),
     )
     parser.add_argument(
@@ -360,20 +358,19 @@ def main():
         type=float,
         default=0.0,
         help=(
-            "Per-step penalty coefficient for claiming a planet whose hand is not the "
-            "main played hand, weighted by (1 - play_share) and ramped by ante "
-            "progress like the use penalty. Defaults to 0.0 (disabled). Default: 0.0."
+            "Per-step penalty coefficient for claiming a planet whose hand is not a "
+            "draw-reliable scoring plan. Best-available pack choices remain exempt. "
+            "Default: 0.0 (disabled)."
         ),
     )
     parser.add_argument(
         "--planet-match-shaping",
         action="store_true",
         help=(
-            "Enable the optional planet-alignment shaping component "
-            "(bonuses for using/claiming planets that match played hand types, plus "
-            "the --planet-unmatched-*-penalty-coeff penalties). The base signal "
-            "cannot credit-assign planet choices; without this agents drift to ~90%% "
-            "unmatched planet use."
+            "Enable plan-aware Planet shaping. Pair/High Card are scalable "
+            "fallbacks; Flush and kind hands require matching deck concentration. "
+            "Two Pair is low-priority and requires a dedicated synergy Joker; "
+            "Full House is not a strategic Planet target."
         ),
     )
     parser.add_argument(
@@ -382,8 +379,9 @@ def main():
         action="store_true",
         help=(
             "Enable contextual score/build potential shaping. "
-            "It values representative score, blind readiness, early chip marginal "
-            "value, and capped recognized-scaler option value. Default: disabled."
+            "It values draw-reliable hand plans, blind readiness, Tarot/economy "
+            "conversion, Blue/Purple seals, score-improving shop options, Standard-pack "
+            "seal searches, and capped recognized-scaler value. Default: disabled."
         ),
     )
     parser.add_argument(

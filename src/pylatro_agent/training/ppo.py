@@ -572,6 +572,7 @@ class _RolloutMetrics:
     consumable_use_set_counts: Counter = field(default_factory=Counter)
     consumable_claim_set_counts: Counter = field(default_factory=Counter)
     consumable_buy_set_counts: Counter = field(default_factory=Counter)
+    pack_claim_seal_counts: Counter = field(default_factory=Counter)
     pack_skip_state_counts: Counter = field(default_factory=Counter)
     step_rewards: list[float] = field(default_factory=list)
     progress_flags: list[float] = field(default_factory=list)
@@ -616,6 +617,11 @@ class _RolloutMetrics:
     joker_modeled_fractions: defaultdict = field(default_factory=lambda: defaultdict(list))
     build_values: defaultdict = field(default_factory=lambda: defaultdict(list))
     potential_values: defaultdict = field(default_factory=lambda: defaultdict(list))
+    hand_plan_type_counts: Counter = field(default_factory=Counter)
+    hand_plan_reliability: list[float] = field(default_factory=list)
+    hand_plan_readiness: list[float] = field(default_factory=list)
+    purple_seal_tarots_generated: int = 0
+    blue_seal_planets_generated: int = 0
     hologram_scaling_counts: list[float] = field(default_factory=list)
     hologram_x_mult_deltas: list[float] = field(default_factory=list)
     hologram_build_score_deltas: list[float] = field(default_factory=list)
@@ -1699,6 +1705,27 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
         consumable_set = _extract_step_info_value(infos, info_key, env_idx, done=done, default="")
         if consumable_set:
             counter[str(consumable_set)] += 1
+    claimed_seal = _extract_step_info_value(infos, "pack_claim_seal", env_idx, done=done, default="")
+    if claimed_seal:
+        rm.pack_claim_seal_counts[str(claimed_seal)] += 1
+    rm.purple_seal_tarots_generated += int(
+        _extract_step_info_value(
+            infos,
+            "purple_seal_tarot_generated_count",
+            env_idx,
+            done=done,
+            default=0,
+        )
+    )
+    rm.blue_seal_planets_generated += int(
+        _extract_step_info_value(
+            infos,
+            "blue_seal_planet_generated_count",
+            env_idx,
+            done=done,
+            default=0,
+        )
+    )
     if _extract_step_info_value(infos, "hand_play_observed", env_idx, done=done, default=False):
         rm.hand_play_observed.append(1.0)
         not_in_candidates = bool(
@@ -1904,6 +1931,27 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
                     counter[str(center)] += 1
 
     if _extract_step_info_value(infos, "build_diagnostics_observed", env_idx, done=done, default=False):
+        plan_type = _extract_step_info_value(infos, "hand_plan_post_type", env_idx, done=done, default="")
+        if plan_type:
+            rm.hand_plan_type_counts[str(plan_type)] += 1
+        plan_reliability = _extract_step_info_value(
+            infos,
+            "hand_plan_post_reliability",
+            env_idx,
+            done=done,
+            default=None,
+        )
+        if plan_reliability is not None:
+            rm.hand_plan_reliability.append(float(plan_reliability))
+        plan_readiness = _extract_step_info_value(
+            infos,
+            "hand_plan_post_readiness",
+            env_idx,
+            done=done,
+            default=None,
+        )
+        if plan_readiness is not None:
+            rm.hand_plan_readiness.append(float(plan_readiness))
         for prefix in ("build_pre", "build_post"):
             for metric in (
                 "estimated_score",
@@ -1962,6 +2010,12 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
                 "realized_build_quality",
                 "scaling_option_value",
                 "readiness",
+                "economy",
+                "tarot_option_value",
+                "planet_option_value",
+                "seal_value",
+                "joker_search_option",
+                "standard_pack_search_option",
                 "total",
             ):
                 value = _extract_step_info_value(
@@ -2786,6 +2840,58 @@ def train_ppo(
                     rm.consumable_use_set_counts[consumable_set] / steps_per_thousand,
                     rollout_step,
                 )
+            for seal in ("Blue", "Purple", "Gold", "Red"):
+                writer.add_scalar(
+                    f"strategy/seals/claims/{seal.lower()}_per_1k_steps",
+                    rm.pack_claim_seal_counts[seal] / steps_per_thousand,
+                    rollout_step,
+                )
+            writer.add_scalar(
+                "strategy/seals/purple_tarots_generated_per_1k_steps",
+                rm.purple_seal_tarots_generated / steps_per_thousand,
+                rollout_step,
+            )
+            writer.add_scalar(
+                "strategy/seals/blue_planets_generated_per_1k_steps",
+                rm.blue_seal_planets_generated / steps_per_thousand,
+                rollout_step,
+            )
+            plan_total = sum(rm.hand_plan_type_counts.values())
+            if plan_total:
+                for hand_name, count in rm.hand_plan_type_counts.items():
+                    tag_name = hand_name.lower().replace(" ", "_")
+                    writer.add_scalar(
+                        f"strategy/hand_plan/{tag_name}_share",
+                        count / plan_total,
+                        rollout_step,
+                    )
+            if rm.hand_plan_reliability:
+                writer.add_scalar(
+                    "strategy/hand_plan/reliability_mean",
+                    float(np.mean(rm.hand_plan_reliability)),
+                    rollout_step,
+                )
+            if rm.hand_plan_readiness:
+                writer.add_scalar(
+                    "strategy/hand_plan/readiness_mean",
+                    float(np.mean(rm.hand_plan_readiness)),
+                    rollout_step,
+                )
+            for component in (
+                "economy",
+                "tarot_option_value",
+                "planet_option_value",
+                "seal_value",
+                "joker_search_option",
+                "standard_pack_search_option",
+            ):
+                values = rm.potential_values.get(f"post_{component}")
+                if values:
+                    writer.add_scalar(
+                        f"strategy/potential/{component}_mean",
+                        float(np.mean(values)),
+                        rollout_step,
+                    )
             for component_name, values in rm.reward_component_values.items():
                 if values:
                     writer.add_scalar(

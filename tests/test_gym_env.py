@@ -435,6 +435,7 @@ def test_env_hologram_scaling_reports_xmult_and_build_delta(game_data, vocab):
                 cost=0,
                 base_cost=0,
                 front_key="S_A",
+                seal="Blue",
             )
         ],
     )
@@ -451,6 +452,9 @@ def test_env_hologram_scaling_reports_xmult_and_build_delta(game_data, vocab):
     assert info["hologram_x_mult_current"] == pytest.approx(hologram.x_mult)
     assert info["hologram_x_mult_delta"] > 0.0
     assert info["hologram_build_score_delta"] > 0.0
+    assert info["pack_claim_seal"] == "Blue"
+    assert info["seal_pre_blue_count"] == 0
+    assert info["seal_post_blue_count"] == 1
 
 
 def _first_valid(mask: np.ndarray, start: int, end: int) -> int:

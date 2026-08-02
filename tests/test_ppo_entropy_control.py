@@ -545,6 +545,9 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
         "_planet_use_main_hand_match": np.array([True]),
         "planet_use_key": np.array(["c_pluto"], dtype=object),
         "_planet_use_key": np.array([True]),
+        "pack_claim_seal": np.array(["Blue"], dtype=object),
+        "purple_seal_tarot_generated_count": np.array([1]),
+        "blue_seal_planet_generated_count": np.array([1]),
     }
 
     _record_action_diagnostics(rm, infos, 0, done=False)
@@ -558,6 +561,9 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     assert rm.planet_use_played_hand == [1.0]
     assert rm.planet_use_main_hand_match == [0.0]
     assert rm.planet_use_key_counts["c_pluto"] == 1
+    assert rm.pack_claim_seal_counts["Blue"] == 1
+    assert rm.purple_seal_tarots_generated == 1
+    assert rm.blue_seal_planets_generated == 1
 
 
 def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_signals() -> None:
@@ -579,6 +585,9 @@ def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_sig
         "joker_removed_emitted_count": np.array([1]),
         "joker_removed_0_id": np.array(["j_joker"], dtype=object),
         "build_diagnostics_observed": np.array([True]),
+        "hand_plan_post_type": np.array(["Pair"], dtype=object),
+        "hand_plan_post_reliability": np.array([0.9]),
+        "hand_plan_post_readiness": np.array([1.1]),
         "build_pre_estimated_score": np.array([100.0]),
         "build_post_estimated_score": np.array([150.0]),
         "build_pre_required_score": np.array([120.0]),
@@ -597,6 +606,7 @@ def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_sig
         "potential_pre_total": np.array([0.4]),
         "potential_post_total": np.array([0.6]),
         "potential_delta_total": np.array([0.2]),
+        "potential_post_seal_value": np.array([0.5]),
         "hologram_scaling_count": np.array([1]),
         "hologram_x_mult_delta": np.array([0.25]),
         "hologram_build_score_delta": np.array([50.0]),
@@ -618,6 +628,10 @@ def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_sig
     assert rm.joker_marginal_ratios["j_hologram"] == pytest.approx([1.5])
     assert rm.build_values["build_post_readiness"] == pytest.approx([1.25])
     assert rm.potential_values["post_total"] == pytest.approx([0.6])
+    assert rm.potential_values["post_seal_value"] == pytest.approx([0.5])
+    assert rm.hand_plan_type_counts["Pair"] == 1
+    assert rm.hand_plan_reliability == pytest.approx([0.9])
+    assert rm.hand_plan_readiness == pytest.approx([1.1])
     assert rm.hologram_x_mult_deltas == pytest.approx([0.25])
     assert rm.counterfactual_calls == 1
     assert rm.counterfactual_failures == 0

@@ -101,3 +101,39 @@ def test_pack_claim_best_available_true_for_sole_planet_and_ties() -> None:
     state = _pack_state(["c_pluto", "c_pluto"], hands)
     assert _claim(state, 0)["planet_claim_best_available"] is True
     assert _claim(state, 1)["planet_claim_best_available"] is True
+
+
+def test_targeted_tarot_actions_are_counted_as_consumable_uses() -> None:
+    state = SimpleNamespace(
+        data=SimpleNamespace(centers={"c_death": {"set": "Tarot", "config": {}}}),
+        consumables=[SimpleNamespace(center_key="c_death")],
+    )
+
+    for action_type in (
+        ActionType.USE_CONSUMABLE_HAND_SUBSET,
+        ActionType.USE_CONSUMABLE_JOKER,
+    ):
+        decoded = SimpleNamespace(action_type=action_type, index=0)
+        diagnostics = action_diagnostics(state, decoded)
+        assert diagnostics["consumable_use_set"] == "Tarot"
+        assert diagnostics["consumable_use_key"] == "c_death"
+
+
+def test_seal_generation_events_are_exported() -> None:
+    prev = {"consumable_details": ()}
+    tarot = {"consumable_details": ({"key": "c_death", "set": "Tarot"},)}
+    planet = {"consumable_details": ({"key": "c_mercury", "set": "Planet"},)}
+
+    discard = step_event_diagnostics(
+        prev,
+        tarot,
+        SimpleNamespace(action_type=ActionType.DISCARD_SUBSET, index=0),
+    )
+    play = step_event_diagnostics(
+        prev,
+        planet,
+        SimpleNamespace(action_type=ActionType.PLAY_SUBSET, index=0),
+    )
+
+    assert discard["purple_seal_tarot_generated_count"] == 1
+    assert play["blue_seal_planet_generated_count"] == 1

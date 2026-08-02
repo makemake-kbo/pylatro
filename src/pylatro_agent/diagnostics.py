@@ -18,7 +18,8 @@ from pylatro.instances import remove_joker
 
 from .action import ActionType
 from .hand_candidates import generate_hand_candidates
-from .shop_eval import BuildEval, evaluate_build
+from .hand_plan import estimate_hand_plans
+from .shop_eval import BuildEval, capture_build_features, evaluate_build
 from .subset_actions import subset_indices
 
 MAX_DIAGNOSTIC_JOKERS = 12
@@ -31,6 +32,12 @@ _POTENTIAL_COMPONENTS = (
     "realized_build_quality",
     "scaling_option_value",
     "readiness",
+    "economy",
+    "tarot_option_value",
+    "planet_option_value",
+    "seal_value",
+    "joker_search_option",
+    "standard_pack_search_option",
     "total",
 )
 
@@ -86,6 +93,28 @@ def _is_best_planet_in_pack(state, chosen_index: int) -> bool:
     the unmatched-claim penalty exempts these claims. Only planet cards
     compete in the ranking; ties keep the claim exempt.
     """
+    plan_ranks: dict[str, tuple[int, float, float]] = {}
+    try:
+        plans = estimate_hand_plans(capture_build_features(state))
+        if plans is not None:
+            for plan in plans.plans:
+                plan_ranks[plan.hand_type] = (
+                    int(plan.draw_reliability >= 0.20),
+                    float(plan.utility),
+                    float(plan.draw_reliability),
+                )
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        plan_ranks = {}
+    if plan_ranks:
+        chosen_type = _planet_hand_type(state, _center_key(state.pack.cards[chosen_index]))
+        chosen_rank = plan_ranks.get(chosen_type, (0, 0.0, 0.0))
+        return not any(
+            _center_set(state, _center_key(card)) == "Planet"
+            and plan_ranks.get(_planet_hand_type(state, _center_key(card)), (0, 0.0, 0.0)) > chosen_rank
+            for index, card in enumerate(state.pack.cards)
+            if index != chosen_index
+        )
+
     main_hand = _main_hand_proxy(state)
     max_played = max(
         (int(hand.get("played", 0) or 0) for hand in state.hands.values()),
@@ -141,6 +170,12 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
     if decoded.action_type == ActionType.PLAY_SUBSET:
         diagnostics: dict[str, Any] = {"hand_play_observed": True}
         indices = tuple(subset_indices(decoded.index))
+        selected = set(indices)
+        diagnostics["blue_seal_held_count"] = sum(
+            card.seal == "Blue" and not card.debuff
+            for index, card in enumerate(state.hand_cards)
+            if index not in selected
+        )
         if any(index >= len(state.hand_cards) for index in indices):
             diagnostics["hand_play_not_in_candidates"] = True
             return diagnostics
@@ -171,7 +206,22 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
         })
         return diagnostics
 
-    if decoded.action_type == ActionType.USE_CONSUMABLE_NO_TARGET:
+    if decoded.action_type == ActionType.DISCARD_SUBSET:
+        indices = tuple(subset_indices(decoded.index))
+        return {
+            "purple_seal_discarded_count": sum(
+                index < len(state.hand_cards)
+                and state.hand_cards[index].seal == "Purple"
+                and not state.hand_cards[index].debuff
+                for index in indices
+            )
+        }
+
+    if decoded.action_type in {
+        ActionType.USE_CONSUMABLE_NO_TARGET,
+        ActionType.USE_CONSUMABLE_HAND_SUBSET,
+        ActionType.USE_CONSUMABLE_JOKER,
+    }:
         if decoded.index >= len(state.consumables):
             return {}
         center_key = _center_key(state.consumables[decoded.index])
@@ -192,6 +242,7 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
         diagnostics = {
             "pack_claim_set": center_set,
             "pack_claim_key": center_key,
+            "pack_claim_seal": str(getattr(state.pack.cards[decoded.index], "seal", "") or ""),
         }
         if center_set == "Planet":
             diagnostics.update(_planet_diagnostics(state, center_key, prefix="planet_claim"))
@@ -287,6 +338,26 @@ def step_event_diagnostics(
             if isinstance(joker, dict):
                 diagnostics["shop_sold_joker_id"] = str(joker.get("key") or "")
 
+    before_consumables = Counter(
+        (str(item.get("key") or ""), str(item.get("set") or ""))
+        for item in (prev_info.get("consumable_details") or ())
+        if isinstance(item, dict)
+    )
+    after_consumables = Counter(
+        (str(item.get("key") or ""), str(item.get("set") or ""))
+        for item in (curr_info.get("consumable_details") or ())
+        if isinstance(item, dict)
+    )
+    generated = after_consumables - before_consumables
+    if decoded.action_type == ActionType.DISCARD_SUBSET:
+        diagnostics["purple_seal_tarot_generated_count"] = sum(
+            count for (_key, card_set), count in generated.items() if card_set == "Tarot"
+        )
+    elif decoded.action_type == ActionType.PLAY_SUBSET:
+        diagnostics["blue_seal_planet_generated_count"] = sum(
+            count for (_key, card_set), count in generated.items() if card_set == "Planet"
+        )
+
     after_offers = _shop_joker_ids(curr_info)
     entered_shop = bool(curr_info.get("in_shop")) and not bool(prev_info.get("in_shop"))
     if after_offers and (entered_shop or decoded.action_type == ActionType.SHOP_REROLL):
@@ -361,6 +432,15 @@ def build_step_diagnostics(
     # They are never copied into the vector info payload below.
     prev_info["_build_value_estimate"] = pre_build.build_value
     curr_info["_build_value_estimate"] = post_build.build_value
+    try:
+        pre_plan = estimate_hand_plans(prev_info)
+        post_plan = estimate_hand_plans(curr_info)
+    except (KeyError, OverflowError, TypeError, ValueError):
+        pre_plan = post_plan = None
+    if pre_plan is not None:
+        prev_info["_hand_plan_estimate"] = pre_plan
+    if post_plan is not None:
+        curr_info["_hand_plan_estimate"] = post_plan
 
     diagnostics: dict[str, Any] = {"build_diagnostics_observed": True}
     _add_build_summary(diagnostics, "build_pre", pre_build)
@@ -368,6 +448,22 @@ def build_step_diagnostics(
     diagnostics["build_estimated_score_delta"] = float(
         post_build.estimated_score - pre_build.estimated_score
     )
+    if pre_plan is not None and post_plan is not None:
+        diagnostics.update(
+            {
+                "hand_plan_pre_type": pre_plan.best.hand_type,
+                "hand_plan_post_type": post_plan.best.hand_type,
+                "hand_plan_pre_reliability": float(pre_plan.best.draw_reliability),
+                "hand_plan_post_reliability": float(post_plan.best.draw_reliability),
+                "hand_plan_pre_readiness": float(pre_plan.best.readiness_ratio),
+                "hand_plan_post_readiness": float(post_plan.best.readiness_ratio),
+            }
+        )
+    pre_seals = prev_info.get("deck_stats", {}).get("seal_counts", {})
+    post_seals = curr_info.get("deck_stats", {}).get("seal_counts", {})
+    for seal in ("Blue", "Purple", "Gold", "Red"):
+        diagnostics[f"seal_pre_{seal.lower()}_count"] = int(pre_seals.get(seal, 0) or 0)
+        diagnostics[f"seal_post_{seal.lower()}_count"] = int(post_seals.get(seal, 0) or 0)
 
     pre_hologram = _hologram_x_mults(prev_info)
     post_hologram = _hologram_x_mults(curr_info)

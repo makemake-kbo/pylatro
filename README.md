@@ -146,7 +146,7 @@ build-aware shaping, Planet alignment, and conservative exploration:
 uv run python train.py ppo \
   --pretrained checkpoints/supervised/supervised_epoch10.pt \
   --envs 16 --rollout-length 256 --batch 352 --ppo-epochs 4 \
-  --updates 2000 --device cuda --win-ante 6 --hl-gauss \
+  --updates 2000 --device cuda --win-ante 4 --hl-gauss \
   --gamma 0.997 --lr 1e-5 --clip-eps 0.1 \
   --target-kl 0.03 --target-kl-max 0.15 \
   --dense-reward-scale 0.25 \
@@ -158,11 +158,15 @@ uv run python train.py ppo \
   --reinit-value-head --critic-warmup-updates 15 --critic-warmup-min-ev 0
 ```
 
-`--score-build-potential` supplies immediate credit for useful Tarot-driven deck
-and build improvements. Planet shaping rewards leveling hands the run actually
-uses and mildly discourages irrelevant choices. A conservative fixed entropy
-bonus avoids destabilizing a pretrained policy, while the lower learning rate
-and hard KL guard limit destructive PPO updates. Reinitialize the value head
+`--score-build-potential` uses draw reliability and projected score to value Pair
+and High Card as scalable fallbacks, Flush after suit fixing, and multiplicity
+hands only after rank/card fixing. Two Pair receives a small conditional signal
+only with a dedicated synergy Joker; Full House is not a strategic target. The
+same bounded potential strongly values Blue/Purple seals, Tarot
+deck fixing and money generation, score-improving Joker replacements, and
+midgame Standard-pack searches when scoring is already safe. Planet shaping
+rewards only these viable plans. A conservative fixed entropy bonus, low learning
+rate, and hard KL guard protect the pretrained policy. Reinitialize the value head
 when adding these rewards to a checkpoint trained with different reward semantics.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.

@@ -287,6 +287,15 @@ def main():
         help="Danger threshold for state-dependent hand-decision sharpening (default: 0.35).",
     )
     parser.add_argument(
+        "--danger-shop-leave-logit-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "Soft macro-logit penalty on leaving an unsafe shop, paired with half as much "
+            "positive reroll bias. It never masks actions. Use 2.0; default: disabled."
+        ),
+    )
+    parser.add_argument(
         "--entropy-coeff",
         type=float,
         default=0.01,
@@ -664,6 +673,7 @@ def main():
         # In supervised mode a categorical head still trains (MSE through the
         # histogram mean); the HL-Gauss cross-entropy loss is PPO-only.
         value_bins=51 if args.hl_gauss else 0,
+        danger_shop_leave_logit_penalty=args.danger_shop_leave_logit_penalty,
     )
 
     checkpoint_dir = args.checkpoint_dir

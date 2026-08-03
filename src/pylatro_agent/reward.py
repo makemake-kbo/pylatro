@@ -53,13 +53,17 @@ class RewardConfig:
     # a declined offer.  Realized, confidence-gated upgrades are rewarded below.
     potential_w_joker_search: float = 0.0
     potential_w_standard_pack_search: float = 0.50
+    # Potential allocated only to the unsafe region. It rises linearly with
+    # clear probability until the build reaches the 65% safety threshold, then
+    # saturates so PPO is paid for rescue rather than needless over-preparation.
+    potential_w_survival_safety: float = 0.40
     potential_build_cap: float = 2.0
     potential_readiness_saturation: float = 1.5
 
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 7
+REWARD_MODEL_VERSION = 8
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -135,6 +139,7 @@ REWARD_COMPONENT_NAMES = (
     "tarot_value_bonus",
     "joker_upgrade_bonus",
     "danger_reroll_bonus",
+    "survival_shaping",
     "joker_move",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
@@ -150,6 +155,7 @@ _COMPONENT_GROUP = {
     "tarot_value_bonus": "consumable",
     "joker_upgrade_bonus": "shop",
     "danger_reroll_bonus": "shop",
+    "survival_shaping": "potential",
     "joker_move": "joker_move",
 }
 
@@ -423,6 +429,33 @@ def potential_shaping_reward(prev_info: dict, curr_info: dict, config: RewardCon
     return config.gamma * phi_curr - state_potential(prev_info, config)
 
 
+def _survival_safety_potential(info: Mapping[str, Any], config: RewardConfig) -> float:
+    """Bounded safety potential focused below the 65% clear threshold."""
+
+    if not config.enable_score_build_potential or config.potential_w_survival_safety <= 0.0:
+        return 0.0
+    if info.get("_potential_terminal", False):
+        return 0.0
+    clear_probability = info.get("clear_probability")
+    if clear_probability is None:
+        try:
+            clear_probability = estimate_clear_risk(info).clear_probability
+        except (KeyError, OverflowError, TypeError, ValueError):
+            return 0.0
+    safe_probability = 1.0 - 0.35
+    safety_fraction = _clip(float(clear_probability) / safe_probability, 0.0, 1.0)
+    return max(float(config.potential_w_survival_safety), 0.0) * safety_fraction
+
+
+def survival_shaping_reward(prev_info: dict, curr_info: dict, config: RewardConfig) -> float:
+    """Potential-based credit for actions that move an unsafe state toward safety."""
+
+    return config.gamma * _survival_safety_potential(curr_info, config) - _survival_safety_potential(
+        prev_info,
+        config,
+    )
+
+
 def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -574,6 +607,7 @@ def default_reward_components(
         terminal_info = dict(curr_info)
         terminal_info["_potential_terminal"] = True
         components["potential_shaping"] = potential_shaping_reward(prev_info, terminal_info, active_config)
+        components["survival_shaping"] = survival_shaping_reward(prev_info, terminal_info, active_config)
         death_ante = int(curr_info.get("ante", state.round_resets.ante))
         components["terminal"] = outcome_value(
             won=won,
@@ -602,6 +636,7 @@ def default_reward_components(
         return components
 
     components["potential_shaping"] = potential_shaping_reward(prev_info, curr_info, active_config)
+    components["survival_shaping"] = survival_shaping_reward(prev_info, curr_info, active_config)
 
     if config.enable_planet_match_rewards:
         _apply_planet_match_rewards(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+import pytest
 import torch
 
 from pylatro_agent.action import ActionType, encode_action
@@ -9,6 +10,7 @@ from pylatro_agent.action_grammar import (
     ACTION_TYPE_TO_GRAMMAR_INDEX,
     NUM_GRAMMAR_ACTIONS,
     ActionGrammarDistribution,
+    ActionGrammarHead,
     ActionGrammarOutput,
 )
 from pylatro_agent.constants import (
@@ -20,8 +22,11 @@ from pylatro_agent.constants import (
     MAX_JOKER_SLOTS,
     MAX_PACK_CARDS,
     MAX_PLAY_CANDIDATES,
+    MAX_SEQ_LEN,
     MAX_SHOP_ITEMS,
     NUM_ACTIONS,
+    SCALAR_DIM,
+    TOKEN_DIM,
 )
 from pylatro_agent.subset_actions import consumable_subset_index, subset_index
 
@@ -46,6 +51,52 @@ def _blank_output(batch_size: int) -> ActionGrammarOutput:
             MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1),
         ),
     )
+
+
+def _grammar_head_inputs(batch_size: int, d_model: int) -> tuple[torch.Tensor, ...]:
+    return (
+        torch.zeros(batch_size, MAX_SEQ_LEN, d_model),
+        torch.ones(batch_size, MAX_SEQ_LEN),
+        torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long),
+        torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long),
+        torch.zeros(batch_size, SCALAR_DIM),
+    )
+
+
+def test_action_head_directly_conditions_on_danger() -> None:
+    head = ActionGrammarHead(8)
+    with torch.no_grad():
+        for parameter in head.parameters():
+            parameter.zero_()
+        head.danger_policy_proj.weight[0, 0] = 1.0
+        play_index = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PLAY_SUBSET]
+        head.macro_head.weight[play_index, 0] = 1.0
+
+    inputs = list(_grammar_head_inputs(2, 8))
+    inputs[-1][:, 7] = 1.0
+    inputs[-1][:, 12] = torch.tensor([0.2, 0.8])
+    output = head(*inputs)
+
+    danger_delta = output.macro_logits[1, play_index] - output.macro_logits[0, play_index]
+    assert danger_delta.item() == pytest.approx(0.6)
+
+
+def test_unsafe_shop_prior_is_soft_and_phase_specific() -> None:
+    head = ActionGrammarHead(8, danger_shop_leave_logit_penalty=2.0)
+    with torch.no_grad():
+        for parameter in head.parameters():
+            parameter.zero_()
+
+    inputs = list(_grammar_head_inputs(3, 8))
+    scalars = inputs[-1]
+    scalars[:, 12] = torch.tensor([1.0, 0.35, 1.0])
+    scalars[:, 7] = torch.tensor([2.0, 2.0, 1.0])
+    output = head(*inputs)
+
+    leave_index = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE]
+    reroll_index = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_REROLL]
+    assert output.macro_logits[:, leave_index].tolist() == pytest.approx([-2.0, 0.0, 0.0])
+    assert output.macro_logits[:, reroll_index].tolist() == pytest.approx([1.0, 0.0, 0.0])
 
 
 def test_action_grammar_samples_only_valid_flat_actions() -> None:

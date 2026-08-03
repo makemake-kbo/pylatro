@@ -28,6 +28,7 @@ from pylatro_agent.reward import (
     reward_config_snapshot,
     state_potential,
     state_potential_breakdown,
+    survival_shaping_reward,
 )
 
 
@@ -376,6 +377,44 @@ def test_dense_scale_does_not_change_potential_shaping() -> None:
     scaled = default_reward_components(state, prev, curr, False, False, RewardConfig(dense_reward_scale=0.1))
 
     assert scaled["potential_shaping"] == pytest.approx(base["potential_shaping"])
+
+
+def test_survival_shaping_rewards_rescue_and_saturates_at_safety() -> None:
+    config = RewardConfig(
+        gamma=1.0,
+        enable_score_build_potential=True,
+        potential_w_survival_safety=0.4,
+    )
+
+    rescue = survival_shaping_reward(
+        _info(clear_probability=0.10),
+        _info(clear_probability=0.50),
+        config,
+    )
+    regression = survival_shaping_reward(
+        _info(clear_probability=0.50),
+        _info(clear_probability=0.10),
+        config,
+    )
+    safely_overbuilt = survival_shaping_reward(
+        _info(clear_probability=0.70),
+        _info(clear_probability=0.95),
+        config,
+    )
+
+    assert rescue == pytest.approx(0.4 * 0.4 / 0.65)
+    assert regression == pytest.approx(-rescue)
+    assert safely_overbuilt == pytest.approx(0.0)
+
+
+def test_survival_shaping_is_disabled_with_build_potential() -> None:
+    config = RewardConfig(enable_score_build_potential=False)
+
+    assert survival_shaping_reward(
+        _info(clear_probability=0.0),
+        _info(clear_probability=1.0),
+        config,
+    ) == pytest.approx(0.0)
 
 
 def test_improving_move_joker_uses_only_exact_layout_reward() -> None:

@@ -40,6 +40,11 @@ class AgentConfig:
     value_bins: int = 0
     value_v_min: float = -8.0
     value_v_max: float = 12.0
+    # Soft, analytic-risk prior applied only in shops. At high immediate-death
+    # probability it makes leaving less likely and rerolling more likely, but
+    # never changes the legal-action mask. Zero disables the fixed prior while
+    # retaining the learned direct danger-conditioning path.
+    danger_shop_leave_logit_penalty: float = 0.0
 
 
 class BalatroAgent(nn.Module):
@@ -57,7 +62,10 @@ class BalatroAgent(nn.Module):
             dropout=config.dropout,
         )
 
-        self.action_grammar_head = ActionGrammarHead(d)
+        self.action_grammar_head = ActionGrammarHead(
+            d,
+            danger_shop_leave_logit_penalty=config.danger_shop_leave_logit_penalty,
+        )
 
         # Value head
         self.value_head = ValueHead(

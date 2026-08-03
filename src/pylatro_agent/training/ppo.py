@@ -28,6 +28,7 @@ from ..constants import (
     HISTORY_OMITTED_DIM,
     HISTORY_ROUNDS,
     MAX_SEQ_LEN,
+    META_START,
     NUM_ACTIONS,
     SCALAR_DIM,
     TOKEN_DIM,
@@ -52,6 +53,25 @@ from .sil import (
 logger = logging.getLogger(__name__)
 _MISSING = object()
 _HISTORY_SIGNATURE_CACHE: dict[type, bool] = {}
+_BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
+
+
+def _next_blind_clear_outcome(
+    *,
+    shop_ante: int,
+    shop_blind_index: int,
+    final_ante: int,
+    won: bool,
+    terminal_blind: str,
+) -> float:
+    """Return whether the blind forecast at shop leave was subsequently cleared."""
+
+    if won or final_ante > shop_ante:
+        return 1.0
+    if final_ante < shop_ante:
+        return 0.0
+    terminal_index = _BLIND_INDEX.get(str(terminal_blind).lower(), shop_blind_index)
+    return float(terminal_index > shop_blind_index)
 
 
 class RunningMeanStd:
@@ -645,6 +665,10 @@ class _RolloutMetrics:
     shop_survival_predictions: list[float] = field(default_factory=list)
     shop_survival_outcomes: list[float] = field(default_factory=list)
     shop_survival_briers: list[float] = field(default_factory=list)
+    risk_shop_death_predictions: list[float] = field(default_factory=list)
+    risk_shop_death_outcomes: list[float] = field(default_factory=list)
+    risk_shop_death_briers: list[float] = field(default_factory=list)
+    risk_ante1_false_safe_deaths: list[float] = field(default_factory=list)
     joker_marginal_ratios: defaultdict = field(default_factory=lambda: defaultdict(list))
     joker_modeled_fractions: defaultdict = field(default_factory=lambda: defaultdict(list))
     build_values: defaultdict = field(default_factory=lambda: defaultdict(list))
@@ -778,6 +802,33 @@ def _write_terminal_loss_metrics(writer, rm: _RolloutMetrics, step: int, *, win_
         )
     for boss_key, count in rm.terminal_boss_loss_counts.items():
         writer.add_scalar(f"terminal/boss_loss/{boss_key}_count", float(count), step)
+
+
+def _write_risk_calibration_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
+    """Write compact calibration of shop danger estimates against survival."""
+
+    if rm.risk_shop_death_briers:
+        writer.add_scalar(
+            "strategy/risk/shop_death_brier",
+            float(np.mean(rm.risk_shop_death_briers)),
+            step,
+        )
+        writer.add_scalar(
+            "strategy/risk/predicted_death_mean",
+            float(np.mean(rm.risk_shop_death_predictions)),
+            step,
+        )
+        writer.add_scalar(
+            "strategy/risk/actual_death_rate",
+            float(np.mean(rm.risk_shop_death_outcomes)),
+            step,
+        )
+    if rm.risk_ante1_false_safe_deaths:
+        writer.add_scalar(
+            "strategy/risk/ante1_false_safe_death_fraction",
+            float(np.mean(rm.risk_ante1_false_safe_deaths)),
+            step,
+        )
 
 
 def _unwrap_model(model: nn.Module) -> nn.Module:
@@ -2520,11 +2571,15 @@ def train_ppo(
     else:
         logger.info(
             "Rollout temperature: base=%.3f, active-hand danger/Ante-1=%.3f "
-            "(death_probability>=%.2f; shop exploration unchanged)",
+            "(death_probability>=%.2f; shop temperature unchanged)",
             config.rollout_temperature,
             min(config.danger_rollout_temperature, config.rollout_temperature),
             config.danger_death_probability_threshold,
         )
+    logger.info(
+        "Danger policy conditioning: direct features enabled; unsafe-shop leave logit penalty=%.2f",
+        max(float(agent_config.danger_shop_leave_logit_penalty), 0.0),
+    )
     # Discount-horizon diagnostic for explicit low-gamma overrides. At
     # gamma=0.99 a terminal reward is discounted to ~0.22 at 150 steps and
     # ~0.05 at 300, making early-game economy decisions nearly invisible.
@@ -2784,7 +2839,9 @@ def train_ppo(
     # These persist across rollout boundaries because an episode often spans
     # several PPO updates.
     env_last_shop_survival_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
+    env_last_shop_analytic_clear_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
     env_last_shop_ante = np.zeros(config.num_envs, dtype=np.int64)
+    env_last_shop_blind_index = np.zeros(config.num_envs, dtype=np.int8)
     # Per-env start step within the current rollout for the current episode.
     # Reset to 0 at each rollout, advanced past every `done` step so the
     # buffer can retroactively fill ante-survival targets for completed
@@ -2836,6 +2893,7 @@ def train_ppo(
                 chosen_action_probs_np = chosen_action_probs.cpu().numpy()
                 max_action_probs_np = max_action_probs.cpu().numpy()
                 pre_scalars = obs_buf._np_scalars
+                pre_tokens = obs_buf._np_tokens
                 rm.clear_probabilities.extend(pre_scalars[:, 11].astype(np.float64).tolist())
                 rm.immediate_death_probabilities.extend(pre_scalars[:, 12].astype(np.float64).tolist())
                 survival_np = value_dict["ante_survival"].cpu().numpy()
@@ -2845,7 +2903,9 @@ def train_ppo(
                     shop_ante = max(round(float(pre_scalars[env_idx, 2])), 1)
                     survival_index = min(shop_ante - 1, survival_np.shape[1] - 1)
                     env_last_shop_survival_pred[env_idx] = float(survival_np[env_idx, survival_index])
+                    env_last_shop_analytic_clear_pred[env_idx] = float(pre_scalars[env_idx, 11])
                     env_last_shop_ante[env_idx] = shop_ante
+                    env_last_shop_blind_index[env_idx] = int(pre_tokens[env_idx, META_START + 3, 0]) // 100
 
                 # Step all envs at once
                 next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
@@ -3032,15 +3092,46 @@ def train_ppo(
                         )
                         if last_play_value_ratio is not None:
                             rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
-                    if np.isfinite(env_last_shop_survival_pred[i]):
+                    if np.isfinite(env_last_shop_survival_pred[i]) or np.isfinite(
+                        env_last_shop_analytic_clear_pred[i]
+                    ):
                         if not ep_stalled:
-                            prediction = float(env_last_shop_survival_pred[i])
-                            outcome = float(ep_won or ep_ante > int(env_last_shop_ante[i]))
-                            rm.shop_survival_predictions.append(prediction)
-                            rm.shop_survival_outcomes.append(outcome)
-                            rm.shop_survival_briers.append((prediction - outcome) ** 2)
+                            shop_ante = int(env_last_shop_ante[i])
+                            ante_outcome = float(ep_won or ep_ante > shop_ante)
+                            if np.isfinite(env_last_shop_survival_pred[i]):
+                                prediction = float(env_last_shop_survival_pred[i])
+                                rm.shop_survival_predictions.append(prediction)
+                                rm.shop_survival_outcomes.append(ante_outcome)
+                                rm.shop_survival_briers.append((prediction - ante_outcome) ** 2)
+                            if np.isfinite(env_last_shop_analytic_clear_pred[i]):
+                                terminal_blind = str(
+                                    _extract_step_info_value(
+                                        infos,
+                                        "blind_on_deck",
+                                        i,
+                                        done=True,
+                                        default="",
+                                    )
+                                    or ""
+                                )
+                                blind_outcome = _next_blind_clear_outcome(
+                                    shop_ante=shop_ante,
+                                    shop_blind_index=int(env_last_shop_blind_index[i]),
+                                    final_ante=ep_ante,
+                                    won=ep_won,
+                                    terminal_blind=terminal_blind,
+                                )
+                                predicted_death = 1.0 - float(env_last_shop_analytic_clear_pred[i])
+                                death_outcome = 1.0 - blind_outcome
+                                rm.risk_shop_death_predictions.append(predicted_death)
+                                rm.risk_shop_death_outcomes.append(death_outcome)
+                                rm.risk_shop_death_briers.append((predicted_death - death_outcome) ** 2)
+                                if shop_ante == 1 and death_outcome > 0.5:
+                                    rm.risk_ante1_false_safe_deaths.append(float(predicted_death <= 0.35))
                         env_last_shop_survival_pred[i] = np.nan
+                        env_last_shop_analytic_clear_pred[i] = np.nan
                         env_last_shop_ante[i] = 0
+                        env_last_shop_blind_index[i] = 0
                     if sil_tracker is not None and sil_buffer is not None:
                         # Insert wins and ordinary completed losses; drop only
                         # episodes the environment itself flags as
@@ -3183,6 +3274,7 @@ def train_ppo(
                     float(np.mean(rm.shop_survival_outcomes)),
                     rollout_step,
                 )
+            _write_risk_calibration_metrics(writer, rm, rollout_step)
             if episode_rewards:
                 writer.add_scalar(
                     "recent_100/episode_reward_mean", float(np.mean(episode_rewards[-100:])), rollout_step

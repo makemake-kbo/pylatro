@@ -67,6 +67,11 @@ _SHOP_SELL_JOKER = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_SELL_JOKER]
 _SHOP_SELL_CONSUMABLE = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_SELL_CONSUMABLE]
 _PACK_CLAIM = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PACK_CLAIM]
 _MOVE_JOKER = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.MOVE_JOKER]
+_SHOP_REROLL = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_REROLL]
+_SHOP_LEAVE = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE]
+
+_SHOP_PHASE_ID = 2
+_DANGER_THRESHOLD = 0.35
 
 _ACTION_ID_TO_GRAMMAR = np.zeros(NUM_ACTIONS, dtype=np.int64)
 _ACTION_ID_TO_INDEX = np.zeros(NUM_ACTIONS, dtype=np.int64)
@@ -132,7 +137,7 @@ class ActionGrammarOutput:
 class ActionGrammarHead(nn.Module):
     """Produces component logits for the structured action grammar."""
 
-    def __init__(self, d_model: int):
+    def __init__(self, d_model: int, *, danger_shop_leave_logit_penalty: float = 0.0):
         super().__init__()
         state_dim = 128
         hidden = 128
@@ -148,6 +153,13 @@ class ActionGrammarHead(nn.Module):
             nn.Linear(LEGACY_POLICY_SCALAR_DIM, 32),
             nn.GELU(),
         )
+        # Give the action heads a short, explicit path from danger to behavior.
+        # Zero initialization preserves every loaded policy logit exactly; PPO
+        # can then learn how danger, remaining hands, and remaining discards
+        # should change its action preferences after critic warmup.
+        self.danger_policy_proj = nn.Linear(3, state_dim, bias=False)
+        nn.init.zeros_(self.danger_policy_proj.weight)
+        self.danger_shop_leave_logit_penalty = max(float(danger_shop_leave_logit_penalty), 0.0)
         self.macro_head = nn.Linear(state_dim, NUM_GRAMMAR_ACTIONS)
 
         self.hand_count_head = nn.Linear(state_dim, 2 * 5)
@@ -198,6 +210,14 @@ class ActionGrammarHead(nn.Module):
             ],
             dim=-1,
         )
+        danger = scalars[:, 12].clamp(0.0, 1.0) if scalars.shape[1] >= 13 else scalars.new_zeros(batch)
+        hands_fraction = (scalars[:, 4] / 4.0).clamp(0.0, 1.0)
+        discards_fraction = (scalars[:, 5] / 4.0).clamp(0.0, 1.0)
+        danger_features = torch.stack(
+            [danger, danger * hands_fraction, danger * discards_fraction],
+            dim=-1,
+        )
+        state = state + self.danger_policy_proj(danger_features)
 
         hand_ctx, hand_present = self._gather_hand_slots(
             backbone_out,
@@ -249,8 +269,20 @@ class ActionGrammarHead(nn.Module):
             dim=1,
         )
 
+        macro_logits = self.macro_head(state)
+        if self.danger_shop_leave_logit_penalty > 0.0:
+            # This is deliberately a soft prior, not a mask. If leaving is the
+            # only legal action it remains certain; otherwise a highly unsafe
+            # shop favors continued search without forcing a particular buy.
+            in_shop = scalars[:, 7].round().eq(_SHOP_PHASE_ID).to(macro_logits.dtype)
+            urgency = ((danger - _DANGER_THRESHOLD) / (1.0 - _DANGER_THRESHOLD)).clamp(0.0, 1.0)
+            prior = self.danger_shop_leave_logit_penalty * urgency * in_shop
+            macro_logits = macro_logits.clone()
+            macro_logits[:, _SHOP_LEAVE] -= prior
+            macro_logits[:, _SHOP_REROLL] += 0.5 * prior
+
         return ActionGrammarOutput(
-            macro_logits=self.macro_head(state),
+            macro_logits=macro_logits,
             hand_count_logits=self.hand_count_head(state).view(batch, 2, 5),
             hand_card_logits=hand_card_logits,
             candidate_play_logits=candidate_play_logits,

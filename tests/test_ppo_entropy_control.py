@@ -16,6 +16,7 @@ from pylatro_agent.training.ppo import (
     _make_alpha_optimizer,
     _make_policy_optimizer,
     _mean_valid_action_type_count,
+    _next_blind_clear_outcome,
     _next_eval_regression_streak,
     _per_state_normalized_entropy,
     _policy_temperature_for_scalars,
@@ -26,6 +27,7 @@ from pylatro_agent.training.ppo import (
     _smoothed_entropy_signal,
     _validate_ppo_config,
     _write_action_behavior_metrics,
+    _write_risk_calibration_metrics,
     _write_rollout_episode_metrics,
     _write_terminal_loss_metrics,
 )
@@ -614,6 +616,47 @@ def test_terminal_loss_metrics_emit_only_zero_count_without_losses() -> None:
     _write_terminal_loss_metrics(writer, _RolloutMetrics(), step=3, win_ante=4)
 
     assert writer.scalars == {"terminal/loss_count": (0.0, 3)}
+
+
+def test_risk_calibration_metrics_report_false_safe_ante1_deaths() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        risk_shop_death_predictions=[0.2, 0.8],
+        risk_shop_death_outcomes=[1.0, 0.0],
+        risk_shop_death_briers=[0.64, 0.64],
+        risk_ante1_false_safe_deaths=[1.0, 0.0],
+    )
+    writer = _Writer()
+
+    _write_risk_calibration_metrics(writer, rm, step=7)
+
+    assert writer.scalars["strategy/risk/shop_death_brier"] == pytest.approx((0.64, 7))
+    assert writer.scalars["strategy/risk/predicted_death_mean"] == pytest.approx((0.5, 7))
+    assert writer.scalars["strategy/risk/actual_death_rate"] == pytest.approx((0.5, 7))
+    assert writer.scalars["strategy/risk/ante1_false_safe_death_fraction"] == pytest.approx((0.5, 7))
+
+
+def test_next_blind_calibration_does_not_charge_a_later_same_ante_death() -> None:
+    assert _next_blind_clear_outcome(
+        shop_ante=1,
+        shop_blind_index=1,
+        final_ante=1,
+        won=False,
+        terminal_blind="Boss",
+    ) == pytest.approx(1.0)
+    assert _next_blind_clear_outcome(
+        shop_ante=1,
+        shop_blind_index=2,
+        final_ante=1,
+        won=False,
+        terminal_blind="Boss",
+    ) == pytest.approx(0.0)
 
 
 def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:

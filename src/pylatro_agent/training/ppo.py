@@ -307,6 +307,10 @@ class PPOConfig:
     # ~39% at ante 4). 10 eval games can't measure rare-event winrate; bump
     # the default so eval/win_rate has signal to compare against.
     eval_games: int = 50
+    # Stop cleanly when deterministic evaluation regresses materially from the
+    # best checkpoint for consecutive evals. None disables the guard.
+    eval_regression_tolerance: float | None = None
+    eval_regression_patience: int = 2
     # Optional override for the device used during eval. When set (e.g. "cpu"),
     # eval games run on that device instead of the training device. Useful for
     # long MPS runs where the eval loop's serial forward-pass allocations
@@ -321,7 +325,10 @@ class PPOConfig:
     # Stake (difficulty tier, 1-8) the training/eval envs run at. The self-play
     # curriculum ramps this; on its own PPO trains at the base stake.
     stake: int = 1
-    max_no_progress_steps: int = 256
+    # Keep self-induced action loops close enough for terminal stall credit to
+    # reach the responsible decisions through GAE. Immediate idle penalties
+    # remain the primary defense; this is the bounded backstop.
+    max_no_progress_steps: int = 32
     micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
     normalize_returns: bool = False  # BC pretraining supervises expected_score on raw ±10-ish
     # returns; turning on running-mean/std normalization here causes a one-rollout GAE
@@ -656,6 +663,7 @@ class _RolloutMetrics:
     counterfactual_representative_realized_abs_gaps: list[float] = field(default_factory=list)
     counterfactual_representative_realized_signed_gaps: list[float] = field(default_factory=list)
     counterfactual_focal_counts: Counter = field(default_factory=Counter)
+    joker_move_rewards: list[float] = field(default_factory=list)
     play_subset_count: int = 0
     discard_subset_count: int = 0
 
@@ -675,6 +683,41 @@ def _write_rollout_episode_metrics(writer, rm: _RolloutMetrics, step: int) -> No
     }
     for tag, values in metrics.items():
         writer.add_scalar(f"rollout/{tag}", float(np.mean(values)), step)
+
+
+def _write_action_behavior_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
+    """Write compact action-family and no-progress-loop diagnostics."""
+
+    action_total = sum(rm.action_type_counts.values())
+    if action_total:
+        for action_type in _ACTION_TYPES:
+            writer.add_scalar(
+                f"actions/type/{action_type.value}_fraction",
+                rm.action_type_counts.get(action_type.value, 0) / action_total,
+                step,
+            )
+    if rm.joker_move_rewards:
+        writer.add_scalar(
+            "actions/move_joker_non_improving_fraction",
+            float(np.mean(np.asarray(rm.joker_move_rewards) <= 1e-6)),
+            step,
+        )
+        writer.add_scalar(
+            "actions/move_joker_reward_mean",
+            float(np.mean(rm.joker_move_rewards)),
+            step,
+        )
+    if rm.steps_since_progress:
+        writer.add_scalar(
+            "rollout/no_progress_streak_p95",
+            float(np.percentile(rm.steps_since_progress, 95)),
+            step,
+        )
+        writer.add_scalar(
+            "rollout/no_progress_streak_max",
+            float(np.max(rm.steps_since_progress)),
+            step,
+        )
 
 
 def _write_terminal_loss_metrics(writer, rm: _RolloutMetrics, step: int, *, win_ante: int) -> None:
@@ -822,6 +865,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("checkpoint_interval must be positive")
     if config.eval_interval <= 0:
         raise ValueError("eval_interval must be positive")
+    if config.eval_regression_tolerance is not None and not 0.0 < config.eval_regression_tolerance <= 1.0:
+        raise ValueError("eval_regression_tolerance must be in (0, 1] when set")
+    if config.eval_regression_patience <= 0:
+        raise ValueError("eval_regression_patience must be positive")
     if config.ppo_epochs <= 0:
         raise ValueError("ppo_epochs must be positive")
     if config.rollout_length <= 0:
@@ -1601,6 +1648,9 @@ def _save_checkpoint(
             "gae_lambda",
             "rollout_temperature",
             "action_type_entropy_scale",
+            "max_no_progress_steps",
+            "eval_regression_tolerance",
+            "eval_regression_patience",
             "gamma",
             "win_ante",
             "target_entropy",
@@ -2188,6 +2238,22 @@ def _safe_mean(values: list[float]) -> float:
     return float(np.mean(values)) if values else float("nan")
 
 
+def _next_eval_regression_streak(
+    *,
+    win_rate: float,
+    best_win_rate: float | None,
+    current_streak: int,
+    tolerance: float | None,
+) -> int:
+    """Advance or clear the consecutive material-eval-regression count."""
+
+    if tolerance is None or best_win_rate is None:
+        return 0
+    if best_win_rate - win_rate >= tolerance:
+        return current_streak + 1
+    return 0
+
+
 def _sanitize_tag_part(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value) or "unknown"
 
@@ -2615,6 +2681,8 @@ def train_ppo(
     # saved best forward so the resumed run keeps the prior best unless it beats it.
     best_eval_win_rate: float | None = None
     best_eval_update: int | None = None
+    eval_regression_streak = 0
+    early_stop_requested = False
     if resume_state is not None and not config.reset_best_eval:
         best_eval_win_rate = resume_state.get("best_eval_win_rate")
         best_eval_update = resume_state.get("best_eval_update")
@@ -2795,6 +2863,18 @@ def train_ppo(
                             _extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0)
                         )
                     )
+                    if action_type_name == ActionType.MOVE_JOKER.value:
+                        rm.joker_move_rewards.append(
+                            float(
+                                _extract_step_info_value(
+                                    infos,
+                                    "joker_move_reward",
+                                    env_idx,
+                                    done=step_done,
+                                    default=0.0,
+                                )
+                            )
+                        )
                     for component_name in REWARD_INFO_KEYS:
                         component_value = _extract_step_info_value(
                             infos,
@@ -2972,6 +3052,7 @@ def train_ppo(
             writer.add_scalar("rollout/progress_rate", float(np.mean(rm.progress_flags)), rollout_step)
             writer.add_scalar("rollout/completed_episodes", float(np.sum(rm.done_flags)), rollout_step)
             _write_rollout_episode_metrics(writer, rm, rollout_step)
+            _write_action_behavior_metrics(writer, rm, rollout_step)
             _write_terminal_loss_metrics(writer, rm, rollout_step, win_ante=effective_win_ante)
             if rm.clear_probabilities:
                 writer.add_scalar(
@@ -3458,6 +3539,34 @@ def train_ppo(
                         update_count,
                         best_path,
                     )
+                eval_regression_streak = _next_eval_regression_streak(
+                    win_rate=win_rate,
+                    best_win_rate=best_eval_win_rate,
+                    current_streak=eval_regression_streak,
+                    tolerance=config.eval_regression_tolerance,
+                )
+                eval_best = best_eval_win_rate if best_eval_win_rate is not None else win_rate
+                regression_from_best = max(float(eval_best) - win_rate, 0.0)
+                writer.add_scalar("eval/regression_from_best", regression_from_best, update_count)
+                writer.add_scalar("eval/regression_streak", float(eval_regression_streak), update_count)
+                regression_early_stop = (
+                    config.eval_regression_tolerance is not None
+                    and eval_regression_streak >= config.eval_regression_patience
+                )
+                writer.add_scalar("eval/regression_early_stop", float(regression_early_stop), update_count)
+                if regression_early_stop:
+                    early_stop_requested = True
+                    writer.flush()
+                    logger.error(
+                        "Stopping PPO after %d consecutive eval regressions: "
+                        "win_rate=%.3f, best=%.3f at update %s, tolerance=%.3f. "
+                        "Best checkpoint remains ppo_best_eval.pt.",
+                        eval_regression_streak,
+                        win_rate,
+                        best_eval_win_rate,
+                        best_eval_update,
+                        config.eval_regression_tolerance,
+                    )
                 # eval runs `eval_games` full games in-process; release the
                 # forward-pass allocations it cached before the next rollout.
                 if device.type == "mps":
@@ -3614,6 +3723,9 @@ def train_ppo(
                         mean_action_type_entropy_update,
                         update_count,
                     )
+
+            if early_stop_requested:
+                break
 
     finally:
         # Always close the vector env and TensorBoard writer, even on

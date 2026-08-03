@@ -148,13 +148,17 @@ uv run python train.py ppo \
   --envs 16 --rollout-length 256 --batch 352 --ppo-epochs 4 \
   --updates 2000 --device cuda --win-ante 4 --hl-gauss \
   --gamma 0.997 --lr 1e-5 --clip-eps 0.1 \
-  --target-kl 0.03 --target-kl-max 0.15 \
+  --target-kl 0.03 --target-kl-p95 0.10 --target-kl-max 0.15 \
+  --min-minibatch-fraction 0.50 \
   --dense-reward-scale 0.25 \
   --score-build-potential \
   --planet-match-shaping \
   --planet-unmatched-use-penalty-coeff 0.25 \
   --planet-unmatched-claim-penalty-coeff 0.10 \
-  --entropy-coeff 0.01 \
+  --entropy-coeff 0.01 --action-type-entropy-scale 0.25 \
+  --max-idle-steps 32 \
+  --eval-games 100 --eval-interval 10 \
+  --eval-regression-tolerance 0.10 --eval-regression-patience 2 \
   --reinit-value-head --critic-warmup-updates 15 --critic-warmup-min-ev 0.4
 ```
 
@@ -171,9 +175,12 @@ when that chance is credible; unsafe rerolls and realized, confidently modeled
 Joker upgrades get positive-only credit, with no penalty for declining an offer.
 The win and ante-survival heads are trained during PPO and the compact TensorBoard
 shop/terminal metrics expose dying with money, weak full Joker slots, and
-last-shop survival calibration. A conservative fixed entropy bonus, low learning
-rate, and hard KL guard protect the pretrained policy. Reinitialize the value head
-when adding these rewards to a checkpoint trained with different reward semantics.
+last-shop survival calibration. Non-improving Joker reorderings receive an
+immediate penalty, and action-family fractions plus no-progress streaks make a
+shop loop directly visible. A short idle horizon, action-family entropy bonus,
+hard KL guard, and two-eval regression stop protect the pretrained policy while
+retaining the `1e-5` learning rate. Reinitialize the value head when adding these
+rewards to a checkpoint trained with different reward semantics.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 

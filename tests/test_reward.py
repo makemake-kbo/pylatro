@@ -11,6 +11,7 @@ from pylatro_agent.reward import (
     DEFAULT_REWARD_CONFIG,
     EARLY_DEATH_PENALTIES,
     IDLE_PENALTY_CAP,
+    JOKER_MOVE_NON_IMPROVING_PENALTY,
     LOSS_BASE,
     PLANET_MATCH_BONUS,
     PLANET_PLAYED_HAND_BONUS,
@@ -360,7 +361,7 @@ def test_dense_scale_does_not_change_potential_shaping() -> None:
     assert scaled["potential_shaping"] == pytest.approx(base["potential_shaping"])
 
 
-def test_move_joker_uses_only_exact_layout_reward() -> None:
+def test_improving_move_joker_uses_only_exact_layout_reward() -> None:
     state = _state()
     components = default_reward_components(
         state,
@@ -379,3 +380,25 @@ def test_move_joker_uses_only_exact_layout_reward() -> None:
     assert components["potential_shaping"] == 0
     assert components["idle_penalty"] == 0
     assert components["total"] == pytest.approx(0.75)
+
+
+def test_non_improving_move_joker_gets_immediate_loop_penalty() -> None:
+    state = _state()
+    components = default_reward_components(
+        state,
+        _info(),
+        _info(
+            action_type="move_joker",
+            joker_move_reward=0.0,
+            progress_made=False,
+            steps_since_progress=20,
+        ),
+        False,
+        False,
+        RewardConfig(dense_reward_scale=0.25),
+    )
+
+    assert components["joker_move"] == pytest.approx(-JOKER_MOVE_NON_IMPROVING_PENALTY)
+    assert components["potential_shaping"] == 0
+    assert components["idle_penalty"] < 0
+    assert components["total"] == pytest.approx(components["joker_move"] + components["idle_penalty"])

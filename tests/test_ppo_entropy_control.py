@@ -16,6 +16,7 @@ from pylatro_agent.training.ppo import (
     _make_alpha_optimizer,
     _make_policy_optimizer,
     _mean_valid_action_type_count,
+    _next_eval_regression_streak,
     _per_state_normalized_entropy,
     _ppo_terminal_flags,
     _record_action_diagnostics,
@@ -23,6 +24,7 @@ from pylatro_agent.training.ppo import (
     _run_ppo_update,
     _smoothed_entropy_signal,
     _validate_ppo_config,
+    _write_action_behavior_metrics,
     _write_rollout_episode_metrics,
     _write_terminal_loss_metrics,
 )
@@ -318,6 +320,21 @@ def test_ppo_config_allows_disabled_target_kl() -> None:
     _validate_ppo_config(PPOConfig(target_kl=None))
 
 
+def test_ppo_config_uses_short_no_progress_backstop() -> None:
+    assert PPOConfig().max_no_progress_steps == 32
+
+
+@pytest.mark.parametrize("tolerance", [0.0, -0.1, 1.1])
+def test_ppo_config_rejects_invalid_eval_regression_tolerance(tolerance: float) -> None:
+    with pytest.raises(ValueError, match="eval_regression_tolerance"):
+        _validate_ppo_config(PPOConfig(eval_regression_tolerance=tolerance))
+
+
+def test_ppo_config_rejects_nonpositive_eval_regression_patience() -> None:
+    with pytest.raises(ValueError, match="eval_regression_patience"):
+        _validate_ppo_config(PPOConfig(eval_regression_patience=0))
+
+
 def test_ppo_config_rejects_negative_counterfactual_interval() -> None:
     with pytest.raises(ValueError, match="counterfactual_diagnostic_interval"):
         _validate_ppo_config(PPOConfig(counterfactual_diagnostic_interval=-1))
@@ -469,6 +486,60 @@ def test_rollout_episode_metrics_skip_empty_rollouts() -> None:
             raise AssertionError("empty rollouts must not emit episode metrics")
 
     _write_rollout_episode_metrics(_Writer(), _RolloutMetrics(), step=1)
+
+
+def test_action_behavior_metrics_expose_macro_collapse_and_joker_move_loop() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        action_type_counts={"move_joker": 80, "shop_leave": 20},
+        joker_move_rewards=[0.0, -0.1, 0.02],
+        steps_since_progress=[0.0, 1.0, 2.0, 32.0],
+    )
+    writer = _Writer()
+
+    _write_action_behavior_metrics(writer, rm, step=11)
+
+    assert writer.scalars["actions/type/move_joker_fraction"] == (0.8, 11)
+    assert writer.scalars["actions/type/shop_leave_fraction"] == (0.2, 11)
+    assert writer.scalars["actions/type/play_subset_fraction"] == (0.0, 11)
+    assert writer.scalars["actions/move_joker_non_improving_fraction"] == pytest.approx((2 / 3, 11))
+    assert writer.scalars["actions/move_joker_reward_mean"] == pytest.approx((-0.08 / 3, 11))
+    assert writer.scalars["rollout/no_progress_streak_p95"] == pytest.approx(
+        (np.percentile(rm.steps_since_progress, 95), 11)
+    )
+    assert writer.scalars["rollout/no_progress_streak_max"] == (32.0, 11)
+
+
+def test_eval_regression_streak_requires_consecutive_material_drops() -> None:
+    streak = _next_eval_regression_streak(
+        win_rate=0.50,
+        best_win_rate=0.64,
+        current_streak=0,
+        tolerance=0.10,
+    )
+    assert streak == 1
+    streak = _next_eval_regression_streak(
+        win_rate=0.48,
+        best_win_rate=0.64,
+        current_streak=streak,
+        tolerance=0.10,
+    )
+    assert streak == 2
+    assert (
+        _next_eval_regression_streak(
+            win_rate=0.60,
+            best_win_rate=0.64,
+            current_streak=streak,
+            tolerance=0.10,
+        )
+        == 0
+    )
 
 
 def test_terminal_loss_metrics_are_compact_and_numeric() -> None:

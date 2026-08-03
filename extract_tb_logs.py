@@ -7,6 +7,7 @@ SCALAR_TAGS = [
     'rollout/ep_reward_mean', 'rollout/ep_length_mean',
     'rollout/episode_reward_mean', 'rollout/episode_length_mean',
     'rollout/win_rate', 'rollout/final_ante_mean', 'eval/win_rate',
+    'eval/regression_from_best', 'eval/regression_streak', 'eval/regression_early_stop',
     'recent_100/win_rate', 'recent_100/final_ante_mean',
     'reward/terminal_mean', 'reward/score_progress_mean', 'reward/pressure_progress_mean',
     'reward/blind_clear_mean', 'reward/ante_bonus_mean', 'reward/idle_penalty_mean',
@@ -21,6 +22,8 @@ SCALAR_TAGS = [
     'actions/shop_reroll_fraction', 'actions/shop_sell_joker_fraction',
     'actions/shop_sell_consumable_fraction', 'actions/play_subset_fraction',
     'actions/discard_subset_fraction',
+    'actions/move_joker_non_improving_fraction', 'actions/move_joker_reward_mean',
+    'rollout/no_progress_streak_p95', 'rollout/no_progress_streak_max',
     'build/estimated_score_mean', 'build/required_score_mean', 'build/readiness_mean',
     'build/score_gain_ratio_mean', 'build/modeled_fraction_mean',
     'potential/post_total_mean', 'potential/delta_total_mean',
@@ -48,6 +51,7 @@ SCALAR_TAGS = [
 ]
 
 SCALAR_PREFIXES = [
+    'actions/type/',
     'shop/offered_joker/', 'shop/bought_joker/', 'shop/sold_joker/',
     'joker/marginal_ratio/', 'joker/modeled_fraction/',
     'terminal/',

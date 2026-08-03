@@ -59,7 +59,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 5
+REWARD_MODEL_VERSION = 6
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -112,6 +112,7 @@ EARLY_DEATH_PENALTIES = {1: 2.0, 2: 1.0}
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
 IDLE_PENALTY_CAP = 0.02
+JOKER_MOVE_NON_IMPROVING_PENALTY = 0.02
 
 PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
@@ -576,9 +577,19 @@ def default_reward_components(
         return components
 
     # Reordering is scored by an exact build-layout diagnostic and must not
-    # also collect generic potential or idle shaping.
+    # also collect generic potential shaping.  A neutral or harmful move is
+    # still an idle action, however: exempting every reorder from the idle
+    # penalty lets PPO cycle through the many legal permutations until the
+    # distant no-progress truncation, whose credit is effectively lost over a
+    # long GAE horizon.
     if str(curr_info.get("action_type", "")) == "move_joker":
-        components["joker_move"] = float(curr_info.get("joker_move_reward", 0.0) or 0.0)
+        move_reward = float(curr_info.get("joker_move_reward", 0.0) or 0.0)
+        components["joker_move"] = move_reward
+        if move_reward <= 1e-6:
+            components["joker_move"] -= JOKER_MOVE_NON_IMPROVING_PENALTY
+            idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
+            idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
+            components["idle_penalty"] = -min(idle_penalty, IDLE_PENALTY_CAP) * config.dense_reward_scale
         components["total"] = sum(components.values())
         return components
 

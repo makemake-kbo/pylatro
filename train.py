@@ -205,8 +205,8 @@ def main():
     parser.add_argument(
         "--max-idle-steps",
         type=int,
-        default=256,
-        help="Terminate PPO episodes only after this many consecutive no-progress steps (default: 256)",
+        default=32,
+        help="Terminate PPO episodes after this many consecutive no-progress steps (default: 32)",
     )
     parser.add_argument(
         "--target-entropy",
@@ -230,6 +230,21 @@ def main():
         type=int,
         default=50,
         help="Games per PPO eval pass (default: 50). Wins are rare; small samples are noisy.",
+    )
+    parser.add_argument(
+        "--eval-regression-tolerance",
+        type=float,
+        default=None,
+        help=(
+            "Stop cleanly after repeated eval drops of at least this absolute win-rate "
+            "amount from the best checkpoint (for example 0.10). Default: disabled."
+        ),
+    )
+    parser.add_argument(
+        "--eval-regression-patience",
+        type=int,
+        default=2,
+        help="Consecutive material eval regressions before stopping (default: 2).",
     )
     parser.add_argument(
         "--eval-device",
@@ -714,6 +729,8 @@ def main():
                 rollout_temperature=args.rollout_temperature,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
+                eval_regression_tolerance=args.eval_regression_tolerance,
+                eval_regression_patience=args.eval_regression_patience,
                 eval_device=args.eval_device,
                 hand_ar_mixture_eps=ppo_eps,
                 critic_warmup_updates=args.critic_warmup_updates,

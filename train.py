@@ -270,6 +270,23 @@ def main():
         ),
     )
     parser.add_argument(
+        "--danger-rollout-temperature",
+        type=float,
+        default=None,
+        help=(
+            "Optional lower temperature for active hand decisions in Ante 1 or "
+            "when immediate death probability crosses --danger-death-probability-threshold. "
+            "Shop, pack, and blind-select exploration keep --rollout-temperature. "
+            "Use 0.85; default: disabled."
+        ),
+    )
+    parser.add_argument(
+        "--danger-death-probability-threshold",
+        type=float,
+        default=0.35,
+        help="Danger threshold for state-dependent hand-decision sharpening (default: 0.35).",
+    )
+    parser.add_argument(
         "--entropy-coeff",
         type=float,
         default=0.01,
@@ -727,6 +744,8 @@ def main():
                 async_envs=not args.sync_envs,
                 reset_schedules=args.reset_schedules,
                 rollout_temperature=args.rollout_temperature,
+                danger_rollout_temperature=args.danger_rollout_temperature,
+                danger_death_probability_threshold=args.danger_death_probability_threshold,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
                 eval_regression_tolerance=args.eval_regression_tolerance,

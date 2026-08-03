@@ -183,6 +183,23 @@ def test_state_potential_tracks_blind_and_ante_progress() -> None:
     assert later_blind > half_blind
 
 
+@pytest.mark.parametrize("sub_phase", ["shop", "booster_pack", "blind_select"])
+def test_state_potential_does_not_carry_completed_score_into_next_blind(sub_phase: str) -> None:
+    config = RewardConfig()
+    between_blinds = _info(
+        blind_on_deck="Boss",
+        round_score=552,
+        blind_target=600,
+        sub_phase=sub_phase,
+        in_shop=sub_phase == "shop",
+    )
+    no_stale_score = {**between_blinds, "round_score": 0}
+
+    assert state_potential(between_blinds, config) == pytest.approx(
+        state_potential(no_stale_score, config)
+    )
+
+
 def test_potential_shaping_uses_gamma_and_zero_terminal_potential() -> None:
     config = RewardConfig(gamma=0.9)
     prev = _info(round_score=20)

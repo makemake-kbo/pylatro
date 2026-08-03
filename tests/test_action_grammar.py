@@ -126,6 +126,28 @@ def test_action_grammar_temperature_changes_log_prob_consistently() -> None:
     assert cool.log_prob(torch.tensor([reroll])).item() < warm.log_prob(torch.tensor([reroll])).item()
 
 
+def test_action_grammar_accepts_per_row_temperature() -> None:
+    action_mask = torch.zeros(2, NUM_ACTIONS)
+    leave = encode_action(ActionType.SHOP_LEAVE)
+    reroll = encode_action(ActionType.SHOP_REROLL)
+    action_mask[:, leave] = 1
+    action_mask[:, reroll] = 1
+
+    output = _blank_output(batch_size=2)
+    output.macro_logits[:, :] = -10.0
+    output.macro_logits[:, ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE]] = 1.0
+    output.macro_logits[:, ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_REROLL]] = 0.0
+
+    dist = ActionGrammarDistribution(
+        output,
+        action_mask,
+        temperature=torch.tensor([0.5, 1.0]),
+    )
+    leave_log_prob = dist.log_prob(torch.tensor([leave, leave]))
+
+    assert leave_log_prob[0] > leave_log_prob[1]
+
+
 def test_candidate_logits_in_output_shape():
     output = _blank_output(batch_size=2)
     assert output.candidate_play_logits.shape == (2, HAND_CANDIDATE_MAX)

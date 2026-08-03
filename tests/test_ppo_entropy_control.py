@@ -18,6 +18,7 @@ from pylatro_agent.training.ppo import (
     _mean_valid_action_type_count,
     _next_eval_regression_streak,
     _per_state_normalized_entropy,
+    _policy_temperature_for_scalars,
     _ppo_terminal_flags,
     _record_action_diagnostics,
     _RolloutMetrics,
@@ -309,6 +310,30 @@ def test_load_checkpoint_compatible_rejects_architecture_mismatch(tmp_path) -> N
 def test_ppo_config_rejects_nonpositive_rollout_temperature() -> None:
     with pytest.raises(ValueError, match="rollout_temperature"):
         _validate_ppo_config(PPOConfig(rollout_temperature=0.0))
+
+
+def test_ppo_config_rejects_invalid_danger_temperature_controls() -> None:
+    with pytest.raises(ValueError, match="danger_rollout_temperature"):
+        _validate_ppo_config(PPOConfig(danger_rollout_temperature=0.0))
+    with pytest.raises(ValueError, match="danger_death_probability_threshold"):
+        _validate_ppo_config(PPOConfig(danger_death_probability_threshold=1.1))
+
+
+def test_policy_temperature_sharpens_only_active_ante1_or_danger_rows() -> None:
+    scalars = torch.zeros(5, SCALAR_DIM)
+    scalars[:, 2] = torch.tensor([1.0, 2.0, 2.0, 1.0, 2.0])
+    scalars[:, 7] = torch.tensor([1.0, 1.0, 1.0, 2.0, 2.0])
+    scalars[:, 12] = torch.tensor([0.0, 0.8, 0.1, 0.9, 0.9])
+    config = PPOConfig(
+        rollout_temperature=1.0,
+        danger_rollout_temperature=0.85,
+        danger_death_probability_threshold=0.35,
+    )
+
+    temperatures = _policy_temperature_for_scalars(scalars, config)
+
+    assert isinstance(temperatures, torch.Tensor)
+    assert temperatures.tolist() == pytest.approx([0.85, 0.85, 1.0, 1.0, 1.0])
 
 
 def test_ppo_config_rejects_nonpositive_target_kl_when_set() -> None:

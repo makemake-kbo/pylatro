@@ -71,6 +71,21 @@ def test_clear_risk_tracks_score_margin_and_current_progress() -> None:
     assert unsafe.score_margin > 0.0
 
 
+@pytest.mark.parametrize("sub_phase", ["shop", "booster_pack", "blind_select"])
+def test_clear_risk_ignores_completed_blind_score_for_upcoming_blind(sub_phase: str) -> None:
+    upcoming = _snapshot(target=400.0, score=300.0)
+    upcoming["sub_phase"] = sub_phase
+    upcoming["in_shop"] = sub_phase == "shop"
+
+    active = _snapshot(target=400.0, score=300.0)
+    active["sub_phase"] = "choose_action"
+
+    assert estimate_clear_risk(upcoming).clear_probability == estimate_clear_risk(
+        _snapshot(target=400.0)
+    ).clear_probability
+    assert estimate_clear_risk(active).clear_probability == 1.0
+
+
 def test_clear_risk_reserves_margin_for_unmodeled_boss_constraints() -> None:
     ordinary = estimate_clear_risk(_snapshot(target=200.0))
     boss_info = deepcopy(_snapshot(target=200.0))

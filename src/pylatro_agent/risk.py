@@ -78,6 +78,17 @@ def _risk_info(info: Mapping[str, Any]) -> dict[str, Any]:
     adjusted = dict(info)
     target = max(float(info.get("blind_target", 0) or 0), 0.0)
     score = max(float(info.get("round_score", 0) or 0), 0.0)
+    # The controller keeps the completed blind's score while the policy is in
+    # the following shop / pack / blind-select flow, even though blind_target
+    # already points at the *next* blind.  Subtracting that stale score makes an
+    # unsafe build look nearly guaranteed to clear (e.g. 552 from the previous
+    # Big blind turns an upcoming 600-chip Boss into a fictitious 48-chip
+    # target).  Only active hand play has meaningful progress against the
+    # current target.  Older serialized snapshots may lack sub_phase, so retain
+    # their historical behavior unless the non-play phase is explicit.
+    sub_phase = info.get("sub_phase")
+    if bool(info.get("in_shop")) or (sub_phase is not None and str(sub_phase) != "choose_action"):
+        score = 0.0
     adjusted["blind_target"] = max(target - score, 1.0)
     return adjusted
 

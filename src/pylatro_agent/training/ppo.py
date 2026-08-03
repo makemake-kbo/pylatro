@@ -347,6 +347,12 @@ class PPOConfig:
     rollout_temperature: float = (
         1.0  # Phase 4: was 0.7; the sharpening crutch now only suppresses exploration post-Phase-1 BC
     )
+    # Optional state-dependent sharpening for active hand decisions. Ante 1 is
+    # always protected; later antes use the explicit immediate-danger signal.
+    # Shop / pack / blind-select states retain rollout_temperature so Joker and
+    # consumable search remain exploratory.
+    danger_rollout_temperature: float | None = None
+    danger_death_probability_threshold: float = 0.35
     # Weight on the ante_survival auxiliary BCE loss. Small by default ,
     # the head is useful for analysis and as an auxiliary learning signal,
     # but it shouldn't meaningfully pull the policy optimization.
@@ -779,7 +785,11 @@ def _unwrap_model(model: nn.Module) -> nn.Module:
     return model.module if isinstance(model, nn.DataParallel) else model
 
 
-def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor], temperature: float = 1.0):
+def _grammar_distribution(
+    model: nn.Module,
+    batch: dict[str, torch.Tensor],
+    temperature: float | torch.Tensor = 1.0,
+):
     import inspect
 
     base_model = _unwrap_model(model)
@@ -815,6 +825,39 @@ def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor], temp
         temperature=temperature,
         **history_kwargs,
     )
+
+
+def _policy_temperature_for_scalars(
+    scalars: torch.Tensor,
+    config: PPOConfig,
+) -> float | torch.Tensor:
+    """Return the on-policy temperature for each observation row.
+
+    Only active hand-play states are sharpened. Ante 1 is protected regardless
+    of the analytic risk estimate; later hands are sharpened when immediate
+    death probability crosses the configured threshold. Because this function
+    is used for rollout collection, PPO minibatches, SIL, and KL diagnostics,
+    old and new log-probabilities remain distributions over the same policy.
+    """
+
+    danger_temperature = config.danger_rollout_temperature
+    if danger_temperature is None:
+        return config.rollout_temperature
+
+    base = torch.full(
+        (scalars.shape[0],),
+        float(config.rollout_temperature),
+        dtype=scalars.dtype,
+        device=scalars.device,
+    )
+    # Tokenizer scalar layout: ante=2, sub_phase=7 (CHOOSE_ACTION=1),
+    # immediate_death_probability=12.
+    active_hand = scalars[:, 7].round().eq(1)
+    opening_ante = scalars[:, 2] <= 1.0
+    immediate_danger = scalars[:, 12] >= float(config.danger_death_probability_threshold)
+    sharpen = active_hand & (opening_ante | immediate_danger)
+    danger = torch.full_like(base, min(float(danger_temperature), float(config.rollout_temperature)))
+    return torch.where(sharpen, danger, base)
 
 
 def _value_head_parameters(model: nn.Module) -> list[nn.Parameter]:
@@ -881,6 +924,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("lr must be positive")
     if config.rollout_temperature <= 0.0:
         raise ValueError("rollout_temperature must be positive")
+    if config.danger_rollout_temperature is not None and config.danger_rollout_temperature <= 0.0:
+        raise ValueError("danger_rollout_temperature must be positive when set")
+    if not 0.0 <= config.danger_death_probability_threshold <= 1.0:
+        raise ValueError("danger_death_probability_threshold must be between 0 and 1")
     if config.entropy_coeff < 0.0:
         raise ValueError("entropy_coeff must be non-negative")
     if config.survival_loss_coeff < 0.0:
@@ -1040,7 +1087,7 @@ def _evaluate_rollout_kl(
     batch_size: int,
     device: torch.device,
     use_pin_memory: bool,
-    temperature: float,
+    config: PPOConfig,
 ) -> tuple[float, float, int]:
     """Evaluate current-vs-rollout KL over all on-policy samples.
 
@@ -1057,7 +1104,11 @@ def _evaluate_rollout_kl(
     minibatch_max = 0.0
     with torch.no_grad():
         for batch in batches:
-            dist, _ = _grammar_distribution(model, batch, temperature=temperature)
+            dist, _ = _grammar_distribution(
+                model,
+                batch,
+                temperature=_policy_temperature_for_scalars(batch["scalars"], config),
+            )
             sample_count = int(batch["actions"].numel())
             new_log_probs = dist.log_prob(batch["actions"])
             log_ratio = new_log_probs - batch["old_log_probs"]
@@ -1194,7 +1245,11 @@ def _run_ppo_update(
                     if capture_grads:
                         sil_grad_snapshot = _snapshot_actor_grads(model)
 
-            dist, value_dict = _grammar_distribution(model, batch, temperature=config.rollout_temperature)
+            dist, value_dict = _grammar_distribution(
+                model,
+                batch,
+                temperature=_policy_temperature_for_scalars(batch["scalars"], config),
+            )
 
             new_log_probs = dist.log_prob(batch["actions"])
             entropy_per_state = dist.entropy()
@@ -1381,7 +1436,7 @@ def _run_ppo_update(
             effective_batch_size,
             device,
             use_pin_memory,
-            config.rollout_temperature,
+            config,
         )
         stats.full_kl = full_kl
         if rollback_snapshot is not None and config.target_kl_max is not None and full_kl_max > config.target_kl_max:
@@ -1496,7 +1551,11 @@ def _compute_sil_group_loss(
     if outcomes is not None:
         diagnostics["sample_win_fraction"] = float(outcomes.mean().item())
 
-    dist, value_dict = _grammar_distribution(model, sampled, temperature=config.rollout_temperature)
+    dist, value_dict = _grammar_distribution(
+        model,
+        sampled,
+        temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
+    )
     log_probs = dist.log_prob(sampled["actions"])
     finite = (log_probs > -1e7).float()
 
@@ -1647,6 +1706,8 @@ def _save_checkpoint(
             "clip_epsilon",
             "gae_lambda",
             "rollout_temperature",
+            "danger_rollout_temperature",
+            "danger_death_probability_threshold",
             "action_type_entropy_scale",
             "max_no_progress_steps",
             "eval_regression_tolerance",
@@ -2451,7 +2512,19 @@ def train_ppo(
                 "--critic-warmup-min-ev 0 so the random head converges before "
                 "the policy trains on its advantages."
             )
-    logger.info("Rollout temperature: %.3f (applied to rollout, training, and bootstrap)", config.rollout_temperature)
+    if config.danger_rollout_temperature is None:
+        logger.info(
+            "Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
+            config.rollout_temperature,
+        )
+    else:
+        logger.info(
+            "Rollout temperature: base=%.3f, active-hand danger/Ante-1=%.3f "
+            "(death_probability>=%.2f; shop exploration unchanged)",
+            config.rollout_temperature,
+            min(config.danger_rollout_temperature, config.rollout_temperature),
+            config.danger_death_probability_threshold,
+        )
     # Discount-horizon diagnostic for explicit low-gamma overrides. At
     # gamma=0.99 a terminal reward is discounted to ~0.22 at 150 steps and
     # ~0.05 at 300, making early-game economy decisions nearly invisible.
@@ -2747,7 +2820,7 @@ def train_ppo(
                         history_event_mask=obs_buf.history_event_mask,
                         history_round_mask=obs_buf.history_round_mask,
                         history_omitted=obs_buf.history_omitted,
-                        temperature=config.rollout_temperature,
+                        temperature=_policy_temperature_for_scalars(obs_buf.scalars, config),
                     )
                     actions = dist.sample()
                     log_probs = dist.log_prob(actions)
@@ -2790,7 +2863,9 @@ def train_ppo(
                         final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
                         with torch.no_grad():
                             _, truncated_value_dict = _grammar_distribution(
-                                model, final_obs_batch, temperature=config.rollout_temperature
+                                model,
+                                final_obs_batch,
+                                temperature=_policy_temperature_for_scalars(final_obs_batch["scalars"], config),
                             )
                         truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
                         if return_rms is not None:
@@ -3021,7 +3096,7 @@ def train_ppo(
                     history_event_mask=obs_buf.history_event_mask,
                     history_round_mask=obs_buf.history_round_mask,
                     history_omitted=obs_buf.history_omitted,
-                    temperature=config.rollout_temperature,
+                    temperature=_policy_temperature_for_scalars(obs_buf.scalars, config),
                 )
                 last_values = value_dict["expected_score"].cpu().numpy()
                 if return_rms is not None:

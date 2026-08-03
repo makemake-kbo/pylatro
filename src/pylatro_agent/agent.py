@@ -83,7 +83,7 @@ class BalatroAgent(nn.Module):
         history_event_mask: torch.Tensor | None = None,
         history_round_mask: torch.Tensor | None = None,
         history_omitted: torch.Tensor | None = None,
-        temperature: float = 1.0,
+        temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
         """Return the structured policy distribution and value predictions."""
@@ -134,7 +134,7 @@ class BalatroAgent(nn.Module):
         history_event_mask: torch.Tensor | None = None,
         history_round_mask: torch.Tensor | None = None,
         history_omitted: torch.Tensor | None = None,
-        temperature: float = 1.0,
+        temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
         """Named entry point used by rollout and training code."""

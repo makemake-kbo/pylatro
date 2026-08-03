@@ -303,15 +303,26 @@ class ActionGrammarDistribution:
         self,
         output: ActionGrammarOutput,
         action_mask: torch.Tensor,
-        temperature: float = 1.0,
+        temperature: float | torch.Tensor = 1.0,
         tokens: torch.Tensor | None = None,
         hand_ar_mixture_eps: float = 0.0,
     ) -> None:
         self.output = output
         self.action_mask = action_mask > 0
-        self.temperature = max(float(temperature), 1e-6)
         self.device = action_mask.device
         self.batch_size = action_mask.shape[0]
+        if isinstance(temperature, torch.Tensor):
+            temperature = temperature.to(device=self.device, dtype=torch.float32)
+            if temperature.ndim == 0:
+                temperature = temperature.expand(self.batch_size)
+            if temperature.shape != (self.batch_size,):
+                raise ValueError(
+                    "tensor temperature must be scalar or have one value per batch row "
+                    f"(expected {(self.batch_size,)}, got {tuple(temperature.shape)})"
+                )
+            self.temperature: float | torch.Tensor = temperature.clamp_min(1e-6)
+        else:
+            self.temperature = max(float(temperature), 1e-6)
         self.tokens = tokens
         # Mixture weight on the autoregressive hand/discard head:
         #   p(a) = (1 - eps) * p_cand(a) + eps * p_ar(a)
@@ -629,6 +640,9 @@ class ActionGrammarDistribution:
         return self.log_prob(actions).exp()
 
     def _t(self, logits: torch.Tensor) -> torch.Tensor:
+        if isinstance(self.temperature, torch.Tensor):
+            shape = (self.batch_size, *([1] * (logits.ndim - 1)))
+            return logits / self.temperature.to(dtype=logits.dtype).view(shape)
         return logits / self.temperature
 
     def _first_valid_actions(self) -> torch.Tensor:

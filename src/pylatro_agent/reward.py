@@ -59,7 +59,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 6
+REWARD_MODEL_VERSION = 7
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -385,6 +385,14 @@ def state_potential_breakdown(info: dict, config: RewardConfig) -> dict[str, flo
 
     blind_target = max(float(info.get("blind_target", 0) or 0), 1.0)
     round_score = max(float(info.get("round_score", 0) or 0), 0.0)
+    sub_phase = info.get("sub_phase")
+    if bool(info.get("in_shop")) or (sub_phase is not None and str(sub_phase) != "choose_action"):
+        # Between blinds, round_score still belongs to the completed blind
+        # while blind_target belongs to the upcoming one.  Macro blind/ante
+        # progress already records the clear; carrying chips forward here both
+        # overvalues the shop state and creates a spurious penalty when the next
+        # blind resets the score to zero.
+        round_score = 0.0
     blind_progress = w_blind * min(round_score / blind_target, 1.0)
 
     ante = max(int(info.get("ante", 1) or 1), 1)

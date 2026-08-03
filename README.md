@@ -156,6 +156,8 @@ uv run python train.py ppo \
   --planet-unmatched-use-penalty-coeff 0.25 \
   --planet-unmatched-claim-penalty-coeff 0.10 \
   --entropy-coeff 0.01 --action-type-entropy-scale 0.25 \
+  --danger-rollout-temperature 0.85 \
+  --danger-death-probability-threshold 0.35 \
   --max-idle-steps 32 \
   --eval-games 100 --eval-interval 10 \
   --eval-regression-tolerance 0.10 --eval-regression-patience 2 \
@@ -170,9 +172,12 @@ same bounded potential strongly values Blue/Purple seals, Tarot
 deck fixing and money generation, score-improving Joker replacements, and
 midgame Standard-pack searches when scoring is already safe. Planet shaping
 rewards only these viable plans. Tokenizer v6 also exposes a conservative,
-boss-aware chance of clearing the immediate blind. Banked cash is valuable only
-when that chance is credible; unsafe rerolls and realized, confidently modeled
-Joker upgrades get positive-only credit, with no penalty for declining an offer.
+boss-aware chance of clearing the immediate blind. Completed-blind chips are
+discarded before the next shop's risk estimate, and active hand decisions are
+sharpened in Ante 1 or immediate danger without reducing shop exploration.
+Banked cash is valuable only when that chance is credible; unsafe rerolls and
+realized, confidently modeled Joker upgrades get positive-only credit, with no
+penalty for declining an offer.
 The win and ante-survival heads are trained during PPO and the compact TensorBoard
 shop/terminal metrics expose dying with money, weak full Joker slots, and
 last-shop survival calibration. Non-improving Joker reorderings receive an

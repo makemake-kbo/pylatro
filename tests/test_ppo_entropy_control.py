@@ -630,6 +630,8 @@ def test_risk_calibration_metrics_report_false_safe_ante1_deaths() -> None:
         risk_shop_death_predictions=[0.2, 0.8],
         risk_shop_death_outcomes=[1.0, 0.0],
         risk_shop_death_briers=[0.64, 0.64],
+        risk_shop_raw_death_predictions=[0.7, 0.9],
+        risk_shop_raw_death_briers=[0.49, 0.81],
         risk_ante1_false_safe_deaths=[1.0, 0.0],
     )
     writer = _Writer()
@@ -639,6 +641,9 @@ def test_risk_calibration_metrics_report_false_safe_ante1_deaths() -> None:
     assert writer.scalars["strategy/risk/shop_death_brier"] == pytest.approx((0.64, 7))
     assert writer.scalars["strategy/risk/predicted_death_mean"] == pytest.approx((0.5, 7))
     assert writer.scalars["strategy/risk/actual_death_rate"] == pytest.approx((0.5, 7))
+    assert writer.scalars["strategy/risk/death_auc"] == pytest.approx((0.0, 7))
+    assert writer.scalars["strategy/risk/raw_shop_death_brier"] == pytest.approx((0.65, 7))
+    assert writer.scalars["strategy/risk/raw_predicted_death_mean"] == pytest.approx((0.8, 7))
     assert writer.scalars["strategy/risk/ante1_false_safe_death_fraction"] == pytest.approx((0.5, 7))
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from math import exp, log
 from typing import Any
 
 from .build_value import BuildValueEstimate, estimate_build_value
@@ -56,8 +57,47 @@ _BOSS_SAFETY_FACTORS = {
 }
 
 
+# Empirical calibration for the deliberately pessimistic analytic estimate.
+# On v8 updates 18-120, shop-leave forecasts averaged roughly 0.81 death
+# probability against a 0.32 observed next-blind death rate.  The raw score
+# also had weak separation across rollout aggregates, so temperature scaling
+# (slope < 1) is preferable to a bias-only correction that would leave the
+# overconfident range intact.  Keep this mapping small, monotonic, and explicit:
+# downstream policy, reward, and shop controls all consume the calibrated
+# ClearRiskEstimate rather than maintaining divergent thresholds.
+ANALYTIC_DEATH_LOGIT_SCALE = 0.50
+ANALYTIC_DEATH_LOGIT_BIAS = -1.47
+_CALIBRATION_EPSILON = 1e-4
+
+
 def _clip01(value: float) -> float:
     return max(0.0, min(float(value), 1.0))
+
+
+def calibrate_analytic_death_probability(raw_probability: float) -> float:
+    """Return the empirically calibrated probability of losing the next blind.
+
+    This is Platt/temperature scaling over the analytic probability's logit.
+    It preserves ordering while correcting both the large pessimistic bias and
+    the raw estimate's excessive confidence near zero and one.
+    """
+
+    raw = min(max(float(raw_probability), _CALIBRATION_EPSILON), 1.0 - _CALIBRATION_EPSILON)
+    raw_logit = log(raw / (1.0 - raw))
+    calibrated_logit = ANALYTIC_DEATH_LOGIT_SCALE * raw_logit + ANALYTIC_DEATH_LOGIT_BIAS
+    return _clip01(1.0 / (1.0 + exp(-calibrated_logit)))
+
+
+def uncalibrate_analytic_death_probability(calibrated_probability: float) -> float:
+    """Invert :func:`calibrate_analytic_death_probability` for diagnostics."""
+
+    calibrated = min(
+        max(float(calibrated_probability), _CALIBRATION_EPSILON),
+        1.0 - _CALIBRATION_EPSILON,
+    )
+    calibrated_logit = log(calibrated / (1.0 - calibrated))
+    raw_logit = (calibrated_logit - ANALYTIC_DEATH_LOGIT_BIAS) / ANALYTIC_DEATH_LOGIT_SCALE
+    return _clip01(1.0 / (1.0 + exp(-raw_logit)))
 
 
 def _active_boss_key(info: Mapping[str, Any]) -> str:
@@ -117,7 +157,8 @@ def estimate_clear_risk(
         resolved_plans = None
         build = None
     if resolved_plans is None:
-        return ClearRiskEstimate(0.0, 1.0, "", 0.0, 0.0, 0.0)
+        death_probability = calibrate_analytic_death_probability(1.0)
+        return ClearRiskEstimate(1.0 - death_probability, death_probability, "", 0.0, 0.0, 0.0)
 
     boss_factor = _BOSS_SAFETY_FACTORS.get(_active_boss_key(info), 1.0)
     best_probability = 0.0
@@ -138,10 +179,11 @@ def estimate_clear_risk(
     # Unknown Joker effects should make the risk estimate more conservative,
     # but not collapse it to zero and hide all useful danger information.
     confidence_factor = 0.70 + 0.30 * confidence
-    clear_probability = _clip01(best_probability * confidence_factor)
+    raw_clear_probability = _clip01(best_probability * confidence_factor)
+    death_probability = calibrate_analytic_death_probability(1.0 - raw_clear_probability)
     return ClearRiskEstimate(
-        clear_probability=clear_probability,
-        immediate_death_probability=1.0 - clear_probability,
+        clear_probability=1.0 - death_probability,
+        immediate_death_probability=death_probability,
         hand_type=best_plan.hand_type,
         draw_reliability=float(best_plan.draw_reliability),
         score_margin=best_margin,

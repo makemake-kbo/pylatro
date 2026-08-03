@@ -40,6 +40,7 @@ from ..diagnostics import (
 )
 from ..env import BalatroEnv
 from ..reward import DEFAULT_REWARD_CONFIG, REWARD_INFO_KEYS, RewardConfig
+from ..risk import uncalibrate_analytic_death_probability
 from ..survival import compute_ante_survival_targets
 from ..value_head import hl_gauss_projection
 from ..vocab import Vocab, build_vocab
@@ -72,6 +73,32 @@ def _next_blind_clear_outcome(
         return 0.0
     terminal_index = _BLIND_INDEX.get(str(terminal_blind).lower(), shop_blind_index)
     return float(terminal_index > shop_blind_index)
+
+
+def _binary_roc_auc(predictions: list[float], outcomes: list[float]) -> float | None:
+    """Return tie-aware ROC AUC, or None when only one outcome class exists."""
+
+    prediction_array = np.asarray(predictions, dtype=np.float64)
+    outcome_array = np.asarray(outcomes, dtype=np.float64) > 0.5
+    positive_count = int(outcome_array.sum())
+    negative_count = int(outcome_array.size - positive_count)
+    if positive_count == 0 or negative_count == 0:
+        return None
+
+    order = np.argsort(prediction_array, kind="mergesort")
+    sorted_predictions = prediction_array[order]
+    ranks = np.empty(prediction_array.size, dtype=np.float64)
+    start = 0
+    while start < prediction_array.size:
+        end = start + 1
+        while end < prediction_array.size and sorted_predictions[end] == sorted_predictions[start]:
+            end += 1
+        ranks[order[start:end]] = 0.5 * (start + 1 + end)
+        start = end
+    positive_rank_sum = float(ranks[outcome_array].sum())
+    return (positive_rank_sum - positive_count * (positive_count + 1) / 2.0) / (
+        positive_count * negative_count
+    )
 
 
 class RunningMeanStd:
@@ -668,6 +695,8 @@ class _RolloutMetrics:
     risk_shop_death_predictions: list[float] = field(default_factory=list)
     risk_shop_death_outcomes: list[float] = field(default_factory=list)
     risk_shop_death_briers: list[float] = field(default_factory=list)
+    risk_shop_raw_death_predictions: list[float] = field(default_factory=list)
+    risk_shop_raw_death_briers: list[float] = field(default_factory=list)
     risk_ante1_false_safe_deaths: list[float] = field(default_factory=list)
     joker_marginal_ratios: defaultdict = field(default_factory=lambda: defaultdict(list))
     joker_modeled_fractions: defaultdict = field(default_factory=lambda: defaultdict(list))
@@ -821,6 +850,20 @@ def _write_risk_calibration_metrics(writer, rm: _RolloutMetrics, step: int) -> N
         writer.add_scalar(
             "strategy/risk/actual_death_rate",
             float(np.mean(rm.risk_shop_death_outcomes)),
+            step,
+        )
+        auc = _binary_roc_auc(rm.risk_shop_death_predictions, rm.risk_shop_death_outcomes)
+        if auc is not None:
+            writer.add_scalar("strategy/risk/death_auc", auc, step)
+    if rm.risk_shop_raw_death_briers:
+        writer.add_scalar(
+            "strategy/risk/raw_shop_death_brier",
+            float(np.mean(rm.risk_shop_raw_death_briers)),
+            step,
+        )
+        writer.add_scalar(
+            "strategy/risk/raw_predicted_death_mean",
+            float(np.mean(rm.risk_shop_raw_death_predictions)),
             step,
         )
     if rm.risk_ante1_false_safe_deaths:
@@ -2840,6 +2883,7 @@ def train_ppo(
     # several PPO updates.
     env_last_shop_survival_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
     env_last_shop_analytic_clear_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
+    env_last_shop_raw_analytic_clear_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
     env_last_shop_ante = np.zeros(config.num_envs, dtype=np.int64)
     env_last_shop_blind_index = np.zeros(config.num_envs, dtype=np.int8)
     # Per-env start step within the current rollout for the current episode.
@@ -2904,6 +2948,9 @@ def train_ppo(
                     survival_index = min(shop_ante - 1, survival_np.shape[1] - 1)
                     env_last_shop_survival_pred[env_idx] = float(survival_np[env_idx, survival_index])
                     env_last_shop_analytic_clear_pred[env_idx] = float(pre_scalars[env_idx, 11])
+                    calibrated_death = 1.0 - float(pre_scalars[env_idx, 11])
+                    raw_death = uncalibrate_analytic_death_probability(calibrated_death)
+                    env_last_shop_raw_analytic_clear_pred[env_idx] = 1.0 - raw_death
                     env_last_shop_ante[env_idx] = shop_ante
                     env_last_shop_blind_index[env_idx] = int(pre_tokens[env_idx, META_START + 3, 0]) // 100
 
@@ -3126,10 +3173,19 @@ def train_ppo(
                                 rm.risk_shop_death_predictions.append(predicted_death)
                                 rm.risk_shop_death_outcomes.append(death_outcome)
                                 rm.risk_shop_death_briers.append((predicted_death - death_outcome) ** 2)
+                                if np.isfinite(env_last_shop_raw_analytic_clear_pred[i]):
+                                    raw_predicted_death = 1.0 - float(
+                                        env_last_shop_raw_analytic_clear_pred[i]
+                                    )
+                                    rm.risk_shop_raw_death_predictions.append(raw_predicted_death)
+                                    rm.risk_shop_raw_death_briers.append(
+                                        (raw_predicted_death - death_outcome) ** 2
+                                    )
                                 if shop_ante == 1 and death_outcome > 0.5:
                                     rm.risk_ante1_false_safe_deaths.append(float(predicted_death <= 0.35))
                         env_last_shop_survival_pred[i] = np.nan
                         env_last_shop_analytic_clear_pred[i] = np.nan
+                        env_last_shop_raw_analytic_clear_pred[i] = np.nan
                         env_last_shop_ante[i] = 0
                         env_last_shop_blind_index[i] = 0
                     if sil_tracker is not None and sil_buffer is not None:

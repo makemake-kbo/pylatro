@@ -5,7 +5,11 @@ from copy import deepcopy
 
 import pytest
 
-from pylatro_agent.risk import estimate_clear_risk
+from pylatro_agent.risk import (
+    calibrate_analytic_death_probability,
+    estimate_clear_risk,
+    uncalibrate_analytic_death_probability,
+)
 from pylatro_agent.strategy_value import _economy_value
 
 RANKS = ("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A")
@@ -64,11 +68,26 @@ def test_clear_risk_tracks_score_margin_and_current_progress() -> None:
     partial = estimate_clear_risk(_snapshot(target=200.0))
     nearly_clear = estimate_clear_risk(_snapshot(target=400.0, score=300.0))
 
-    assert unsafe.clear_probability == 0.0
-    assert partial.clear_probability == pytest.approx(0.46)
-    assert nearly_clear.clear_probability == 1.0
-    assert nearly_clear.immediate_death_probability == 0.0
+    assert unsafe.clear_probability == pytest.approx(
+        1.0 - calibrate_analytic_death_probability(1.0)
+    )
+    assert partial.clear_probability == pytest.approx(
+        1.0 - calibrate_analytic_death_probability(1.0 - 0.46)
+    )
+    assert nearly_clear.clear_probability == pytest.approx(
+        1.0 - calibrate_analytic_death_probability(0.0)
+    )
+    assert nearly_clear.immediate_death_probability < 0.01
     assert unsafe.score_margin > 0.0
+
+
+def test_analytic_death_calibration_corrects_pessimism_and_is_invertible() -> None:
+    calibrated = calibrate_analytic_death_probability(0.81)
+
+    assert calibrated == pytest.approx(0.32, abs=0.01)
+    assert calibrate_analytic_death_probability(0.90) > calibrated
+    assert calibrate_analytic_death_probability(0.50) < calibrated
+    assert uncalibrate_analytic_death_probability(calibrated) == pytest.approx(0.81)
 
 
 @pytest.mark.parametrize("sub_phase", ["shop", "booster_pack", "blind_select"])
@@ -83,7 +102,7 @@ def test_clear_risk_ignores_completed_blind_score_for_upcoming_blind(sub_phase: 
     assert estimate_clear_risk(upcoming).clear_probability == estimate_clear_risk(
         _snapshot(target=400.0)
     ).clear_probability
-    assert estimate_clear_risk(active).clear_probability == 1.0
+    assert estimate_clear_risk(active).clear_probability > 0.99
 
 
 def test_clear_risk_reserves_margin_for_unmodeled_boss_constraints() -> None:

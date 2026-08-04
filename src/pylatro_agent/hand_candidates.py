@@ -28,6 +28,10 @@ class HandCandidate:
     hand_name: str = ""
     estimated_score: float = 0.0
     blind_ratio: float = 0.0
+    # A deliberately Joker-free estimate of the chips this hand can bank.
+    # Keep this separate from estimated_score: the latter ranks structural
+    # build potential and is part of the existing candidate/token semantics.
+    raw_score: float = 0.0
 
 
 def generate_hand_candidates(
@@ -63,6 +67,7 @@ def _generate_play_candidates(state: RunState) -> list[HandCandidate]:
         cards = [hand[i] for i in indices]
         hand_name, _display, _poker_hands, scoring_hand = get_poker_hand_info(state, cards)
         estimated_score = _estimate_play_value(state, cards, hand_name, scoring_hand)
+        raw_score = _estimate_raw_score(state, cards, hand_name, scoring_hand)
         blind_ratio = estimated_score / max(_blind_target(state), 1)
         ranked.append(
             HandCandidate(
@@ -71,6 +76,7 @@ def _generate_play_candidates(state: RunState) -> list[HandCandidate]:
                 hand_name=hand_name,
                 estimated_score=estimated_score,
                 blind_ratio=blind_ratio,
+                raw_score=raw_score,
             )
         )
 
@@ -328,6 +334,59 @@ def _estimate_play_value(
         2.0,
     ) * 20_000.0
     return score
+
+
+def _estimate_raw_score(
+    state: RunState,
+    cards: list[PlayingCard],
+    hand_name: str,
+    scoring_hand: list[PlayingCard],
+) -> float:
+    """Conservative score proxy for banking chips without Joker scaling.
+
+    This covers the deterministic hand/card contributions that matter most in
+    ante 1. It intentionally excludes Jokers and held-card effects so the
+    tempo signal does not teach the policy to play a low-chip hand merely
+    because a later-game build could carry it.
+    """
+    hand_meta = state.hands.get(hand_name, {})
+    chips = float(hand_meta.get("chips", 0) or 0)
+    mult = float(hand_meta.get("mult", 1) or 1)
+
+    scoring_cards = list(scoring_hand)
+    scoring_ids = {id(card) for card in scoring_cards}
+    for card in cards:
+        center = state.data.centers.get(card.center_key, {})
+        if center.get("effect", "") == "Stone Card" and id(card) not in scoring_ids:
+            scoring_cards.append(card)
+
+    for card in scoring_cards:
+        if card.debuff:
+            continue
+        center = state.data.centers.get(card.center_key, {})
+        config = center.get("config") or {}
+        is_stone = center.get("effect", "") == "Stone Card"
+        repetitions = 2 if card.seal == "Red" else 1
+        for _ in range(repetitions):
+            chips += (
+                (0.0 if is_stone else _card_nominal(card))
+                + float(card.perma_bonus)
+                + float(config.get("bonus", 0) or 0)
+            )
+            # Lucky Card's multiplier is stochastic, so stay conservative.
+            if center.get("effect", "") != "Lucky Card":
+                mult += float(config.get("mult", 0) or 0)
+            x_mult = float(config.get("Xmult", 1) or 1)
+            if x_mult > 1.0:
+                mult *= x_mult
+            if card.edition_key == "foil":
+                chips += 50.0
+            elif card.edition_key == "holo":
+                mult += 10.0
+            elif card.edition_key == "polychrome":
+                mult *= 1.5
+
+    return max(chips, 0.0) * max(mult, 0.0)
 
 
 def _estimate_discard_value(

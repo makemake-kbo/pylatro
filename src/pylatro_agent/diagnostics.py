@@ -185,6 +185,15 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
             diagnostics["hand_play_not_in_candidates"] = True
             return diagnostics
 
+        if int(state.round_resets.ante) == 1:
+            chip_best = max(play_candidates, key=lambda candidate: candidate.raw_score)
+            diagnostics.update(
+                {
+                    "ante1_chip_best_score": float(chip_best.raw_score),
+                    "ante1_chip_best_hand": chip_best.hand_name,
+                }
+            )
+
         chosen = next(
             (candidate for candidate in play_candidates if candidate.indices == indices),
             None,
@@ -205,11 +214,13 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
             "hand_play_chosen_hand": chosen.hand_name,
             "hand_play_best_hand": best.hand_name,
         })
+        if int(state.round_resets.ante) == 1:
+            diagnostics["ante1_chip_chosen_score"] = float(chosen.raw_score)
         return diagnostics
 
     if decoded.action_type == ActionType.DISCARD_SUBSET:
         indices = tuple(subset_indices(decoded.index))
-        return {
+        diagnostics = {
             "purple_seal_discarded_count": sum(
                 index < len(state.hand_cards)
                 and state.hand_cards[index].seal == "Purple"
@@ -217,6 +228,17 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
                 for index in indices
             )
         }
+        if int(state.round_resets.ante) == 1:
+            play_candidates, _discard_candidates = generate_hand_candidates(state)
+            if play_candidates:
+                chip_best = max(play_candidates, key=lambda candidate: candidate.raw_score)
+                diagnostics.update(
+                    {
+                        "ante1_chip_best_score": float(chip_best.raw_score),
+                        "ante1_chip_best_hand": chip_best.hand_name,
+                    }
+                )
+        return diagnostics
 
     if decoded.action_type in {
         ActionType.USE_CONSUMABLE_NO_TARGET,

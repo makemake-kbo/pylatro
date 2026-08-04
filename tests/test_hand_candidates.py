@@ -15,3 +15,30 @@ def test_generate_hand_candidates_handles_forced_selection() -> None:
     assert play_candidates
     assert all(forced_slots.issubset(candidate.indices) for candidate in play_candidates)
     assert all(forced_slots.issubset(candidate.indices) for candidate in discard_candidates)
+
+
+def test_play_candidates_expose_joker_free_raw_chip_score() -> None:
+    state = create_run_state("AAAAAAAA")
+    start_blind(state, "Small")
+    cards = state.hand_cards
+    specs = (
+        ("Hearts", "A"),
+        ("Hearts", "K"),
+        ("Hearts", "Q"),
+        ("Hearts", "J"),
+        ("Hearts", "9"),
+        ("Spades", "A"),
+        ("Clubs", "5"),
+        ("Diamonds", "2"),
+    )
+    for card, (suit, rank) in zip(cards, specs, strict=True):
+        card.suit = suit
+        card.rank = rank
+
+    play_candidates, _discard_candidates = generate_hand_candidates(state)
+    flush = next(candidate for candidate in play_candidates if candidate.hand_name == "Flush")
+    pair = next(candidate for candidate in play_candidates if candidate.hand_name == "Pair")
+
+    assert flush.raw_score == 340.0
+    assert pair.raw_score == 64.0
+    assert flush.raw_score > pair.raw_score

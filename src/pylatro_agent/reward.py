@@ -63,7 +63,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 9
+REWARD_MODEL_VERSION = 10
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -116,7 +116,15 @@ EARLY_DEATH_PENALTIES = {1: 2.0, 2: 1.0}
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
 IDLE_PENALTY_CAP = 0.02
-JOKER_MOVE_NON_IMPROVING_PENALTY = 0.02
+JOKER_MOVE_NON_IMPROVING_PENALTY = 0.10
+JOKER_MOVE_REPEAT_PENALTY = 0.02
+JOKER_MOVE_PENALTY_CAP = 0.50
+
+# Ante 1 has little build scaling, so raw hand chips must carry a meaningful
+# share of the blind. This direct tempo signal prevents spending every discard
+# while an already-playable hand is available.
+ANTE1_CHIP_TEMPO_BONUS = 0.40
+ANTE1_DISCARD_PLAYABLE_RATIO = 0.75
 
 PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
@@ -141,6 +149,7 @@ REWARD_COMPONENT_NAMES = (
     "danger_reroll_bonus",
     "survival_shaping",
     "joker_move",
+    "ante1_chip_tempo",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
 
@@ -157,6 +166,7 @@ _COMPONENT_GROUP = {
     "danger_reroll_bonus": "shop",
     "survival_shaping": "potential",
     "joker_move": "joker_move",
+    "ante1_chip_tempo": "hand_quality",
 }
 
 
@@ -589,6 +599,56 @@ def _apply_value_tarot_reward(
         components["tarot_value_bonus"] = VALUE_TAROT_BONUS * min(payout / 10.0, 1.0)
 
 
+def _apply_ante1_chip_tempo_reward(
+    prev_info: dict,
+    curr_info: dict,
+    components: dict[str, float],
+) -> None:
+    """Prefer immediately bankable raw chips before build scaling comes online."""
+    if int(prev_info.get("ante", 0) or 0) != 1:
+        return
+    action_type = str(curr_info.get("action_type", ""))
+    if action_type not in {"play_subset", "discard_subset"}:
+        return
+
+    remaining_score = max(
+        float(prev_info.get("blind_target", 0.0) or 0.0) - float(prev_info.get("round_score", 0.0) or 0.0),
+        0.0,
+    )
+    hands_left = max(int(prev_info.get("hands_left", 0) or 0), 1)
+    required_per_hand = remaining_score / hands_left
+    if required_per_hand <= 0.0:
+        return
+
+    if action_type == "play_subset":
+        chosen_score = max(float(curr_info.get("ante1_chip_chosen_score", 0.0) or 0.0), 0.0)
+        if chosen_score > 0.0:
+            components["ante1_chip_tempo"] = ANTE1_CHIP_TEMPO_BONUS * min(
+                chosen_score / required_per_hand,
+                1.0,
+            )
+        return
+
+    best_score = max(float(curr_info.get("ante1_chip_best_score", 0.0) or 0.0), 0.0)
+    playable_ratio = best_score / required_per_hand
+    if playable_ratio < ANTE1_DISCARD_PLAYABLE_RATIO:
+        return
+
+    # Make the final discard twice as costly as the first. An early discard
+    # remains available for a real draw improvement, while exhausting all of
+    # them despite a playable hand becomes clearly unattractive.
+    discards_left = max(int(prev_info.get("discards_left", 0) or 0), 1)
+    discard_urgency = max(0.5, 1.0 - 0.2 * max(discards_left - 1, 0))
+    components["ante1_chip_tempo"] = (
+        -ANTE1_CHIP_TEMPO_BONUS
+        * min(
+            playable_ratio,
+            1.0,
+        )
+        * discard_urgency
+    )
+
+
 def default_reward_components(
     state: RunState,
     prev_info: dict,
@@ -628,8 +688,12 @@ def default_reward_components(
         move_reward = float(curr_info.get("joker_move_reward", 0.0) or 0.0)
         components["joker_move"] = move_reward
         if move_reward <= 1e-6:
-            components["joker_move"] -= JOKER_MOVE_NON_IMPROVING_PENALTY
             idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
+            move_penalty = min(
+                JOKER_MOVE_NON_IMPROVING_PENALTY + max(idle_streak - 1, 0) * JOKER_MOVE_REPEAT_PENALTY,
+                JOKER_MOVE_PENALTY_CAP,
+            )
+            components["joker_move"] -= move_penalty
             idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
             components["idle_penalty"] = -min(idle_penalty, IDLE_PENALTY_CAP) * config.dense_reward_scale
         components["total"] = sum(components.values())
@@ -637,6 +701,7 @@ def default_reward_components(
 
     components["potential_shaping"] = potential_shaping_reward(prev_info, curr_info, active_config)
     components["survival_shaping"] = survival_shaping_reward(prev_info, curr_info, active_config)
+    _apply_ante1_chip_tempo_reward(prev_info, curr_info, components)
 
     if config.enable_planet_match_rewards:
         _apply_planet_match_rewards(
@@ -670,6 +735,7 @@ def default_reward_components(
         components[name] *= consumable_scale
     components["joker_upgrade_bonus"] *= dense_scale
     components["danger_reroll_bonus"] *= dense_scale
+    components["ante1_chip_tempo"] *= dense_scale
 
     components["total"] = sum(components.values())
     return components

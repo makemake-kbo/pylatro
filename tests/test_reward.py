@@ -7,11 +7,14 @@ import pytest
 from pylatro_agent import reward as reward_module
 from pylatro_agent.build_value import BuildValueEstimate, JokerMarginal, ScoreChannels
 from pylatro_agent.reward import (
+    ANTE1_CHIP_TEMPO_BONUS,
     ANTE_PROGRESS_VALUE,
     DEFAULT_REWARD_CONFIG,
     EARLY_DEATH_PENALTIES,
     IDLE_PENALTY_CAP,
     JOKER_MOVE_NON_IMPROVING_PENALTY,
+    JOKER_MOVE_PENALTY_CAP,
+    JOKER_MOVE_REPEAT_PENALTY,
     LOSS_BASE,
     PLANET_MATCH_BONUS,
     PLANET_PLAYED_HAND_BONUS,
@@ -454,7 +457,107 @@ def test_non_improving_move_joker_gets_immediate_loop_penalty() -> None:
         RewardConfig(dense_reward_scale=0.25),
     )
 
-    assert components["joker_move"] == pytest.approx(-JOKER_MOVE_NON_IMPROVING_PENALTY)
+    expected_move_penalty = min(
+        JOKER_MOVE_NON_IMPROVING_PENALTY + 19 * JOKER_MOVE_REPEAT_PENALTY,
+        JOKER_MOVE_PENALTY_CAP,
+    )
+    assert components["joker_move"] == pytest.approx(-expected_move_penalty)
     assert components["potential_shaping"] == 0
     assert components["idle_penalty"] < 0
     assert components["total"] == pytest.approx(components["joker_move"] + components["idle_penalty"])
+
+
+def test_non_improving_move_joker_penalty_starts_strong_and_caps() -> None:
+    state = _state()
+    first = default_reward_components(
+        state,
+        _info(),
+        _info(action_type="move_joker", joker_move_reward=0.0, steps_since_progress=1),
+        False,
+        False,
+    )
+    repeated = default_reward_components(
+        state,
+        _info(),
+        _info(action_type="move_joker", joker_move_reward=0.0, steps_since_progress=100),
+        False,
+        False,
+    )
+
+    assert first["joker_move"] == pytest.approx(-JOKER_MOVE_NON_IMPROVING_PENALTY)
+    assert repeated["joker_move"] == pytest.approx(-JOKER_MOVE_PENALTY_CAP)
+
+
+def test_ante1_chip_tempo_rewards_raw_score_and_scales() -> None:
+    state = _state(ante=1)
+    config = RewardConfig(dense_reward_scale=0.25)
+    components = default_reward_components(
+        state,
+        _info(ante=1, blind_target=400.0, round_score=0.0, hands_left=4),
+        _info(
+            ante=1,
+            action_type="play_subset",
+            ante1_chip_chosen_score=90.0,
+        ),
+        False,
+        False,
+        config,
+    )
+
+    assert components["ante1_chip_tempo"] == pytest.approx(ANTE1_CHIP_TEMPO_BONUS * 0.9 * config.dense_reward_scale)
+
+
+def test_ante1_chip_tempo_penalizes_exhausting_discards_with_playable_hand() -> None:
+    state = _state(ante=1)
+    config = RewardConfig(dense_reward_scale=0.25)
+    first = default_reward_components(
+        state,
+        _info(
+            ante=1,
+            blind_target=400.0,
+            round_score=0.0,
+            hands_left=4,
+            discards_left=4,
+        ),
+        _info(ante=1, action_type="discard_subset", ante1_chip_best_score=80.0),
+        False,
+        False,
+        config,
+    )
+    last = default_reward_components(
+        state,
+        _info(
+            ante=1,
+            blind_target=400.0,
+            round_score=0.0,
+            hands_left=4,
+            discards_left=1,
+        ),
+        _info(ante=1, action_type="discard_subset", ante1_chip_best_score=80.0),
+        False,
+        False,
+        config,
+    )
+
+    assert first["ante1_chip_tempo"] == pytest.approx(-0.04)
+    assert last["ante1_chip_tempo"] == pytest.approx(-0.08)
+
+
+def test_ante1_chip_tempo_allows_weak_discards_and_is_disabled_later() -> None:
+    weak = default_reward_components(
+        _state(ante=1),
+        _info(ante=1, blind_target=400.0, hands_left=4, discards_left=1),
+        _info(ante=1, action_type="discard_subset", ante1_chip_best_score=70.0),
+        False,
+        False,
+    )
+    later = default_reward_components(
+        _state(ante=2),
+        _info(ante=2, blind_target=800.0, hands_left=4, discards_left=1),
+        _info(ante=2, action_type="play_subset", ante1_chip_chosen_score=800.0),
+        False,
+        False,
+    )
+
+    assert weak["ante1_chip_tempo"] == 0.0
+    assert later["ante1_chip_tempo"] == 0.0

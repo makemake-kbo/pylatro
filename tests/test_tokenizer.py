@@ -24,6 +24,7 @@ from pylatro_agent.constants import (
     SubPhase,
     TokenType,
 )
+from pylatro_agent.hand_candidates import generate_hand_candidates
 from pylatro_agent.tokenizer import Tokenizer, sign_log
 from pylatro_agent.vocab import build_vocab
 
@@ -141,6 +142,21 @@ def test_hand_candidates_emitted_in_choose_action(run_state, vocab):
     for i in range(HAND_CANDIDATE_START, HAND_CANDIDATE_START + n_candidates):
         assert obs.token_types[i] == TokenType.HAND_CANDIDATE
         assert obs.attention_mask[i] == 1
+
+
+def test_ante_one_play_candidates_expose_raw_chip_pace(run_state, vocab):
+    tok = Tokenizer(vocab=vocab)
+    round_score = 40
+    obs = tok.tokenize(run_state, SubPhase.CHOOSE_ACTION, round_score=round_score)
+    play_candidates, _ = generate_hand_candidates(run_state)
+    candidate = play_candidates[0]
+    blind_target = tok._blind_target(run_state)
+    required_per_hand = (blind_target - round_score) / run_state.current_round.hands_left
+
+    assert obs.tokens[HAND_CANDIDATE_START, 3] == int(sign_log(candidate.raw_score) * 10.0)
+    assert obs.tokens[HAND_CANDIDATE_START, 4] == int(
+        min(candidate.raw_score / required_per_hand * 10.0, 255.0)
+    )
 
 
 def test_hand_candidates_not_emitted_in_other_phases(run_state, vocab):

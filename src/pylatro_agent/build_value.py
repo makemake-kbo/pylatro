@@ -498,7 +498,12 @@ def _main_effect(
     if not matches:
         return index, "hand_condition"
 
-    x_mult = _number(joker.get("x_mult"), _number(joker.get("base_x_mult"), 1.0))
+    x_mult = _number(joker.get("x_mult"), 1.0)
+    # Some static Xmult Jokers (notably Cavendish) store the scoring value in
+    # config.extra while their generic live x_mult field remains at 1.  The
+    # captured base value is the effective fallback in that representation.
+    if x_mult <= 1.0:
+        x_mult = _number(joker.get("base_x_mult"), 1.0)
     if x_mult > 1.0:
         state.mult *= x_mult
         state.x_mult *= x_mult
@@ -775,6 +780,30 @@ def estimate_build_value(
         modeled_effects=modeled_effects,
         unmodeled_effects=unmodeled_effects,
         channels=full.channels,
+    )
+
+
+def estimate_representative_score(
+    info: Mapping[str, Any],
+    jokers: Sequence[Mapping[str, Any]] | None = None,
+) -> float:
+    """Score one ordered build without the leave-one-out marginal passes.
+
+    Action masking needs to compare every reachable final Joker order.  The
+    ordinary build evaluator also computes one counterfactual per owned Joker,
+    which is useful for diagnostics but unnecessarily expensive for a mask.
+    This uses the identical representative hand and score pass while returning
+    only the order-sensitive score.
+    """
+    owned = tuple(jokers if jokers is not None else (info.get("joker_details") or ()))
+    hand_type, hand_detail = _representative_hand(info)
+    return float(
+        _score_pass(
+            info,
+            owned,
+            hand_type=hand_type,
+            hand_detail=hand_detail,
+        ).score
     )
 
 

@@ -54,6 +54,41 @@ def test_choose_action_mask(hand_play_state):
     assert mask.sum() >= 2
 
 
+def test_non_improving_joker_reorders_are_masked(hand_play_state):
+    add_joker(hand_play_state, "j_joker")
+    add_joker(hand_play_state, "j_sly")
+
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+    moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
+
+    assert moves.sum() == 0
+
+
+def test_only_score_improving_joker_reorders_are_unmasked(hand_play_state):
+    # Flat mult should resolve before Cavendish's Xmult. The mask exposes one
+    # canonical atomic move rather than duplicate actions for the same order.
+    add_joker(hand_play_state, "j_cavendish")
+    add_joker(hand_play_state, "j_joker")
+
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+    improving = encode_action(ActionType.MOVE_JOKER, 0, 1)
+    equivalent = encode_action(ActionType.MOVE_JOKER, 1, 0)
+
+    moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
+    assert moves.sum() == 1
+    assert mask[improving] or mask[equivalent]
+
+
+def test_joker_reorders_are_hidden_in_shop(hand_play_state):
+    add_joker(hand_play_state, "j_cavendish")
+    add_joker(hand_play_state, "j_joker")
+
+    mask = compute_action_mask(hand_play_state, SubPhase.SHOP)
+    moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
+
+    assert moves.sum() == 0
+
+
 def test_choose_action_subset_ranges_are_bounded(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 

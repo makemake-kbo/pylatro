@@ -311,6 +311,19 @@ def test_live_hologram_xmult_is_used() -> None:
     assert scaled.joker_marginal_score_ratios[0] > 1.7
 
 
+def test_static_base_xmult_fallback_preserves_joker_order() -> None:
+    cavendish = joker("j_cavendish", name="Cavendish", base_x_mult=3.0, x_mult=1.0)
+    additive = joker("j_joker", name="Joker", mult=4.0)
+    early_xmult = estimate_build_value(
+        info([card("8", "Clubs") for _ in range(52)], [cavendish, additive])
+    )
+    late_xmult = estimate_build_value(
+        info([card("8", "Clubs") for _ in range(52)], [additive, cavendish])
+    )
+
+    assert late_xmult.representative_score_per_hand > early_xmult.representative_score_per_hand
+
+
 def test_joker_edition_order_and_debuff_are_modeled() -> None:
     poly = joker("j_poly", edition={"polychrome": True})
     additive = joker("j_add", mult=10)

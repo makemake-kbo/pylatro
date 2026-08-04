@@ -233,16 +233,62 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
 
     # Leave always valid
     mask[AR.SHOP_LEAVE] = 1
-    _mask_joker_moves(mask, state)
+    # Joker order only affects hand scoring. Defer any useful reorder until a
+    # concrete hand is visible instead of exposing shop-time permutation loops.
 
 
 def _mask_joker_moves(mask: np.ndarray, state: RunState) -> None:
     count = min(len(state.jokers), MAX_JOKER_SLOTS)
-    for source in range(count):
-        for destination in range(count):
-            if source != destination:
-                compressed = destination - (destination > source)
-                mask[int(ActionRange.MOVE_JOKER_START) + source * (MAX_JOKER_SLOTS - 1) + compressed] = 1
+    if count < 2:
+        return
+
+    # Joker moves are atomic moves to a final slot, so a neutral intermediate
+    # permutation is never required.  Exposing every legal permutation gave
+    # PPO a large family of no-progress actions that it repeatedly cycled
+    # through despite an escalating reward penalty.  Keep only moves whose
+    # final order improves the same analytic representative score used by the
+    # reward diagnostic.
+    from .heuristic import HeuristicAgent
+
+    candidate_moves: set[tuple[int, int]] = set()
+    for target in HeuristicAgent()._joker_order_candidates(state, count):
+        if target == tuple(range(count)):
+            continue
+        destination = next(index for index, wanted in enumerate(target) if index != wanted)
+        source = target[destination]
+        candidate_moves.add((source, destination))
+    if not candidate_moves:
+        return
+
+    try:
+        from .build_value import estimate_representative_score
+        from .shop_eval import capture_build_features
+
+        build_info = capture_build_features(state)
+        joker_details = tuple(build_info.get("joker_details") or ())
+        baseline = estimate_representative_score(build_info, joker_details)
+        tolerance = max(abs(baseline) * 1e-6, 1e-6)
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        # Legality must fail open for the small, score-relevant candidate set
+        # if a novel card state cannot be represented by the analytic scorer.
+        for source, destination in candidate_moves:
+            mask[_joker_move_action(source, destination)] = 1
+        return
+
+    for source, destination in candidate_moves:
+        reordered = list(joker_details)
+        reordered.insert(destination, reordered.pop(source))
+        try:
+            candidate = estimate_representative_score(build_info, reordered)
+        except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+            candidate = baseline + tolerance * 2.0
+        if candidate > baseline + tolerance:
+            mask[_joker_move_action(source, destination)] = 1
+
+
+def _joker_move_action(source: int, destination: int) -> int:
+    compressed = destination - (destination > source)
+    return int(ActionRange.MOVE_JOKER_START) + source * (MAX_JOKER_SLOTS - 1) + compressed
 
 
 def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:

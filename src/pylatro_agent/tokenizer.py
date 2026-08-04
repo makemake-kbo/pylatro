@@ -240,7 +240,14 @@ class Tokenizer:
             )
             for rank_slot, candidate in enumerate(all_candidates[:HAND_CANDIDATE_MAX]):
                 pos = HAND_CANDIDATE_START + rank_slot
-                self._encode_hand_candidate(tokens, pos, candidate, rank_slot, state)
+                self._encode_hand_candidate(
+                    tokens,
+                    pos,
+                    candidate,
+                    rank_slot,
+                    state,
+                    round_score,
+                )
                 token_types[pos] = TokenType.HAND_CANDIDATE
                 attn_mask[pos] = 1
 
@@ -514,12 +521,26 @@ class Tokenizer:
         candidate: HandCandidate,
         rank_slot: int,
         state: RunState,
+        round_score: int,
     ) -> None:
+        score_feature = candidate.estimated_score
+        coverage_feature = candidate.blind_ratio
+        if state.round_resets.ante == 1 and candidate.kind == "play":
+            # In ante 1, immediate bankable chips matter more than projected
+            # build scaling. Reuse the checkpoint-compatible score/coverage
+            # channels so the policy sees raw chips and whether this play is on
+            # pace to clear with its remaining hands.
+            blind_target = float(self._blind_target(state))
+            remaining_score = max(blind_target - max(float(round_score), 0.0), 0.0)
+            required_per_hand = remaining_score / max(state.current_round.hands_left, 1)
+            score_feature = candidate.raw_score
+            coverage_feature = candidate.raw_score / max(required_per_hand, 1.0)
+
         tokens[pos, 0] = 1 if candidate.kind == "play" else 2
         tokens[pos, 1] = HAND_NAME_TO_ID.get(candidate.hand_name, 0)
         tokens[pos, 2] = len(candidate.indices)
-        tokens[pos, 3] = int(min(max(sign_log(candidate.estimated_score) * 10.0, -255.0), 255.0))
-        tokens[pos, 4] = int(min(max(candidate.blind_ratio * 10.0, 0.0), 255.0))
+        tokens[pos, 3] = int(min(max(sign_log(score_feature) * 10.0, -255.0), 255.0))
+        tokens[pos, 4] = int(min(max(coverage_feature * 10.0, 0.0), 255.0))
         for i in range(5):
             tokens[pos, 5 + i] = candidate.indices[i] + 1 if i < len(candidate.indices) else 0
         tokens[pos, 10] = rank_slot + 1

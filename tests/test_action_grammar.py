@@ -27,6 +27,7 @@ from pylatro_agent.constants import (
     NUM_ACTIONS,
     SCALAR_DIM,
     TOKEN_DIM,
+    ActionRange,
 )
 from pylatro_agent.subset_actions import consumable_subset_index, subset_index
 
@@ -535,6 +536,58 @@ def test_mixture_sampling_produces_non_candidate_plays():
         if s == dist_action:
             non_cand_count += 1
     assert non_cand_count >= 1, "eps=0.1 should occasionally sample the non-candidate play"
+
+
+def test_mode_respects_pure_ar_with_candidates_present():
+    output, action_mask, tokens, candidate_action, distractor_action = _hand_state_with_candidates_and_distractor()
+    # Make the AR head decisively prefer the two-card distractor while the
+    # candidate head still exposes only the three-card candidate.
+    output.hand_count_logits[0, 0] = torch.tensor([-10.0, 10.0, -10.0, -10.0, -10.0])
+    output.hand_card_logits[0, 0] = -10.0
+    output.hand_card_logits[0, 0, 1] = 10.0
+    output.hand_card_logits[0, 0, 3] = 10.0
+
+    candidate_dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.0)
+    ar_dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=1.0)
+
+    assert candidate_dist.mode().item() == candidate_action
+    assert ar_dist.mode().item() == distractor_action
+
+
+def test_mode_maximizes_joint_flat_probability_not_macro_probability():
+    action_mask = torch.zeros(1, NUM_ACTIONS)
+    buy_a = int(ActionRange.SHOP_BUY_START)
+    buy_b = buy_a + 1
+    leave = int(ActionRange.SHOP_LEAVE)
+    action_mask[0, buy_a] = 1
+    action_mask[0, buy_b] = 1
+    action_mask[0, leave] = 1
+
+    output = _blank_output(batch_size=1)
+    output.macro_logits[0] = -10.0
+    output.macro_logits[0, ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_BUY]] = 1.0
+    output.macro_logits[0, ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE]] = 0.8
+    output.shop_buy_logits[0, :2] = 0.0
+
+    dist = ActionGrammarDistribution(output, action_mask)
+    mode = dist.mode()
+
+    # SHOP_BUY has the larger macro probability, but splits it evenly across
+    # two actions; deterministic SHOP_LEAVE is the true flat mode.
+    assert mode.item() == leave
+    assert dist.max_prob().item() == pytest.approx(dist.log_prob(mode).exp().item())
+
+
+def test_max_prob_reuses_exact_mode_computation():
+    output, action_mask, tokens, _candidate_action, _distractor_action = _hand_state_with_candidates_and_distractor()
+    dist = ActionGrammarDistribution(output, action_mask, tokens=tokens, hand_ar_mixture_eps=0.1)
+
+    mode = dist.mode()
+    cached = dist._flat_mode_cache
+
+    assert cached is not None
+    assert dist.max_prob().item() == pytest.approx(dist.log_prob(mode).exp().item())
+    assert dist._flat_mode_cache is cached
 
 
 def test_mixture_log_prob_has_gradient_to_both_components():

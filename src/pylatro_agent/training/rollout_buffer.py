@@ -73,13 +73,9 @@ class RolloutBuffer:
         self.history_joker_masks = np.zeros(
             (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int8
         )
-        self.history_event_masks = np.zeros(
-            (self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int8
-        )
+        self.history_event_masks = np.zeros((self.total_size, HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int8)
         self.history_round_masks = np.zeros((self.total_size, HISTORY_ROUNDS), dtype=np.int8)
-        self.history_omitted = np.zeros(
-            (self.total_size, HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32
-        )
+        self.history_omitted = np.zeros((self.total_size, HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32)
 
         # Pre-allocate action/value arrays, shape: (total,)
         self.actions = np.zeros(self.total_size, dtype=np.int64)
@@ -245,7 +241,7 @@ class RolloutBuffer:
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.advantages[start:start + n])
+            valid.append(self.advantages[start : start + n])
         if not valid:
             return
         flat = np.concatenate(valid)
@@ -257,21 +253,25 @@ class RolloutBuffer:
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            normalized = (self.advantages[start:start + n] - mean) * scale
+            normalized = (self.advantages[start : start + n] - mean) * scale
             if clip_sigma > 0.0:
                 np.clip(normalized, -clip_sigma, clip_sigma, out=normalized)
-            self.advantages[start:start + n] = normalized
+            self.advantages[start : start + n] = normalized
 
     def get_batches(
         self,
         batch_size: int,
         device: torch.device,
         pin_memory: bool = False,
+        micro_batch_size: int | None = None,
     ) -> list[dict[str, torch.Tensor]]:
         """Return shuffled mini-batches as tensors.
 
         Uses numpy fancy indexing on pre-allocated arrays, no Python list
-        comprehensions over individual transitions.
+        comprehensions over individual transitions. When ``micro_batch_size``
+        is set, each logical ``batch_size`` group is split independently and
+        annotated so gradient accumulation can weight a short final microbatch
+        exactly instead of silently dropping or underweighting samples.
         """
         # Determine valid range (in case envs didn't all fill rollout_length)
         valid_indices = []
@@ -286,48 +286,57 @@ class RolloutBuffer:
 
         shuffled = np.random.permutation(all_indices)
 
+        physical_size = batch_size if micro_batch_size is None else max(1, min(micro_batch_size, batch_size))
         batches = []
-        for start in range(0, n, batch_size):
-            end = min(start + batch_size, n)
-            idx = shuffled[start:end]
+        for logical_start in range(0, n, batch_size):
+            logical_end = min(logical_start + batch_size, n)
+            logical_size = logical_end - logical_start
+            for start in range(logical_start, logical_end, physical_size):
+                end = min(start + physical_size, logical_end)
+                idx = shuffled[start:end]
 
-            batch = {
-                "tokens": torch.as_tensor(self.tokens[idx].astype(np.int64), device=device),
-                "token_types": torch.as_tensor(self.token_types[idx].astype(np.int64), device=device),
-                "scalars": torch.as_tensor(self.scalars[idx], device=device),
-                "attention_mask": torch.as_tensor(self.attention_masks[idx].astype(np.int64), device=device),
-                "action_mask": torch.as_tensor(self.action_masks[idx], device=device),
-                "history_events": torch.as_tensor(self.history_events[idx].astype(np.int64), device=device),
-                "history_event_features": torch.as_tensor(self.history_event_features[idx], device=device),
-                "history_cards": torch.as_tensor(self.history_cards[idx].astype(np.int64), device=device),
-                "history_card_mask": torch.as_tensor(
-                    self.history_card_masks[idx].astype(np.int64), device=device
-                ),
-                "history_jokers": torch.as_tensor(self.history_jokers[idx].astype(np.int64), device=device),
-                "history_joker_mask": torch.as_tensor(
-                    self.history_joker_masks[idx].astype(np.int64), device=device
-                ),
-                "history_event_mask": torch.as_tensor(
-                    self.history_event_masks[idx].astype(np.int64), device=device
-                ),
-                "history_round_mask": torch.as_tensor(
-                    self.history_round_masks[idx].astype(np.int64), device=device
-                ),
-                "history_omitted": torch.as_tensor(self.history_omitted[idx], device=device),
-                "actions": torch.as_tensor(self.actions[idx], device=device),
-                "old_log_probs": torch.as_tensor(self.log_probs[idx], device=device),
-                "advantages": torch.as_tensor(self.advantages[idx], device=device),
-                "returns": torch.as_tensor(self.returns[idx], device=device),
-                "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
-                "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
-                "win_probability_target": torch.as_tensor(self.win_probability_targets[idx], device=device),
-                "win_probability_mask": torch.as_tensor(self.win_probability_masks[idx], device=device),
-            }
+                batch = {
+                    "tokens": torch.as_tensor(self.tokens[idx].astype(np.int64), device=device),
+                    "token_types": torch.as_tensor(self.token_types[idx].astype(np.int64), device=device),
+                    "scalars": torch.as_tensor(self.scalars[idx], device=device),
+                    "attention_mask": torch.as_tensor(self.attention_masks[idx].astype(np.int64), device=device),
+                    "action_mask": torch.as_tensor(self.action_masks[idx], device=device),
+                    "history_events": torch.as_tensor(self.history_events[idx].astype(np.int64), device=device),
+                    "history_event_features": torch.as_tensor(self.history_event_features[idx], device=device),
+                    "history_cards": torch.as_tensor(self.history_cards[idx].astype(np.int64), device=device),
+                    "history_card_mask": torch.as_tensor(self.history_card_masks[idx].astype(np.int64), device=device),
+                    "history_jokers": torch.as_tensor(self.history_jokers[idx].astype(np.int64), device=device),
+                    "history_joker_mask": torch.as_tensor(
+                        self.history_joker_masks[idx].astype(np.int64), device=device
+                    ),
+                    "history_event_mask": torch.as_tensor(
+                        self.history_event_masks[idx].astype(np.int64), device=device
+                    ),
+                    "history_round_mask": torch.as_tensor(
+                        self.history_round_masks[idx].astype(np.int64), device=device
+                    ),
+                    "history_omitted": torch.as_tensor(self.history_omitted[idx], device=device),
+                    "actions": torch.as_tensor(self.actions[idx], device=device),
+                    "old_log_probs": torch.as_tensor(self.log_probs[idx], device=device),
+                    "advantages": torch.as_tensor(self.advantages[idx], device=device),
+                    "returns": torch.as_tensor(self.returns[idx], device=device),
+                    "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
+                    "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
+                    "win_probability_target": torch.as_tensor(self.win_probability_targets[idx], device=device),
+                    "win_probability_mask": torch.as_tensor(self.win_probability_masks[idx], device=device),
+                }
 
-            if pin_memory and device.type == "cpu":
-                batch = {k: v.pin_memory() for k, v in batch.items()}
+                if pin_memory and device.type == "cpu":
+                    batch = {k: v.pin_memory() for k, v in batch.items()}
 
-            batches.append(batch)
+                batch["_logical_group_start"] = torch.tensor(start == logical_start, device=device)
+                batch["_logical_group_end"] = torch.tensor(end == logical_end, device=device)
+                batch["_loss_weight"] = torch.tensor(
+                    (end - start) / logical_size,
+                    dtype=torch.float32,
+                    device=device,
+                )
+                batches.append(batch)
         return batches
 
     @property
@@ -337,7 +346,7 @@ class RolloutBuffer:
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.returns[start:start + n])
+            valid.append(self.returns[start : start + n])
         return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
 
     @property
@@ -347,7 +356,7 @@ class RolloutBuffer:
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.advantages[start:start + n])
+            valid.append(self.advantages[start : start + n])
         return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
 
     @property
@@ -357,5 +366,5 @@ class RolloutBuffer:
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.values[start:start + n])
+            valid.append(self.values[start : start + n])
         return np.concatenate(valid) if valid else np.array([], dtype=np.float32)

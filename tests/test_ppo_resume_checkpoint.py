@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from pylatro_agent import checkpoint as ckpt
+from pylatro_agent.constants import TOKENIZER_SEMANTICS
 from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
     PPOConfig,
@@ -75,6 +76,7 @@ def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
         active_reward_config=RewardConfig(),
     )
     assert blob["checkpoint_format"] == ckpt.PPO_CHECKPOINT_FORMAT
+    assert blob["tokenizer_semantics"] == TOKENIZER_SEMANTICS
     assert blob["update_count"] == 42
     assert blob["total_steps"] == 42 * 16 * 256
     assert blob["planned_updates"] == 300
@@ -144,6 +146,35 @@ def test_weights_only_checkpoint_rejected_for_resume(tmp_path) -> None:
             "cpu",
             active_reward_config=RewardConfig(),
         )
+
+
+def test_known_faulty_v6_candidate_semantics_checkpoint_is_rejected(tmp_path) -> None:
+    path = tmp_path / "faulty_v6.pt"
+    torch.save(
+        {
+            "tokenizer_version": 6,
+            "reward_model_version": 11,
+            "state_dict": _tiny_model().state_dict(),
+        },
+        path,
+    )
+
+    with pytest.raises(RuntimeError, match="known faulty tokenizer-v6"):
+        ckpt.load_checkpoint_payload(path, "cpu")
+
+
+def test_historical_unmarked_good_v6_checkpoint_remains_loadable(tmp_path) -> None:
+    path = tmp_path / "historical_v6.pt"
+    torch.save(
+        {
+            "tokenizer_version": 6,
+            "reward_model_version": 10,
+            "state_dict": _tiny_model().state_dict(),
+        },
+        path,
+    )
+
+    assert "state_dict" in ckpt.load_checkpoint_payload(path, "cpu")
 
 
 def test_strict_resume_rejects_reward_fingerprint_mismatch(tmp_path) -> None:

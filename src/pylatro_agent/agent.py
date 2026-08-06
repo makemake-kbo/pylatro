@@ -93,7 +93,8 @@ class BalatroAgent(nn.Module):
         history_omitted: torch.Tensor | None = None,
         temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
-    ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
+        return_raw_outputs: bool = False,
+    ) -> tuple[ActionGrammarDistribution | dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         """Return the structured policy distribution and value predictions."""
         eps = self.config.hand_ar_mixture_eps if hand_ar_mixture_eps is None else hand_ar_mixture_eps
         if history_events is not None and history_round_mask is not None:
@@ -115,6 +116,26 @@ class BalatroAgent(nn.Module):
         x = self.backbone(x, padding_mask=(attention_mask == 0))
         grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
         value_dict = self.value_head(x, attention_mask)
+        if return_raw_outputs:
+            # DataParallel can gather nested tensor containers, but not an
+            # ActionGrammarDistribution (which also closes over the unsharded
+            # action mask/tokens). Reconstruct the distribution after gather.
+            return {
+                "macro_logits": grammar_output.macro_logits,
+                "hand_count_logits": grammar_output.hand_count_logits,
+                "hand_card_logits": grammar_output.hand_card_logits,
+                "candidate_play_logits": grammar_output.candidate_play_logits,
+                "candidate_discard_logits": grammar_output.candidate_discard_logits,
+                "consumable_slot_logits": grammar_output.consumable_slot_logits,
+                "consumable_count_logits": grammar_output.consumable_count_logits,
+                "consumable_card_logits": grammar_output.consumable_card_logits,
+                "consumable_joker_logits": grammar_output.consumable_joker_logits,
+                "shop_buy_logits": grammar_output.shop_buy_logits,
+                "shop_sell_joker_logits": grammar_output.shop_sell_joker_logits,
+                "shop_sell_consumable_logits": grammar_output.shop_sell_consumable_logits,
+                "pack_claim_logits": grammar_output.pack_claim_logits,
+                "joker_move_logits": grammar_output.joker_move_logits,
+            }, value_dict
         return (
             ActionGrammarDistribution(
                 grammar_output,

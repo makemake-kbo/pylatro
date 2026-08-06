@@ -9,6 +9,7 @@ from pylatro import load_game_data
 from pylatro_agent.action_grammar import NUM_GRAMMAR_ACTIONS, ActionGrammarDistribution
 from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
+from pylatro_agent.training.ppo import _grammar_distribution
 from pylatro_agent.vocab import build_vocab
 
 
@@ -67,6 +68,31 @@ def test_named_distribution_entry_point_matches_forward_contract(
     assert isinstance(distribution, ActionGrammarDistribution)
     assert distribution.sample().shape == (3,)
     assert values["expected_score"].shape == (3,)
+
+
+def test_data_parallel_path_uses_tensor_outputs_and_rebuilds_distribution(
+    model: BalatroAgent,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wrapped = torch.nn.DataParallel(model)
+    tokens, token_types, scalars, attention_mask, action_mask = _inputs(2)
+    batch = {
+        "tokens": tokens,
+        "token_types": token_types,
+        "scalars": scalars,
+        "attention_mask": attention_mask,
+        "action_mask": action_mask,
+    }
+
+    def fail_if_unwrapped(*_args, **_kwargs):
+        raise AssertionError("DataParallel path bypassed model.forward")
+
+    monkeypatch.setattr(model, "action_distribution", fail_if_unwrapped)
+    distribution, values = _grammar_distribution(wrapped, batch)
+
+    assert isinstance(distribution, ActionGrammarDistribution)
+    assert distribution.action_type_probs.shape == (2, NUM_GRAMMAR_ACTIONS)
+    assert values["expected_score"].shape == (2,)
 
 
 def test_removed_flat_heads_are_not_registered(model: BalatroAgent) -> None:

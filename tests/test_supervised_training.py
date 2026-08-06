@@ -15,6 +15,8 @@ import torch
 
 from pylatro import load_game_data
 from pylatro_agent.action import ActionType, encode_action
+from pylatro_agent.action_grammar import ActionGrammarDistribution
+from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.tokenizer import Tokenizer
@@ -30,6 +32,7 @@ from pylatro_agent.training.supervised import (
     _action_type_dataset_stats,
     _collate_batch,
     _discounted_returns,
+    _grammar_distribution,
     train_supervised,
 )
 from pylatro_agent.vocab import build_vocab
@@ -53,6 +56,33 @@ def tokenizer(vocab):
 @pytest.fixture(scope="module")
 def agent():
     return HeuristicAgent()
+
+
+def test_supervised_data_parallel_uses_wrapped_forward(
+    game_data,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = BalatroAgent(
+        AgentConfig(d_model=32, n_layers=1, n_heads=4, d_ff=64, dropout=0.0),
+        build_vocab(game_data),
+    )
+    wrapped = torch.nn.DataParallel(model)
+    batch = {
+        "tokens": torch.zeros(2, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long),
+        "token_types": torch.zeros(2, MAX_SEQ_LEN, dtype=torch.long),
+        "scalars": torch.zeros(2, SCALAR_DIM),
+        "attention_mask": torch.ones(2, MAX_SEQ_LEN, dtype=torch.long),
+        "action_mask": torch.ones(2, NUM_ACTIONS),
+    }
+
+    def fail_if_unwrapped(*_args, **_kwargs):
+        raise AssertionError("supervised DataParallel path bypassed forward")
+
+    monkeypatch.setattr(model, "action_distribution", fail_if_unwrapped)
+    distribution, values = _grammar_distribution(wrapped, batch)
+
+    assert isinstance(distribution, ActionGrammarDistribution)
+    assert values["expected_score"].shape == (2,)
 
 
 def _dummy_obs() -> dict[str, np.ndarray]:

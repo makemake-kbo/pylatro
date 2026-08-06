@@ -41,6 +41,8 @@ from .subset_actions import (
 def compute_action_mask(
     state: RunState,
     sub_phase: SubPhase,
+    *,
+    forbidden_joker_move: tuple[int, int] | None = None,
 ) -> np.ndarray:
     """Return a binary mask of shape (NUM_ACTIONS,) where 1 = valid."""
     mask = np.zeros(NUM_ACTIONS, dtype=np.int8)
@@ -49,7 +51,7 @@ def compute_action_mask(
         _mask_blind_select(mask, state)
 
     elif sub_phase == SubPhase.CHOOSE_ACTION:
-        _mask_choose_action(mask, state)
+        _mask_choose_action(mask, state, forbidden_joker_move=forbidden_joker_move)
 
     elif sub_phase == SubPhase.SHOP:
         _mask_shop(mask, state)
@@ -75,7 +77,12 @@ def _mask_blind_select(mask: np.ndarray, state: RunState) -> None:
         mask[AR.BLIND_REROLL] = 1
 
 
-def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
+def _mask_choose_action(
+    mask: np.ndarray,
+    state: RunState,
+    *,
+    forbidden_joker_move: tuple[int, int] | None = None,
+) -> None:
     AR = ActionRange
     hand_size = len(state.hand_cards)
     forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
@@ -89,7 +96,7 @@ def _mask_choose_action(mask: np.ndarray, state: RunState) -> None:
         mask[AR.DISCARD_SUBSET_START : AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     _mask_consumable_flat(mask, state)
-    _mask_joker_moves(mask, state)
+    _mask_joker_moves(mask, state, forbidden_joker_move=forbidden_joker_move)
 
 
 def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray) -> np.ndarray:
@@ -237,17 +244,22 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
     # concrete hand is visible instead of exposing shop-time permutation loops.
 
 
-def _mask_joker_moves(mask: np.ndarray, state: RunState) -> None:
+def _mask_joker_moves(
+    mask: np.ndarray,
+    state: RunState,
+    *,
+    forbidden_joker_move: tuple[int, int] | None = None,
+) -> None:
     count = min(len(state.jokers), MAX_JOKER_SLOTS)
     if count < 2:
         return
 
-    # Joker moves are atomic moves to a final slot, so a neutral intermediate
-    # permutation is never required.  Exposing every legal permutation gave
-    # PPO a large family of no-progress actions that it repeatedly cycled
-    # through despite an escalating reward penalty.  Keep only moves whose
-    # final order improves the same analytic representative score used by the
-    # reward diagnostic.
+    # Keep the action family bounded to the first canonical step toward each
+    # score-relevant target order.  Do not require that step to improve an
+    # approximate one-step score: copy-joker layouts can need a neutral move
+    # before the profitable final move.  Strategic desirability belongs in the
+    # policy/reward; the mask only preserves legal reachability while avoiding
+    # the full permutation action family that previously formed reorder loops.
     from .heuristic import HeuristicAgent
 
     candidate_moves: set[tuple[int, int]] = set()
@@ -257,33 +269,10 @@ def _mask_joker_moves(mask: np.ndarray, state: RunState) -> None:
         destination = next(index for index, wanted in enumerate(target) if index != wanted)
         source = target[destination]
         candidate_moves.add((source, destination))
-    if not candidate_moves:
-        return
-
-    try:
-        from .build_value import estimate_representative_score
-        from .shop_eval import capture_build_features
-
-        build_info = capture_build_features(state)
-        joker_details = tuple(build_info.get("joker_details") or ())
-        baseline = estimate_representative_score(build_info, joker_details)
-        tolerance = max(abs(baseline) * 1e-6, 1e-6)
-    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
-        # Legality must fail open for the small, score-relevant candidate set
-        # if a novel card state cannot be represented by the analytic scorer.
-        for source, destination in candidate_moves:
-            mask[_joker_move_action(source, destination)] = 1
-        return
-
     for source, destination in candidate_moves:
-        reordered = list(joker_details)
-        reordered.insert(destination, reordered.pop(source))
-        try:
-            candidate = estimate_representative_score(build_info, reordered)
-        except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
-            candidate = baseline + tolerance * 2.0
-        if candidate > baseline + tolerance:
-            mask[_joker_move_action(source, destination)] = 1
+        if forbidden_joker_move == (source, destination):
+            continue
+        mask[_joker_move_action(source, destination)] = 1
 
 
 def _joker_move_action(source: int, destination: int) -> int:

@@ -10,6 +10,12 @@ from enum import IntEnum, StrEnum
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
 TOKENIZER_VERSION = 6
+# Stable semantic identity within tokenizer-v6. Commit 100fbf0 accidentally
+# reused v6 while remapping candidate columns 3/4; full checkpoints now stamp
+# this marker so that shape-compatible but behavior-incompatible weights fail
+# loudly. Historical good v6 checkpoints predate the marker and remain
+# loadable, except for the known reward-model-11 faulty generation.
+TOKENIZER_SEMANTICS = "v6_projected_score_blind_ratio"
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160

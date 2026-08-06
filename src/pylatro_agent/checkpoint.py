@@ -22,7 +22,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from .constants import TOKENIZER_VERSION
+from .constants import TOKENIZER_SEMANTICS, TOKENIZER_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,13 @@ def save_checkpoint(
     path = Path(path)
     payload = {
         "tokenizer_version": TOKENIZER_VERSION,
+        "tokenizer_semantics": TOKENIZER_SEMANTICS,
         "state_dict": model.state_dict(),
     }
     if extra:
         payload.update(extra)
+    payload["tokenizer_version"] = TOKENIZER_VERSION
+    payload["tokenizer_semantics"] = TOKENIZER_SEMANTICS
     torch.save(payload, path)
     return path
 
@@ -89,7 +92,29 @@ def load_checkpoint_payload(
             "Loading tokenizer_version=5 checkpoint into append-only tokenizer_version=6; "
             "the new immediate-risk embedding remains freshly initialized."
         )
+    _validate_tokenizer_semantics(blob, path)
     return blob
+
+
+def _validate_tokenizer_semantics(blob: dict[str, Any], path: str | Path) -> None:
+    """Reject known shape-compatible tokenizer semantic mismatches.
+
+    Old weights-only v6 files contain no semantic marker and generally cannot
+    be distinguished. Full PPO checkpoints from the faulty 100fbf0 generation
+    can be identified by reward_model_version=11 and are rejected explicitly.
+    """
+    saved_version = blob.get("tokenizer_version")
+    saved_semantics = blob.get("tokenizer_semantics")
+    if saved_semantics is not None and saved_semantics != TOKENIZER_SEMANTICS:
+        raise RuntimeError(
+            f"Checkpoint {path} uses tokenizer_semantics={saved_semantics!r}, but the active "
+            f"semantics are {TOKENIZER_SEMANTICS!r}. Candidate token meanings are incompatible."
+        )
+    if saved_version == 6 and saved_semantics is None and blob.get("reward_model_version") == 11:
+        raise RuntimeError(
+            f"Checkpoint {path} is a known faulty tokenizer-v6/reward-model-11 artifact from "
+            "the 100fbf0 candidate-field remap. Use a bef33f6/6060673-era checkpoint instead."
+        )
 
 
 def capture_rng_states() -> dict[str, Any]:
@@ -161,6 +186,7 @@ def save_ppo_checkpoint(
     path = Path(path)
     payload: dict[str, Any] = {
         "tokenizer_version": TOKENIZER_VERSION,
+        "tokenizer_semantics": TOKENIZER_SEMANTICS,
         "checkpoint_format": PPO_CHECKPOINT_FORMAT,
         "state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
@@ -194,6 +220,8 @@ def save_ppo_checkpoint(
     # Reserved reward metadata is always derived from the active configuration;
     # callers cannot override it through ``extra``.
     payload.update(reward_checkpoint_metadata(reward_config))
+    payload["tokenizer_version"] = TOKENIZER_VERSION
+    payload["tokenizer_semantics"] = TOKENIZER_SEMANTICS
     torch.save(payload, path)
     return path
 
@@ -239,6 +267,7 @@ def load_ppo_resume_payload(
             f"{TOKENIZER_VERSION}. Observation format has changed; "
             "retrain or pin the tokenizer version."
         )
+    _validate_tokenizer_semantics(blob, path)
 
     from .reward import REWARD_MODEL_VERSION, reward_config_fingerprint
 

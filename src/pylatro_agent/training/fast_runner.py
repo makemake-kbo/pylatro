@@ -37,6 +37,7 @@ from ..constants import (
 )
 from ..history import PlayHistoryTracker, blind_history_key
 from ..masks import _mask_debuffed_plays
+from ..masks import _mask_joker_moves as _mask_bounded_joker_moves
 from ..subset_actions import (
     consumable_subset_indices,
     legal_consumable_subset_mask,
@@ -53,6 +54,7 @@ class FastRunner:
     __slots__ = (
         "_ctrl",
         "_done",
+        "_forbidden_joker_move",
         "_history",
         "_mask",
         "_max_ante",
@@ -76,6 +78,7 @@ class FastRunner:
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
+        self._forbidden_joker_move: tuple[int, int] | None = None
         self._history = PlayHistoryTracker()
         self._won: bool = False
         self._step_count: int = 0
@@ -134,7 +137,7 @@ class FastRunner:
         if sp == SubPhase.BLIND_SELECT:
             _mask_blind(m, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
-            _mask_action(m, state, AR)
+            _mask_action(m, state, AR, self._forbidden_joker_move)
         elif sp == SubPhase.SHOP:
             _mask_shop(m, state, AR)
         elif sp == SubPhase.BOOSTER_PACK:
@@ -194,13 +197,16 @@ class FastRunner:
         ctrl = self._ctrl
         state = self._state
         AR = ActionRange
+        is_joker_move = AR.MOVE_JOKER_START <= aid <= AR.MOVE_JOKER_END
+        if not is_joker_move:
+            self._forbidden_joker_move = None
 
         if aid == AR.BLIND_PLAY:
             blind_type = state.blind_on_deck or "Small"
             ctrl.select_blind(blind_type)
             self._history.start_round(blind_history_key(state))
             self._sub_phase = SubPhase.CHOOSE_ACTION
-            self._round_score = 0
+            self._round_score = ctrl.round_score
 
         elif aid == AR.BLIND_SKIP:
             skipped_key = (
@@ -229,7 +235,12 @@ class FastRunner:
                 round_score=self._round_score,
             )
             result = ctrl.play_selected(list(indices))
-            self._round_score += result.score.total
+            # The controller is authoritative: Mr. Bones can consume itself
+            # and reset the accumulated round score after a losing final hand.
+            # Incrementing our mirror would preserve a score the engine has
+            # deliberately cleared and hide the negative potential delta from
+            # fast_generate reward shaping.
+            self._round_score = ctrl.round_score
             self._history.finalize(
                 pending_history,
                 hand_type=result.score.hand_name,
@@ -312,6 +323,7 @@ class FastRunner:
             source, compressed = divmod(rel, MAX_JOKER_SLOTS - 1)
             destination = compressed + (compressed >= source)
             move_joker(state, source, destination)
+            self._forbidden_joker_move = (destination, source)
 
     def _progress_signature(self):
         state = self._state
@@ -346,7 +358,7 @@ def _mask_blind(m, state, AR):
 
 @cython.cfunc
 @cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int)
-def _mask_action(m, state, AR):
+def _mask_action(m, state, AR, forbidden_joker_move=None):
     _play_start = AR.PLAY_SUBSET_START
     _disc_start = AR.DISCARD_SUBSET_START
     hand_size = len(state.hand_cards)
@@ -367,7 +379,7 @@ def _mask_action(m, state, AR):
         else:
             m[_disc_start : _disc_start + n_subsets] = legal_subsets
     _mask_consumable_flat(m, state, AR)
-    _mask_joker_moves(m, state, AR)
+    _mask_joker_moves(m, state, forbidden_joker_move)
 
 
 @cython.cfunc
@@ -411,16 +423,10 @@ def _mask_shop(m, state, AR):
         m[_sell_cons + i] = 1
 
     m[_leave] = 1
-    _mask_joker_moves(m, state, AR)
 
 
-def _mask_joker_moves(m, state, AR):
-    count = min(len(state.jokers), MAX_JOKER_SLOTS)
-    for source in range(count):
-        for destination in range(count):
-            if source != destination:
-                compressed = destination - (destination > source)
-                m[AR.MOVE_JOKER_START + source * (MAX_JOKER_SLOTS - 1) + compressed] = 1
+def _mask_joker_moves(m, state, forbidden_joker_move=None):
+    _mask_bounded_joker_moves(m, state, forbidden_joker_move=forbidden_joker_move)
 
 
 @cython.cfunc

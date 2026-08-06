@@ -19,6 +19,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from pylatro import GameData, load_game_data
 
 from ..action import ActionType, decode_action
+from ..action_grammar import ActionGrammarDistribution, ActionGrammarOutput
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
 from ..constants import NUM_ACTIONS
@@ -84,23 +85,45 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
 
 
 def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor]):
-    """Return the structured policy distribution, unwrapping DataParallel if present."""
+    """Return the policy while keeping DataParallel on the actual forward path."""
     base_model = model.module if isinstance(model, nn.DataParallel) else model
+    history_kwargs = {
+        "history_events": batch.get("history_events"),
+        "history_event_features": batch.get("history_event_features"),
+        "history_cards": batch.get("history_cards"),
+        "history_card_mask": batch.get("history_card_mask"),
+        "history_jokers": batch.get("history_jokers"),
+        "history_joker_mask": batch.get("history_joker_mask"),
+        "history_event_mask": batch.get("history_event_mask"),
+        "history_round_mask": batch.get("history_round_mask"),
+        "history_omitted": batch.get("history_omitted"),
+    }
+    if isinstance(model, nn.DataParallel) and isinstance(base_model, BalatroAgent):
+        raw_output, value_dict = model(
+            batch["tokens"],
+            batch["token_types"],
+            batch["scalars"],
+            batch["attention_mask"],
+            batch["action_mask"],
+            return_raw_outputs=True,
+            **history_kwargs,
+        )
+        return (
+            ActionGrammarDistribution(
+                ActionGrammarOutput(**raw_output),
+                batch["action_mask"],
+                tokens=batch["tokens"],
+                hand_ar_mixture_eps=base_model.config.hand_ar_mixture_eps,
+            ),
+            value_dict,
+        )
     return base_model.action_distribution(
         batch["tokens"],
         batch["token_types"],
         batch["scalars"],
         batch["attention_mask"],
         batch["action_mask"],
-        history_events=batch.get("history_events"),
-        history_event_features=batch.get("history_event_features"),
-        history_cards=batch.get("history_cards"),
-        history_card_mask=batch.get("history_card_mask"),
-        history_jokers=batch.get("history_jokers"),
-        history_joker_mask=batch.get("history_joker_mask"),
-        history_event_mask=batch.get("history_event_mask"),
-        history_round_mask=batch.get("history_round_mask"),
-        history_omitted=batch.get("history_omitted"),
+        **history_kwargs,
     )
 
 
@@ -392,22 +415,12 @@ def _collate_batch(records: list[dict], device: torch.device, config: Supervised
             history_values("history_event_features"), dtype=torch.float32, device=device
         ),
         "history_cards": torch.tensor(history_values("history_cards"), dtype=torch.long, device=device),
-        "history_card_mask": torch.tensor(
-            history_values("history_card_mask"), dtype=torch.long, device=device
-        ),
+        "history_card_mask": torch.tensor(history_values("history_card_mask"), dtype=torch.long, device=device),
         "history_jokers": torch.tensor(history_values("history_jokers"), dtype=torch.long, device=device),
-        "history_joker_mask": torch.tensor(
-            history_values("history_joker_mask"), dtype=torch.long, device=device
-        ),
-        "history_event_mask": torch.tensor(
-            history_values("history_event_mask"), dtype=torch.long, device=device
-        ),
-        "history_round_mask": torch.tensor(
-            history_values("history_round_mask"), dtype=torch.long, device=device
-        ),
-        "history_omitted": torch.tensor(
-            history_values("history_omitted"), dtype=torch.float32, device=device
-        ),
+        "history_joker_mask": torch.tensor(history_values("history_joker_mask"), dtype=torch.long, device=device),
+        "history_event_mask": torch.tensor(history_values("history_event_mask"), dtype=torch.long, device=device),
+        "history_round_mask": torch.tensor(history_values("history_round_mask"), dtype=torch.long, device=device),
+        "history_omitted": torch.tensor(history_values("history_omitted"), dtype=torch.float32, device=device),
         "actions": torch.tensor(
             [r["action"] for r in records],
             dtype=torch.long,

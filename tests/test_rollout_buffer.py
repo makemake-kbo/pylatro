@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+import torch
 
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
@@ -113,3 +115,19 @@ def test_rollout_buffer_truncation_does_not_leak_gae_across_episode_boundary() -
     np.testing.assert_allclose(buffer.advantages[0], 1.3159475, rtol=1e-6)
     np.testing.assert_allclose(buffer.advantages[1], 1.295, rtol=1e-6)
 
+
+def test_microbatches_preserve_exact_logical_batch_and_partial_weight() -> None:
+    buffer = RolloutBuffer(num_envs=1, rollout_length=352)
+    buffer._step_counts[0] = 352
+
+    batches = buffer.get_batches(
+        352,
+        torch.device("cpu"),
+        micro_batch_size=64,
+    )
+
+    assert [batch["actions"].numel() for batch in batches] == [64, 64, 64, 64, 64, 32]
+    assert [bool(batch["_logical_group_start"]) for batch in batches] == [True, False, False, False, False, False]
+    assert [bool(batch["_logical_group_end"]) for batch in batches] == [False, False, False, False, False, True]
+    assert sum(float(batch["_loss_weight"]) for batch in batches) == pytest.approx(1.0)
+    assert float(batches[-1]["_loss_weight"]) == pytest.approx(32 / 352)

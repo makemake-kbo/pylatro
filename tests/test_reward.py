@@ -199,9 +199,7 @@ def test_state_potential_does_not_carry_completed_score_into_next_blind(sub_phas
     )
     no_stale_score = {**between_blinds, "round_score": 0}
 
-    assert state_potential(between_blinds, config) == pytest.approx(
-        state_potential(no_stale_score, config)
-    )
+    assert state_potential(between_blinds, config) == pytest.approx(state_potential(no_stale_score, config))
 
 
 def test_potential_shaping_uses_gamma_and_zero_terminal_potential() -> None:
@@ -488,7 +486,7 @@ def test_non_improving_move_joker_penalty_starts_strong_and_caps() -> None:
     assert repeated["joker_move"] == pytest.approx(-JOKER_MOVE_PENALTY_CAP)
 
 
-def test_ante1_chip_tempo_rewards_raw_score_and_scales() -> None:
+def test_ante1_chip_tempo_rewards_actual_blind_progress_and_scales() -> None:
     state = _state(ante=1)
     config = RewardConfig(dense_reward_scale=0.25)
     components = default_reward_components(
@@ -497,57 +495,57 @@ def test_ante1_chip_tempo_rewards_raw_score_and_scales() -> None:
         _info(
             ante=1,
             action_type="play_subset",
-            ante1_chip_chosen_score=90.0,
+            blind_target=400.0,
+            round_score=90.0,
         ),
         False,
         False,
         config,
     )
 
-    assert components["ante1_chip_tempo"] == pytest.approx(ANTE1_CHIP_TEMPO_BONUS * 0.9 * config.dense_reward_scale)
+    assert components["ante1_chip_tempo"] == pytest.approx(
+        ANTE1_CHIP_TEMPO_BONUS * (90.0 / 400.0) * config.dense_reward_scale
+    )
 
 
-def test_ante1_chip_tempo_penalizes_exhausting_discards_with_playable_hand() -> None:
+def test_ante1_chip_tempo_is_segmentation_invariant() -> None:
     state = _state(ante=1)
     config = RewardConfig(dense_reward_scale=0.25)
+
+    one_play = default_reward_components(
+        state,
+        _info(ante=1, blind_target=400.0, round_score=0.0, hands_left=4),
+        _info(ante=1, blind_target=400.0, round_score=200.0, action_type="play_subset"),
+        False,
+        False,
+        config,
+    )["ante1_chip_tempo"]
     first = default_reward_components(
         state,
-        _info(
-            ante=1,
-            blind_target=400.0,
-            round_score=0.0,
-            hands_left=4,
-            discards_left=4,
-        ),
-        _info(ante=1, action_type="discard_subset", ante1_chip_best_score=80.0),
+        _info(ante=1, blind_target=400.0, round_score=0.0, hands_left=4),
+        _info(ante=1, blind_target=400.0, round_score=100.0, action_type="play_subset"),
         False,
         False,
         config,
-    )
-    last = default_reward_components(
+    )["ante1_chip_tempo"]
+    second = default_reward_components(
         state,
-        _info(
-            ante=1,
-            blind_target=400.0,
-            round_score=0.0,
-            hands_left=4,
-            discards_left=1,
-        ),
-        _info(ante=1, action_type="discard_subset", ante1_chip_best_score=80.0),
+        _info(ante=1, blind_target=400.0, round_score=100.0, hands_left=3),
+        _info(ante=1, blind_target=400.0, round_score=200.0, action_type="play_subset"),
         False,
         False,
         config,
-    )
+    )["ante1_chip_tempo"]
 
-    assert first["ante1_chip_tempo"] == pytest.approx(-0.04)
-    assert last["ante1_chip_tempo"] == pytest.approx(-0.08)
+    assert first + second == pytest.approx(one_play)
+    assert one_play < WIN_VALUE * config.dense_reward_scale
 
 
-def test_ante1_chip_tempo_allows_weak_discards_and_is_disabled_later() -> None:
-    weak = default_reward_components(
+def test_ante1_chip_tempo_ignores_discards_and_is_disabled_later() -> None:
+    discard = default_reward_components(
         _state(ante=1),
         _info(ante=1, blind_target=400.0, hands_left=4, discards_left=1),
-        _info(ante=1, action_type="discard_subset", ante1_chip_best_score=70.0),
+        _info(ante=1, action_type="discard_subset", round_score=100.0),
         False,
         False,
     )
@@ -559,5 +557,62 @@ def test_ante1_chip_tempo_allows_weak_discards_and_is_disabled_later() -> None:
         False,
     )
 
-    assert weak["ante1_chip_tempo"] == 0.0
+    assert discard["ante1_chip_tempo"] == 0.0
     assert later["ante1_chip_tempo"] == 0.0
+
+
+@pytest.mark.parametrize(("terminated", "won"), [(False, False), (True, False), (True, True)])
+def test_ante1_chip_tempo_pays_same_progress_on_terminal_and_nonterminal(
+    terminated: bool,
+    won: bool,
+) -> None:
+    config = RewardConfig(dense_reward_scale=0.25)
+    components = default_reward_components(
+        _state(ante=1, win_ante=1),
+        _info(ante=1, blind_target=400.0, round_score=0.0),
+        _info(ante=1, blind_target=400.0, round_score=200.0, action_type="play_subset"),
+        terminated,
+        won,
+        config,
+    )
+
+    assert components["ante1_chip_tempo"] == pytest.approx(ANTE1_CHIP_TEMPO_BONUS * 0.5 * config.dense_reward_scale)
+
+
+def test_ante1_chip_tempo_telescopes_through_score_reset() -> None:
+    state = _state(ante=1)
+    config = RewardConfig(dense_reward_scale=0.25)
+    up = default_reward_components(
+        state,
+        _info(ante=1, blind_target=400.0, round_score=0.0),
+        _info(ante=1, blind_target=400.0, round_score=100.0, action_type="play_subset"),
+        False,
+        False,
+        config,
+    )["ante1_chip_tempo"]
+    reset = default_reward_components(
+        state,
+        _info(ante=1, blind_target=400.0, round_score=100.0),
+        _info(ante=1, blind_target=400.0, round_score=0.0, action_type="play_subset"),
+        False,
+        False,
+        config,
+    )["ante1_chip_tempo"]
+
+    assert up > 0.0
+    assert reset < 0.0
+    assert up + reset == pytest.approx(0.0)
+
+
+def test_ante1_chip_tempo_caps_progress_and_negative_scores() -> None:
+    config = RewardConfig(dense_reward_scale=0.25)
+    components = default_reward_components(
+        _state(ante=1),
+        _info(ante=1, blind_target=400.0, round_score=-50.0),
+        _info(ante=1, blind_target=400.0, round_score=800.0, action_type="play_subset"),
+        False,
+        False,
+        config,
+    )
+
+    assert components["ante1_chip_tempo"] == pytest.approx(ANTE1_CHIP_TEMPO_BONUS * config.dense_reward_scale)

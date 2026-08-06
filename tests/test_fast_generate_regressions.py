@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-from pylatro import add_consumable, create_run_state, load_game_data, select_blind, start_blind
+import math
+
+import numpy as np
+import pytest
+
+from pylatro import add_consumable, add_joker, create_run_state, load_game_data, select_blind, start_blind
 from pylatro.models import PlayingCard
 from pylatro_agent.action import ActionType, encode_action
-from pylatro_agent.constants import ActionRange
+from pylatro_agent.constants import ActionRange, SubPhase
 from pylatro_agent.heuristic import HeuristicAgent
-from pylatro_agent.subset_actions import consumable_subset_index
+from pylatro_agent.masks import compute_action_mask
+from pylatro_agent.reward import ANTE1_CHIP_TEMPO_BONUS, default_reward_components
+from pylatro_agent.subset_actions import consumable_subset_index, subset_index
 from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.training import fast_generate
+from pylatro_agent.training.fast_generate import _capture_info
 from pylatro_agent.training.fast_runner import FastRunner
 from pylatro_agent.vocab import build_vocab
 
@@ -37,6 +45,78 @@ def test_run_game_single_pass_marks_progress() -> None:
 
     assert records
     assert any(progress_flags)
+
+
+def test_fast_runner_joker_masks_match_main_masks() -> None:
+    data = load_game_data()
+    runner = FastRunner(42, data)
+    runner.step(int(ActionRange.BLIND_PLAY))
+    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
+        add_joker(runner.state, joker_key)
+
+    main_play = compute_action_mask(runner.state, SubPhase.CHOOSE_ACTION)
+    fast_play = runner.compute_mask().copy()
+    move_slice = slice(int(ActionRange.MOVE_JOKER_START), int(ActionRange.MOVE_JOKER_END) + 1)
+    np.testing.assert_array_equal(fast_play[move_slice], main_play[move_slice])
+
+    runner._sub_phase = SubPhase.SHOP
+    main_shop = compute_action_mask(runner.state, SubPhase.SHOP)
+    fast_shop = runner.compute_mask().copy()
+    np.testing.assert_array_equal(fast_shop[move_slice], main_shop[move_slice])
+    assert not fast_shop[move_slice].any()
+
+
+def test_fast_runner_blocks_immediate_joker_move_inverse() -> None:
+    data = load_game_data()
+    runner = FastRunner(42, data)
+    runner.step(int(ActionRange.BLIND_PLAY))
+    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
+        add_joker(runner.state, joker_key)
+
+    first_step = encode_action(ActionType.MOVE_JOKER, 1, 0)
+    assert runner.compute_mask()[first_step] == 1
+    runner.step(first_step)
+
+    reverse = encode_action(ActionType.MOVE_JOKER, 0, 1)
+    next_step = encode_action(ActionType.MOVE_JOKER, 2, 1)
+    mask = runner.compute_mask()
+    assert mask[reverse] == 0
+    assert mask[next_step] == 1
+
+
+def test_fast_runner_mr_bones_score_reset_claws_back_ante1_potential() -> None:
+    data = load_game_data()
+    runner = FastRunner(7, data)
+    runner.step(int(ActionRange.BLIND_PLAY))
+    add_joker(runner.state, "j_mr_bones")
+
+    blind_target = runner._ctrl.blind_target()
+    prior_score = math.ceil(blind_target * 0.25)
+    runner._ctrl.round_score = prior_score
+    runner._round_score = prior_score
+    runner.state.current_round.hands_left = 1
+    prev_info = _capture_info(runner)
+
+    action = encode_action(ActionType.PLAY_SUBSET, subset_index((0,)))
+    assert runner.compute_mask()[action] == 1
+    runner.step(action)
+    curr_info = _capture_info(runner)
+    curr_info["action_type"] = "play_subset"
+
+    assert runner._ctrl.round_score == 0
+    assert runner.round_score == 0
+    assert curr_info["round_score"] == 0
+    assert "j_mr_bones" not in runner.state.joker_keys
+    assert not runner.done
+
+    components = default_reward_components(
+        runner.state,
+        prev_info,
+        curr_info,
+        terminated=False,
+        won=False,
+    )
+    assert components["ante1_chip_tempo"] == pytest.approx(-ANTE1_CHIP_TEMPO_BONUS * prior_score / blind_target)
 
 
 def test_fast_action_diagnostics_match_env_diagnostics() -> None:

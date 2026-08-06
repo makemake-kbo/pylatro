@@ -461,82 +461,8 @@ class ActionGrammarDistribution:
         return torch.where(valid, actions, self._first_valid_actions())
 
     def mode(self) -> torch.Tensor:
-        macro = _masked_argmax(self._t(self.output.macro_logits), self.macro_mask)
-        actions = self._first_valid_actions()
-
-        fixed_actions = {
-            ActionType.BLIND_PLAY: int(ActionRange.BLIND_PLAY),
-            ActionType.BLIND_SKIP: int(ActionRange.BLIND_SKIP),
-            ActionType.BLIND_REROLL: int(ActionRange.BLIND_REROLL),
-            ActionType.SHOP_REROLL: int(ActionRange.SHOP_REROLL),
-            ActionType.SHOP_LEAVE: int(ActionRange.SHOP_LEAVE),
-            ActionType.PACK_SKIP: int(ActionRange.PACK_SKIP),
-        }
-        for action_type, action_id in fixed_actions.items():
-            actions = torch.where(
-                macro == ACTION_TYPE_TO_GRAMMAR_INDEX[action_type],
-                torch.full_like(actions, action_id),
-                actions,
-            )
-
-        actions = torch.where(macro == _PLAY, self._greedy_hand_actions(is_play=True), actions)
-        actions = torch.where(macro == _DISCARD, self._greedy_hand_actions(is_play=False), actions)
-        actions = torch.where(macro == _CONSUMABLE_NO_TARGET, self._greedy_consumable_no_target_actions(), actions)
-        actions = torch.where(macro == _CONSUMABLE_HAND, self._greedy_consumable_hand_actions(), actions)
-        actions = torch.where(macro == _CONSUMABLE_JOKER, self._greedy_consumable_joker_actions(), actions)
-
-        actions = torch.where(
-            macro == _SHOP_BUY,
-            self._greedy_indexed_actions(
-                self._t(self.output.shop_buy_logits),
-                _range_mask(self.action_mask, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
-                int(ActionRange.SHOP_BUY_START),
-            ),
-            actions,
-        )
-        actions = torch.where(
-            macro == _SHOP_SELL_JOKER,
-            self._greedy_indexed_actions(
-                self._t(self.output.shop_sell_joker_logits),
-                _range_mask(self.action_mask, ActionRange.SHOP_SELL_JOKER_START, ActionRange.SHOP_SELL_JOKER_END),
-                int(ActionRange.SHOP_SELL_JOKER_START),
-            ),
-            actions,
-        )
-        actions = torch.where(
-            macro == _SHOP_SELL_CONSUMABLE,
-            self._greedy_indexed_actions(
-                self._t(self.output.shop_sell_consumable_logits),
-                _range_mask(
-                    self.action_mask,
-                    ActionRange.SHOP_SELL_CONSUMABLE_START,
-                    ActionRange.SHOP_SELL_CONSUMABLE_END,
-                ),
-                int(ActionRange.SHOP_SELL_CONSUMABLE_START),
-            ),
-            actions,
-        )
-        actions = torch.where(
-            macro == _PACK_CLAIM,
-            self._greedy_indexed_actions(
-                self._t(self.output.pack_claim_logits),
-                _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
-                int(ActionRange.PACK_CLAIM_START),
-            ),
-            actions,
-        )
-        actions = torch.where(
-            macro == _MOVE_JOKER,
-            self._greedy_indexed_actions(
-                self._t(self.output.joker_move_logits),
-                _range_mask(self.action_mask, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
-                int(ActionRange.MOVE_JOKER_START),
-            ),
-            actions,
-        )
-
-        valid = self.action_mask.gather(1, actions.unsqueeze(-1)).squeeze(-1)
-        return torch.where(valid, actions, self._first_valid_actions())
+        actions, _log_probs = self._flat_mode()
+        return actions
 
     def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
         actions = actions.long()
@@ -665,8 +591,255 @@ class ActionGrammarDistribution:
         return normalized.mean()
 
     def max_prob(self) -> torch.Tensor:
-        """Approximate max flat-action probability for rollout diagnostics."""
-        return self.action_type_probs.max(dim=-1).values
+        """Exact probability of :meth:`mode` under the flat action policy."""
+        _actions, log_probs = self._flat_mode()
+        return log_probs.exp()
+
+    def _flat_mode(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the exact flat-action argmax and its joint log-probability.
+
+        A macro-first greedy choice is not the mode of a hierarchical policy:
+        a slightly more likely but diffuse macro can have less mass on every
+        individual action than a deterministic macro.  Compare each macro's
+        best conditional leaf after accounting for the candidate/AR hand
+        mixture, then maximize the joint probability.
+        """
+        cached = getattr(self, "_flat_mode_cache", None)
+        if cached is not None:
+            return cached
+
+        actions = self._first_valid_actions().unsqueeze(1).expand(-1, NUM_GRAMMAR_ACTIONS).clone()
+        conditional_logp = torch.full(
+            (self.batch_size, NUM_GRAMMAR_ACTIONS),
+            -1e8,
+            dtype=self.output.macro_logits.dtype,
+            device=self.device,
+        )
+
+        for action_type in (
+            ActionType.BLIND_PLAY,
+            ActionType.BLIND_SKIP,
+            ActionType.BLIND_REROLL,
+            ActionType.SHOP_REROLL,
+            ActionType.SHOP_LEAVE,
+            ActionType.PACK_SKIP,
+        ):
+            macro_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[action_type]
+            actions[:, macro_idx] = decode_action_id_for_singleton(action_type)
+            conditional_logp[:, macro_idx] = 0.0
+
+        for macro_idx, is_play in ((_PLAY, True), (_DISCARD, False)):
+            hand_action, hand_logp = self._best_hand_actions(is_play=is_play)
+            actions[:, macro_idx] = hand_action
+            conditional_logp[:, macro_idx] = hand_logp
+
+        no_target_action, no_target_logp = self._best_indexed_actions(
+            self._t(self.output.consumable_slot_logits[:, 0]),
+            self._consumable_no_target_slot_mask(),
+            int(ActionRange.CONSUMABLE_FLAT_START),
+            stride=CONSUMABLE_ACTIONS_PER_SLOT,
+            offset=CONSUMABLE_NO_TARGET_OFFSET,
+        )
+        actions[:, _CONSUMABLE_NO_TARGET] = no_target_action
+        conditional_logp[:, _CONSUMABLE_NO_TARGET] = no_target_logp
+
+        hand_action, hand_logp = self._best_consumable_hand_actions()
+        actions[:, _CONSUMABLE_HAND] = hand_action
+        conditional_logp[:, _CONSUMABLE_HAND] = hand_logp
+        joker_action, joker_logp = self._best_consumable_joker_actions()
+        actions[:, _CONSUMABLE_JOKER] = joker_action
+        conditional_logp[:, _CONSUMABLE_JOKER] = joker_logp
+
+        indexed_families = (
+            (_SHOP_BUY, self.output.shop_buy_logits, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
+            (
+                _SHOP_SELL_JOKER,
+                self.output.shop_sell_joker_logits,
+                ActionRange.SHOP_SELL_JOKER_START,
+                ActionRange.SHOP_SELL_JOKER_END,
+            ),
+            (
+                _SHOP_SELL_CONSUMABLE,
+                self.output.shop_sell_consumable_logits,
+                ActionRange.SHOP_SELL_CONSUMABLE_START,
+                ActionRange.SHOP_SELL_CONSUMABLE_END,
+            ),
+            (_PACK_CLAIM, self.output.pack_claim_logits, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
+            (_MOVE_JOKER, self.output.joker_move_logits, ActionRange.MOVE_JOKER_START, ActionRange.MOVE_JOKER_END),
+        )
+        for macro_idx, logits, start, end in indexed_families:
+            action, logp = self._best_indexed_actions(
+                self._t(logits),
+                _range_mask(self.action_mask, start, end),
+                int(start),
+            )
+            actions[:, macro_idx] = action
+            conditional_logp[:, macro_idx] = logp
+
+        macro_logp = _masked_log_softmax(self._t(self.output.macro_logits), self.macro_mask)
+        joint_logp = (macro_logp + conditional_logp).masked_fill(~self.macro_mask, -1e8)
+        best_macro = joint_logp.argmax(dim=-1)
+        best_actions = actions.gather(1, best_macro.unsqueeze(-1)).squeeze(-1)
+        best_logp = joint_logp.gather(1, best_macro.unsqueeze(-1)).squeeze(-1)
+        valid = self.action_mask.gather(1, best_actions.unsqueeze(-1)).squeeze(-1)
+        best_actions = torch.where(valid, best_actions, self._first_valid_actions())
+        self._flat_mode_cache = (best_actions, best_logp)
+        return self._flat_mode_cache
+
+    def _best_indexed_actions(
+        self,
+        logits: torch.Tensor,
+        mask: torch.Tensor,
+        base: int,
+        *,
+        stride: int = 1,
+        offset: int = 0,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        log_probs = _masked_log_softmax(logits, mask)
+        best_logp, index = log_probs.max(dim=-1)
+        return base + index * stride + offset, best_logp
+
+    def _best_hand_actions(self, *, is_play: bool) -> tuple[torch.Tensor, torch.Tensor]:
+        """Exact conditional mode of the candidate/AR hand mixture."""
+        valid_subsets = self._hand_valid_subset_mask(is_play)
+        family = 0 if is_play else 1
+        base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
+        cand_logits, cand_valid, cand_actions = self._candidate_distribution(is_play=is_play)
+        cand_log_probs = _masked_log_softmax(cand_logits, cand_valid)
+        has_candidates = cand_valid.any(dim=-1)
+        count_masks = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
+        count_log_probs = _masked_log_softmax(self._t(self.output.hand_count_logits[:, family]), count_masks)
+        card_logits = self._t(self.output.hand_card_logits[:, family])
+
+        best_actions = self._first_valid_actions()
+        best_logps = torch.full_like(best_actions, -1e8, dtype=card_logits.dtype)
+        subset_sizes = _hand_subset_sizes(self.device)
+        subset_slots = _hand_subset_slots(self.device)
+        eps = self.hand_ar_mixture_eps
+
+        for row in range(self.batch_size):
+            legal = valid_subsets[row].nonzero(as_tuple=False).squeeze(-1)
+            if legal.numel() == 0:
+                continue
+            row_best_logp = card_logits.new_tensor(-1e8)
+            row_best_subset = legal.new_tensor(0)
+            for chunk in legal.split(256):
+                counts = subset_sizes[chunk]
+                chunk_size = int(chunk.numel())
+                ar_logp = count_log_probs[row, counts - 1] + _ordered_card_log_prob(
+                    card_logits[row : row + 1].expand(chunk_size, -1),
+                    valid_subsets[row : row + 1].expand(chunk_size, -1),
+                    subset_slots[chunk],
+                    counts,
+                    max_count=5,
+                    subset_bits=_hand_subset_bits(self.device),
+                    subset_sizes=subset_sizes,
+                    slot_bits=_slot_bits(self.device),
+                )
+                if has_candidates[row] and eps < 1.0:
+                    flat_actions = base + chunk
+                    matches = cand_actions[row].unsqueeze(0).eq(flat_actions.unsqueeze(1)) & cand_valid[row].unsqueeze(
+                        0
+                    )
+                    has_match = matches.any(dim=-1)
+                    slots = matches.long().argmax(dim=-1)
+                    candidate_logp = cand_log_probs[row, slots]
+                    candidate_logp = torch.where(
+                        has_match,
+                        candidate_logp,
+                        torch.full_like(candidate_logp, -1e8),
+                    )
+                    if eps <= 0.0:
+                        mixed_logp = candidate_logp
+                    else:
+                        mixed_logp = torch.logsumexp(
+                            torch.stack(
+                                [math.log(1.0 - eps) + candidate_logp, math.log(eps) + ar_logp],
+                                dim=-1,
+                            ),
+                            dim=-1,
+                        )
+                else:
+                    mixed_logp = ar_logp
+                chunk_logp, chunk_slot = mixed_logp.max(dim=0)
+                if chunk_logp > row_best_logp:
+                    row_best_logp = chunk_logp
+                    row_best_subset = chunk[chunk_slot]
+            best_actions[row] = base + row_best_subset
+            best_logps[row] = row_best_logp
+        return best_actions, best_logps
+
+    def _best_consumable_hand_actions(self) -> tuple[torch.Tensor, torch.Tensor]:
+        blocks = self._consumable_blocks()
+        hand_start = CONSUMABLE_HAND_SUBSET_OFFSET
+        valid = blocks[:, :, hand_start : hand_start + NUM_CONSUMABLE_HAND_SUBSETS]
+        slot_mask = valid.any(dim=-1)
+        slot_logp = _masked_log_softmax(self._t(self.output.consumable_slot_logits[:, 1]), slot_mask)
+        subset_sizes = _consumable_subset_sizes(self.device)
+        subset_slots = _consumable_subset_slots(self.device)
+        best_actions = self._first_valid_actions()
+        best_logps = torch.full_like(best_actions, -1e8, dtype=slot_logp.dtype)
+
+        for row in range(self.batch_size):
+            for slot in slot_mask[row].nonzero(as_tuple=False).squeeze(-1):
+                slot_index = int(slot.item())
+                slot_valid = valid[row, slot_index]
+                legal = slot_valid.nonzero(as_tuple=False).squeeze(-1)
+                if legal.numel() == 0:
+                    continue
+                count_mask = _subset_count_mask(slot_valid.unsqueeze(0), subset_sizes, MAX_CONSUMABLE_HAND_TARGETS)
+                count_logp = _masked_log_softmax(
+                    self._t(self.output.consumable_count_logits[row : row + 1, slot_index]),
+                    count_mask,
+                )[0]
+                for chunk in legal.split(256):
+                    counts = subset_sizes[chunk]
+                    chunk_size = int(chunk.numel())
+                    leaf_logp = count_logp[counts - 1] + _ordered_card_log_prob(
+                        self._t(self.output.consumable_card_logits[row : row + 1, slot_index]).expand(chunk_size, -1),
+                        slot_valid.unsqueeze(0).expand(chunk_size, -1),
+                        subset_slots[chunk],
+                        counts,
+                        max_count=MAX_CONSUMABLE_HAND_TARGETS,
+                        subset_bits=_consumable_subset_bits(self.device),
+                        subset_sizes=subset_sizes,
+                        slot_bits=_slot_bits(self.device),
+                    )
+                    leaf_logp = leaf_logp + slot_logp[row, slot_index]
+                    chunk_logp, chunk_index = leaf_logp.max(dim=0)
+                    if chunk_logp > best_logps[row]:
+                        detail = chunk[chunk_index]
+                        best_logps[row] = chunk_logp
+                        best_actions[row] = (
+                            int(ActionRange.CONSUMABLE_FLAT_START)
+                            + slot_index * CONSUMABLE_ACTIONS_PER_SLOT
+                            + CONSUMABLE_HAND_SUBSET_OFFSET
+                            + detail
+                        )
+        return best_actions, best_logps
+
+    def _best_consumable_joker_actions(self) -> tuple[torch.Tensor, torch.Tensor]:
+        blocks = self._consumable_blocks()
+        start = CONSUMABLE_JOKER_OFFSET
+        valid = blocks[:, :, start : start + MAX_JOKER_SLOTS]
+        slot_mask = valid.any(dim=-1)
+        slot_logp = _masked_log_softmax(self._t(self.output.consumable_slot_logits[:, 2]), slot_mask)
+        joker_logp = torch.log_softmax(
+            self._t(self.output.consumable_joker_logits).masked_fill(~valid, -1e8),
+            dim=-1,
+        )
+        best_joker_logp, joker = joker_logp.max(dim=-1)
+        joint = (slot_logp + best_joker_logp).masked_fill(~slot_mask, -1e8)
+        best_logp, slot = joint.max(dim=-1)
+        rows = torch.arange(self.batch_size, device=self.device)
+        joker = joker[rows, slot]
+        action = (
+            int(ActionRange.CONSUMABLE_FLAT_START)
+            + slot * CONSUMABLE_ACTIONS_PER_SLOT
+            + CONSUMABLE_JOKER_OFFSET
+            + joker
+        )
+        return action, best_logp
 
     def selected_prob(self, actions: torch.Tensor) -> torch.Tensor:
         return self.log_prob(actions).exp()

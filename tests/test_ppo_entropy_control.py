@@ -19,11 +19,13 @@ from pylatro_agent.training.ppo import (
     _next_blind_clear_outcome,
     _next_eval_regression_streak,
     _per_state_normalized_entropy,
+    _physical_minibatch_count,
     _policy_temperature_for_scalars,
     _ppo_terminal_flags,
     _record_action_diagnostics,
     _RolloutMetrics,
     _run_ppo_update,
+    _sample_weighted_mean,
     _smoothed_entropy_signal,
     _validate_ppo_config,
     _write_action_behavior_metrics,
@@ -71,6 +73,31 @@ class _TinyPpoModel(torch.nn.Module):
         return _TinyPpoDistribution(logits, action_mask, temperature), {
             "expected_score": values,
             "ante_survival": survival,
+        }
+
+
+class _TinyAuxPpoModel(_TinyPpoModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.survival_logits = torch.nn.Parameter(torch.linspace(-0.8, 0.6, DEFAULT_MAX_ANTES))
+        self.win_logit = torch.nn.Parameter(torch.tensor(-0.35))
+
+    def action_distribution(
+        self,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
+        attention_mask: torch.Tensor,
+        action_mask: torch.Tensor,
+        temperature: float = 1.0,
+    ) -> tuple[_TinyPpoDistribution, dict[str, torch.Tensor]]:
+        del tokens, token_types, scalars, attention_mask
+        batch = action_mask.shape[0]
+        logits = self.logits.unsqueeze(0).expand(batch, -1)
+        return _TinyPpoDistribution(logits, action_mask, temperature), {
+            "expected_score": self.value.expand(batch),
+            "ante_survival": self.survival_logits.sigmoid().unsqueeze(0).expand(batch, -1),
+            "win_prob": self.win_logit.sigmoid().expand(batch),
         }
 
 
@@ -147,6 +174,129 @@ def test_smoothed_entropy_signal_uses_current_value_first() -> None:
 
 def test_smoothed_entropy_signal_applies_ema() -> None:
     assert _smoothed_entropy_signal(0.2, 0.5, 0.8) == 0.26
+
+
+def test_sample_weighted_metrics_are_invariant_to_partial_microbatch_segmentation() -> None:
+    full_batch_mean = 32.0 / 352.0
+    segmented = _sample_weighted_mean(
+        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        [64, 64, 64, 64, 64, 32],
+    )
+
+    assert segmented == pytest.approx(full_batch_mean)
+    assert _sample_weighted_mean([full_batch_mean], [352]) == pytest.approx(segmented)
+
+
+def test_physical_minibatch_count_includes_each_logical_tail() -> None:
+    assert _physical_minibatch_count(352, 352, 64) == 6
+    assert _physical_minibatch_count(704, 352, 64) == 12
+    assert _physical_minibatch_count(752, 352, 64) == 13
+
+
+def _make_auxiliary_mask_buffer(*, all_zero: bool = False) -> RolloutBuffer:
+    sample_count = 11
+    action = int(ActionRange.SHOP_LEAVE)
+    buffer = _make_signal_buffer(
+        actions=[action] * sample_count,
+        advantages=[0.0] * sample_count,
+    )
+    if all_zero:
+        return buffer
+
+    survival_mask = np.zeros((sample_count, DEFAULT_MAX_ANTES), dtype=np.float32)
+    survival_mask[:4] = 1.0
+    survival_mask[4:8, :2] = 1.0
+    survival_mask[8:, 0] = 1.0
+    survival_target = np.indices(survival_mask.shape).sum(axis=0) % 2
+    buffer.ante_survival_masks[:sample_count] = survival_mask
+    buffer.ante_survival_targets[:sample_count] = survival_target.astype(np.float32)
+
+    buffer.win_probability_masks[:sample_count] = np.array(
+        [1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1],
+        dtype=np.float32,
+    )
+    buffer.win_probability_targets[:sample_count] = np.array(
+        [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+        dtype=np.float32,
+    )
+    return buffer
+
+
+def _run_auxiliary_update(*, effective_batch_size: int, accum_steps: int, all_zero: bool = False):
+    model = _TinyAuxPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
+    config = PPOConfig(
+        ppo_epochs=1,
+        mini_batch_size=11,
+        clip_epsilon=0.2,
+        entropy_coeff=0.0,
+        value_loss_coeff=0.0,
+        survival_loss_coeff=1.0,
+        win_probability_loss_coeff=1.0,
+        critic_updates_trunk=True,
+        max_grad_norm=100.0,
+        target_kl=None,
+        rollout_temperature=1.0,
+    )
+    captured_grads: dict[str, list[torch.Tensor]] = {name: [] for name, _param in model.named_parameters()}
+    handles = []
+    for name, parameter in model.named_parameters():
+        handles.append(
+            parameter.register_hook(lambda grad, key=name: captured_grads[key].append(grad.detach().clone()))
+        )
+
+    np.random.seed(12345)
+    stats = _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=_make_auxiliary_mask_buffer(all_zero=all_zero),
+        return_rms=None,
+        entropy_coeff=0.0,
+        config=config,
+        accum_steps=accum_steps,
+        effective_batch_size=effective_batch_size,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+    )
+    for handle in handles:
+        handle.remove()
+    grad_sums = {
+        name: torch.stack(grads).sum(dim=0) if grads else torch.zeros_like(parameter)
+        for (name, parameter), grads in zip(model.named_parameters(), captured_grads.values(), strict=True)
+    }
+    return model, stats, grad_sums
+
+
+def test_auxiliary_losses_match_unsplit_logical_batch_with_uneven_masks() -> None:
+    full_model, full_stats, full_grads = _run_auxiliary_update(effective_batch_size=11, accum_steps=1)
+    split_model, split_stats, split_grads = _run_auxiliary_update(effective_batch_size=4, accum_steps=3)
+
+    assert split_stats.sample_counts == [4, 4, 3]
+    assert len(set(split_stats.survival_valid_counts)) > 1
+    assert len(set(split_stats.win_probability_valid_counts)) > 1
+    for name, full_parameter in full_model.named_parameters():
+        torch.testing.assert_close(split_model.state_dict()[name], full_parameter, rtol=1e-6, atol=1e-7)
+        torch.testing.assert_close(split_grads[name], full_grads[name], rtol=1e-6, atol=1e-7)
+
+    full_survival = _sample_weighted_mean(full_stats.survival_losses, full_stats.survival_valid_counts)
+    split_survival = _sample_weighted_mean(split_stats.survival_losses, split_stats.survival_valid_counts)
+    full_win = _sample_weighted_mean(full_stats.win_probability_losses, full_stats.win_probability_valid_counts)
+    split_win = _sample_weighted_mean(split_stats.win_probability_losses, split_stats.win_probability_valid_counts)
+    assert split_survival == pytest.approx(full_survival, rel=1e-7, abs=1e-8)
+    assert split_win == pytest.approx(full_win, rel=1e-7, abs=1e-8)
+
+
+def test_auxiliary_losses_are_safe_with_all_zero_valid_masks() -> None:
+    model, stats, grads = _run_auxiliary_update(effective_batch_size=4, accum_steps=3, all_zero=True)
+
+    assert stats.survival_valid_counts == [0.0, 0.0, 0.0]
+    assert stats.win_probability_valid_counts == [0.0, 0.0, 0.0]
+    assert _sample_weighted_mean(stats.survival_losses, stats.survival_valid_counts) == 0.0
+    assert _sample_weighted_mean(stats.win_probability_losses, stats.win_probability_valid_counts) == 0.0
+    assert torch.equal(model.survival_logits, torch.linspace(-0.8, 0.6, DEFAULT_MAX_ANTES))
+    assert torch.equal(model.win_logit, torch.tensor(-0.35))
+    assert torch.count_nonzero(grads["survival_logits"]) == 0
+    assert torch.count_nonzero(grads["win_logit"]) == 0
 
 
 def test_alpha_loss_gradient_decreases_alpha_when_entropy_above_target() -> None:

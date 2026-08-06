@@ -6,6 +6,7 @@ import math
 import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from torch.optim import Adam
 from pylatro import GameData, load_game_data
 
 from ..action import ActionType, decode_action
+from ..action_grammar import ActionGrammarDistribution, ActionGrammarOutput
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import (
     HISTORY_EVENT_DIM,
@@ -96,9 +98,7 @@ def _binary_roc_auc(predictions: list[float], outcomes: list[float]) -> float | 
         ranks[order[start:end]] = 0.5 * (start + 1 + end)
         start = end
     positive_rank_sum = float(ranks[outcome_array].sum())
-    return (positive_rank_sum - positive_count * (positive_count + 1) / 2.0) / (
-        positive_count * negative_count
-    )
+    return (positive_rank_sum - positive_count * (positive_count + 1) / 2.0) / (positive_count * negative_count)
 
 
 class RunningMeanStd:
@@ -537,6 +537,8 @@ class _UpdateStats:
     value_mses: list[float]
     survival_losses: list[float]
     win_probability_losses: list[float]
+    survival_valid_counts: list[float]
+    win_probability_valid_counts: list[float]
     entropies: list[float]
     normalized_entropies: list[float]
     action_type_entropies: list[float]
@@ -544,6 +546,7 @@ class _UpdateStats:
     approx_kls: list[float]
     valid_action_counts: list[float]
     valid_action_type_counts: list[float]
+    sample_counts: list[int] = field(default_factory=list)
     on_policy_fractions: list[float] = field(default_factory=list)
     on_policy_advantage_means: list[float] = field(default_factory=list)
     on_policy_advantage_stds: list[float] = field(default_factory=list)
@@ -643,7 +646,7 @@ class _RolloutMetrics:
     progress_flags: list[float] = field(default_factory=list)
     steps_since_progress: list[float] = field(default_factory=list)
     chosen_action_probs: list[float] = field(default_factory=list)
-    max_action_probs: list[float] = field(default_factory=list)
+    max_action_type_probs: list[float] = field(default_factory=list)
     done_flags: list[float] = field(default_factory=list)
     terminated_flags: list[float] = field(default_factory=list)
     truncated_flags: list[float] = field(default_factory=list)
@@ -910,6 +913,28 @@ def _grammar_distribution(
         )
         if supports_history and key in batch
     }
+    if isinstance(model, nn.DataParallel) and isinstance(base_model, BalatroAgent):
+        raw_output, value_dict = model(
+            batch["tokens"],
+            batch["token_types"],
+            batch["scalars"],
+            batch["attention_mask"],
+            batch["action_mask"],
+            temperature=temperature,
+            return_raw_outputs=True,
+            **history_kwargs,
+        )
+        grammar_output = ActionGrammarOutput(**raw_output)
+        return (
+            ActionGrammarDistribution(
+                grammar_output,
+                batch["action_mask"],
+                temperature=temperature,
+                tokens=batch["tokens"],
+                hand_ar_mixture_eps=base_model.config.hand_ar_mixture_eps,
+            ),
+            value_dict,
+        )
     return base_model.action_distribution(
         batch["tokens"],
         batch["token_types"],
@@ -919,6 +944,81 @@ def _grammar_distribution(
         temperature=temperature,
         **history_kwargs,
     )
+
+
+def _sample_weighted_mean(values: list[float], sample_counts: list[int | float]) -> float:
+    """Aggregate per-microbatch means with their actual denominator counts."""
+    if not values:
+        return 0.0
+    if len(values) != len(sample_counts) or not sample_counts:
+        return float(np.mean(values))
+    weights = np.asarray(sample_counts, dtype=np.float64)
+    if float(weights.sum()) <= 0.0:
+        return 0.0
+    return float(np.average(np.asarray(values, dtype=np.float64), weights=weights))
+
+
+def _logical_mask_weights(
+    batches: list[dict[str, torch.Tensor]],
+    mask_key: str,
+    accum_steps: int,
+) -> tuple[list[float], list[float]]:
+    """Return valid-target fractions within each logical optimizer group.
+
+    Survival and win BCEs are means over valid targets, not rows. Their
+    accumulated gradients must therefore be weighted by each microbatch's
+    share of the logical group's valid targets. All-zero groups receive zero
+    weights, avoiding both divide-by-zero and accidental auxiliary gradients.
+    """
+    valid_counts = [float(batch[mask_key].detach().sum().item()) for batch in batches]
+    weights = [0.0] * len(batches)
+    group_start = 0
+    for index, batch in enumerate(batches):
+        if "_logical_group_end" in batch:
+            group_end = bool(batch["_logical_group_end"].item())
+        else:
+            group_end = ((index + 1) % max(accum_steps, 1) == 0) or index + 1 == len(batches)
+        if not group_end:
+            continue
+        group_total = sum(valid_counts[group_start : index + 1])
+        if group_total > 0.0:
+            for group_index in range(group_start, index + 1):
+                weights[group_index] = valid_counts[group_index] / group_total
+        group_start = index + 1
+    return weights, valid_counts
+
+
+def _physical_minibatch_count(total_samples: int, logical_batch_size: int, micro_batch_size: int) -> int:
+    """Count physical forwards when each logical batch has its own tail."""
+    if total_samples <= 0:
+        return 0
+    logical = max(int(logical_batch_size), 1)
+    micro = max(min(int(micro_batch_size), logical), 1)
+    full_groups, remainder = divmod(int(total_samples), logical)
+    count = full_groups * math.ceil(logical / micro)
+    if remainder:
+        count += math.ceil(remainder / micro)
+    return count
+
+
+def _observation_buffer_batch(obs_buf) -> dict[str, torch.Tensor]:
+    """Expose an observation buffer through the common model-batch interface."""
+    return {
+        "tokens": obs_buf.tokens,
+        "token_types": obs_buf.token_types,
+        "scalars": obs_buf.scalars,
+        "attention_mask": obs_buf.attention_mask,
+        "action_mask": obs_buf.action_mask,
+        "history_events": obs_buf.history_events,
+        "history_event_features": obs_buf.history_event_features,
+        "history_cards": obs_buf.history_cards,
+        "history_card_mask": obs_buf.history_card_mask,
+        "history_jokers": obs_buf.history_jokers,
+        "history_joker_mask": obs_buf.history_joker_mask,
+        "history_event_mask": obs_buf.history_event_mask,
+        "history_round_mask": obs_buf.history_round_mask,
+        "history_omitted": obs_buf.history_omitted,
+    }
 
 
 def _policy_temperature_for_scalars(
@@ -1253,6 +1353,8 @@ def _run_ppo_update(
         value_mses=[],
         survival_losses=[],
         win_probability_losses=[],
+        survival_valid_counts=[],
+        win_probability_valid_counts=[],
         entropies=[],
         normalized_entropies=[],
         action_type_entropies=[],
@@ -1271,7 +1373,17 @@ def _run_ppo_update(
         _snapshot_ppo_update(model, optimizer) if config.target_kl_max is not None and not policy_frozen else None
     )
     n_rollout_samples = len(buffer._flat_returns)
-    minibatches_per_epoch = max(1, math.ceil(n_rollout_samples / effective_batch_size))
+    if accum_steps > 1:
+        minibatches_per_epoch = max(
+            1,
+            _physical_minibatch_count(
+                n_rollout_samples,
+                config.mini_batch_size,
+                effective_batch_size,
+            ),
+        )
+    else:
+        minibatches_per_epoch = max(1, math.ceil(n_rollout_samples / effective_batch_size))
     expected_minibatches = minibatches_per_epoch * config.ppo_epochs
     min_soft_stop_fraction = config.min_minibatch_fraction if config.min_minibatch_fraction is not None else 0.0
     min_soft_stop_minibatches = math.ceil(expected_minibatches * min_soft_stop_fraction)
@@ -1292,11 +1404,35 @@ def _run_ppo_update(
 
     minibatches_processed = 0
     for _ppo_epoch in range(config.ppo_epochs):
-        batches = buffer.get_batches(effective_batch_size, device, pin_memory=use_pin_memory)
+        batches = buffer.get_batches(
+            config.mini_batch_size if accum_steps > 1 else effective_batch_size,
+            device,
+            pin_memory=use_pin_memory,
+            micro_batch_size=effective_batch_size if accum_steps > 1 else None,
+        )
+        survival_loss_weights, survival_valid_counts = _logical_mask_weights(
+            batches,
+            "ante_survival_mask",
+            accum_steps,
+        )
+        win_loss_weights, win_valid_counts = _logical_mask_weights(
+            batches,
+            "win_probability_mask",
+            accum_steps,
+        )
         optimizer.zero_grad()
         for i, batch in enumerate(batches):
-            is_group_start = i % accum_steps == 0
-            is_step_boundary = ((i + 1) % accum_steps == 0) or ((i + 1) == len(batches))
+            if "_logical_group_start" in batch:
+                is_group_start = bool(batch["_logical_group_start"].item())
+                is_step_boundary = bool(batch["_logical_group_end"].item())
+                loss_weight = batch["_loss_weight"]
+            else:
+                # Backward-compatible path for lightweight test buffers.
+                is_group_start = i % accum_steps == 0
+                is_step_boundary = ((i + 1) % accum_steps == 0) or ((i + 1) == len(batches))
+                loss_weight = torch.as_tensor(1.0 / accum_steps, device=device)
+            survival_loss_weight = torch.as_tensor(survival_loss_weights[i], device=device)
+            win_loss_weight = torch.as_tensor(win_loss_weights[i], device=device)
 
             # --- SIL auxiliary loss (one batch per attempted logical group) ---
             # Sampled and backwarded at the group start so the whole group
@@ -1402,15 +1538,22 @@ def _run_ppo_update(
                     reduction="none",
                 )
                 win_probability_loss = (win_bce * win_mask).sum() / win_mask.sum().clamp(min=1.0)
+                win_valid_count = win_valid_counts[i]
             else:
                 # Lightweight test/ablation models may intentionally omit this
                 # auxiliary head; the production agent always exposes it.
                 win_probability_loss = value_loss.new_zeros(())
+                win_loss_weight = win_loss_weight.new_zeros(())
+                win_valid_count = 0.0
 
-            critic_loss = (
-                config.value_loss_coeff * value_loss
-                + config.survival_loss_coeff * survival_loss
-                + config.win_probability_loss_coeff * win_probability_loss
+            # Row-normalized value loss and valid-target-normalized auxiliary
+            # losses have different logical denominators. Weight each by its
+            # own share rather than applying the row fraction to the entire
+            # critic objective.
+            weighted_critic_loss = (
+                config.value_loss_coeff * value_loss * loss_weight
+                + config.survival_loss_coeff * survival_loss * survival_loss_weight
+                + config.win_probability_loss_coeff * win_probability_loss * win_loss_weight
             )
 
             if policy_frozen:
@@ -1428,7 +1571,7 @@ def _run_ppo_update(
                 # (critic_updates_trunk is deliberately ignored while frozen:
                 # trunk updates from the value loss drift the policy logits).
                 value_params = _value_head_parameters(model)
-                critic_loss.div(accum_steps).backward()
+                weighted_critic_loss.backward()
                 value_param_ids = {id(param) for param in value_params}
                 for param in model.parameters():
                     if id(param) not in value_param_ids:
@@ -1450,13 +1593,13 @@ def _run_ppo_update(
                 policy_objective_loss = policy_objective_loss * policy_loss_scale
 
                 if config.critic_updates_trunk:
-                    total_loss = (policy_objective_loss + critic_loss).div(accum_steps)
+                    total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
                     total_loss.backward()
                 else:
                     value_params = _value_head_parameters(model)
-                    policy_objective_loss.div(accum_steps).backward(retain_graph=bool(value_params))
+                    (policy_objective_loss * loss_weight).backward(retain_graph=bool(value_params))
                     if value_params:
-                        _accumulate_critic_grads_into_value_head(critic_loss.div(accum_steps), value_params)
+                        _accumulate_critic_grads_into_value_head(weighted_critic_loss, value_params)
 
             # Step every accum_steps micro-batches (or on last batch). This is
             # a logical optimizer-group boundary: PPO and SIL share this single
@@ -1484,7 +1627,7 @@ def _run_ppo_update(
                 approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
                 valid_action_count_mean = valid_action_counts.float().mean().item()
                 stats.on_policy_advantage_means.append(advantages.mean().item())
-                stats.on_policy_advantage_stds.append(advantages.std().item())
+                stats.on_policy_advantage_stds.append(advantages.std(unbiased=False).item())
                 stats.on_policy_positive_advantage_fractions.append((advantages > 0).float().mean().item())
                 stats.on_policy_return_means.append(batch["returns"].mean().item())
             stats.policy_losses.append(policy_loss.item())
@@ -1492,6 +1635,8 @@ def _run_ppo_update(
             stats.value_mses.append(value_mse.item())
             stats.survival_losses.append(survival_loss.item())
             stats.win_probability_losses.append(win_probability_loss.item())
+            stats.survival_valid_counts.append(survival_valid_counts[i])
+            stats.win_probability_valid_counts.append(win_valid_count)
             stats.entropies.append(entropy.item())
             stats.normalized_entropies.append(normalized_entropy.item())
             stats.action_type_entropies.append(normalized_action_type_entropy.item())
@@ -1502,6 +1647,7 @@ def _run_ppo_update(
             stats.on_policy_fractions.append(on_policy_fraction)
             minibatches_processed += 1
             on_policy_samples = int(on_policy_count.item())
+            stats.sample_counts.append(on_policy_samples)
             stats.ppo_samples_processed += on_policy_samples
             running_kl.add(approx_kl, on_policy_samples)
             stats.running_kl = running_kl.mean
@@ -2569,11 +2715,14 @@ def train_ppo(
         else:
             from ..checkpoint import load_checkpoint_payload
 
-            loaded_cfg = load_checkpoint_payload(
-                pretrained_path,
-                "cpu",
-                allow_compatible_tokenizer=True,
-            ).get("agent_config") or {}
+            loaded_cfg = (
+                load_checkpoint_payload(
+                    pretrained_path,
+                    "cpu",
+                    allow_compatible_tokenizer=True,
+                ).get("agent_config")
+                or {}
+            )
         loaded_bins = int(loaded_cfg.get("value_bins", 0) or 0)
         if resume_path and loaded_bins != agent_config.value_bins:
             raise ValueError(
@@ -2640,9 +2789,13 @@ def train_ppo(
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
     if use_multi_gpu:
         model = nn.DataParallel(model)
-        accum_steps = max(1, config.mini_batch_size // config.micro_batch_size)
-        effective_batch_size = config.micro_batch_size
-        logger.info(f"DataParallel: grad accum {accum_steps} steps, micro_batch={effective_batch_size}")
+        effective_batch_size = max(1, min(config.micro_batch_size, config.mini_batch_size))
+        accum_steps = max(1, math.ceil(config.mini_batch_size / effective_batch_size))
+        logger.info(
+            "DataParallel: up to %d accumulation steps per exact logical batch, micro_batch<=%d",
+            accum_steps,
+            effective_batch_size,
+        )
     else:
         accum_steps = 1
         effective_batch_size = config.mini_batch_size
@@ -2906,28 +3059,20 @@ def train_ppo(
             model.eval()
             for step in range(config.rollout_length):
                 with torch.no_grad():
-                    dist, value_dict = _unwrap_model(model).action_distribution(
-                        obs_buf.tokens,
-                        obs_buf.token_types,
-                        obs_buf.scalars,
-                        obs_buf.attention_mask,
-                        obs_buf.action_mask,
-                        history_events=obs_buf.history_events,
-                        history_event_features=obs_buf.history_event_features,
-                        history_cards=obs_buf.history_cards,
-                        history_card_mask=obs_buf.history_card_mask,
-                        history_jokers=obs_buf.history_jokers,
-                        history_joker_mask=obs_buf.history_joker_mask,
-                        history_event_mask=obs_buf.history_event_mask,
-                        history_round_mask=obs_buf.history_round_mask,
-                        history_omitted=obs_buf.history_omitted,
+                    dist, value_dict = _grammar_distribution(
+                        model,
+                        _observation_buffer_batch(obs_buf),
                         temperature=_policy_temperature_for_scalars(obs_buf.scalars, config),
                     )
                     actions = dist.sample()
                     log_probs = dist.log_prob(actions)
                     values = value_dict["expected_score"]
                     chosen_action_probs = dist.selected_prob(actions)
-                    max_action_probs = dist.max_prob()
+                    # Cheap macro-concentration telemetry. This is explicitly
+                    # not the maximum flat-action probability; computing the
+                    # exact hand-mixture mode on every rollout step would add
+                    # substantial evaluation-only work to training.
+                    max_action_type_probs = dist.action_type_probs.max(dim=-1).values
 
                 actions_np = actions.cpu().numpy()
                 log_probs_np = log_probs.cpu().numpy()
@@ -2935,7 +3080,7 @@ def train_ppo(
                 if return_rms is not None:
                     values_np = return_rms.denormalize(values_np)
                 chosen_action_probs_np = chosen_action_probs.cpu().numpy()
-                max_action_probs_np = max_action_probs.cpu().numpy()
+                max_action_type_probs_np = max_action_type_probs.cpu().numpy()
                 pre_scalars = obs_buf._np_scalars
                 pre_tokens = obs_buf._np_tokens
                 rm.clear_probabilities.extend(pre_scalars[:, 11].astype(np.float64).tolist())
@@ -3003,7 +3148,7 @@ def train_ppo(
                 env_ep_length += 1
                 rm.step_rewards.extend(rewards.astype(np.float64).tolist())
                 rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
-                rm.max_action_probs.extend(max_action_probs_np.astype(np.float64).tolist())
+                rm.max_action_type_probs.extend(max_action_type_probs_np.astype(np.float64).tolist())
                 rm.done_flags.extend(dones.astype(np.float64).tolist())
                 rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
                 rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
@@ -3116,9 +3261,7 @@ def train_ppo(
                         ).lower()
                         rm.terminal_loss_blind_counts[end_blind] += 1
                         if end_blind == "boss":
-                            boss_key = str(
-                                _extract_step_info_value(infos, "boss_key", i, done=True, default="") or ""
-                            )
+                            boss_key = str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
                             if boss_key:
                                 rm.terminal_boss_loss_counts[boss_key] += 1
                         blind_target = float(
@@ -3129,9 +3272,7 @@ def train_ppo(
                         )
                         if blind_target > 0.0:
                             rm.terminal_loss_score_ratios.append(round_score / blind_target)
-                        last_play_top1 = _extract_step_info_value(
-                            infos, "hand_play_top1", i, done=True, default=None
-                        )
+                        last_play_top1 = _extract_step_info_value(infos, "hand_play_top1", i, done=True, default=None)
                         if last_play_top1 is not None:
                             rm.terminal_loss_last_play_top1.append(float(bool(last_play_top1)))
                         last_play_value_ratio = _extract_step_info_value(
@@ -3139,9 +3280,7 @@ def train_ppo(
                         )
                         if last_play_value_ratio is not None:
                             rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
-                    if np.isfinite(env_last_shop_survival_pred[i]) or np.isfinite(
-                        env_last_shop_analytic_clear_pred[i]
-                    ):
+                    if np.isfinite(env_last_shop_survival_pred[i]) or np.isfinite(env_last_shop_analytic_clear_pred[i]):
                         if not ep_stalled:
                             shop_ante = int(env_last_shop_ante[i])
                             ante_outcome = float(ep_won or ep_ante > shop_ante)
@@ -3174,13 +3313,9 @@ def train_ppo(
                                 rm.risk_shop_death_outcomes.append(death_outcome)
                                 rm.risk_shop_death_briers.append((predicted_death - death_outcome) ** 2)
                                 if np.isfinite(env_last_shop_raw_analytic_clear_pred[i]):
-                                    raw_predicted_death = 1.0 - float(
-                                        env_last_shop_raw_analytic_clear_pred[i]
-                                    )
+                                    raw_predicted_death = 1.0 - float(env_last_shop_raw_analytic_clear_pred[i])
                                     rm.risk_shop_raw_death_predictions.append(raw_predicted_death)
-                                    rm.risk_shop_raw_death_briers.append(
-                                        (raw_predicted_death - death_outcome) ** 2
-                                    )
+                                    rm.risk_shop_raw_death_briers.append((raw_predicted_death - death_outcome) ** 2)
                                 if shop_ante == 1 and death_outcome > 0.5:
                                     rm.risk_ante1_false_safe_deaths.append(float(predicted_death <= 0.35))
                         env_last_shop_survival_pred[i] = np.nan
@@ -3228,21 +3363,9 @@ def train_ppo(
 
             # Bootstrap values for GAE
             with torch.no_grad():
-                _, value_dict = _unwrap_model(model).action_distribution(
-                    obs_buf.tokens,
-                    obs_buf.token_types,
-                    obs_buf.scalars,
-                    obs_buf.attention_mask,
-                    obs_buf.action_mask,
-                    history_events=obs_buf.history_events,
-                    history_event_features=obs_buf.history_event_features,
-                    history_cards=obs_buf.history_cards,
-                    history_card_mask=obs_buf.history_card_mask,
-                    history_jokers=obs_buf.history_jokers,
-                    history_joker_mask=obs_buf.history_joker_mask,
-                    history_event_mask=obs_buf.history_event_mask,
-                    history_round_mask=obs_buf.history_round_mask,
-                    history_omitted=obs_buf.history_omitted,
+                _, value_dict = _grammar_distribution(
+                    model,
+                    _observation_buffer_batch(obs_buf),
                     temperature=_policy_temperature_for_scalars(obs_buf.scalars, config),
                 )
                 last_values = value_dict["expected_score"].cpu().numpy()
@@ -3269,7 +3392,11 @@ def train_ppo(
             writer.add_scalar("rollout/step_reward_mean", float(np.mean(rm.step_rewards)), rollout_step)
             writer.add_scalar("rollout/reward_mean", float(np.mean(rm.step_rewards)), rollout_step)
             writer.add_scalar("rollout/chosen_action_prob_mean", float(np.mean(rm.chosen_action_probs)), rollout_step)
-            writer.add_scalar("rollout/max_action_prob_mean", float(np.mean(rm.max_action_probs)), rollout_step)
+            writer.add_scalar(
+                "rollout/max_action_type_prob_mean",
+                float(np.mean(rm.max_action_type_probs)),
+                rollout_step,
+            )
             writer.add_scalar("rollout/done_rate", float(np.mean(rm.done_flags)), rollout_step)
             writer.add_scalar("rollout/progress_rate", float(np.mean(rm.progress_flags)), rollout_step)
             writer.add_scalar("rollout/completed_episodes", float(np.sum(rm.done_flags)), rollout_step)
@@ -3534,7 +3661,10 @@ def train_ppo(
             update_valid_action_type_counts = update_stats.valid_action_type_counts
 
             # Track the normalized entropy signal every update, even with fixed entropy.
-            mean_normalized_entropy = float(np.mean(update_normalized_entropies))
+            mean_normalized_entropy = _sample_weighted_mean(
+                update_normalized_entropies,
+                update_stats.sample_counts,
+            )
             entropy_signal_ema = _smoothed_entropy_signal(
                 entropy_signal_ema,
                 mean_normalized_entropy,
@@ -3553,24 +3683,49 @@ def train_ppo(
             update_count += 1
 
             # TensorBoard logging
-            mean_entropy = float(np.mean(update_entropies))
-            writer.add_scalar("ppo/policy_loss", np.mean(update_policy_losses), update_count)
-            writer.add_scalar("ppo/value_loss", np.mean(update_value_losses), update_count)
+            weighted_mean = partial(
+                _sample_weighted_mean,
+                sample_counts=update_stats.sample_counts,
+            )
+
+            mean_entropy = weighted_mean(update_entropies)
+            mean_policy_loss = weighted_mean(update_policy_losses)
+            mean_value_loss = weighted_mean(update_value_losses)
+            mean_value_mse = weighted_mean(update_stats.value_mses)
+            mean_survival_loss = _sample_weighted_mean(
+                update_stats.survival_losses,
+                update_stats.survival_valid_counts,
+            )
+            mean_win_probability_loss = _sample_weighted_mean(
+                update_stats.win_probability_losses,
+                update_stats.win_probability_valid_counts,
+            )
+            mean_action_type_entropy = weighted_mean(update_action_type_entropies)
+            mean_clip_fraction = weighted_mean(update_clip_fracs)
+            mean_approx_kl = update_stats.running_kl
+            mean_valid_action_count = weighted_mean(update_valid_action_counts)
+            mean_valid_action_type_count = weighted_mean(update_valid_action_type_counts)
+            writer.add_scalar("ppo/policy_loss", mean_policy_loss, update_count)
+            writer.add_scalar("ppo/value_loss", mean_value_loss, update_count)
             writer.add_scalar("ppo/entropy_raw", mean_entropy, update_count)
             # Return-unit MSE regardless of head mode (raw under HL-Gauss, where
             # returns are never normalized); under HL-Gauss value_loss is
             # cross-entropy so this is the run-over-run comparable series.
-            writer.add_scalar("ppo/value_mse", np.mean(update_stats.value_mses), update_count)
-            writer.add_scalar("ppo/survival_loss", np.mean(update_stats.survival_losses), update_count)
+            writer.add_scalar("ppo/value_mse", mean_value_mse, update_count)
+            writer.add_scalar("ppo/survival_loss", mean_survival_loss, update_count)
             writer.add_scalar(
                 "ppo/win_probability_loss",
-                np.mean(update_stats.win_probability_losses),
+                mean_win_probability_loss,
                 update_count,
             )
-            writer.add_scalar("ppo/entropy_normalized", np.mean(update_normalized_entropies), update_count)
-            writer.add_scalar("ppo/action_type_entropy_normalized", np.mean(update_action_type_entropies), update_count)
-            writer.add_scalar("ppo/clip_fraction", np.mean(update_clip_fracs), update_count)
-            writer.add_scalar("ppo/approx_kl", update_stats.running_kl, update_count)
+            writer.add_scalar("ppo/entropy_normalized", mean_normalized_entropy, update_count)
+            writer.add_scalar(
+                "ppo/action_type_entropy_normalized",
+                mean_action_type_entropy,
+                update_count,
+            )
+            writer.add_scalar("ppo/clip_fraction", mean_clip_fraction, update_count)
+            writer.add_scalar("ppo/approx_kl", mean_approx_kl, update_count)
             writer.add_scalar(
                 "ppo/kl_rollback_event",
                 1.0 if update_stats.kl_rollback else 0.0,
@@ -3606,7 +3761,17 @@ def train_ppo(
             minibatches_expected = 0
             minibatch_fraction = 1.0
             if n_samples > 0:
-                minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
+                if accum_steps > 1:
+                    minibatches_per_epoch = max(
+                        1,
+                        _physical_minibatch_count(
+                            n_samples,
+                            config.mini_batch_size,
+                            effective_batch_size,
+                        ),
+                    )
+                else:
+                    minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
                 minibatches_expected = minibatches_per_epoch * config.ppo_epochs
                 minibatch_fraction = min(1.0, minibatches_processed / minibatches_expected)
                 writer.add_scalar("ppo/minibatch_fraction", minibatch_fraction, update_count)
@@ -3615,7 +3780,9 @@ def train_ppo(
             kl_max = float(np.max(update_approx_kls)) if update_approx_kls else 0.0
             clip_frac_max = float(np.max(update_clip_fracs)) if update_clip_fracs else 0.0
             writer.add_scalar(
-                "ppo/valid_action_type_count_mean", np.mean(update_valid_action_type_counts), update_count
+                "ppo/valid_action_type_count_mean",
+                mean_valid_action_type_count,
+                update_count,
             )
             writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
             # Release the rollout buffer before the eval/checkpoint memory peak.
@@ -3801,14 +3968,14 @@ def train_ppo(
             if should_log_progress:
                 progress = (
                     f"Update {update_count}/{planned_updates}, steps {total_steps}/{config.total_timesteps}: "
-                    f"policy_loss={np.mean(update_policy_losses):.4f}, "
-                    f"value_loss={np.mean(update_value_losses):.4f}, "
+                    f"policy_loss={mean_policy_loss:.4f}, "
+                    f"value_loss={mean_value_loss:.4f}, "
                     f"entropy={mean_entropy:.4f}, "
                     f"entropy_signal={entropy_signal_ema:.4f}, "
                     f"entropy_coeff={entropy_coeff:.5f}, "
-                    f"clip_fraction={np.mean(update_clip_fracs):.4f}, "
-                    f"approx_kl={np.mean(update_approx_kls):.5f}, "
-                    f"valid_actions={np.mean(update_valid_action_counts):.1f}, "
+                    f"clip_fraction={mean_clip_fraction:.4f}, "
+                    f"approx_kl={mean_approx_kl:.5f}, "
+                    f"valid_actions={mean_valid_action_count:.1f}, "
                     f"ep_reward_mean={recent_reward_mean:.3f}, "
                     f"ep_length_mean={recent_length_mean:.1f}, "
                     f"rollout_win_rate={recent_win_rate:.3f}, "
@@ -3920,9 +4087,9 @@ def train_ppo(
                     )
 
             # === Exploration-pressure warnings (Phase 4) ===
-            mean_normalized_entropy_update = float(np.mean(update_normalized_entropies))
+            mean_normalized_entropy_update = mean_normalized_entropy
             mean_chosen_action_prob = _safe_mean(rm.chosen_action_probs)
-            mean_action_type_entropy_update = float(np.mean(update_action_type_entropies))
+            mean_action_type_entropy_update = mean_action_type_entropy
             if should_log_progress:
                 if mean_normalized_entropy_update < 0.10:
                     logger.warning(
@@ -4050,13 +4217,9 @@ class _ObsBuffer:
             (num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int64
         )
         self._np_history_joker_mask = np.zeros_like(self._np_history_jokers)
-        self._np_history_event_mask = np.zeros(
-            (num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int64
-        )
+        self._np_history_event_mask = np.zeros((num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int64)
         self._np_history_round_mask = np.zeros((num_envs, HISTORY_ROUNDS), dtype=np.int64)
-        self._np_history_omitted = np.zeros(
-            (num_envs, HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32
-        )
+        self._np_history_omitted = np.zeros((num_envs, HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32)
 
     def update(self, obs_dict: dict) -> None:
         """Copy vectorized env output into pre-allocated tensors."""
@@ -4199,20 +4362,10 @@ def _single_obs_to_batch(obs: dict, device: torch.device) -> dict[str, torch.Ten
             obs["history_event_features"], dtype=torch.float32, device=device
         ).unsqueeze(0),
         "history_cards": torch.tensor(obs["history_cards"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_card_mask": torch.tensor(
-            obs["history_card_mask"], dtype=torch.long, device=device
-        ).unsqueeze(0),
+        "history_card_mask": torch.tensor(obs["history_card_mask"], dtype=torch.long, device=device).unsqueeze(0),
         "history_jokers": torch.tensor(obs["history_jokers"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_joker_mask": torch.tensor(
-            obs["history_joker_mask"], dtype=torch.long, device=device
-        ).unsqueeze(0),
-        "history_event_mask": torch.tensor(
-            obs["history_event_mask"], dtype=torch.long, device=device
-        ).unsqueeze(0),
-        "history_round_mask": torch.tensor(
-            obs["history_round_mask"], dtype=torch.long, device=device
-        ).unsqueeze(0),
-        "history_omitted": torch.tensor(
-            obs["history_omitted"], dtype=torch.float32, device=device
-        ).unsqueeze(0),
+        "history_joker_mask": torch.tensor(obs["history_joker_mask"], dtype=torch.long, device=device).unsqueeze(0),
+        "history_event_mask": torch.tensor(obs["history_event_mask"], dtype=torch.long, device=device).unsqueeze(0),
+        "history_round_mask": torch.tensor(obs["history_round_mask"], dtype=torch.long, device=device).unsqueeze(0),
+        "history_omitted": torch.tensor(obs["history_omitted"], dtype=torch.float32, device=device).unsqueeze(0),
     }

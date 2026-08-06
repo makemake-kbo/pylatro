@@ -63,7 +63,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 11
+REWARD_MODEL_VERSION = 12
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -120,11 +120,9 @@ JOKER_MOVE_NON_IMPROVING_PENALTY = 0.10
 JOKER_MOVE_REPEAT_PENALTY = 0.02
 JOKER_MOVE_PENALTY_CAP = 0.50
 
-# Ante 1 has little build scaling, so raw hand chips must carry a meaningful
-# share of the blind. This direct tempo signal prevents spending every discard
-# while an already-playable hand is available.
+# Ante 1 has little build scaling, so actual blind-score progress carries a
+# small, bounded potential. Its signed difference is segmentation invariant.
 ANTE1_CHIP_TEMPO_BONUS = 0.40
-ANTE1_DISCARD_PLAYABLE_RATIO = 0.75
 
 PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
@@ -604,49 +602,29 @@ def _apply_ante1_chip_tempo_reward(
     curr_info: dict,
     components: dict[str, float],
 ) -> None:
-    """Prefer immediately bankable raw chips before build scaling comes online."""
+    """Apply a signed difference of the bounded ante-one score potential.
+
+    ``Phi(score) = bonus * clamp(score / blind_target, 0, 1)``. Both scores
+    use the *previous* blind target, so a play that completes the blind or the
+    run is valued against the blind it actually faced. The signed difference
+    telescopes within a blind: splitting a score across plays cannot create
+    reward, and a Mr. Bones-style reset pays back earlier progress. Starting a
+    new blind establishes a fresh zero baseline rather than clawing back the
+    completed blind's score.
+    """
     if int(prev_info.get("ante", 0) or 0) != 1:
         return
     action_type = str(curr_info.get("action_type", ""))
-    if action_type not in {"play_subset", "discard_subset"}:
+    if action_type != "play_subset":
         return
-
-    remaining_score = max(
-        float(prev_info.get("blind_target", 0.0) or 0.0) - float(prev_info.get("round_score", 0.0) or 0.0),
-        0.0,
-    )
-    hands_left = max(int(prev_info.get("hands_left", 0) or 0), 1)
-    required_per_hand = remaining_score / hands_left
-    if required_per_hand <= 0.0:
+    blind_target = float(prev_info.get("blind_target", 0.0) or 0.0)
+    if blind_target <= 0.0:
         return
-
-    if action_type == "play_subset":
-        chosen_score = max(float(curr_info.get("ante1_chip_chosen_score", 0.0) or 0.0), 0.0)
-        if chosen_score > 0.0:
-            components["ante1_chip_tempo"] = ANTE1_CHIP_TEMPO_BONUS * min(
-                chosen_score / required_per_hand,
-                1.0,
-            )
-        return
-
-    best_score = max(float(curr_info.get("ante1_chip_best_score", 0.0) or 0.0), 0.0)
-    playable_ratio = best_score / required_per_hand
-    if playable_ratio < ANTE1_DISCARD_PLAYABLE_RATIO:
-        return
-
-    # Make the final discard twice as costly as the first. An early discard
-    # remains available for a real draw improvement, while exhausting all of
-    # them despite a playable hand becomes clearly unattractive.
-    discards_left = max(int(prev_info.get("discards_left", 0) or 0), 1)
-    discard_urgency = max(0.5, 1.0 - 0.2 * max(discards_left - 1, 0))
-    components["ante1_chip_tempo"] = (
-        -ANTE1_CHIP_TEMPO_BONUS
-        * min(
-            playable_ratio,
-            1.0,
-        )
-        * discard_urgency
-    )
+    prev_score = float(prev_info.get("round_score", 0.0) or 0.0)
+    curr_score = float(curr_info.get("round_score", 0.0) or 0.0)
+    prev_progress = min(max(prev_score / blind_target, 0.0), 1.0)
+    curr_progress = min(max(curr_score / blind_target, 0.0), 1.0)
+    components["ante1_chip_tempo"] = ANTE1_CHIP_TEMPO_BONUS * (curr_progress - prev_progress)
 
 
 def default_reward_components(
@@ -675,6 +653,8 @@ def default_reward_components(
             win_ante=win_ante,
             stalled=bool(curr_info.get("stalled", False)),
         )
+        _apply_ante1_chip_tempo_reward(prev_info, curr_info, components)
+        components["ante1_chip_tempo"] *= config.dense_reward_scale
         components["total"] = sum(components.values())
         return components
 

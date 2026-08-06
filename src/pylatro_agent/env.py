@@ -97,6 +97,10 @@ class BalatroEnv(gymnasium.Env):
         self._sub_phase = SubPhase.BLIND_SELECT
         self._steps_since_progress = 0
         self._history = PlayHistoryTracker()
+        # After a joker move, suppress only its exact inverse until a
+        # non-reorder action occurs. This preserves neutral multi-step plans
+        # while structurally preventing immediate A->B->A cycles.
+        self._forbidden_joker_move: tuple[int, int] | None = None
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -144,13 +148,9 @@ class BalatroEnv(gymnasium.Env):
                 "history_joker_mask": spaces.Box(
                     0, 1, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), dtype=np.int8
                 ),
-                "history_event_mask": spaces.Box(
-                    0, 1, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int8
-                ),
+                "history_event_mask": spaces.Box(0, 1, (HISTORY_ROUNDS, HISTORY_MAX_PLAYS), dtype=np.int8),
                 "history_round_mask": spaces.Box(0, 1, (HISTORY_ROUNDS,), dtype=np.int8),
-                "history_omitted": spaces.Box(
-                    -np.inf, np.inf, (HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32
-                ),
+                "history_omitted": spaces.Box(-np.inf, np.inf, (HISTORY_ROUNDS, HISTORY_OMITTED_DIM), dtype=np.float32),
             }
         )
         self.action_space = spaces.Discrete(NUM_ACTIONS)
@@ -184,6 +184,7 @@ class BalatroEnv(gymnasium.Env):
         self._steps_since_progress = 0
         self._play_diagnostic_count = 0
         self._joker_replacement_clear_baseline = None
+        self._forbidden_joker_move = None
         self._history.reset()
         self._prev_info = self._capture_state_info()
 
@@ -291,14 +292,10 @@ class BalatroEnv(gymnasium.Env):
             and action_diagnostics.get("shop_sold_joker_id")
             and self._joker_replacement_clear_baseline is None
         ):
-            self._joker_replacement_clear_baseline = float(
-                self._prev_info.get("clear_probability", 0.0) or 0.0
-            )
+            self._joker_replacement_clear_baseline = float(self._prev_info.get("clear_probability", 0.0) or 0.0)
         elif decoded.action_type == ActionType.SHOP_BUY and action_diagnostics.get("shop_bought_joker_id"):
             if self._joker_replacement_clear_baseline is not None:
-                curr_info["joker_upgrade_baseline_clear_probability"] = (
-                    self._joker_replacement_clear_baseline
-                )
+                curr_info["joker_upgrade_baseline_clear_probability"] = self._joker_replacement_clear_baseline
                 action_diagnostics["joker_replacement_sequence"] = True
             self._joker_replacement_clear_baseline = None
         elif decoded.action_type == ActionType.SHOP_LEAVE:
@@ -420,6 +417,7 @@ class BalatroEnv(gymnasium.Env):
         return compute_action_mask(
             self._controller.state,
             self._sub_phase,
+            forbidden_joker_move=self._forbidden_joker_move,
         )
 
     def _execute_action(self, decoded) -> Any:
@@ -427,6 +425,8 @@ class BalatroEnv(gymnasium.Env):
         ctrl = self._controller
         state = ctrl.state
         at = decoded.action_type
+        if at != ActionType.MOVE_JOKER:
+            self._forbidden_joker_move = None
 
         if at == ActionType.BLIND_PLAY:
             blind_type = state.blind_on_deck or "Small"
@@ -541,6 +541,7 @@ class BalatroEnv(gymnasium.Env):
 
         elif at == ActionType.MOVE_JOKER:
             move_joker(state, decoded.index, decoded.detail)
+            self._forbidden_joker_move = (decoded.detail, decoded.index)
 
     def _build_obs(self, state_info: dict | None = None) -> RawObservation:
         state = self._controller.state

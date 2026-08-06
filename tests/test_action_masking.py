@@ -16,6 +16,7 @@ from pylatro import (
     select_blind,
     start_blind,
 )
+from pylatro.instances import move_joker
 from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.constants import ActionRange, SubPhase
 from pylatro_agent.heuristic import HeuristicAgent
@@ -64,7 +65,7 @@ def test_non_improving_joker_reorders_are_masked(hand_play_state):
     assert moves.sum() == 0
 
 
-def test_only_score_improving_joker_reorders_are_unmasked(hand_play_state):
+def test_only_canonical_joker_reorders_are_unmasked(hand_play_state):
     # Flat mult should resolve before Cavendish's Xmult. The mask exposes one
     # canonical atomic move rather than duplicate actions for the same order.
     add_joker(hand_play_state, "j_cavendish")
@@ -77,6 +78,41 @@ def test_only_score_improving_joker_reorders_are_unmasked(hand_play_state):
     moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
     assert moves.sum() == 1
     assert mask[improving] or mask[equivalent]
+
+
+def test_neutral_first_step_toward_copy_joker_order_is_reachable(hand_play_state):
+    # Blueprint/Dusk/Hack/Idol has exact-scored layouts where moving Dusk in
+    # front of Blueprint is neutral (480 -> 480) but enables the following
+    # move toward a 3328-point target.  The mask must not judge that first step
+    # by a one-step representative-score approximation.
+    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
+        add_joker(hand_play_state, joker_key)
+
+    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+    neutral_first_step = encode_action(ActionType.MOVE_JOKER, 1, 0)
+
+    assert mask[neutral_first_step] == 1
+
+
+def test_immediate_reverse_is_masked_without_blocking_next_plan_step(hand_play_state):
+    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
+        add_joker(hand_play_state, joker_key)
+
+    first_step = encode_action(ActionType.MOVE_JOKER, 1, 0)
+    initial = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
+    assert initial[first_step] == 1
+    move_joker(hand_play_state, 1, 0)
+
+    reverse = encode_action(ActionType.MOVE_JOKER, 0, 1)
+    next_step = encode_action(ActionType.MOVE_JOKER, 2, 1)
+    bounded = compute_action_mask(
+        hand_play_state,
+        SubPhase.CHOOSE_ACTION,
+        forbidden_joker_move=(0, 1),
+    )
+
+    assert bounded[reverse] == 0
+    assert bounded[next_step] == 1
 
 
 def test_joker_reorders_are_hidden_in_shop(hand_play_state):
@@ -92,8 +128,8 @@ def test_joker_reorders_are_hidden_in_shop(hand_play_state):
 def test_choose_action_subset_ranges_are_bounded(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 
-    play_mask = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
-    discard_mask = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
+    play_mask = mask[ActionRange.PLAY_SUBSET_START : ActionRange.PLAY_SUBSET_END + 1]
+    discard_mask = mask[ActionRange.DISCARD_SUBSET_START : ActionRange.DISCARD_SUBSET_END + 1]
     assert play_mask.sum() >= 1
     assert discard_mask.sum() >= 1
     assert play_mask.sum() <= len(play_mask)
@@ -137,7 +173,6 @@ def test_heuristic_can_pick_hand_targeted_consumable(hand_play_state):
 
 def test_shop_mask_leave_always_valid(hand_play_state):
     # Simulate being in shop phase
-    from pylatro import populate_shop, cash_out
     # This is a simplified test — just check leave is always valid in shop mask
     mask = compute_action_mask(hand_play_state, SubPhase.SHOP)
     assert mask[ActionRange.SHOP_LEAVE] == 1
@@ -152,6 +187,7 @@ def test_pack_mask_joker_capacity_check(game_data):
     populate_shop(state)
 
     from pylatro.runtime import joker_limit
+
     jlimit = joker_limit(state)
 
     for _ in range(jlimit):
@@ -177,11 +213,11 @@ def test_pack_mask_joker_capacity_check(game_data):
             is_negative = bool(card.edition and card.edition.get("negative"))
             if not is_negative:
                 assert mask[ActionRange.PACK_CLAIM_START + i] == 0, (
-                    f"Non-negative joker at full slots should be masked out"
+                    "Non-negative joker at full slots should be masked out"
                 )
             else:
                 assert mask[ActionRange.PACK_CLAIM_START + i] == 1, (
-                    f"Negative joker should be claimable even at full slots"
+                    "Negative joker should be claimable even at full slots"
                 )
 
     if not has_joker_in_pack:
@@ -197,6 +233,7 @@ def test_pack_mask_consumable_capacity_check(game_data):
     populate_shop(state)
 
     from pylatro.runtime import consumable_limit
+
     climit = consumable_limit(state)
 
     for _ in range(climit):
@@ -219,9 +256,7 @@ def test_pack_mask_consumable_capacity_check(game_data):
         center = state.data.centers.get(card.center_key, {})
         if center.get("consumeable"):
             has_consumable_in_pack = True
-            assert mask[ActionRange.PACK_CLAIM_START + i] == 0, (
-                f"Consumable at full slots should be masked out"
-            )
+            assert mask[ActionRange.PACK_CLAIM_START + i] == 0, "Consumable at full slots should be masked out"
 
     if not has_consumable_in_pack:
         pytest.skip("No consumable in pack for this test")
@@ -236,6 +271,7 @@ def test_shop_mask_negative_joker_buyable_at_full_slots(game_data):
     populate_shop(state)
 
     from pylatro.runtime import joker_limit
+
     jlimit = joker_limit(state)
 
     for _ in range(jlimit):
@@ -249,9 +285,7 @@ def test_shop_mask_negative_joker_buyable_at_full_slots(game_data):
             is_negative = bool(item.edition and item.edition.get("negative"))
             if item.cost <= state.dollars:
                 if is_negative:
-                    assert mask[ActionRange.SHOP_BUY_START + i] == 1, (
-                        "Negative joker should be buyable at full slots"
-                    )
+                    assert mask[ActionRange.SHOP_BUY_START + i] == 1, "Negative joker should be buyable at full slots"
                 else:
                     assert mask[ActionRange.SHOP_BUY_START + i] == 0, (
                         "Non-negative joker should be masked at full slots"
@@ -271,7 +305,7 @@ def _boss_choose_state(game_data, boss_key: str):
 
 
 def _play_legal_indices(mask):
-    play = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
+    play = mask[ActionRange.PLAY_SUBSET_START : ActionRange.PLAY_SUBSET_END + 1]
     return np.where(play)[0]
 
 
@@ -286,7 +320,7 @@ def test_psychic_masks_provably_zero_small_plays(game_data):
     # Every remaining play satisfies the must-play-5 debuff
     assert {len(subset_indices(int(i))) for i in legal} == {5}
     # Discards are untouched — single-card discards stay legal
-    disc = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
+    disc = mask[ActionRange.DISCARD_SUBSET_START : ActionRange.DISCARD_SUBSET_END + 1]
     disc_sizes = {len(subset_indices(int(i))) for i in np.where(disc)[0]}
     assert 1 in disc_sizes
 
@@ -352,6 +386,6 @@ def test_debuff_mask_probes_preserve_blind_triggered(game_data):
 def test_small_blind_plays_are_not_debuff_masked(hand_play_state):
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
 
-    play = mask[ActionRange.PLAY_SUBSET_START:ActionRange.PLAY_SUBSET_END + 1]
-    disc = mask[ActionRange.DISCARD_SUBSET_START:ActionRange.DISCARD_SUBSET_END + 1]
+    play = mask[ActionRange.PLAY_SUBSET_START : ActionRange.PLAY_SUBSET_END + 1]
+    disc = mask[ActionRange.DISCARD_SUBSET_START : ActionRange.DISCARD_SUBSET_END + 1]
     assert np.array_equal(play, disc)

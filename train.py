@@ -74,7 +74,16 @@ def main():
         default=256,
         help="PPO rollout length per env before each update (default: 256)",
     )
-    parser.add_argument("--batch", type=int, default=128, help="Batch size (default: 128)")
+    parser.add_argument("--batch", type=int, default=128, help="Logical PPO batch size (default: 128)")
+    parser.add_argument(
+        "--micro-batch-size",
+        type=int,
+        default=None,
+        help=(
+            "Physical PPO samples per forward/backward pass. Gradients accumulate to --batch exactly. "
+            "Default: --batch (no accumulation)."
+        ),
+    )
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO epochs per update (default: 4)")
     parser.add_argument(
         "--pretrained",
@@ -798,6 +807,7 @@ def main():
                 total_updates=args.updates,
                 ppo_epochs=args.ppo_epochs,
                 mini_batch_size=args.batch,
+                micro_batch_size=args.micro_batch_size or args.batch,
                 lr=args.lr,
                 clip_epsilon=args.clip_eps,
                 gae_lambda=args.gae_lambda,

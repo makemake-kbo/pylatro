@@ -93,6 +93,7 @@ class BalatroAgent(nn.Module):
         history_omitted: torch.Tensor | None = None,
         temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
+        detach_value_features: bool = False,
         return_raw_outputs: bool = False,
     ) -> tuple[ActionGrammarDistribution | dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         """Return the structured policy distribution and value predictions."""
@@ -115,7 +116,13 @@ class BalatroAgent(nn.Module):
         )
         x = self.backbone(x, padding_mask=(attention_mask == 0))
         grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
-        value_dict = self.value_head(x, attention_mask)
+        # Critic warmup and the protected actor ramp intentionally train the
+        # value head against fixed policy features. Detaching here keeps the
+        # critic out of the shared trunk by construction and lets PPO backward
+        # policy + critic in one traversal instead of retaining the full graph
+        # for a second value-head-only autograd pass.
+        value_features = x.detach() if detach_value_features else x
+        value_dict = self.value_head(value_features, attention_mask)
         if return_raw_outputs:
             # DataParallel can gather nested tensor containers, but not an
             # ActionGrammarDistribution (which also closes over the unsharded
@@ -165,6 +172,7 @@ class BalatroAgent(nn.Module):
         history_omitted: torch.Tensor | None = None,
         temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
+        detach_value_features: bool = False,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
         """Named entry point used by rollout and training code."""
         return self(
@@ -184,6 +192,7 @@ class BalatroAgent(nn.Module):
             history_omitted,
             temperature=temperature,
             hand_ar_mixture_eps=hand_ar_mixture_eps,
+            detach_value_features=detach_value_features,
         )
 
     def count_parameters(self) -> int:

@@ -19,6 +19,8 @@ SOURCE_METADATA = {
 }
 
 V14_TRANSITION_CONFIG = {
+    "mini_batch_size": 320,
+    "micro_batch_size": 160,
     "lr": 3e-6,
     "clip_epsilon": 0.1,
     "critic_warmup_updates": 20,

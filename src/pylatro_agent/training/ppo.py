@@ -469,7 +469,10 @@ class PPOConfig:
     # reach the responsible decisions through GAE. Immediate idle penalties
     # remain the primary defense; this is the bounded backstop.
     max_no_progress_steps: int = 32
-    micro_batch_size: int = 64  # Physical batch per forward pass (DataParallel grad accum)
+    # Physical samples per forward/backward pass. Logical ``mini_batch_size``
+    # gradients are accumulated exactly across these chunks on both single-
+    # and multi-GPU runs.
+    micro_batch_size: int = 64
     normalize_returns: bool = False  # BC pretraining supervises expected_score on raw ±10-ish
     # returns; turning on running-mean/std normalization here causes a one-rollout GAE
     # corruption window the first time rms.std deviates from 1, which is enough to wreck a
@@ -745,6 +748,8 @@ class _PPOTransitionState:
 
 
 _TRANSITION_CONFIG_FIELDS = (
+    "mini_batch_size",
+    "micro_batch_size",
     "lr",
     "clip_epsilon",
     "critic_warmup_updates",
@@ -1353,6 +1358,7 @@ def _grammar_distribution(
     model: nn.Module,
     batch: dict[str, torch.Tensor],
     temperature: float | torch.Tensor = 1.0,
+    detach_value_features: bool = False,
 ):
     import inspect
 
@@ -1388,6 +1394,7 @@ def _grammar_distribution(
             batch["attention_mask"],
             batch["action_mask"],
             temperature=temperature,
+            detach_value_features=detach_value_features,
             return_raw_outputs=True,
             **history_kwargs,
         )
@@ -1402,6 +1409,7 @@ def _grammar_distribution(
             ),
             value_dict,
         )
+    extra_kwargs = {"detach_value_features": detach_value_features} if isinstance(base_model, BalatroAgent) else {}
     return base_model.action_distribution(
         batch["tokens"],
         batch["token_types"],
@@ -1410,6 +1418,7 @@ def _grammar_distribution(
         batch["action_mask"],
         temperature=temperature,
         **history_kwargs,
+        **extra_kwargs,
     )
 
 
@@ -1609,6 +1618,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
             raise ValueError("ppo_recipe_id must be non-empty")
     if config.ppo_epochs <= 0:
         raise ValueError("ppo_epochs must be positive")
+    if config.mini_batch_size <= 0:
+        raise ValueError("mini_batch_size must be positive")
+    if config.micro_batch_size <= 0:
+        raise ValueError("micro_batch_size must be positive")
     if config.rollout_length <= 0:
         raise ValueError("rollout_length must be positive")
     if config.max_no_progress_steps <= 0:
@@ -1871,6 +1884,8 @@ def _run_ppo_update(
         on_policy_fractions=[],
     )
     stats.actual_lr = float(optimizer.param_groups[0]["lr"])
+    critic_head_only = policy_frozen or protect_actor_from_critic or not config.critic_updates_trunk
+    critic_features_detached = critic_head_only and isinstance(_unwrap_model(model), BalatroAgent)
 
     # A hard KL limit is a rejection criterion, not a warning. Snapshot before
     # the first gradient is computed so a rejected update restores both weights
@@ -1985,6 +2000,7 @@ def _run_ppo_update(
                 model,
                 batch,
                 temperature=_policy_temperature_for_scalars(batch["scalars"], config),
+                detach_value_features=critic_features_detached,
             )
 
             new_log_probs = dist.log_prob(batch["actions"])
@@ -2105,7 +2121,15 @@ def _run_ppo_update(
                 # contribution while sharing this microbatch's clip + step.
                 policy_objective_loss = policy_objective_loss * policy_loss_scale
 
-                if config.critic_updates_trunk and not protect_actor_from_critic:
+                if critic_features_detached:
+                    # The production critic consumed detached backbone
+                    # features, so one backward produces PPO gradients for the
+                    # policy/trunk and critic gradients for value_head only.
+                    # This avoids retaining the full transformer graph for a
+                    # second autograd traversal during the protected ramp.
+                    total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
+                    total_loss.backward()
+                elif config.critic_updates_trunk and not protect_actor_from_critic:
                     total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
                     total_loss.backward()
                 else:
@@ -2457,6 +2481,7 @@ def _save_checkpoint(
             "seed",
             "ppo_epochs",
             "mini_batch_size",
+            "micro_batch_size",
             "lr",
             "clip_epsilon",
             "gae_lambda",
@@ -3372,16 +3397,17 @@ def train_ppo(
     use_multi_gpu = config.device == "cuda" and torch.cuda.device_count() > 1
     if use_multi_gpu:
         model = nn.DataParallel(model)
-        effective_batch_size = max(1, min(config.micro_batch_size, config.mini_batch_size))
-        accum_steps = max(1, math.ceil(config.mini_batch_size / effective_batch_size))
+    effective_batch_size = max(1, min(config.micro_batch_size, config.mini_batch_size))
+    accum_steps = max(1, math.ceil(config.mini_batch_size / effective_batch_size))
+    if accum_steps > 1:
         logger.info(
-            "DataParallel: up to %d accumulation steps per exact logical batch, micro_batch<=%d",
+            "PPO gradient accumulation: up to %d physical microbatches per exact logical batch "
+            "(logical=%d, physical<=%d, DataParallel=%s).",
             accum_steps,
+            config.mini_batch_size,
             effective_batch_size,
+            use_multi_gpu,
         )
-    else:
-        accum_steps = 1
-        effective_batch_size = config.mini_batch_size
 
     initial_optimizer_lr = _phase_learning_rate(
         config,
@@ -4193,6 +4219,7 @@ def train_ppo(
             # save the exact critic/policy state and stop normally; we never
             # force an unready critic onto the pretrained actor.
             critic_updates_completed = transition_state.critic_warmup_updates_completed
+            warmup_was_complete = transition_state.warmup_complete
             if config.critic_warmup_updates > 0 and not transition_state.warmup_complete:
                 warmup_decision = _record_critic_ev_and_decide(
                     transition_state,
@@ -4221,6 +4248,7 @@ def train_ppo(
                 )
 
             in_critic_warmup = warmup_decision.active
+            gate_just_opened = not warmup_was_complete and transition_state.warmup_complete
             active_optimizer_lr = _set_optimizer_lr_for_phase(
                 optimizer,
                 config,
@@ -4309,6 +4337,38 @@ def train_ppo(
                 )
                 del buffer
                 break
+
+            if gate_just_opened:
+                # Persist the trained critic and latched transition before the
+                # first actor backward. A CUDA failure can then resume at the
+                # protected ramp instead of replaying the entire warmup.
+                writer.flush()
+                ramp_ready_path = _save_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    save_path=save_path,
+                    update_count=update_count,
+                    total_steps=total_steps,
+                    planned_updates=planned_updates,
+                    entropy_coeff=entropy_coeff,
+                    entropy_signal_ema=entropy_signal_ema,
+                    lr=config.lr,
+                    log_alpha=log_alpha,
+                    alpha_optimizer=alpha_optimizer,
+                    return_rms=return_rms,
+                    agent_config=agent_config,
+                    config=config,
+                    transition_state=transition_state,
+                    filename="ppo_actor_ramp_ready.pt",
+                    extra={
+                        "best_eval_win_rate": best_eval_win_rate,
+                        "best_eval_update": best_eval_update,
+                        "schedule_total_steps": schedule_total_steps,
+                        "critic_warmup_rolling_ev": warmup_decision.rolling_ev,
+                    },
+                )
+                _mirror_latest_checkpoint(ramp_ready_path, save_path)
+                logger.info("Saved actor-ramp transition checkpoint: %s", ramp_ready_path)
 
             actor_transition = _actor_transition_runtime(
                 config,

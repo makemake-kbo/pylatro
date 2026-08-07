@@ -89,8 +89,9 @@ class _LoopTestAgent(torch.nn.Module):
         attention_mask: torch.Tensor,
         action_mask: torch.Tensor,
         temperature: float | torch.Tensor = 1.0,
+        detach_value_features: bool = False,
     ) -> tuple[_LoopTestDistribution, dict[str, torch.Tensor]]:
-        del tokens, token_types, scalars, attention_mask, temperature
+        del tokens, token_types, scalars, attention_mask, temperature, detach_value_features
         batch_size = action_mask.shape[0]
         value_input = torch.ones(batch_size, 1, dtype=action_mask.dtype, device=action_mask.device)
         values = self.value_head(value_input).squeeze(-1)
@@ -227,6 +228,7 @@ def _run_controlled_transition_loop(
     config.rollout_length = 2
     config.ppo_epochs = 1
     config.mini_batch_size = 2
+    config.micro_batch_size = 1
     config.device = "cpu"
     config.async_envs = False
     config.checkpoint_interval = 1
@@ -299,6 +301,8 @@ def _run_controlled_transition_loop(
             "policy_loss_scale": kwargs["policy_loss_scale"],
             "clip_epsilon": kwargs["clip_epsilon"],
             "protect_actor_from_critic": kwargs["protect_actor_from_critic"],
+            "accum_steps": kwargs["accum_steps"],
+            "effective_batch_size": kwargs["effective_batch_size"],
         }
         result = original_run_update(**kwargs)
         call["actor_changed"] = not torch.equal(model.actor.detach(), actor_before)
@@ -505,17 +509,7 @@ def test_warmup_boundary_orders_19_then_critic_update_then_first_actor() -> None
         "ppo_transition_state": state.to_payload(config),
         "ppo_config_fields": {
             name: getattr(config, name)
-            for name in (
-                "lr",
-                "clip_epsilon",
-                "critic_warmup_updates",
-                "critic_warmup_lr",
-                "critic_warmup_min_ev",
-                "critic_warmup_ev_window",
-                "critic_warmup_max_updates",
-                "actor_ramp_updates",
-                "actor_ramp_start_clip_fraction",
-            )
+            for name in ppo_module._TRANSITION_CONFIG_FIELDS
         },
     }
     restored = _restore_ppo_transition_state(config, resume_blob)
@@ -582,6 +576,8 @@ def test_train_ppo_real_loop_switches_lr_before_first_actor_step_and_checkpoints
             "policy_loss_scale": 0.0,
             "clip_epsilon": pytest.approx(0.05),
             "protect_actor_from_critic": True,
+            "accum_steps": 2,
+            "effective_batch_size": 1,
             "actor_changed": False,
             "value_head_changed": True,
         },
@@ -590,6 +586,8 @@ def test_train_ppo_real_loop_switches_lr_before_first_actor_step_and_checkpoints
             "policy_loss_scale": 1.0,
             "clip_epsilon": pytest.approx(0.05),
             "protect_actor_from_critic": True,
+            "accum_steps": 2,
+            "effective_batch_size": 1,
             "actor_changed": True,
             "value_head_changed": True,
         },
@@ -607,6 +605,16 @@ def test_train_ppo_real_loop_switches_lr_before_first_actor_step_and_checkpoints
     # Adam state at all, while value-head params in group 1 have stepped.
     assert 0 not in warmup_checkpoint["optimizer_state_dict"]["state"]
     assert warmup_checkpoint["optimizer_state_dict"]["state"]
+
+    ramp_ready_checkpoint = torch.load(
+        tmp_path / "ppo_actor_ramp_ready.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert ramp_ready_checkpoint["update_count"] == 20
+    assert ramp_ready_checkpoint["ppo_transition_state"]["warmup_complete"] is True
+    assert ramp_ready_checkpoint["ppo_transition_state"]["actor_ramp_successful_updates"] == 0
+    assert ramp_ready_checkpoint["ppo_active_lr"] == pytest.approx(3e-6)
 
     actor_checkpoint = torch.load(tmp_path / "ppo_update21.pt", map_location="cpu", weights_only=False)
     assert actor_checkpoint["ppo_transition_state"]["warmup_complete"] is True
@@ -676,17 +684,7 @@ def test_fail_closed_transition_restores_as_terminal() -> None:
         "ppo_transition_state": state.to_payload(config),
         "ppo_config_fields": {
             name: getattr(config, name)
-            for name in (
-                "lr",
-                "clip_epsilon",
-                "critic_warmup_updates",
-                "critic_warmup_lr",
-                "critic_warmup_min_ev",
-                "critic_warmup_ev_window",
-                "critic_warmup_max_updates",
-                "actor_ramp_updates",
-                "actor_ramp_start_clip_fraction",
-            )
+            for name in ppo_module._TRANSITION_CONFIG_FIELDS
         },
     }
     restored = _restore_ppo_transition_state(config, blob)
@@ -769,17 +767,7 @@ def test_transition_config_mismatch_is_rejected_directly() -> None:
         "ppo_transition_state": state.to_payload(saved_config),
         "ppo_config_fields": {
             name: getattr(saved_config, name)
-            for name in (
-                "lr",
-                "clip_epsilon",
-                "critic_warmup_updates",
-                "critic_warmup_lr",
-                "critic_warmup_min_ev",
-                "critic_warmup_ev_window",
-                "critic_warmup_max_updates",
-                "actor_ramp_updates",
-                "actor_ramp_start_clip_fraction",
-            )
+            for name in ppo_module._TRANSITION_CONFIG_FIELDS
         },
     }
     active_config = _safe_transition_config()

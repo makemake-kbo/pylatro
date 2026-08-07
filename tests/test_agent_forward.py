@@ -70,6 +70,37 @@ def test_named_distribution_entry_point_matches_forward_contract(
     assert values["expected_score"].shape == (3,)
 
 
+def test_detached_value_features_keep_critic_gradient_out_of_backbone(
+    model: BalatroAgent,
+) -> None:
+    inputs = _inputs(2)
+
+    model.zero_grad(set_to_none=True)
+    distribution, _values = model.action_distribution(*inputs, detach_value_features=True)
+    actions = torch.zeros(2, dtype=torch.long)
+    policy_loss = -distribution.log_prob(actions).mean()
+    policy_loss.backward()
+    policy_backbone_grads = {
+        name: parameter.grad.detach().clone()
+        for name, parameter in model.backbone.named_parameters()
+        if parameter.grad is not None
+    }
+    assert policy_backbone_grads
+
+    model.zero_grad(set_to_none=True)
+    distribution, values = model.action_distribution(*inputs, detach_value_features=True)
+    combined_loss = -distribution.log_prob(actions).mean() + 100.0 * values["expected_score"].mean()
+    combined_loss.backward()
+
+    for name, parameter in model.backbone.named_parameters():
+        expected = policy_backbone_grads.get(name)
+        if expected is None:
+            assert parameter.grad is None
+        else:
+            assert torch.allclose(parameter.grad, expected)
+    assert any(parameter.grad is not None for parameter in model.value_head.parameters())
+
+
 def test_data_parallel_path_uses_tensor_outputs_and_rebuilds_distribution(
     model: BalatroAgent,
     monkeypatch: pytest.MonkeyPatch,

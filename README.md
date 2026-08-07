@@ -145,7 +145,7 @@ build-aware shaping, Planet alignment, and conservative exploration:
 ```bash
 uv run python train.py ppo \
   --pretrained checkpoints/supervised/supervised_epoch10.pt \
-  --envs 16 --rollout-length 256 --batch 320 --ppo-epochs 4 \
+  --envs 16 --rollout-length 256 --batch 320 --micro-batch-size 160 --ppo-epochs 4 \
   --updates 2000 --device cuda --win-ante 4 --hl-gauss \
   --gamma 0.997 --lr 3e-6 --clip-eps 0.1 \
   --target-kl 0.03 --target-kl-p95 0.10 --target-kl-max 0.15 \
@@ -222,11 +222,14 @@ must also report tokenizer v6, reward model v12, update 280, and best-eval updat
 ownership marker. The UUID, pinned source SHA, and recipe identity are passed
 into training and cryptographically bind every normal, best, and fail-closed
 checkpoint to that directory; strict resume rejects a foreign checkpoint even
-when its v14 hyperparameters match. The corrected recipe uses a `320` minibatch
-to leave headroom for the protected actor-ramp backward pass. Its provenance ID
-is `pylatro-v14-safe-v3` with a new default run directory, deliberately refusing
-the pre-fix v1 marker and the v2 recipe that exhausted GPU memory at actor
-unfreeze. Override
+when its v14 hyperparameters match. The corrected recipe preserves a logical
+batch of `320` while accumulating two physical microbatches of at most `160`.
+During warmup and the protected ramp the critic consumes detached backbone
+features, so policy and critic share one backward without leaking critic
+gradients into the policy trunk or retaining the transformer graph. The gate
+transition is checkpointed before the first actor step. Its provenance ID is
+`pylatro-v14-safe-v4` with a new default run directory, deliberately refusing
+the earlier recipes that exhausted GPU memory at actor unfreeze. Override
 `PYLATRO_WORKSPACE`, `PYLATRO_SOURCE_CHECKPOINT`, `PYLATRO_SOURCE_SHA256`, or
 `PYLATRO_RUN_NAME` only for an equivalently validated non-v13 source.
 

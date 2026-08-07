@@ -61,12 +61,15 @@ def test_v14_launcher_and_validator_pin_distinct_phase_learning_rates() -> None:
     launcher = LAUNCHER_PATH.read_text()
     assert validator.V14_TRANSITION_CONFIG["lr"] == pytest.approx(3e-6)
     assert validator.V14_TRANSITION_CONFIG["critic_warmup_lr"] == pytest.approx(1e-5)
+    assert validator.V14_TRANSITION_CONFIG["mini_batch_size"] == 320
+    assert validator.V14_TRANSITION_CONFIG["micro_batch_size"] == 160
     assert "--lr 3e-6" in launcher
     assert "--critic-warmup-lr 1e-5" in launcher
     assert "--batch 320" in launcher
+    assert "--micro-batch-size 160" in launcher
     assert "--batch 352" not in launcher
-    assert "criticlr1e5_batch320" in launcher
-    assert 'recipe_id="pylatro-v14-safe-v3"' in launcher
+    assert "criticlr1e5_micro160" in launcher
+    assert 'recipe_id="pylatro-v14-safe-v4"' in launcher
 
 
 def test_source_validator_checks_hash_and_exact_metadata(tmp_path: Path) -> None:
@@ -87,7 +90,7 @@ def test_resume_validator_requires_v14_transition_recipe(tmp_path: Path) -> None
     resume = tmp_path / "v14_resume.pt"
     run_uuid = str(uuid.uuid4())
     source_sha256 = "a" * 64
-    recipe_id = "pylatro-v14-safe-v3"
+    recipe_id = "pylatro-v14-safe-v4"
     torch.save(
         {
             "checkpoint_format": "ppo_full",
@@ -257,7 +260,7 @@ def test_launcher_rejects_foreign_v14_checkpoint_uuid(tmp_path: Path) -> None:
             "ppo_run_provenance": {
                 "run_uuid": str(uuid.uuid4()),
                 "source_sha256": source_sha256,
-                "recipe_id": "pylatro-v14-safe-v3",
+                "recipe_id": "pylatro-v14-safe-v4",
             },
         },
         checkpoint_dir / "ppo_latest.pt",

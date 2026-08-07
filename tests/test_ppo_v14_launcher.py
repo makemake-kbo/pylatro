@@ -63,7 +63,10 @@ def test_v14_launcher_and_validator_pin_distinct_phase_learning_rates() -> None:
     assert validator.V14_TRANSITION_CONFIG["critic_warmup_lr"] == pytest.approx(1e-5)
     assert "--lr 3e-6" in launcher
     assert "--critic-warmup-lr 1e-5" in launcher
-    assert 'recipe_id="pylatro-v14-safe-v2"' in launcher
+    assert "--batch 320" in launcher
+    assert "--batch 352" not in launcher
+    assert "criticlr1e5_batch320" in launcher
+    assert 'recipe_id="pylatro-v14-safe-v3"' in launcher
 
 
 def test_source_validator_checks_hash_and_exact_metadata(tmp_path: Path) -> None:
@@ -84,7 +87,7 @@ def test_resume_validator_requires_v14_transition_recipe(tmp_path: Path) -> None
     resume = tmp_path / "v14_resume.pt"
     run_uuid = str(uuid.uuid4())
     source_sha256 = "a" * 64
-    recipe_id = "pylatro-v14-safe-v2"
+    recipe_id = "pylatro-v14-safe-v3"
     torch.save(
         {
             "checkpoint_format": "ppo_full",
@@ -254,7 +257,7 @@ def test_launcher_rejects_foreign_v14_checkpoint_uuid(tmp_path: Path) -> None:
             "ppo_run_provenance": {
                 "run_uuid": str(uuid.uuid4()),
                 "source_sha256": source_sha256,
-                "recipe_id": "pylatro-v14-safe-v2",
+                "recipe_id": "pylatro-v14-safe-v3",
             },
         },
         checkpoint_dir / "ppo_latest.pt",

@@ -164,7 +164,8 @@ uv run python train.py ppo \
   --eval-games 100 --eval-interval 10 \
   --eval-regression-tolerance 0.05 --eval-regression-patience 2 \
   --reinit-value-head \
-  --critic-warmup-updates 20 --critic-warmup-min-ev 0.4 \
+  --critic-warmup-updates 20 --critic-warmup-lr 1e-5 \
+  --critic-warmup-min-ev 0.4 \
   --critic-warmup-ev-window 5 --critic-warmup-max-updates 80 \
   --actor-ramp-updates 25 --actor-ramp-start-clip-fraction 0.5
 ```
@@ -195,20 +196,24 @@ last-shop survival calibration. Non-improving Joker reorderings receive an
 immediate penalty, and action-family fractions plus no-progress streaks make a
 shop loop directly visible. A short idle horizon, action-family entropy bonus,
 hard KL guard, and two-eval regression stop protect the pretrained policy. The
-v14 recipe lowers the shared step size to `3e-6`. Actor unfreeze requires a full
+v14 trains the freshly reinitialized value head at `1e-5` while keeping the
+policy and shared trunk frozen. Actor unfreeze requires a full
 rolling EV window after the minimum critic warmup; an unready critic at the
 maximum warmup count is checkpointed and stopped, never force-unfrozen. During
-the protected actor ramp, the PPO clip range grows from `0.05` to `0.10` and
+the protected actor ramp, the optimizer switches to the `3e-6` actor/base LR
+before its first step, the PPO clip range grows from `0.05` to `0.10`, and
 critic gradients remain value-head-only so they cannot move the shared policy trunk. Reinitialize
 the value head when adding these rewards to a checkpoint trained with different
 reward semantics. Full PPO checkpoints persist the rolling EV evidence, total
 critic warmup updates, gate/fail-closed status, and successful actor-ramp update
 count, so strict resume continues the exact transition phase. Legacy checkpoints
-without that state are rejected when either safety phase is enabled.
+without that state are rejected when either safety phase is enabled. Checkpoints
+also persist the configured actor/warmup LRs and active optimizer LR; strict
+resume rejects a phase/LR mismatch instead of silently stepping at the wrong rate.
 
 The production CUDA recipe is also available as
 `scripts/run_ppo_v14_safe_tarot_seal_strategy.sh`. By default it initializes a
-fresh v14 directory from the original best v12 update-280 policy and refuses any
+fresh corrected-v14 directory from the original best v12 update-280 policy and refuses any
 v13 source/run override. It may resume only `ppo_latest.pt` inside its own v14
 directory. The source is pinned to SHA-256
 `5a81807c38213d0aadd5d984158652daafd259df0e416d70097698dd75cc0660` and
@@ -217,7 +222,9 @@ must also report tokenizer v6, reward model v12, update 280, and best-eval updat
 ownership marker. The UUID, pinned source SHA, and recipe identity are passed
 into training and cryptographically bind every normal, best, and fail-closed
 checkpoint to that directory; strict resume rejects a foreign checkpoint even
-when its v14 hyperparameters match. Override
+when its v14 hyperparameters match. The corrected recipe uses provenance ID
+`pylatro-v14-safe-v2` and a new default run directory; it deliberately refuses
+pre-fix v1 markers and checkpoints. Override
 `PYLATRO_WORKSPACE`, `PYLATRO_SOURCE_CHECKPOINT`, `PYLATRO_SOURCE_SHA256`, or
 `PYLATRO_RUN_NAME` only for an equivalently validated non-v13 source.
 

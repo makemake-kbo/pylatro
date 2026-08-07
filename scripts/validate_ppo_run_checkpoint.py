@@ -19,8 +19,10 @@ SOURCE_METADATA = {
 }
 
 V14_TRANSITION_CONFIG = {
+    "lr": 3e-6,
     "clip_epsilon": 0.1,
     "critic_warmup_updates": 20,
+    "critic_warmup_lr": 1e-5,
     "critic_warmup_min_ev": 0.4,
     "critic_warmup_ev_window": 5,
     "critic_warmup_max_updates": 80,
@@ -125,6 +127,24 @@ def validate_resume(
     ]
     if mismatches:
         raise RuntimeError("resume transition recipe mismatch: " + "; ".join(mismatches))
+    expected_active_lr = (
+        V14_TRANSITION_CONFIG["lr"]
+        if bool(transition.get("warmup_complete", False))
+        else V14_TRANSITION_CONFIG["critic_warmup_lr"]
+    )
+    if payload.get("ppo_active_lr") != expected_active_lr:
+        raise RuntimeError(
+            "resume active optimizer LR mismatch: "
+            f"expected={expected_active_lr!r}, actual={payload.get('ppo_active_lr')!r}"
+        )
+    optimizer_state = payload.get("optimizer_state_dict") or {}
+    param_groups = optimizer_state.get("param_groups") or []
+    group_lrs = [group.get("lr") for group in param_groups if isinstance(group, dict)]
+    if not group_lrs or len(group_lrs) != len(param_groups) or any(lr != expected_active_lr for lr in group_lrs):
+        raise RuntimeError(
+            "resume optimizer-group LR mismatch: "
+            f"expected={expected_active_lr!r}, actual={group_lrs!r}"
+        )
     expected_provenance = {
         "run_uuid": run_uuid,
         "source_sha256": source_sha256.lower(),

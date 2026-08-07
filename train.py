@@ -447,6 +447,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--critic-warmup-lr",
+        type=float,
+        default=None,
+        help=(
+            "Learning rate used only while the policy is frozen and critic gradients are restricted "
+            "to the value head. The optimizer switches back to --lr before the first actor update. "
+            "Default: --lr."
+        ),
+    )
+    parser.add_argument(
         "--critic-warmup-min-ev",
         type=float,
         default=0.7,
@@ -822,6 +832,7 @@ def main():
                 eval_device=args.eval_device,
                 hand_ar_mixture_eps=ppo_eps,
                 critic_warmup_updates=args.critic_warmup_updates,
+                critic_warmup_lr=args.critic_warmup_lr,
                 critic_warmup_min_ev=args.critic_warmup_min_ev,
                 critic_warmup_ev_window=args.critic_warmup_ev_window,
                 critic_warmup_max_updates=args.critic_warmup_max_updates,

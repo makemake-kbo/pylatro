@@ -4,10 +4,11 @@ import numpy as np
 import pytest
 import torch
 
+import pylatro_agent.training.ppo as ppo_module
 from pylatro import load_game_data
 from pylatro_agent import checkpoint as ckpt
 from pylatro_agent.agent import AgentConfig, BalatroAgent
-from pylatro_agent.constants import META_COUNT, SCALAR_DIM, TOKEN_DIM, TOKENIZER_SEMANTICS
+from pylatro_agent.constants import META_COUNT, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, TOKENIZER_SEMANTICS
 from pylatro_agent.embeddings import MetaEmbedding
 from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
@@ -23,8 +24,10 @@ from pylatro_agent.training.ppo import (
     _optimizer_to,
     _PPOTransitionState,
     _record_critic_ev_and_decide,
+    _restore_policy_optimizer_state,
     _restore_ppo_transition_state,
     _save_checkpoint,
+    _set_optimizer_lr_for_phase,
     _validate_resume_provenance,
     train_ppo,
 )
@@ -34,6 +37,82 @@ from pylatro_agent.vocab import build_vocab
 def _tiny_model() -> torch.nn.Module:
     torch.manual_seed(0)
     return torch.nn.Linear(4, 2)
+
+
+class _LoopTestDistribution:
+    """Minimal rollout distribution that always selects the first legal action."""
+
+    def __init__(self, action_mask: torch.Tensor, actor: torch.Tensor) -> None:
+        self._action_mask = action_mask
+        logits = actor.unsqueeze(0).expand_as(action_mask).masked_fill(action_mask <= 0, -1e8)
+        self._distribution = torch.distributions.Categorical(logits=logits)
+        self.action_type_probs = torch.ones(
+            action_mask.shape[0],
+            1,
+            dtype=action_mask.dtype,
+            device=action_mask.device,
+        )
+
+    def sample(self) -> torch.Tensor:
+        return self._action_mask.argmax(dim=-1)
+
+    def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        return self._distribution.log_prob(actions)
+
+    def selected_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        return self.log_prob(actions).exp()
+
+    def entropy(self) -> torch.Tensor:
+        return self._distribution.entropy()
+
+    def normalized_action_type_entropy(self) -> torch.Tensor:
+        return self.actor_dependency * 0.0
+
+    @property
+    def actor_dependency(self) -> torch.Tensor:
+        return self._distribution.logits.sum()
+
+
+class _LoopTestAgent(torch.nn.Module):
+    """Small actor/value model used to exercise train_ppo orchestration."""
+
+    def __init__(self, _config: AgentConfig, _vocab) -> None:
+        super().__init__()
+        self.actor = torch.nn.Parameter(torch.zeros(NUM_ACTIONS))
+        self.value_head = torch.nn.Linear(1, 1)
+
+    def action_distribution(
+        self,
+        tokens: torch.Tensor,
+        token_types: torch.Tensor,
+        scalars: torch.Tensor,
+        attention_mask: torch.Tensor,
+        action_mask: torch.Tensor,
+        temperature: float | torch.Tensor = 1.0,
+    ) -> tuple[_LoopTestDistribution, dict[str, torch.Tensor]]:
+        del tokens, token_types, scalars, attention_mask, temperature
+        batch_size = action_mask.shape[0]
+        value_input = torch.ones(batch_size, 1, dtype=action_mask.dtype, device=action_mask.device)
+        values = self.value_head(value_input).squeeze(-1)
+        survival = torch.full((batch_size, 8), 0.5, dtype=values.dtype, device=values.device)
+        return _LoopTestDistribution(action_mask, self.actor), {
+            "expected_score": values,
+            "ante_survival": survival,
+        }
+
+
+class _LoopTestWriter:
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def add_scalar(self, *_args, **_kwargs) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 def test_raw_state_dict_checkpoint_is_rejected(tmp_path) -> None:
@@ -112,8 +191,10 @@ def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
 
 def _safe_transition_config() -> PPOConfig:
     return PPOConfig(
+        lr=3e-6,
         clip_epsilon=0.1,
         critic_warmup_updates=20,
+        critic_warmup_lr=1e-5,
         critic_warmup_min_ev=0.4,
         critic_warmup_ev_window=5,
         critic_warmup_max_updates=80,
@@ -125,8 +206,125 @@ def _safe_transition_config() -> PPOConfig:
 def _bind_test_provenance(config: PPOConfig, *, run_uuid: str = "12345678-1234-5678-9234-567812345678") -> PPOConfig:
     config.ppo_run_uuid = run_uuid
     config.ppo_source_sha256 = "a" * 64
-    config.ppo_recipe_id = "pylatro-v14-safe-v1"
+    config.ppo_recipe_id = "pylatro-v14-safe-v2"
     return config
+
+
+def _run_controlled_transition_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    *,
+    transition_state: _PPOTransitionState,
+    update_count: int,
+    additional_updates: int,
+) -> list[dict[str, object]]:
+    """Drive train_ppo with real phase/checkpoint orchestration and tiny compute."""
+
+    from torch.utils import tensorboard as tensorboard_module
+
+    config = _safe_transition_config()
+    config.num_envs = 1
+    config.rollout_length = 2
+    config.ppo_epochs = 1
+    config.mini_batch_size = 2
+    config.device = "cpu"
+    config.async_envs = False
+    config.checkpoint_interval = 1
+    config.eval_interval = 100
+    config.eval_games = 1
+    config.log_interval = 100
+    config.target_kl = None
+    config.survival_loss_coeff = 0.0
+    config.win_probability_loss_coeff = 0.0
+    config.save_dir = str(tmp_path)
+    config.log_dir = str(tmp_path / "runs")
+    agent_config = AgentConfig(d_model=16, n_layers=1, n_heads=2, d_ff=32)
+
+    def make_grouped_optimizer(parameters, lr: float) -> torch.optim.Adam:
+        parameter_list = list(parameters)
+        assert len(parameter_list) >= 2
+        return torch.optim.Adam(
+            [
+                {"params": parameter_list[:1]},
+                {"params": parameter_list[1:]},
+            ],
+            lr=lr,
+        )
+
+    source_model = _LoopTestAgent(agent_config, None)
+    source_optimizer = make_grouped_optimizer(source_model.parameters(), config.critic_warmup_lr)
+    target_update = update_count + additional_updates
+    resume_state = {
+        "state_dict": source_model.state_dict(),
+        "optimizer_state_dict": source_optimizer.state_dict(),
+        "update_count": update_count,
+        "total_steps": update_count * config.num_envs * config.rollout_length,
+        "planned_updates": target_update,
+        "entropy_coeff": config.entropy_coeff,
+        "entropy_signal_ema": None,
+        "lr": config.lr,
+        "ppo_active_lr": config.critic_warmup_lr,
+        "ppo_transition_state": transition_state.to_payload(config),
+        "ppo_config_fields": {
+            name: getattr(config, name)
+            for name in ppo_module._TRANSITION_CONFIG_FIELDS
+        },
+        "agent_config": {
+            "value_bins": agent_config.value_bins,
+            "value_v_min": agent_config.value_v_min,
+            "value_v_max": agent_config.value_v_max,
+        },
+        "rng_states": {},
+        "schedule_total_steps": target_update * config.num_envs * config.rollout_length,
+    }
+
+    def perfect_explained_variance(self, last_values) -> None:
+        del last_values
+        # Two distinct returns with identical saved critic predictions give
+        # EV=1.0. train_ppo still computes and records EV through its real loop.
+        self.returns[:] = np.linspace(0.0, 1.0, self.total_size, dtype=np.float32)
+        self.values[:] = self.returns
+        self.advantages[:] = np.linspace(-1.0, 1.0, self.total_size, dtype=np.float32)
+
+    update_calls: list[dict[str, object]] = []
+    original_run_update = ppo_module._run_ppo_update
+
+    def observe_real_update(**kwargs):
+        optimizer = kwargs["optimizer"]
+        model = kwargs["model"]
+        actor_before = model.actor.detach().clone()
+        value_before = [parameter.detach().clone() for parameter in model.value_head.parameters()]
+        call = {
+            "group_lrs": [float(group["lr"]) for group in optimizer.param_groups],
+            "policy_loss_scale": kwargs["policy_loss_scale"],
+            "clip_epsilon": kwargs["clip_epsilon"],
+            "protect_actor_from_critic": kwargs["protect_actor_from_critic"],
+        }
+        result = original_run_update(**kwargs)
+        call["actor_changed"] = not torch.equal(model.actor.detach(), actor_before)
+        call["value_head_changed"] = any(
+            not torch.equal(parameter.detach(), before)
+            for parameter, before in zip(model.value_head.parameters(), value_before, strict=True)
+        )
+        update_calls.append(call)
+        return result
+
+    monkeypatch.setattr(ppo_module, "BalatroAgent", _LoopTestAgent)
+    monkeypatch.setattr(ppo_module, "_make_policy_optimizer", make_grouped_optimizer)
+    monkeypatch.setattr(ppo_module.RolloutBuffer, "compute_returns_and_advantages", perfect_explained_variance)
+    monkeypatch.setattr(ppo_module, "_run_ppo_update", observe_real_update)
+    monkeypatch.setattr(ppo_module, "evaluate_model", lambda *_args, **_kwargs: 0.0)
+    monkeypatch.setattr(tensorboard_module, "SummaryWriter", _LoopTestWriter)
+    monkeypatch.setattr(ckpt, "load_ppo_resume_payload", lambda *_args, **_kwargs: resume_state)
+
+    train_ppo(
+        config,
+        agent_config=agent_config,
+        resume_path="controlled-resume.pt",
+        additional_updates=additional_updates,
+        data=load_game_data(),
+    )
+    return update_calls
 
 
 def test_internal_checkpoint_round_trips_complete_transition_state(tmp_path) -> None:
@@ -164,12 +362,105 @@ def test_internal_checkpoint_round_trips_complete_transition_state(tmp_path) -> 
 
     assert restored == transition
     assert blob["ppo_transition_state"]["version"] == 1
+    assert blob["ppo_config_fields"]["lr"] == pytest.approx(3e-6)
+    assert blob["ppo_config_fields"]["critic_warmup_lr"] == pytest.approx(1e-5)
+    assert blob["ppo_active_lr"] == pytest.approx(1e-5)
+    assert blob["optimizer_state_dict"]["param_groups"][0]["lr"] == pytest.approx(1e-5)
     assert blob["ppo_config_fields"]["actor_ramp_updates"] == 25
     assert blob["ppo_run_provenance"] == {
         "run_uuid": config.ppo_run_uuid,
         "source_sha256": config.ppo_source_sha256,
         "recipe_id": config.ppo_recipe_id,
     }
+
+
+@pytest.mark.parametrize(
+    ("warmup_complete", "expected_lr"),
+    [
+        (False, 1e-5),
+        (True, 3e-6),
+    ],
+)
+def test_strict_resume_restores_lr_for_exact_transition_phase(
+    tmp_path,
+    warmup_complete: bool,
+    expected_lr: float,
+) -> None:
+    config = _safe_transition_config()
+    state = _PPOTransitionState(
+        warmup_complete=warmup_complete,
+        critic_warmup_updates_completed=20 if warmup_complete else 12,
+        actor_ramp_successful_updates=4 if warmup_complete else 0,
+    )
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=expected_lr)
+    loss = model(torch.randn(2, 4)).sum()
+    loss.backward()
+    optimizer.step()
+    saved_step = int(next(iter(optimizer.state.values()))["step"])
+
+    path = _save_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        save_path=tmp_path,
+        update_count=12,
+        total_steps=12,
+        planned_updates=100,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=config.lr,
+        config=config,
+        transition_state=state,
+        filename=f"phase-{warmup_complete}.pt",
+    )
+    blob = ckpt.load_ppo_resume_payload(path, "cpu", active_reward_config=RewardConfig())
+    restored_state = _restore_ppo_transition_state(config, blob)
+    restored_optimizer = _make_policy_optimizer(model.parameters(), lr=9e-4)
+    active_lr = _restore_policy_optimizer_state(
+        restored_optimizer,
+        blob,
+        config,
+        restored_state,
+        torch.device("cpu"),
+    )
+
+    assert active_lr == pytest.approx(expected_lr)
+    assert blob["ppo_active_lr"] == pytest.approx(expected_lr)
+    assert restored_optimizer.param_groups[0]["lr"] == pytest.approx(expected_lr)
+    assert int(next(iter(restored_optimizer.state.values()))["step"]) == saved_step
+
+
+def test_strict_resume_rejects_optimizer_lr_inconsistent_with_warmup_phase(tmp_path) -> None:
+    config = _safe_transition_config()
+    state = _PPOTransitionState(warmup_complete=False, critic_warmup_updates_completed=12)
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=config.critic_warmup_lr)
+    path = _save_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        save_path=tmp_path,
+        update_count=12,
+        total_steps=12,
+        planned_updates=100,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=config.lr,
+        config=config,
+        transition_state=state,
+        filename="wrong-lr.pt",
+    )
+    blob = ckpt.load_ppo_resume_payload(path, "cpu", active_reward_config=RewardConfig())
+    blob["optimizer_state_dict"]["param_groups"][0]["lr"] = config.lr
+    restored_optimizer = _make_policy_optimizer(model.parameters(), lr=config.lr)
+
+    with pytest.raises(RuntimeError, match="optimizer-group LR"):
+        _restore_policy_optimizer_state(
+            restored_optimizer,
+            blob,
+            config,
+            state,
+            torch.device("cpu"),
+        )
 
 
 def test_strict_resume_rejects_foreign_run_provenance() -> None:
@@ -215,8 +506,10 @@ def test_warmup_boundary_orders_19_then_critic_update_then_first_actor() -> None
         "ppo_config_fields": {
             name: getattr(config, name)
             for name in (
+                "lr",
                 "clip_epsilon",
                 "critic_warmup_updates",
+                "critic_warmup_lr",
                 "critic_warmup_min_ev",
                 "critic_warmup_ev_window",
                 "critic_warmup_max_updates",
@@ -239,6 +532,9 @@ def test_warmup_boundary_orders_19_then_critic_update_then_first_actor() -> None
     )
     assert decision_at_19.active
     assert not restored.warmup_complete
+    optimizer = _make_policy_optimizer(_tiny_model().parameters(), lr=config.lr)
+    assert _set_optimizer_lr_for_phase(optimizer, config, in_critic_warmup=True) == pytest.approx(1e-5)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-5)
 
     _advance_ppo_transition_state(restored, config, in_critic_warmup=True, kl_rollback=False)
     assert restored.critic_warmup_updates_completed == 20
@@ -248,6 +544,8 @@ def test_warmup_boundary_orders_19_then_critic_update_then_first_actor() -> None
     first_actor_decision = _record_critic_ev_and_decide(restored, config, 0.44)
     assert first_actor_decision.ready
     assert restored.warmup_complete
+    assert _set_optimizer_lr_for_phase(optimizer, config, in_critic_warmup=False) == pytest.approx(3e-6)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(3e-6)
     runtime = _actor_transition_runtime(config, restored, in_critic_warmup=False)
     assert runtime.ramp_active
     assert runtime.progress == 0.0
@@ -258,6 +556,99 @@ def test_warmup_boundary_orders_19_then_critic_update_then_first_actor() -> None
     assert runtime.protect_actor_from_critic
     assert runtime.progress == pytest.approx(7 / 24)
     assert runtime.clip_epsilon == pytest.approx(0.05 + 0.05 * (7 / 24))
+
+
+def test_train_ppo_real_loop_switches_lr_before_first_actor_step_and_checkpoints_each_phase(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _PPOTransitionState(
+        warmup_complete=False,
+        critic_warmup_ev_history=[0.40, 0.41, 0.42, 0.43],
+        critic_warmup_updates_completed=19,
+    )
+
+    calls = _run_controlled_transition_loop(
+        monkeypatch,
+        tmp_path,
+        transition_state=state,
+        update_count=19,
+        additional_updates=2,
+    )
+
+    assert calls == [
+        {
+            "group_lrs": pytest.approx([1e-5, 1e-5]),
+            "policy_loss_scale": 0.0,
+            "clip_epsilon": pytest.approx(0.05),
+            "protect_actor_from_critic": True,
+            "actor_changed": False,
+            "value_head_changed": True,
+        },
+        {
+            "group_lrs": pytest.approx([3e-6, 3e-6]),
+            "policy_loss_scale": 1.0,
+            "clip_epsilon": pytest.approx(0.05),
+            "protect_actor_from_critic": True,
+            "actor_changed": True,
+            "value_head_changed": True,
+        },
+    ]
+
+    warmup_checkpoint = torch.load(tmp_path / "ppo_update20.pt", map_location="cpu", weights_only=False)
+    assert warmup_checkpoint["ppo_transition_state"]["warmup_complete"] is False
+    assert warmup_checkpoint["ppo_transition_state"]["critic_warmup_updates_completed"] == 20
+    assert warmup_checkpoint["ppo_transition_state"]["actor_ramp_successful_updates"] == 0
+    assert warmup_checkpoint["ppo_active_lr"] == pytest.approx(1e-5)
+    assert [group["lr"] for group in warmup_checkpoint["optimizer_state_dict"]["param_groups"]] == pytest.approx(
+        [1e-5, 1e-5]
+    )
+    # Param 0 is the actor-only group. A true warmup freeze leaves it with no
+    # Adam state at all, while value-head params in group 1 have stepped.
+    assert 0 not in warmup_checkpoint["optimizer_state_dict"]["state"]
+    assert warmup_checkpoint["optimizer_state_dict"]["state"]
+
+    actor_checkpoint = torch.load(tmp_path / "ppo_update21.pt", map_location="cpu", weights_only=False)
+    assert actor_checkpoint["ppo_transition_state"]["warmup_complete"] is True
+    assert actor_checkpoint["ppo_transition_state"]["critic_warmup_updates_completed"] == 20
+    assert actor_checkpoint["ppo_transition_state"]["actor_ramp_successful_updates"] == 1
+    assert actor_checkpoint["ppo_active_lr"] == pytest.approx(3e-6)
+    assert [group["lr"] for group in actor_checkpoint["optimizer_state_dict"]["param_groups"]] == pytest.approx(
+        [3e-6, 3e-6]
+    )
+    assert 0 in actor_checkpoint["optimizer_state_dict"]["state"]
+
+
+def test_train_ppo_real_loop_fails_closed_at_cap_without_optimizer_update(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _PPOTransitionState(
+        warmup_complete=False,
+        critic_warmup_ev_history=[0.0, 0.0, 0.0, 0.0, 0.0],
+        critic_warmup_updates_completed=80,
+    )
+
+    calls = _run_controlled_transition_loop(
+        monkeypatch,
+        tmp_path,
+        transition_state=state,
+        update_count=80,
+        additional_updates=1,
+    )
+
+    assert calls == []
+    fail_checkpoint = torch.load(tmp_path / "ppo_warmup_unready.pt", map_location="cpu", weights_only=False)
+    assert fail_checkpoint["update_count"] == 80
+    assert fail_checkpoint["ppo_transition_state"]["warmup_complete"] is False
+    assert fail_checkpoint["ppo_transition_state"]["critic_warmup_updates_completed"] == 80
+    assert fail_checkpoint["ppo_transition_state"]["fail_closed"] is True
+    assert fail_checkpoint["ppo_transition_state"]["fail_reason"] == "critic_ev_gate_unready"
+    assert fail_checkpoint["ppo_active_lr"] == pytest.approx(1e-5)
+    assert [group["lr"] for group in fail_checkpoint["optimizer_state_dict"]["param_groups"]] == pytest.approx(
+        [1e-5, 1e-5]
+    )
+    assert fail_checkpoint["optimizer_state_dict"]["state"] == {}
 
 
 def test_warmup_tensorboard_runtime_is_inactive_with_no_operative_clip() -> None:
@@ -286,8 +677,10 @@ def test_fail_closed_transition_restores_as_terminal() -> None:
         "ppo_config_fields": {
             name: getattr(config, name)
             for name in (
+                "lr",
                 "clip_epsilon",
                 "critic_warmup_updates",
+                "critic_warmup_lr",
                 "critic_warmup_min_ev",
                 "critic_warmup_ev_window",
                 "critic_warmup_max_updates",
@@ -377,8 +770,10 @@ def test_transition_config_mismatch_is_rejected_directly() -> None:
         "ppo_config_fields": {
             name: getattr(saved_config, name)
             for name in (
+                "lr",
                 "clip_epsilon",
                 "critic_warmup_updates",
+                "critic_warmup_lr",
                 "critic_warmup_min_ev",
                 "critic_warmup_ev_window",
                 "critic_warmup_max_updates",
@@ -390,6 +785,11 @@ def test_transition_config_mismatch_is_rejected_directly() -> None:
     active_config = _safe_transition_config()
     active_config.actor_ramp_updates = 24
     with pytest.raises(RuntimeError, match="actor_ramp_updates"):
+        _restore_ppo_transition_state(active_config, blob)
+
+    active_config = _safe_transition_config()
+    active_config.critic_warmup_lr = 8e-6
+    with pytest.raises(RuntimeError, match="critic_warmup_lr"):
         _restore_ppo_transition_state(active_config, blob)
 
 

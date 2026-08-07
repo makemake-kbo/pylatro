@@ -10,13 +10,13 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 workspace_root="${PYLATRO_WORKSPACE:-/workspace}"
 repo_dir="${PYLATRO_REPO_DIR:-${workspace_root}/pylatro}"
 python_bin="${PYLATRO_PYTHON:-/venv/main/bin/python}"
-run_name="${PYLATRO_RUN_NAME:-ppo_strategy_v14_safe_tarot_seal_bestv12u280}"
+run_name="${PYLATRO_RUN_NAME:-ppo_strategy_v14_safe_tarot_seal_bestv12u280_criticlr1e5}"
 checkpoint_dir="${workspace_root}/checkpoints/${run_name}"
 log_dir="${workspace_root}/runs/${run_name}"
 source_checkpoint="${PYLATRO_SOURCE_CHECKPOINT:-${workspace_root}/checkpoints/ppo_strategy_v12_structural_fixes_bestv10/ppo_best_eval.pt}"
 source_sha256="${PYLATRO_SOURCE_SHA256:-5a81807c38213d0aadd5d984158652daafd259df0e416d70097698dd75cc0660}"
 source_sha256="${source_sha256,,}"
-recipe_id="pylatro-v14-safe-v1"
+recipe_id="pylatro-v14-safe-v2"
 run_name_lower="${run_name,,}"
 source_checkpoint_lower="${source_checkpoint,,}"
 
@@ -84,6 +84,7 @@ exec "${python_bin}" train.py ppo \
   --lr 3e-6 \
   --clip-eps 0.1 \
   --critic-warmup-updates 20 \
+  --critic-warmup-lr 1e-5 \
   --critic-warmup-min-ev 0.4 \
   --critic-warmup-ev-window 5 \
   --critic-warmup-max-updates 80 \

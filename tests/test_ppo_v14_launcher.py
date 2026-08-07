@@ -57,6 +57,15 @@ def _launcher_env(tmp_path: Path, source: Path, source_sha256: str) -> dict[str,
     }
 
 
+def test_v14_launcher_and_validator_pin_distinct_phase_learning_rates() -> None:
+    launcher = LAUNCHER_PATH.read_text()
+    assert validator.V14_TRANSITION_CONFIG["lr"] == pytest.approx(3e-6)
+    assert validator.V14_TRANSITION_CONFIG["critic_warmup_lr"] == pytest.approx(1e-5)
+    assert "--lr 3e-6" in launcher
+    assert "--critic-warmup-lr 1e-5" in launcher
+    assert 'recipe_id="pylatro-v14-safe-v2"' in launcher
+
+
 def test_source_validator_checks_hash_and_exact_metadata(tmp_path: Path) -> None:
     source = tmp_path / "source.pt"
     source_sha256 = _write_source(source)
@@ -75,13 +84,15 @@ def test_resume_validator_requires_v14_transition_recipe(tmp_path: Path) -> None
     resume = tmp_path / "v14_resume.pt"
     run_uuid = str(uuid.uuid4())
     source_sha256 = "a" * 64
-    recipe_id = "pylatro-v14-safe-v1"
+    recipe_id = "pylatro-v14-safe-v2"
     torch.save(
         {
             "checkpoint_format": "ppo_full",
             "tokenizer_version": 7,
             "ppo_transition_state": {"version": 1, "warmup_complete": False},
             "ppo_config_fields": dict(validator.V14_TRANSITION_CONFIG),
+            "ppo_active_lr": 1e-5,
+            "optimizer_state_dict": {"param_groups": [{"lr": 1e-5}]},
             "ppo_run_provenance": {
                 "run_uuid": run_uuid,
                 "source_sha256": source_sha256,
@@ -101,6 +112,28 @@ def test_resume_validator_requires_v14_transition_recipe(tmp_path: Path) -> None
     payload["ppo_config_fields"]["actor_ramp_updates"] = 0
     torch.save(payload, resume)
     with pytest.raises(RuntimeError, match="transition recipe mismatch"):
+        validator.validate_resume(
+            resume,
+            run_uuid=run_uuid,
+            source_sha256=source_sha256,
+            recipe_id=recipe_id,
+        )
+
+    payload["ppo_config_fields"] = dict(validator.V14_TRANSITION_CONFIG)
+    payload["ppo_config_fields"]["critic_warmup_lr"] = 3e-6
+    torch.save(payload, resume)
+    with pytest.raises(RuntimeError, match="critic_warmup_lr"):
+        validator.validate_resume(
+            resume,
+            run_uuid=run_uuid,
+            source_sha256=source_sha256,
+            recipe_id=recipe_id,
+        )
+
+    payload["ppo_config_fields"] = dict(validator.V14_TRANSITION_CONFIG)
+    payload["ppo_active_lr"] = 3e-6
+    torch.save(payload, resume)
+    with pytest.raises(RuntimeError, match="active optimizer LR"):
         validator.validate_resume(
             resume,
             run_uuid=run_uuid,
@@ -214,12 +247,14 @@ def test_launcher_rejects_foreign_v14_checkpoint_uuid(tmp_path: Path) -> None:
         {
             "checkpoint_format": "ppo_full",
             "tokenizer_version": 7,
-            "ppo_transition_state": {"version": 1},
+            "ppo_transition_state": {"version": 1, "warmup_complete": False},
             "ppo_config_fields": dict(validator.V14_TRANSITION_CONFIG),
+            "ppo_active_lr": 1e-5,
+            "optimizer_state_dict": {"param_groups": [{"lr": 1e-5}]},
             "ppo_run_provenance": {
                 "run_uuid": str(uuid.uuid4()),
                 "source_sha256": source_sha256,
-                "recipe_id": "pylatro-v14-safe-v1",
+                "recipe_id": "pylatro-v14-safe-v2",
             },
         },
         checkpoint_dir / "ppo_latest.pt",

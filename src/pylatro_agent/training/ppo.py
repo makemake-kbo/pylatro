@@ -246,6 +246,97 @@ def _apply_lr_override(optimizer: torch.optim.Optimizer, new_lr: float, checkpoi
         )
 
 
+def _phase_learning_rate(config: "PPOConfig", *, in_critic_warmup: bool) -> float:
+    """Return the sole operative PPO optimizer LR for the current phase."""
+
+    if in_critic_warmup and config.critic_warmup_lr is not None:
+        return float(config.critic_warmup_lr)
+    return float(config.lr)
+
+
+def _set_optimizer_lr_for_phase(
+    optimizer: torch.optim.Optimizer,
+    config: "PPOConfig",
+    *,
+    in_critic_warmup: bool,
+) -> float:
+    """Set every optimizer param group to the phase LR and return that LR.
+
+    Adam's moments and counters are intentionally preserved. PPO has no LR
+    scheduler; this explicit phase switch is therefore the only code allowed
+    to change the policy optimizer's step size after construction/resume.
+    """
+
+    active_lr = _phase_learning_rate(config, in_critic_warmup=in_critic_warmup)
+    previous_lrs = tuple(float(group["lr"]) for group in optimizer.param_groups)
+    for group in optimizer.param_groups:
+        group["lr"] = active_lr
+    if any(not math.isclose(value, active_lr, rel_tol=1e-12, abs_tol=1e-15) for value in previous_lrs):
+        phase = "critic_warmup" if in_critic_warmup else "actor"
+        logger.info(
+            "Switching PPO optimizer LR for %s: %s -> %.2e; Adam moments are preserved.",
+            phase,
+            ",".join(f"{value:.2e}" for value in previous_lrs),
+            active_lr,
+        )
+    return active_lr
+
+
+def _restore_policy_optimizer_state(
+    optimizer: torch.optim.Optimizer,
+    resume_state: dict,
+    config: "PPOConfig",
+    transition_state: "_PPOTransitionState",
+    device: torch.device,
+) -> float:
+    """Strictly restore Adam state and the LR required by the saved phase."""
+
+    optimizer_state = resume_state.get("optimizer_state_dict")
+    if not isinstance(optimizer_state, dict):
+        raise RuntimeError("Strict resume checkpoint lacks optimizer_state_dict")
+
+    safety_enabled = config.critic_warmup_updates > 0 or config.actor_ramp_updates > 0
+    in_critic_warmup = not transition_state.warmup_complete
+    expected_lr = _phase_learning_rate(config, in_critic_warmup=in_critic_warmup)
+    if safety_enabled:
+        saved_active_lr = resume_state.get("ppo_active_lr")
+        if saved_active_lr is None:
+            raise RuntimeError(
+                "Strict resume checkpoint lacks ppo_active_lr, so the optimizer's transition-phase LR "
+                "cannot be verified safely."
+            )
+        if not math.isclose(float(saved_active_lr), expected_lr, rel_tol=1e-12, abs_tol=1e-15):
+            raise RuntimeError(
+                "Strict resume active PPO LR mismatch: "
+                f"saved={float(saved_active_lr):.12g}, expected={expected_lr:.12g} for the saved transition phase."
+            )
+        saved_groups = optimizer_state.get("param_groups")
+        if not isinstance(saved_groups, list) or not saved_groups:
+            raise RuntimeError("Strict resume optimizer state has no parameter groups")
+        saved_group_lrs = [group.get("lr") for group in saved_groups if isinstance(group, dict)]
+        if len(saved_group_lrs) != len(saved_groups) or any(value is None for value in saved_group_lrs):
+            raise RuntimeError("Strict resume optimizer parameter group lacks an LR")
+        if any(
+            not math.isclose(float(value), expected_lr, rel_tol=1e-12, abs_tol=1e-15)
+            for value in saved_group_lrs
+        ):
+            raise RuntimeError(
+                "Strict resume optimizer-group LR does not match the saved transition phase: "
+                f"saved={saved_group_lrs!r}, expected={expected_lr:.12g}."
+            )
+
+    optimizer.load_state_dict(optimizer_state)
+    _optimizer_to(optimizer, device)
+    if safety_enabled:
+        return _set_optimizer_lr_for_phase(
+            optimizer,
+            config,
+            in_critic_warmup=in_critic_warmup,
+        )
+    _apply_lr_override(optimizer, config.lr, resume_state.get("lr"))
+    return float(config.lr)
+
+
 def _make_env(
     seed: int,
     stake: int,
@@ -448,6 +539,11 @@ class PPOConfig:
     # critic_warmup_min_ev (0 = no EV gate).  The minimum update count is
     # always honored before the EV gate can open.
     critic_warmup_updates: int = 0
+    # Optional value-head-only warmup step size. When unset, warmup retains the
+    # historical shared ``lr``. Production reward-model transitions set this
+    # explicitly so a freshly reinitialized critic can learn faster without
+    # exposing the actor to that larger step size.
+    critic_warmup_lr: float | None = None
     critic_warmup_min_ev: float = 0.7
     critic_warmup_ev_window: int = 3
     # None preserves the historical 4x warmup limit, but reaching it now stops
@@ -649,8 +745,10 @@ class _PPOTransitionState:
 
 
 _TRANSITION_CONFIG_FIELDS = (
+    "lr",
     "clip_epsilon",
     "critic_warmup_updates",
+    "critic_warmup_lr",
     "critic_warmup_min_ev",
     "critic_warmup_ev_window",
     "critic_warmup_max_updates",
@@ -1477,6 +1575,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("eval_regression_patience must be positive")
     if config.critic_warmup_updates < 0:
         raise ValueError("critic_warmup_updates must be non-negative")
+    if config.critic_warmup_lr is not None and (
+        not np.isfinite(config.critic_warmup_lr) or config.critic_warmup_lr <= 0.0
+    ):
+        raise ValueError("critic_warmup_lr must be finite and positive when set")
     if not np.isfinite(config.critic_warmup_min_ev) or config.critic_warmup_min_ev > 1.0:
         raise ValueError("critic_warmup_min_ev must be finite and <= 1")
     if config.critic_warmup_ev_window <= 0:
@@ -1513,8 +1615,8 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("max_no_progress_steps must be positive")
     if config.counterfactual_diagnostic_interval < 0:
         raise ValueError("counterfactual_diagnostic_interval must be non-negative")
-    if config.lr <= 0.0:
-        raise ValueError("lr must be positive")
+    if not np.isfinite(config.lr) or config.lr <= 0.0:
+        raise ValueError("lr must be finite and positive")
     if config.rollout_temperature <= 0.0:
         raise ValueError("rollout_temperature must be positive")
     if config.danger_rollout_temperature is not None and config.danger_rollout_temperature <= 0.0:
@@ -2355,6 +2457,7 @@ def _save_checkpoint(
             "seed",
             "ppo_epochs",
             "mini_batch_size",
+            "lr",
             "clip_epsilon",
             "gae_lambda",
             "rollout_temperature",
@@ -2365,6 +2468,7 @@ def _save_checkpoint(
             "eval_regression_tolerance",
             "eval_regression_patience",
             "critic_warmup_updates",
+            "critic_warmup_lr",
             "critic_warmup_min_ev",
             "critic_warmup_ev_window",
             "critic_warmup_max_updates",
@@ -2382,6 +2486,14 @@ def _save_checkpoint(
             config_fields[key] = getattr(config, key)
     active_reward_config = _effective_reward_config(config) if config is not None else DEFAULT_REWARD_CONFIG
     checkpoint_extra = dict(extra or {})
+    if config is not None and transition_state is not None:
+        checkpoint_extra["ppo_active_lr"] = _set_optimizer_lr_for_phase(
+            optimizer,
+            config,
+            in_critic_warmup=not transition_state.warmup_complete,
+        )
+    else:
+        checkpoint_extra["ppo_active_lr"] = float(optimizer.param_groups[0]["lr"])
     if config is not None:
         provenance = _ppo_run_provenance(config)
         if provenance is not None:
@@ -3271,12 +3383,23 @@ def train_ppo(
         accum_steps = 1
         effective_batch_size = config.mini_batch_size
 
-    optimizer = _make_policy_optimizer(model.parameters(), config.lr)
-    if resume_state is not None and "optimizer_state_dict" in resume_state:
-        optimizer.load_state_dict(resume_state["optimizer_state_dict"])
-        _optimizer_to(optimizer, device)
-        _apply_lr_override(optimizer, config.lr, resume_state.get("lr"))
-        logger.info("Restored PPO optimizer state (Adam moments + counters) from checkpoint.")
+    initial_optimizer_lr = _phase_learning_rate(
+        config,
+        in_critic_warmup=not transition_state.warmup_complete,
+    )
+    optimizer = _make_policy_optimizer(model.parameters(), initial_optimizer_lr)
+    if resume_state is not None:
+        active_lr = _restore_policy_optimizer_state(
+            optimizer,
+            resume_state,
+            config,
+            transition_state,
+            device,
+        )
+        logger.info(
+            "Restored PPO optimizer state (Adam moments + counters) from checkpoint at active LR %.2e.",
+            active_lr,
+        )
 
     # Create vectorized environments. Each env replays a deterministic
     # game-seed stream from its constructor seed, so resuming with plain
@@ -3337,7 +3460,7 @@ def train_ppo(
         )
     logger.info(
         "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "
-        "ppo_epochs=%d, lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
+        "ppo_epochs=%d, actor_lr=%.2e, critic_warmup_lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
         "target_entropy=%.3f, alpha_lr=%.2e, action_type_entropy_scale=%.2f, "
         "target_kl=%s, max_no_progress_steps=%d, log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
         config.total_timesteps,
@@ -3345,6 +3468,7 @@ def train_ppo(
         planned_updates,
         config.ppo_epochs,
         config.lr,
+        _phase_learning_rate(config, in_critic_warmup=True),
         config.entropy_coeff,
         config.adaptive_entropy,
         config.target_entropy,
@@ -4097,6 +4221,11 @@ def train_ppo(
                 )
 
             in_critic_warmup = warmup_decision.active
+            active_optimizer_lr = _set_optimizer_lr_for_phase(
+                optimizer,
+                config,
+                in_critic_warmup=not transition_state.warmup_complete,
+            )
             writer.add_scalar("ppo/critic_warmup_active", float(in_critic_warmup), update_count + 1)
             writer.add_scalar(
                 "ppo/critic_warmup_ev_rolling",
@@ -4125,13 +4254,15 @@ def train_ppo(
             )
             if in_critic_warmup:
                 logger.info(
-                    "Critic warmup %d/%d: EV=%.3f, rolling_EV=%.3f, evidence=%d/%d; policy frozen.",
+                    "Critic warmup %d/%d: EV=%.3f, rolling_EV=%.3f, evidence=%d/%d; "
+                    "policy frozen, value-head LR=%.2e.",
                     critic_updates_completed,
                     warmup_decision.max_updates,
                     explained_variance,
                     warmup_decision.rolling_ev,
                     warmup_decision.passing_samples,
                     config.critic_warmup_ev_window,
+                    active_optimizer_lr,
                 )
 
             if warmup_decision.exhausted:
@@ -4188,6 +4319,9 @@ def train_ppo(
             actor_ramp_progress = actor_transition.progress
             protect_actor_from_critic = actor_transition.protect_actor_from_critic
             writer.add_scalar("ppo/actor_ramp_active", float(actor_transition.ramp_active), update_count + 1)
+            writer.add_scalar("ppo/actor_training_active", float(not in_critic_warmup), update_count + 1)
+            phase_code = 0.0 if in_critic_warmup else (1.0 if actor_transition.ramp_active else 2.0)
+            writer.add_scalar("ppo/optimization_phase", phase_code, update_count + 1)
             writer.add_scalar("ppo/actor_ramp_progress", actor_transition.progress, update_count + 1)
             writer.add_scalar(
                 "ppo/actor_ramp_successful_updates",
@@ -4333,6 +4467,13 @@ def train_ppo(
                 update_count,
             )
             writer.add_scalar("ppo/actual_lr", update_stats.actual_lr, update_count)
+            writer.add_scalar("ppo/effective_lr", active_optimizer_lr, update_count)
+            writer.add_scalar("ppo/configured_actor_lr", config.lr, update_count)
+            writer.add_scalar(
+                "ppo/configured_critic_warmup_lr",
+                _phase_learning_rate(config, in_critic_warmup=True),
+                update_count,
+            )
             if sil_buffer is not None:
                 writer.add_scalar("sil/buffer_win_fraction", float(sil_buffer.win_fraction), update_count)
                 writer.add_scalar("sil/coeff", float(sil_coeff_now), update_count)

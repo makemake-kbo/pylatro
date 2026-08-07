@@ -28,6 +28,7 @@ from pylatro_agent.training.ppo import (
     _RolloutMetrics,
     _run_ppo_update,
     _sample_weighted_mean,
+    _set_optimizer_lr_for_phase,
     _smoothed_entropy_signal,
     _validate_ppo_config,
     _write_action_behavior_metrics,
@@ -518,6 +519,7 @@ def test_ppo_config_rejects_nonpositive_eval_regression_patience() -> None:
     ("config", "message"),
     [
         (PPOConfig(critic_warmup_updates=-1), "critic_warmup_updates"),
+        (PPOConfig(critic_warmup_lr=0.0), "critic_warmup_lr"),
         (
             PPOConfig(critic_warmup_updates=2, critic_warmup_min_ev=0.4, critic_warmup_ev_window=1),
             "critic_warmup_ev_window",
@@ -1146,8 +1148,13 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     model = _TinyDecoupledCriticModel()
     # Non-zero value head so the critic loss reaches the trunk if leaked.
     torch.nn.init.constant_(model.value_head.weight, 0.5)
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    config = _freeze_test_config(critic_updates_trunk=True)
+    config = _freeze_test_config(
+        lr=0.1,
+        critic_updates_trunk=True,
+        critic_warmup_updates=1,
+        critic_warmup_lr=0.2,
+    )
+    optimizer = _make_policy_optimizer(model.parameters(), lr=config.lr)
 
     # 1) Unfrozen update with signal: builds Adam momentum on policy params.
     warm_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0])
@@ -1177,7 +1184,8 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     #    the critic loss leaked past the value head.
     frozen_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, -1.0])
     frozen_buffer.returns[:2] = 10.0
-    _run_ppo_update(
+    frozen_lr = _set_optimizer_lr_for_phase(optimizer, config, in_critic_warmup=True)
+    stats = _run_ppo_update(
         model=model,
         optimizer=optimizer,
         buffer=frozen_buffer,
@@ -1194,6 +1202,8 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     assert torch.equal(model.policy_head.weight.detach(), policy_before)
     assert torch.equal(model.trunk.weight.detach(), trunk_before)
     assert not torch.allclose(model.value_head.weight.detach(), value_before)
+    assert frozen_lr == pytest.approx(0.2)
+    assert stats.actual_lr == pytest.approx(0.2)
     policy_state_after = optimizer.state[model.policy_head.weight]
     assert int(policy_state_after["step"]) == steps_before
     assert torch.equal(policy_state_after["exp_avg"], exp_avg_before)

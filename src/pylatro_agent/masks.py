@@ -285,7 +285,8 @@ def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:
     pack = state.pack
 
     if pack and pack.choices_remaining > 0:
-        from pylatro.runtime import consumable_limit, joker_limit
+        from pylatro.runtime import joker_limit
+        from pylatro.shop import can_claim_pack_card
 
         for i in range(min(len(pack.cards), MAX_PACK_CARDS)):
             card = pack.cards[i]
@@ -297,7 +298,7 @@ def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:
                 if len(state.jokers) < joker_limit(state) or is_negative:
                     mask[AR.PACK_CLAIM_START + i] = 1
             elif card_type in ("Tarot", "Planet", "Spectral"):
-                if len(state.consumables) < consumable_limit(state):
+                if can_claim_pack_card(state, card):
                     mask[AR.PACK_CLAIM_START + i] = 1
             else:
                 mask[AR.PACK_CLAIM_START + i] = 1

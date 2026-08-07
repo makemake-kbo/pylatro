@@ -46,6 +46,7 @@ from .reward import (
 )
 from .risk import estimate_clear_risk, weakest_confident_joker
 from .shop_eval import capture_build_features, evaluate_build
+from .strategic_events import derive_strategic_event
 from .subset_actions import consumable_subset_indices, subset_indices
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
@@ -108,6 +109,9 @@ class BalatroEnv(gymnasium.Env):
         # Preserve the pre-sale safety baseline so the realized purchase reward
         # compares the complete old and new rosters rather than new-vs-empty.
         self._joker_replacement_clear_baseline: float | None = None
+        # Episode-stable, process-monotonic card UIDs make Gold creation
+        # attributable exactly once without Python object-id reuse collisions.
+        self._rewarded_gold_card_ids: set[int] = set()
         # Heuristic teacher for distillation. One instance per env (process);
         # the cache is per-instance and keyed on hand+joker signature, so
         # parallel envs are isolated naturally. When nothing consumes teacher
@@ -184,6 +188,7 @@ class BalatroEnv(gymnasium.Env):
         self._steps_since_progress = 0
         self._play_diagnostic_count = 0
         self._joker_replacement_clear_baseline = None
+        self._rewarded_gold_card_ids.clear()
         self._forbidden_joker_move = None
         self._history.reset()
         self._prev_info = self._capture_state_info()
@@ -287,6 +292,14 @@ class BalatroEnv(gymnasium.Env):
 
         event_diagnostics = step_event_diagnostics(self._prev_info, curr_info, decoded)
         action_diagnostics.update(event_diagnostics)
+        strategic_event = derive_strategic_event(
+            self._prev_info,
+            curr_info,
+            decoded,
+            action_result,
+            self._rewarded_gold_card_ids,
+        )
+        action_diagnostics.update(strategic_event.as_info())
         if (
             decoded.action_type == ActionType.SHOP_SELL_JOKER
             and action_diagnostics.get("shop_sold_joker_id")
@@ -379,6 +392,7 @@ class BalatroEnv(gymnasium.Env):
             "progress_made": progress_made,
             "steps_since_progress": self._steps_since_progress,
             "stalled": curr_info["stalled"],
+            "tarot_usage_total": curr_info.get("tarot_usage_total", 0),
         }
         for component_name, component_value in reward_components.items():
             info[f"reward_{component_name}"] = component_value
@@ -480,25 +494,29 @@ class BalatroEnv(gymnasium.Env):
             indices = subset_indices(decoded.index)
             if any(idx >= len(state.hand_cards) for idx in indices):
                 raise IndexError(f"Discard subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
-            ctrl.discard_selected(list(indices))
+            result = ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
+            return result
 
         elif at == ActionType.USE_CONSUMABLE_NO_TARGET:
-            ctrl.use_consumable_on(decoded.index, hand_targets=(), joker_targets=())
+            result = ctrl.use_consumable_on(decoded.index, hand_targets=(), joker_targets=())
             self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
+            return result
 
         elif at == ActionType.USE_CONSUMABLE_HAND_SUBSET:
             hand_targets = consumable_subset_indices(decoded.detail)
-            ctrl.use_consumable_on(decoded.index, hand_targets=hand_targets, joker_targets=())
+            result = ctrl.use_consumable_on(decoded.index, hand_targets=hand_targets, joker_targets=())
             self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
+            return result
 
         elif at == ActionType.USE_CONSUMABLE_JOKER:
-            ctrl.use_consumable_on(
+            result = ctrl.use_consumable_on(
                 decoded.index,
                 hand_targets=(),
                 joker_targets=(decoded.detail,),
             )
             self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
+            return result
 
         elif at == ActionType.SHOP_BUY:
             idx = decoded.index
@@ -530,10 +548,11 @@ class BalatroEnv(gymnasium.Env):
             self._sub_phase = SubPhase.BLIND_SELECT
 
         elif at == ActionType.PACK_CLAIM:
-            ctrl.claim_from_pack(decoded.index)
+            result = ctrl.claim_from_pack(decoded.index)
             if state.pack and state.pack.choices_remaining <= 0:
                 ctrl.close_current_pack(skipped=False)
                 self._sub_phase = SubPhase.SHOP
+            return result
 
         elif at == ActionType.PACK_SKIP:
             ctrl.close_current_pack(skipped=True)

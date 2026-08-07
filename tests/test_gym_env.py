@@ -46,6 +46,31 @@ def test_env_action_mask_has_valid_actions(game_data, vocab):
     assert mask.sum() > 0, "Must have at least one valid action"
 
 
+def test_env_next_ante_suit_boss_is_visible_after_disabled_boss_cashout(game_data, vocab):
+    env = BalatroEnv(seed=91, data=game_data, vocab=vocab, enable_teacher=False)
+    env.reset()
+    state = env.state
+    state.blind_on_deck = "Boss"
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    env._controller.select_blind("Boss")
+    for card in state.deck_cards:
+        card.seal = None
+    next(card for card in state.deck_cards if card.suit == "Spades").seal = "Blue"
+    state.blind_disabled = True
+    env._controller.cash_out()
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    env._sub_phase = SubPhase.BLIND_SELECT
+
+    env.step(int(ActionRange.BLIND_SKIP))
+    obs, _, terminated, truncated, _ = env.step(int(ActionRange.BLIND_SKIP))
+
+    assert not terminated and not truncated
+    assert state.blind_on_deck == "Boss"
+    assert not state.blind_disabled
+    assert obs["scalars"][13] == 0.0  # p_blue
+    assert obs["scalars"][18] == 0.0  # Spade target utility
+
+
 def test_env_random_rollout(game_data, vocab):
     """Run random valid actions and ensure no crashes."""
     env = BalatroEnv(seed=42, data=game_data, vocab=vocab, max_steps=500)

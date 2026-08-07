@@ -655,6 +655,7 @@ class _RolloutMetrics:
     completed_episode_wins: list[float] = field(default_factory=list)
     completed_episode_stalls: list[float] = field(default_factory=list)
     completed_episode_antes: list[int] = field(default_factory=list)
+    completed_episode_tarot_uses: list[int] = field(default_factory=list)
     terminal_loss_antes: list[int] = field(default_factory=list)
     terminal_loss_score_ratios: list[float] = field(default_factory=list)
     terminal_loss_dollars: list[float] = field(default_factory=list)
@@ -743,6 +744,8 @@ def _write_rollout_episode_metrics(writer, rm: _RolloutMetrics, step: int) -> No
         # Retain the clearer alias introduced for ante diagnostics.
         "mean_ante_reached": rm.completed_episode_antes,
     }
+    if rm.completed_episode_tarot_uses:
+        metrics["tarot_uses_per_completed_episode_mean"] = rm.completed_episode_tarot_uses
     for tag, values in metrics.items():
         writer.add_scalar(f"rollout/{tag}", float(np.mean(values)), step)
 
@@ -2171,19 +2174,31 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
     rm.purple_seal_tarots_generated += int(
         _extract_step_info_value(
             infos,
-            "purple_seal_tarot_generated_count",
+            "strategic_purple_tarots_generated",
             env_idx,
             done=done,
-            default=0,
+            default=_extract_step_info_value(
+                infos,
+                "purple_seal_tarot_generated_count",
+                env_idx,
+                done=done,
+                default=0,
+            ),
         )
     )
     rm.blue_seal_planets_generated += int(
         _extract_step_info_value(
             infos,
-            "blue_seal_planet_generated_count",
+            "strategic_blue_planets_generated",
             env_idx,
             done=done,
-            default=0,
+            default=_extract_step_info_value(
+                infos,
+                "blue_seal_planet_generated_count",
+                env_idx,
+                done=done,
+                default=0,
+            ),
         )
     )
     if _extract_step_info_value(infos, "hand_play_observed", env_idx, done=done, default=False):
@@ -2988,6 +3003,7 @@ def train_ppo(
     episode_wins: list[bool] = []
     episode_stalls: list[bool] = []
     episode_antes: list[int] = []
+    episode_tarot_uses: list[int] = []
     # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
     _low_minibatch_streak = 0
     # Phase 3.2: latch set once explained variance clears critic_warmup_min_ev;
@@ -3222,16 +3238,28 @@ def train_ppo(
                     ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
                     ep_stalled = bool(stalled_flags[i])
                     ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+                    ep_tarot_uses = int(
+                        _extract_step_info_value(
+                            infos,
+                            "tarot_usage_total",
+                            i,
+                            done=True,
+                            default=0,
+                        )
+                        or 0
+                    )
                     episode_rewards.append(ep_reward)
                     episode_lengths.append(ep_length)
                     episode_wins.append(ep_won)
                     episode_stalls.append(ep_stalled)
                     episode_antes.append(ep_ante)
+                    episode_tarot_uses.append(ep_tarot_uses)
                     rm.completed_episode_rewards.append(ep_reward)
                     rm.completed_episode_lengths.append(ep_length)
                     rm.completed_episode_wins.append(float(ep_won))
                     rm.completed_episode_stalls.append(float(ep_stalled))
                     rm.completed_episode_antes.append(ep_ante)
+                    rm.completed_episode_tarot_uses.append(ep_tarot_uses)
                     if not ep_won and not ep_stalled:
                         rm.terminal_loss_antes.append(ep_ante)
                         terminal_dollars = float(
@@ -3468,6 +3496,11 @@ def train_ppo(
                 writer.add_scalar("recent_100/win_rate", float(np.mean(episode_wins[-100:])), rollout_step)
                 writer.add_scalar("recent_100/stall_rate", float(np.mean(episode_stalls[-100:])), rollout_step)
                 writer.add_scalar("recent_100/final_ante_mean", float(np.mean(episode_antes[-100:])), rollout_step)
+                writer.add_scalar(
+                    "recent_100/tarot_uses_per_completed_episode_mean",
+                    float(np.mean(episode_tarot_uses[-100:])),
+                    rollout_step,
+                )
             hand_total = sum(rm.hand_chosen_counts.values())
             if hand_total:
                 for hand_name, count in rm.hand_chosen_counts.items():

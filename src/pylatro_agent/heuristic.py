@@ -3696,7 +3696,14 @@ class HeuristicAgent:
         elif cset == "Tarot":
             cons_slots = consumable_limit(state) - len(state.consumables)
             if cons_slots <= 0:
-                return -100.0
+                from pylatro.shop import can_claim_pack_consumable
+
+                if not can_claim_pack_consumable(
+                    state,
+                    str(center.get("key", "") or ""),
+                    edition=edition,
+                ):
+                    return -100.0
             tarot_score = self._score_tarot_value(state, center)
             roles = self._owned_build_roles(state)
             preboss_survival = (

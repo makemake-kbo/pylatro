@@ -70,6 +70,11 @@ class MetaEmbedding(nn.Module):
         # trust the estimator after critic warmup unfreezes the actor.
         nn.init.zeros_(self.risk_proj.weight)
         nn.init.zeros_(self.risk_proj.bias)
+        # Tokenizer v7's nine append-only strategy features enter through one
+        # bias-free zero adapter. This reaches both the transformer/value path
+        # and every policy head while preserving v6 logits exactly.
+        self.strategy_proj = nn.Linear(9, d_model, bias=False)
+        nn.init.zeros_(self.strategy_proj.weight)
         self.hands_proj = nn.Linear(1, d_model)
         self.discards_proj = nn.Linear(1, d_model)
         self.handsize_proj = nn.Linear(1, d_model)
@@ -103,7 +108,16 @@ class MetaEmbedding(nn.Module):
             if scalars.shape[1] >= 13
             else scalars.new_zeros((batch, 2))
         )
-        out[:, 4] = self.target_proj(target_context) + self.risk_proj(risk_context)
+        strategy_context = (
+            scalars[:, 13:22]
+            if scalars.shape[1] >= 22
+            else scalars.new_zeros((batch, 9))
+        )
+        out[:, 4] = (
+            self.target_proj(target_context)
+            + self.risk_proj(risk_context)
+            + self.strategy_proj(strategy_context)
+        )
         out[:, 5] = self.hands_proj(scalars[:, 4:5])
         out[:, 6] = self.discards_proj(scalars[:, 5:6])
         out[:, 7] = self.handsize_proj(scalars[:, 6:7])

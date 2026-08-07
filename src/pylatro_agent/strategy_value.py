@@ -106,11 +106,12 @@ def _seal_value(info: Mapping[str, Any], plans: HandPlanEstimate) -> float:
 
     best = plans.best
     winning_plan = best.draw_reliability * _clip01(best.readiness_ratio)
-    discards = max(int(info.get("discards_available") or info.get("discards_left") or 0), 0)
-    consumables = sum(1 for item in (info.get("consumable_details") or ()) if isinstance(item, Mapping))
-    capacity = max(int(info.get("consumable_limit", 2) or 2), 0)
-    room = max(capacity - consumables, 0)
-    purple_throughput = _clip01(discards / 2.0) * (0.55 + 0.45 * _clip01(room))
+    # Persistent Purple value follows stable per-round discard throughput. It
+    # must not fall merely because one activation consumed a discard or filled
+    # the last consumable slot; successful generation has already realized the
+    # option without making the physical seal less valuable next round.
+    discard_capacity = max(int(info.get("round_discard_capacity", 0) or 0), 0)
+    purple_throughput = _clip01(discard_capacity / 2.0)
 
     # Blue/Purple deliberately dwarf Red/Gold. They create a repeatable Planet
     # or Tarot engine and are the strongest non-joker deck assets in this model.

@@ -30,6 +30,7 @@ from ..action import ActionType, decode_action
 from ..heuristic import HeuristicAgent
 from ..reward import default_reward
 from ..shop_eval import capture_build_features
+from ..strategic_events import derive_strategic_event
 from ..survival import compute_ante_survival_targets
 from ..tokenizer import Tokenizer
 from ..vocab import Vocab, build_vocab
@@ -170,6 +171,7 @@ def _run_game_single_pass(
     rewards: list[float] = []
     steps_since_progress = 0
     won = False
+    rewarded_gold_card_ids: set[int] = set()
 
     prev_info = _capture_info(runner)
     prev_sig = _info_signature(prev_info)
@@ -187,7 +189,7 @@ def _run_game_single_pass(
         current_obs = obs
         current_prev_info = prev_info
 
-        runner.step(action)
+        action_result = runner.step(action)
 
         state = runner.state
         terminated = runner.done
@@ -230,6 +232,15 @@ def _run_game_single_pass(
             )
 
         action_diagnostics = _fast_action_diagnostics(state, decoded)
+        action_diagnostics.update(
+            derive_strategic_event(
+                current_prev_info,
+                curr_info,
+                decoded,
+                action_result,
+                rewarded_gold_card_ids,
+            ).as_info()
+        )
         curr_info.update(action_diagnostics)
 
         reward = default_reward(state, current_prev_info, curr_info, terminated, won)

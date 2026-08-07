@@ -113,6 +113,11 @@ def reset_blinds(state: RunState) -> None:
 
 def cash_out(state: RunState) -> None:
     apply_end_of_round(state)
+    # A blind disable belongs only to the blind that just settled.  Clear it
+    # after end-of-round effects have observed the disabled blind, but before
+    # advancing the blind/ante so shop and blind-select observations describe
+    # the newly selected boss rather than inheriting Chicot/Luchador state.
+    state.blind_disabled = False
     state.current_round.jokers_purchased = 0
     state.current_round.discards_left = max(0, state.round_resets.discards)
     state.current_round.hands_left = max(1, state.round_resets.hands)

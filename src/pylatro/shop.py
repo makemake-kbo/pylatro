@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections import Counter
+from itertools import combinations
+
 from ._helpers import _apply_voucher_to_run, _as_dict, _calculate_cost
 from .instances import add_consumable, add_joker
 from .models import POKER_HANDS, PackState, PlayingCard, RunState, ShopCard, ShopState
@@ -135,9 +138,244 @@ def buy_shop_card(state: RunState, index: int) -> ShopCard:
     return card
 
 
+_PACK_RANK_VALUE = {
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "T": 10,
+    "J": 11,
+    "Q": 12,
+    "K": 13,
+    "A": 14,
+}
+
+
+def _pack_card_is_protected(card: PlayingCard) -> bool:
+    return bool(
+        card.center_key != "c_base"
+        or card.edition_key
+        or card.seal
+        or card.perma_bonus > 0
+        or card.times_played > 0
+    )
+
+
+def _pack_card_keep_scores(state: RunState) -> list[float]:
+    ranks = Counter(card.rank for card in state.deck_cards)
+    suits = Counter(card.suit for card in state.deck_cards)
+    return [
+        float(_PACK_RANK_VALUE.get(card.rank, 0))
+        + 4.0 * ranks[card.rank]
+        + 1.5 * suits[card.suit]
+        + (80.0 if _pack_card_is_protected(card) else 0.0)
+        for card in state.hand_cards
+    ]
+
+
+def _pack_suit_context(state: RunState) -> tuple[str, str, dict[str, float]]:
+    """Return upcoming boss suit, confident suit anchor, and suit utilities."""
+    from pylatro_agent.strategy_context import SUIT_TARGET_ORDER, compute_suit_target_utilities
+
+    boss_key = state.round_resets.blind_choices.get("Boss", "")
+    boss = state.data.blinds.get(boss_key, {}) if boss_key else {}
+    # A disabled blind has already been reset at cash-out.  Do not let a stale
+    # or manually carried disable make conversion into the *upcoming* boss suit
+    # look safe.
+    boss_suit = str((boss.get("debuff") or {}).get("suit") or "")
+    utilities = dict(
+        zip(
+            SUIT_TARGET_ORDER,
+            compute_suit_target_utilities(
+                state.deck_cards,
+                state.jokers,
+                hand_play_counts={
+                    name: int(hand.get("played", 0) or 0)
+                    for name, hand in state.hands.items()
+                },
+                boss_debuff_suit=boss_suit,
+                respect_card_debuff=False,
+            ),
+            strict=True,
+        )
+    )
+    ordered = sorted(utilities, key=lambda suit: (utilities[suit], suit), reverse=True)
+    best = ordered[0]
+    runner_up = utilities[ordered[1]]
+    # Stock is a four-way 0.10 tie.  Require both useful absolute evidence and
+    # a clear margin before treating one suit as an established anchor.
+    confident = best if utilities[best] >= 0.30 and utilities[best] - runner_up >= 0.10 else ""
+    return boss_suit, confident, utilities
+
+
+def _pack_confident_rank(rank_counts: Counter[str]) -> str:
+    """Return a strict multiplicity anchor, never an ordering tie-break."""
+    ordered = sorted(rank_counts, key=lambda rank: (rank_counts[rank], _PACK_RANK_VALUE.get(rank, 0)), reverse=True)
+    if len(ordered) < 2:
+        return ordered[0] if ordered else ""
+    best = ordered[0]
+    return best if rank_counts[best] >= rank_counts[ordered[1]] + 2 else ""
+
+
+def pack_consumable_use_targets(
+    state: RunState,
+    center_key: str,
+    *,
+    edition: dict[str, bool] | None = None,
+) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
+    """Choose one deterministic, non-destructive immediate pack use.
+
+    Pack claims have one policy action per offered card, so targeting is an
+    engine-level deterministic continuation. Masks and execution both call
+    this function, which prevents a card from appearing claimable at full
+    capacity unless the exact selected targets are still legal at execution.
+    Death respects its rightmost-source rule by considering only source slots
+    to the right of the overwritten target.
+    """
+    from .consumables import can_use_consumable
+    from .instances import create_consumable_instance
+    from .runtime import can_add_consumable
+
+    if edition and edition.get("negative"):
+        return None
+    center = state.data.centers.get(center_key, {})
+    name = str(center.get("name") or "")
+    instance = create_consumable_instance(state, center_key, edition=edition)
+    if name in {"The Emperor", "The High Priestess", "The Fool"} and not can_add_consumable(state):
+        return None
+    if can_use_consumable(state, instance, hand_targets=(), joker_targets=()):
+        return (), ()
+
+    config = center.get("config") or {}
+    max_highlighted = config.get("max_highlighted")
+    if max_highlighted is None and name != "Aura":
+        return None
+    min_size = 1 if name == "Aura" else int(config.get("min_highlighted", 1) or 1)
+    max_size = 1 if name == "Aura" else int(max_highlighted or 0)
+    max_size = min(max_size, 3, len(state.hand_cards))
+    if max_size < min_size:
+        return None
+
+    keep_scores = _pack_card_keep_scores(state)
+    hand = state.hand_cards
+    rank_counts = Counter(card.rank for card in state.deck_cards)
+    suit_counts = Counter(card.suit for card in state.deck_cards)
+    boss_suit, confident_suit, _suit_utilities = _pack_suit_context(state)
+
+    if name == "Death":
+        candidates: list[tuple[float, tuple[int, int]]] = []
+        for target in range(len(hand)):
+            if _pack_card_is_protected(hand[target]):
+                continue
+            for source in range(target + 1, len(hand)):
+                subset = (target, source)
+                if not can_use_consumable(state, instance, hand_targets=subset):
+                    continue
+                structural_gain = (
+                    5.0 * (rank_counts[hand[source].rank] - rank_counts[hand[target].rank])
+                    + 2.0 * (suit_counts[hand[source].suit] - suit_counts[hand[target].suit])
+                )
+                gain = structural_gain + keep_scores[source] - keep_scores[target]
+                if gain > 0.0:
+                    candidates.append((gain, subset))
+        return (max(candidates)[1], ()) if candidates else None
+
+    if name == "The Hanged Man":
+        confident_rank = _pack_confident_rank(rank_counts)
+        eligible = [
+            index
+            for index, card in enumerate(hand)
+            if not _pack_card_is_protected(card)
+            and (not confident_rank or card.rank != confident_rank)
+            and (not confident_suit or card.suit != confident_suit)
+        ]
+        eligible.sort(key=lambda index: (keep_scores[index], index))
+        for size in range(min(max_size, len(eligible)), min_size - 1, -1):
+            subset = tuple(sorted(eligible[:size]))
+            if can_use_consumable(state, instance, hand_targets=subset):
+                return subset, ()
+        return None
+
+    suit_target = {
+        "The Star": "Diamonds",
+        "The Moon": "Clubs",
+        "The Sun": "Hearts",
+        "The World": "Spades",
+    }.get(name)
+    if suit_target is not None:
+        if suit_target == boss_suit:
+            return None
+        # A weak/tied deck has no suit plan to damage, so the offered Tarot is
+        # itself a valid consolidation target.  Once observable deck/history/
+        # Joker evidence establishes a strict anchor, only reinforce it.
+        if confident_suit and suit_target != confident_suit:
+            return None
+        eligible = [
+            index
+            for index, card in enumerate(hand)
+            if card.suit != suit_target and not _pack_card_is_protected(card)
+        ]
+    elif name == "Strength":
+        rank_order = tuple(_PACK_RANK_VALUE)
+        next_rank = {rank: rank_order[(i + 1) % len(rank_order)] for i, rank in enumerate(rank_order)}
+        confident_rank = _pack_confident_rank(rank_counts)
+        eligible = [
+            index
+            for index, card in enumerate(hand)
+            if not _pack_card_is_protected(card)
+            and (
+                (confident_rank and next_rank[card.rank] == confident_rank)
+                or (
+                    not confident_rank
+                    and rank_counts[next_rank[card.rank]] >= rank_counts[card.rank]
+                )
+            )
+        ]
+    elif name in {"Talisman", "Deja Vu", "Trance", "Medium"}:
+        eligible = [index for index, card in enumerate(hand) if not card.seal]
+    elif name == "Aura":
+        eligible = [index for index, card in enumerate(hand) if card.edition_key is None]
+    elif name == "Cryptid":
+        # Cryptid is the one targeted consumable that should copy the asset we
+        # value most.  Return from its descending order here; the common path
+        # below deliberately sorts destructive/overwrite targets weakest-first.
+        eligible = [
+            index
+            for index, card in enumerate(hand)
+            if not card.destroyed and not card.shattered
+        ]
+        eligible.sort(key=lambda index: (-keep_scores[index], index))
+        for index in eligible:
+            subset = (index,)
+            if can_use_consumable(state, instance, hand_targets=subset):
+                return subset, ()
+        return None
+    else:
+        # Enhancement Tarots should improve base cards, not overwrite an
+        # existing enhancement or a high-value physical asset.
+        eligible = [
+            index
+            for index, card in enumerate(hand)
+            if card.center_key == "c_base" and not _pack_card_is_protected(card)
+        ]
+    eligible.sort(key=lambda index: (keep_scores[index], index))
+    for size in range(min(max_size, len(eligible)), min_size - 1, -1):
+        for subset in combinations(eligible, size):
+            if can_use_consumable(state, instance, hand_targets=subset):
+                return tuple(subset), ()
+    return None
+
+
 def claim_pack_card(state: RunState, index: int) -> ShopCard:
     if state.pack is None:
         raise ValueError("No active pack")
+    card = state.pack.cards[index]
+    if not can_claim_pack_card(state, card):
+        raise ValueError("Pack card cannot be claimed at current capacity")
     card = state.pack.cards.pop(index)
     center = state.data.centers[card.center_key]
     if center.get("set") in {"Default", "Enhanced"}:
@@ -154,19 +392,29 @@ def claim_pack_card(state: RunState, index: int) -> ShopCard:
         )
         add_playing_cards(state, [created], area="draw")
     elif center.get("consumeable"):
-        # A consumable chosen from a booster pack is used immediately in
-        # Balatro, not banked. Planets (and every other consumable that needs
-        # no target selection: Black Hole, The Hermit, Judgement, ...) apply on
-        # claim. Target-requiring tarots/spectrals can't be targeted from the
-        # pack flow, and negative-edition cards are held rather than used, so
-        # those fall back to the consumable inventory to be used later.
-        from .consumables import can_use_consumable, use_consumable
+        # Balatro pack consumables apply on claim whenever they have one legal,
+        # non-destructive immediate continuation. Target selection is shared
+        # with the mask above, including Death's rightmost-source direction.
+        from .consumables import use_consumable
         from .instances import create_consumable_instance
 
-        negative = bool(card.edition and "negative" in card.edition)
         instance = create_consumable_instance(state, card.center_key, edition=card.edition)
-        if not negative and can_use_consumable(state, instance):
-            use_consumable(state, instance)
+        targets = pack_consumable_use_targets(
+            state,
+            card.center_key,
+            edition=card.edition,
+        )
+        if targets is not None:
+            hand_targets, joker_targets = targets
+            card.auto_used = True
+            card.auto_used_hand_targets = hand_targets
+            card.auto_used_joker_targets = joker_targets
+            card.use_result = use_consumable(
+                state,
+                instance,
+                hand_targets=hand_targets,
+                joker_targets=joker_targets,
+            )
         else:
             add_consumable(state, card.center_key, edition=card.edition)
     else:
@@ -183,6 +431,33 @@ def claim_pack_card(state: RunState, index: int) -> ShopCard:
     if state.pack.choices_remaining == 0:
         state.pack = None
     return card
+
+
+def can_claim_pack_consumable(
+    state: RunState,
+    center_key: str,
+    *,
+    edition: dict[str, bool] | None = None,
+) -> bool:
+    """Whether a pack consumable can auto-use now or be banked safely."""
+    from .runtime import can_add_consumable
+
+    if pack_consumable_use_targets(state, center_key, edition=edition) is not None:
+        return True
+    return bool(can_add_consumable(state))
+
+
+def can_claim_pack_card(state: RunState, card: ShopCard) -> bool:
+    """Mirror claim semantics without mutating the pack or inventory."""
+    center = state.data.centers.get(card.center_key, {})
+    if center.get("set") == "Joker":
+        from .runtime import can_add_joker
+
+        negative = bool(card.edition and card.edition.get("negative"))
+        return bool(can_add_joker(state) or negative)
+    if center.get("consumeable"):
+        return can_claim_pack_consumable(state, card.center_key, edition=card.edition)
+    return True
 
 
 def open_booster_pack(state: RunState, index: int) -> PackState:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .blind import select_blind
@@ -29,6 +29,7 @@ class DiscardResult:
     discarded: list[PlayingCard]
     destroyed: list[PlayingCard]
     drawn: list[PlayingCard]
+    generated_consumables: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -37,6 +38,9 @@ class PlayResult:
     played: list[PlayingCard]
     destroyed: list[PlayingCard]
     drawn: list[PlayingCard]
+    blue_planets_generated: list[str] = field(default_factory=list)
+    held_gold_count: int = 0
+    held_gold_payout: int = 0
 
 
 def start_blind(state: RunState, blind_type: str | None = None) -> list[PlayingCard]:
@@ -108,6 +112,7 @@ def discard_cards(
 
     discarded: list[PlayingCard] = []
     destroyed: list[PlayingCard] = []
+    generated_consumables: list[str] = []
 
     face_tally = sum(1 for card in selected if _is_face(state, card))
     for index, card in enumerate(selected):
@@ -129,7 +134,9 @@ def discard_cards(
             state.discard_pile.append(card)
             discarded.append(card)
             if card.seal == "Purple" and not card.debuff:
-                add_generated_consumable(state, "Tarot", append="purple_seal")
+                generated = add_generated_consumable(state, "Tarot", append="purple_seal")
+                if generated is not None:
+                    generated_consumables.append(generated.center_key)
 
     _apply_removed_card_effects(state, destroyed)
     sync_all_jokers(state)
@@ -140,7 +147,12 @@ def discard_cards(
         state.current_round.discards_used += 1
         drawn = draw_to_hand(state)
 
-    return DiscardResult(discarded=discarded, destroyed=destroyed, drawn=drawn)
+    return DiscardResult(
+        discarded=discarded,
+        destroyed=destroyed,
+        drawn=drawn,
+        generated_consumables=generated_consumables,
+    )
 
 
 def play_cards(state: RunState, cards: Iterable[PlayingCard | int]) -> PlayResult:
@@ -209,6 +221,7 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
     state.blind_triggered = False
     state.blind_prepped = False
     state.current_round.first_hand_drawn = False
+    state.current_round.held_gold_settled = False
     state.current_round.hand_size = max(
         0,
         state.starting_params.hand_size + int(state.round_resets.temp_handsize or 0),

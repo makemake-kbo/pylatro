@@ -79,7 +79,11 @@ def load_checkpoint_payload(
             "retrain with the current tokenizer."
         )
     saved_version = blob.get("tokenizer_version")
-    append_only_compatible = allow_compatible_tokenizer and saved_version == 5 and TOKENIZER_VERSION == 6
+    append_only_compatible = (
+        allow_compatible_tokenizer
+        and TOKENIZER_VERSION == 7
+        and saved_version in {5, 6}
+    )
     if saved_version != TOKENIZER_VERSION and not append_only_compatible:
         raise RuntimeError(
             f"Checkpoint {path} was saved with tokenizer_version="
@@ -89,14 +93,20 @@ def load_checkpoint_payload(
         )
     if append_only_compatible:
         logger.warning(
-            "Loading tokenizer_version=5 checkpoint into append-only tokenizer_version=6; "
-            "the new immediate-risk embedding remains freshly initialized."
+            "Loading tokenizer_version=%s checkpoint into append-only tokenizer_version=7; "
+            "new risk/strategy adapters remain freshly zero-initialized.",
+            saved_version,
         )
-    _validate_tokenizer_semantics(blob, path)
+    _validate_tokenizer_semantics(blob, path, allow_append_only_compatible=append_only_compatible)
     return blob
 
 
-def _validate_tokenizer_semantics(blob: dict[str, Any], path: str | Path) -> None:
+def _validate_tokenizer_semantics(
+    blob: dict[str, Any],
+    path: str | Path,
+    *,
+    allow_append_only_compatible: bool = False,
+) -> None:
     """Reject known shape-compatible tokenizer semantic mismatches.
 
     Old weights-only v6 files contain no semantic marker and generally cannot
@@ -105,7 +115,12 @@ def _validate_tokenizer_semantics(blob: dict[str, Any], path: str | Path) -> Non
     """
     saved_version = blob.get("tokenizer_version")
     saved_semantics = blob.get("tokenizer_semantics")
-    if saved_semantics is not None and saved_semantics != TOKENIZER_SEMANTICS:
+    compatible_v6_semantics = (
+        allow_append_only_compatible
+        and saved_version == 6
+        and saved_semantics == "v6_projected_score_blind_ratio"
+    )
+    if saved_semantics is not None and saved_semantics != TOKENIZER_SEMANTICS and not compatible_v6_semantics:
         raise RuntimeError(
             f"Checkpoint {path} uses tokenizer_semantics={saved_semantics!r}, but the active "
             f"semantics are {TOKENIZER_SEMANTICS!r}. Candidate token meanings are incompatible."

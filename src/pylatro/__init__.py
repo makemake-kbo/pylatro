@@ -6,7 +6,7 @@ from .instances import add_consumable, add_joker
 from .models import ConsumableInstance, JokerInstance, PackState, RunState
 from .pool import get_current_pool, get_new_boss, get_next_tag_key, get_next_voucher_key, get_pack, poll_edition
 from .run import create_run_state
-from .runtime import check_mr_bones, resolve_blue_seals
+from .runtime import check_mr_bones, resolve_blue_seals, resolve_held_gold_cards
 from .scoring import ScoreResult, evaluate_poker_hand, get_poker_hand_info, resolve_after_hand, score_hand
 from .shop import (
     buy_shop_card,
@@ -63,8 +63,9 @@ __all__ = [
     "refresh_shop",
     "reroll_boss",
     "reroll_shop",
-    "resolve_blue_seals",
     "resolve_after_hand",
+    "resolve_blue_seals",
+    "resolve_held_gold_cards",
     "score_hand",
     "select_blind",
     "sell_owned_consumable",

@@ -271,6 +271,63 @@ def test_fast_runner_unmasks_hand_targeted_consumable() -> None:
     assert mask[action] == 1
 
 
+def test_fast_runner_and_env_report_same_one_shot_held_gold_event() -> None:
+    from pylatro_agent.env import BalatroEnv
+
+    data = load_game_data()
+    runner = FastRunner(73, data)
+    runner.step(int(ActionRange.BLIND_PLAY))
+    runner.state.hands["High Card"]["chips"] = 1_000
+    runner.state.hands["High Card"]["mult"] = 10
+    runner.state.hand_cards[0].center_key = "m_gold"
+    runner.state.hand_cards[1].center_key = "m_gold"
+    fast_action = encode_action(ActionType.PLAY_SUBSET, subset_index((2,)))
+    fast_result = runner.step(fast_action)
+
+    vocab = build_vocab(data)
+    env = BalatroEnv(seed=73, data=data, vocab=vocab, enable_teacher=False)
+    env.reset()
+    env.step(int(ActionRange.BLIND_PLAY))
+    env.state.hands["High Card"]["chips"] = 1_000
+    env.state.hands["High Card"]["mult"] = 10
+    env.state.hand_cards[0].center_key = "m_gold"
+    env.state.hand_cards[1].center_key = "m_gold"
+    env_action = encode_action(ActionType.PLAY_SUBSET, subset_index((2,)))
+    _, _, _, _, info = env.step(env_action)
+
+    assert fast_result.held_gold_count == 2
+    assert fast_result.held_gold_payout == 6
+    assert info["strategic_held_gold_count"] == 2
+    assert info["strategic_held_gold_payout"] == 6
+    assert info["reward_strategic_held_gold_payout"] == pytest.approx(0.18)
+
+
+def test_fast_runner_disabled_boss_cashout_exposes_next_suit_boss() -> None:
+    from pylatro_agent.tokenizer import strategy_probability_features
+
+    data = load_game_data()
+    runner = FastRunner(91, data)
+    state = runner.state
+    state.blind_on_deck = "Boss"
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    runner.step(int(ActionRange.BLIND_PLAY))
+    for card in state.deck_cards:
+        card.seal = None
+    next(card for card in state.deck_cards if card.suit == "Spades").seal = "Blue"
+    state.blind_disabled = True
+    runner._ctrl.cash_out()
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    runner._sub_phase = SubPhase.BLIND_SELECT
+    runner.step(int(ActionRange.BLIND_SKIP))
+    runner.step(int(ActionRange.BLIND_SKIP))
+
+    features = strategy_probability_features(state, SubPhase.BLIND_SELECT)
+    assert not state.blind_disabled
+    assert state.blind_on_deck == "Boss"
+    assert features[0] == 0.0
+    assert features[5] == 0.0
+
+
 def test_heuristic_known_early_seeds_reach_ante_three() -> None:
     from pylatro_agent.env import BalatroEnv
 

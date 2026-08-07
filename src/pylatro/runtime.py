@@ -152,6 +152,39 @@ def resolve_blue_seals(
     return generated
 
 
+def resolve_held_gold_cards(
+    state: RunState,
+    held_cards: Iterable[PlayingCard],
+) -> tuple[int, int]:
+    """Pay live Gold cards held on a winning hand exactly once.
+
+    This runs at the clear event, not during cash-out, so the returned count
+    and payout are attributable to the play that earned them. Played Gold
+    cards are absent from ``held_cards`` and debuffed cards never pay.
+    """
+    if state.current_round.held_gold_settled:
+        return 0, 0
+    # Settle before inspecting the hand so even a zero-payout clear cannot be
+    # replayed later in the same blind after the hand/debuff state changes.
+    state.current_round.held_gold_settled = True
+    count = 0
+    payout = 0
+    for card in held_cards:
+        if card.center_key != "m_gold" or card.debuff:
+            continue
+        center = state.data.centers.get(card.center_key, {})
+        config = center.get("config", {}) or {}
+        amount = max(int(config.get("h_dollars", 0) or 0), 0)
+        if amount <= 0:
+            continue
+        count += 1
+        payout += amount
+    if payout:
+        state.dollars += payout
+        state.current_round.round_dollars += payout
+    return count, payout
+
+
 def create_joker_spec(
     state: RunState,
     *,

@@ -237,6 +237,7 @@ def _deck_stats(state: RunState) -> dict[str, Any]:
             edition_counts[card.edition_key] = edition_counts.get(card.edition_key, 0) + 1
         cards.append(
             {
+                "identity": card.reward_uid,
                 "rank": card.rank,
                 "suit": card.suit,
                 "enhancement": effect,
@@ -250,6 +251,7 @@ def _deck_stats(state: RunState) -> dict[str, Any]:
                 "h_x_mult": float(config.get("h_x_mult", 0) or 0),
                 "perma_bonus": int(card.perma_bonus),
                 "debuffed": bool(card.debuff),
+                "times_played": int(card.times_played),
             }
         )
     return {
@@ -329,7 +331,15 @@ def capture_build_features(state: RunState) -> dict[str, Any]:
     round_active = any(value == "Current" for value in state.round_resets.blind_states.values())
     hands_available = state.current_round.hands_left if round_active else state.round_resets.hands
     discards_available = state.current_round.discards_left if round_active else state.round_resets.discards
+    round_discard_capacity = (
+        state.current_round.discards_left + state.current_round.discards_used
+        if round_active
+        else state.round_resets.discards
+    )
     hand_size = state.current_round.hand_size if round_active else state.starting_params.hand_size
+    boss_key = state.round_resets.blind_choices.get("Boss", "")
+    boss = state.data.blinds.get(boss_key, {}) if boss_key else {}
+    boss_debuff = boss.get("debuff", {}) or {}
 
     return {
         "joker_details": tuple(_joker_summary(centers.get(j.center_key, {}), j.center_key, j) for j in state.jokers),
@@ -362,9 +372,16 @@ def capture_build_features(state: RunState) -> dict[str, Any]:
         },
         "hands_available": max(1, hands_available),
         "discards_available": max(0, discards_available),
+        "round_discard_capacity": max(0, round_discard_capacity),
+        "round_active": round_active,
+        "blind_disabled": bool(state.blind_disabled),
         "hand_size": int(hand_size),
         "joker_limit": joker_limit(state),
         "consumable_limit": consumable_limit(state),
+        "tarot_usage_total": int(state.consumeable_usage_total.get("tarot", 0) or 0),
+        "boss_debuff_suit": (
+            "" if state.blind_disabled else str(boss_debuff.get("suit", "") or "")
+        ),
         "blind_target": _upcoming_blind_target(state),
         "shop_cards": tuple(_shop_card_summary(state, item, i) for i, item in enumerate(shop_items)),
         "pack_card_details": tuple(_pack_card_summary(state, item, i) for i, item in enumerate(pack_items)),

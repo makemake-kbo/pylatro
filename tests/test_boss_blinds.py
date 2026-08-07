@@ -80,6 +80,23 @@ def test_verdant_leaf_sell_joker_disables_blind(data) -> None:
     assert all(not card.debuff for card in state.deck_cards)
 
 
+def test_blind_disable_lasts_through_settlement_then_clears_at_cashout(data) -> None:
+    controller = GameController(data=data)
+    controller.new_run("disabled_cashout")
+    state = controller.state
+    state.blind_on_deck = "Boss"
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    controller.select_blind("Boss")
+    state.blind_disabled = True
+
+    # The disabled current boss remains disabled until its atomic cash-out.
+    assert state.blind_disabled
+    controller.cash_out()
+
+    assert state.round_resets.ante == 2
+    assert not state.blind_disabled
+
+
 def _debuff_state(data, blind_key: str):
     controller = GameController(data=data)
     controller.new_run("42")

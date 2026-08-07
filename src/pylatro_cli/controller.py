@@ -73,10 +73,17 @@ class GameController:
         self.round_score += result.score.total
         # If blind beaten, caller transitions to shop; otherwise draw and check loss.
         if self.blind_beaten():
-            pylatro.resolve_blue_seals(
+            result.blue_planets_generated = [
+                consumable.center_key
+                for consumable in pylatro.resolve_blue_seals(
+                    self.state,
+                    result.score.held_cards,
+                    result.score.hand_name,
+                )
+            ]
+            result.held_gold_count, result.held_gold_payout = pylatro.resolve_held_gold_cards(
                 self.state,
                 result.score.held_cards,
-                result.score.hand_name,
             )
         else:
             pylatro.draw_to_hand(self.state)

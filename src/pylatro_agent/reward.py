@@ -31,6 +31,7 @@ class RewardConfig:
     gamma: float = 0.997
     dense_reward_scale: float = 1.0
     consumable_reward_scale: float = 1.0
+    strategic_event_reward_scale: float = 1.0
 
     enable_planet_match_rewards: bool = False
     planet_unmatched_use_penalty_coeff: float = 0.0
@@ -63,7 +64,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 12
+REWARD_MODEL_VERSION = 13
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -129,7 +130,6 @@ PLANET_PLAYED_HAND_BONUS = 0.25
 PLANET_UNMATCHED_MIN_PROGRESS = 0.25
 JOKER_UPGRADE_BONUS = 0.40
 DANGER_REROLL_BONUS = 0.20
-VALUE_TAROT_BONUS = 1.20
 
 _BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
 _FOOL_PROTECT_TARGETS = {"c_death", "c_hermit", "c_temperance"}
@@ -142,7 +142,13 @@ REWARD_COMPONENT_NAMES = (
     "planet_played_hand_bonus",
     "planet_unmatched_use_penalty",
     "planet_unmatched_claim_penalty",
-    "tarot_value_bonus",
+    "strategic_cash_payout",
+    "strategic_held_gold_payout",
+    "strategic_gold_creation",
+    "strategic_purple_generation",
+    "strategic_blue_generation",
+    "strategic_seal_claim",
+    "strategic_tarot_fix",
     "joker_upgrade_bonus",
     "danger_reroll_bonus",
     "survival_shaping",
@@ -159,7 +165,13 @@ _COMPONENT_GROUP = {
     "planet_played_hand_bonus": "consumable",
     "planet_unmatched_use_penalty": "consumable",
     "planet_unmatched_claim_penalty": "consumable",
-    "tarot_value_bonus": "consumable",
+    "strategic_cash_payout": "strategic_event",
+    "strategic_held_gold_payout": "strategic_event",
+    "strategic_gold_creation": "strategic_event",
+    "strategic_purple_generation": "strategic_event",
+    "strategic_blue_generation": "strategic_event",
+    "strategic_seal_claim": "strategic_event",
+    "strategic_tarot_fix": "strategic_event",
     "joker_upgrade_bonus": "shop",
     "danger_reroll_bonus": "shop",
     "survival_shaping": "potential",
@@ -582,19 +594,63 @@ def _apply_danger_reroll_reward(
     components["danger_reroll_bonus"] = DANGER_REROLL_BONUS * urgency
 
 
-def _apply_value_tarot_reward(
-    prev_info: dict,
-    curr_info: dict,
+def _apply_strategic_event_rewards(
+    curr_info: Mapping[str, Any],
     components: dict[str, float],
+    config: RewardConfig,
 ) -> None:
-    key = str(curr_info.get("consumable_use_key") or "")
-    if not key and curr_info.get("pack_claim_set") == "Tarot":
-        key = str(curr_info.get("pack_claim_key") or "")
-    if key not in {"c_hermit", "c_temperance"}:
-        return
-    payout = max(float(curr_info.get("dollars", 0) or 0) - float(prev_info.get("dollars", 0) or 0), 0.0)
-    if payout > 0.0:
-        components["tarot_value_bonus"] = VALUE_TAROT_BONUS * min(payout / 10.0, 1.0)
+    """Apply bounded, attributable rewards for strategic engine events.
+
+    These terms are intentionally independent from dense/potential scaling:
+    they pay only for a concrete event on this transition and never infer
+    credit from an inventory or dollar delta alone.
+    """
+
+    payout = max(float(curr_info.get("strategic_attributable_cash_payout", 0) or 0), 0.0)
+    gold_created = max(float(curr_info.get("strategic_gold_created_tarot", 0) or 0), 0.0) + max(
+        float(curr_info.get("strategic_gold_created_midas", 0) or 0),
+        0.0,
+    )
+    purple_generated = max(float(curr_info.get("strategic_purple_tarots_generated", 0) or 0), 0.0)
+    blue_generated = max(float(curr_info.get("strategic_blue_planets_generated", 0) or 0), 0.0)
+    held_gold_count = max(float(curr_info.get("strategic_held_gold_count", 0) or 0), 0.0)
+    held_gold_payout = max(float(curr_info.get("strategic_held_gold_payout", 0) or 0), 0.0)
+    paid_gold_cards = min(held_gold_count, held_gold_payout / 3.0)
+    seals_claimed = max(float(curr_info.get("strategic_blue_seals_claimed", 0) or 0), 0.0) + max(
+        float(curr_info.get("strategic_purple_seals_claimed", 0) or 0),
+        0.0,
+    )
+
+    components["strategic_cash_payout"] = min(0.03 * payout, 0.30)
+    components["strategic_held_gold_payout"] = 0.09 * paid_gold_cards
+    components["strategic_gold_creation"] = 0.15 * gold_created
+    components["strategic_purple_generation"] = 0.10 * purple_generated
+    components["strategic_blue_generation"] = 0.08 * blue_generated
+    components["strategic_seal_claim"] = 0.06 * seals_claimed
+    components["strategic_tarot_fix"] = _clip(
+        float(curr_info.get("strategic_tarot_fix_reward", 0.0) or 0.0),
+        -0.20,
+        0.20,
+    )
+
+    names = (
+        "strategic_cash_payout",
+        "strategic_held_gold_payout",
+        "strategic_gold_creation",
+        "strategic_purple_generation",
+        "strategic_blue_generation",
+        "strategic_seal_claim",
+        "strategic_tarot_fix",
+    )
+    scale = max(float(config.strategic_event_reward_scale), 0.0)
+    for name in names:
+        components[name] *= scale
+    positive_sum = sum(max(components[name], 0.0) for name in names)
+    if positive_sum > 1.0:
+        cap_scale = 1.0 / positive_sum
+        for name in names:
+            if components[name] > 0.0:
+                components[name] *= cap_scale
 
 
 def _apply_ante1_chip_tempo_reward(
@@ -654,6 +710,11 @@ def default_reward_components(
             stalled=bool(curr_info.get("stalled", False)),
         )
         _apply_ante1_chip_tempo_reward(prev_info, curr_info, components)
+        _apply_strategic_event_rewards(
+            curr_info,
+            components,
+            config,
+        )
         components["ante1_chip_tempo"] *= config.dense_reward_scale
         components["total"] = sum(components.values())
         return components
@@ -682,6 +743,11 @@ def default_reward_components(
     components["potential_shaping"] = potential_shaping_reward(prev_info, curr_info, active_config)
     components["survival_shaping"] = survival_shaping_reward(prev_info, curr_info, active_config)
     _apply_ante1_chip_tempo_reward(prev_info, curr_info, components)
+    _apply_strategic_event_rewards(
+        curr_info,
+        components,
+        config,
+    )
 
     if config.enable_planet_match_rewards:
         _apply_planet_match_rewards(
@@ -693,7 +759,6 @@ def default_reward_components(
         )
 
     if config.enable_score_build_potential:
-        _apply_value_tarot_reward(prev_info, curr_info, components)
         _apply_joker_upgrade_reward(prev_info, curr_info, components)
         _apply_danger_reroll_reward(prev_info, curr_info, components)
 
@@ -710,7 +775,6 @@ def default_reward_components(
         "planet_played_hand_bonus",
         "planet_unmatched_use_penalty",
         "planet_unmatched_claim_penalty",
-        "tarot_value_bonus",
     ):
         components[name] *= consumable_scale
     components["joker_upgrade_bonus"] *= dense_scale

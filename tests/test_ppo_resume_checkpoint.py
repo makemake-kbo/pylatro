@@ -5,13 +5,15 @@ import pytest
 import torch
 
 from pylatro_agent import checkpoint as ckpt
-from pylatro_agent.constants import TOKENIZER_SEMANTICS
+from pylatro_agent.constants import META_COUNT, SCALAR_DIM, TOKEN_DIM, TOKENIZER_SEMANTICS
+from pylatro_agent.embeddings import MetaEmbedding
 from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
     PPOConfig,
     RunningMeanStd,
     _apply_lr_override,
     _load_checkpoint_compatible,
+    _load_state_dict_into_model,
     _make_policy_optimizer,
     _optimizer_to,
 )
@@ -160,10 +162,10 @@ def test_known_faulty_v6_candidate_semantics_checkpoint_is_rejected(tmp_path) ->
     )
 
     with pytest.raises(RuntimeError, match="known faulty tokenizer-v6"):
-        ckpt.load_checkpoint_payload(path, "cpu")
+        ckpt.load_checkpoint_payload(path, "cpu", allow_compatible_tokenizer=True)
 
 
-def test_historical_unmarked_good_v6_checkpoint_remains_loadable(tmp_path) -> None:
+def test_historical_unmarked_good_v6_checkpoint_is_pretrained_only(tmp_path) -> None:
     path = tmp_path / "historical_v6.pt"
     torch.save(
         {
@@ -174,7 +176,38 @@ def test_historical_unmarked_good_v6_checkpoint_remains_loadable(tmp_path) -> No
         path,
     )
 
-    assert "state_dict" in ckpt.load_checkpoint_payload(path, "cpu")
+    with pytest.raises(RuntimeError, match="tokenizer_version=6"):
+        ckpt.load_checkpoint_payload(path, "cpu")
+    assert "state_dict" in ckpt.load_checkpoint_payload(
+        path,
+        "cpu",
+        allow_compatible_tokenizer=True,
+    )
+
+
+def test_v6_pretrained_migration_preserves_initial_meta_outputs_exactly() -> None:
+    torch.manual_seed(41)
+    v6_reference = MetaEmbedding(d_model=16)
+    v6_state = {
+        key: value
+        for key, value in v6_reference.state_dict().items()
+        if not key.startswith("strategy_proj.")
+    }
+    torch.manual_seed(99)
+    migrated = MetaEmbedding(d_model=16)
+
+    _load_state_dict_into_model(migrated, v6_state, "synthetic_v6.pt")
+
+    tokens = torch.zeros(3, META_COUNT, TOKEN_DIM, dtype=torch.long)
+    scalars = torch.randn(3, SCALAR_DIM)
+    v6_scalars = scalars.clone()
+    v6_scalars[:, 13:22] = 0.0
+    with torch.no_grad():
+        reference_output = v6_reference(tokens, v6_scalars)
+        migrated_output = migrated(tokens, scalars)
+
+    assert torch.count_nonzero(migrated.strategy_proj.weight) == 0
+    assert torch.equal(migrated_output, reference_output)
 
 
 def test_strict_resume_rejects_reward_fingerprint_mismatch(tmp_path) -> None:

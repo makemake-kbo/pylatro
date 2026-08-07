@@ -5,12 +5,14 @@ from __future__ import annotations
 import pytest
 
 from pylatro import (
+    add_joker,
     cash_out,
     create_run_state,
     load_game_data,
     open_booster_pack,
     populate_shop,
     select_blind,
+    skip_blind,
     start_blind,
 )
 from pylatro_agent.constants import (
@@ -25,7 +27,12 @@ from pylatro_agent.constants import (
     TokenType,
 )
 from pylatro_agent.hand_candidates import generate_hand_candidates
-from pylatro_agent.tokenizer import Tokenizer, sign_log
+from pylatro_agent.tokenizer import (
+    Tokenizer,
+    _hypergeom_at_least_one,
+    sign_log,
+    strategy_probability_features,
+)
 from pylatro_agent.vocab import build_vocab
 
 
@@ -62,6 +69,156 @@ def test_tokenize_shape(run_state, vocab):
     assert obs.token_types.shape == (MAX_SEQ_LEN,)
     assert obs.scalars.shape == (SCALAR_DIM,)
     assert obs.attention_mask.shape == (MAX_SEQ_LEN,)
+
+
+def test_strategy_probability_scalars_expose_live_card_opportunities(run_state, vocab):
+    run_state.round_resets.blind_choices["Boss"] = "bl_hook"
+    for card in run_state.deck_cards:
+        card.seal = None
+        card.center_key = "c_base"
+        card.debuff = False
+    run_state.hand_cards[0].seal = "Blue"
+    run_state.hand_cards[1].seal = "Purple"
+    run_state.hand_cards[2].center_key = "m_gold"
+    run_state.hand_cards[3].center_key = "m_steel"
+
+    features = strategy_probability_features(
+        run_state,
+        SubPhase.CHOOSE_ACTION,
+        clear_probability=0.8,
+    )
+    obs = Tokenizer(vocab=vocab).tokenize(
+        run_state,
+        SubPhase.CHOOSE_ACTION,
+        clear_probability=0.8,
+    )
+
+    assert features[:5] == pytest.approx((1.0, 1.0, 1.0, 1.0, 1.0))
+    assert obs.scalars[13:22] == pytest.approx(features)
+
+
+def test_purple_search_probability_reserves_a_discard(run_state):
+    for card in run_state.deck_cards:
+        card.seal = None
+        card.debuff = False
+    run_state.draw_pile[0].seal = "Purple"
+    run_state.current_round.discards_left = 1
+
+    with_one = strategy_probability_features(run_state, SubPhase.CHOOSE_ACTION)[1]
+    run_state.current_round.discards_left = 2
+    with_two = strategy_probability_features(run_state, SubPhase.CHOOSE_ACTION)[1]
+
+    assert with_one == 0.0
+    assert with_two > 0.0
+
+
+def test_strategy_probability_keeps_ineligible_cards_as_failure_draws(game_data):
+    state = create_run_state("strategy_probability_denominator", 1, "b_red", data=game_data)
+    state.blind_on_deck = "Boss"
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    state.round_resets.hands = 5
+    state.round_resets.discards = 3
+    for card in state.deck_cards:
+        card.seal = None
+    success = next(card for card in state.deck_cards if card.suit == "Hearts")
+    success.seal = "Blue"
+
+    probability = strategy_probability_features(state, SubPhase.BLIND_SELECT)[0]
+
+    assert probability == pytest.approx(43 / 52)
+
+
+@pytest.mark.parametrize(
+    ("population", "successes", "draws", "expected"),
+    ((0, 1, 1, 0.0), (52, 0, 43, 0.0), (52, 1, 0, 0.0), (52, 52, 1, 1.0)),
+)
+def test_hypergeom_probability_is_bounded_for_degenerate_inputs(
+    population: int,
+    successes: int,
+    draws: int,
+    expected: float,
+) -> None:
+    value = _hypergeom_at_least_one(population, successes, draws)
+    assert value == pytest.approx(expected)
+    assert 0.0 <= value <= 1.0
+
+
+def test_preblind_strategy_probabilities_exclude_known_boss_suit(game_data):
+    state = create_run_state("strategy_boss_suit", 1, "b_red", data=game_data)
+    state.blind_on_deck = "Boss"
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    for card in state.deck_cards:
+        card.seal = None
+    spade = next(card for card in state.deck_cards if card.suit == "Spades")
+    spade.seal = "Blue"
+
+    features = strategy_probability_features(state, SubPhase.BLIND_SELECT)
+
+    assert features[0] == 0.0
+    assert features[5] == 0.0
+
+    state.blind_disabled = True
+    disabled_features = strategy_probability_features(state, SubPhase.BLIND_SELECT)
+    assert disabled_features[0] > 0.0
+    assert disabled_features[5] > 0.0
+
+
+def test_disabled_boss_cashout_does_not_hide_next_ante_suit_boss(game_data):
+    state = create_run_state("disabled_boss_next_ante", 1, "b_red", data=game_data)
+    state.blind_on_deck = "Boss"
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    start_blind(state, "Boss")
+    for card in state.deck_cards:
+        card.seal = None
+    spade = next(card for card in state.deck_cards if card.suit == "Spades")
+    spade.seal = "Blue"
+    state.blind_disabled = True
+
+    active_disabled = strategy_probability_features(state, SubPhase.CHOOSE_ACTION)
+    assert active_disabled[0] > 0.0
+    assert active_disabled[5] > 0.0
+
+    state.round_resets.blind_states["Boss"] = "Defeated"
+    cash_out(state)
+    state.round_resets.blind_choices["Boss"] = "bl_goad"
+    skip_blind(state)
+    skip_blind(state)
+
+    assert state.round_resets.ante == 2
+    assert state.blind_on_deck == "Boss"
+    assert not state.blind_disabled
+    next_boss = strategy_probability_features(state, SubPhase.BLIND_SELECT)
+    assert next_boss[0] == 0.0
+    assert next_boss[5] == 0.0
+
+
+def test_suit_utilities_preserve_ties_and_follow_deck_history_and_jokers(game_data):
+    tied = create_run_state("suit_utility_tie", 1, "b_red", data=game_data)
+    tied.round_resets.blind_choices["Boss"] = "bl_hook"
+    tied_utilities = strategy_probability_features(tied, SubPhase.BLIND_SELECT)[5:9]
+
+    hearts = create_run_state("suit_utility_hearts", 1, "b_red", data=game_data)
+    hearts.round_resets.blind_choices["Boss"] = "bl_hook"
+    for card in hearts.deck_cards:
+        if card.suit == "Diamonds" and card.rank in {"2", "3", "4", "5", "6", "7", "8", "9"}:
+            card.suit = "Hearts"
+    hearts.hands["Flush"]["played"] = 4
+    for card in hearts.deck_cards:
+        if card.suit == "Hearts":
+            card.times_played = 2
+    hearts_utilities = strategy_probability_features(hearts, SubPhase.BLIND_SELECT)[5:9]
+
+    spades = create_run_state("suit_utility_spades", 1, "b_red", data=game_data)
+    spades.round_resets.blind_choices["Boss"] = "bl_hook"
+    add_joker(spades, "j_arrowhead")
+    spade_utilities = strategy_probability_features(spades, SubPhase.BLIND_SELECT)[5:9]
+
+    assert max(tied_utilities) - min(tied_utilities) == pytest.approx(0.0)
+    assert tied_utilities[0] < 0.25
+    assert hearts_utilities[1] == max(hearts_utilities)
+    assert hearts_utilities[1] > tied_utilities[1]
+    assert spade_utilities[0] == max(spade_utilities)
+    assert spade_utilities[0] > tied_utilities[0]
 
 
 def test_tokenize_has_tokens(run_state, vocab):

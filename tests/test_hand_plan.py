@@ -5,9 +5,10 @@ from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from pylatro_agent.hand_plan import PLAN_HAND_TYPES, estimate_hand_plans
 from pylatro_agent.reward import (
-    VALUE_TAROT_BONUS,
     RewardConfig,
     default_reward_components,
     state_potential_breakdown,
@@ -50,6 +51,7 @@ def _snapshot(cards: list[dict[str, Any]], *, blind_target: float = 400.0) -> di
         "blind_target": blind_target,
         "hands_available": 4,
         "discards_available": 3,
+        "round_discard_capacity": 3,
         "hand_size": 8,
         "joker_limit": 5,
         "consumable_limit": 2,
@@ -191,6 +193,23 @@ def test_blue_and_purple_seals_are_large_persistent_potential() -> None:
     assert sealed["total"] > base["total"]
 
 
+def test_purple_seal_potential_is_stable_after_using_a_discard_or_filling_inventory() -> None:
+    before = _snapshot(_standard_deck())
+    before["deck_stats"]["seal_counts"] = {"Purple": 1}
+    after = deepcopy(before)
+    after["discards_available"] = 2
+    after["consumable_details"] = (
+        {"key": "c_death", "set": "Tarot"},
+        {"key": "c_hermit", "set": "Tarot"},
+    )
+    config = RewardConfig(enable_score_build_potential=True)
+
+    before_seal = state_potential_breakdown(before, config)["seal_value"]
+    after_seal = state_potential_breakdown(after, config)["seal_value"]
+
+    assert after_seal == pytest.approx(before_seal)
+
+
 def test_generated_planet_only_has_value_for_a_reliable_plan() -> None:
     pair_planet = _snapshot(_standard_deck(), blind_target=100.0)
     pair_planet["consumable_details"] = (
@@ -220,7 +239,7 @@ def test_generated_tarot_creates_option_value_until_converted() -> None:
     assert state_potential_breakdown(tarot, config)["tarot_option_value"] > 0.0
 
 
-def test_hermit_and_temperance_receive_large_realized_value_bonus() -> None:
+def test_hermit_and_temperance_receive_attributable_cash_reward() -> None:
     prev = _snapshot(_standard_deck())
     prev["dollars"] = 10
     config = RewardConfig(enable_score_build_potential=True)
@@ -230,6 +249,7 @@ def test_hermit_and_temperance_receive_large_realized_value_bonus() -> None:
         **prev,
         "dollars": 20,
         "consumable_use_key": "c_hermit",
+        "strategic_attributable_cash_payout": 10,
         "progress_made": True,
     }
     temperance = {
@@ -237,6 +257,7 @@ def test_hermit_and_temperance_receive_large_realized_value_bonus() -> None:
         "dollars": 18,
         "pack_claim_set": "Tarot",
         "pack_claim_key": "c_temperance",
+        "strategic_attributable_cash_payout": 8,
         "progress_made": True,
     }
     no_payout = {
@@ -248,9 +269,9 @@ def test_hermit_and_temperance_receive_large_realized_value_bonus() -> None:
     hermit_reward = default_reward_components(state, prev, hermit, False, False, config)
     temperance_reward = default_reward_components(state, prev, temperance, False, False, config)
     no_payout_reward = default_reward_components(state, prev, no_payout, False, False, config)
-    assert hermit_reward["tarot_value_bonus"] == VALUE_TAROT_BONUS
-    assert temperance_reward["tarot_value_bonus"] == VALUE_TAROT_BONUS * 0.8
-    assert no_payout_reward["tarot_value_bonus"] == 0.0
+    assert hermit_reward["strategic_cash_payout"] == 0.30
+    assert temperance_reward["strategic_cash_payout"] == 0.24
+    assert no_payout_reward["strategic_cash_payout"] == 0.0
 
 
 def test_deck_fixing_and_gold_cards_raise_persistent_value() -> None:

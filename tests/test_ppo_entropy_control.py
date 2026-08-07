@@ -642,6 +642,7 @@ def test_rollout_episode_metrics_are_not_lifetime_averages() -> None:
         completed_episode_wins=[0.0, 1.0],
         completed_episode_stalls=[1.0, 0.0],
         completed_episode_antes=[2, 4],
+        completed_episode_tarot_uses=[1, 3],
     )
     writer = _Writer()
 
@@ -654,6 +655,7 @@ def test_rollout_episode_metrics_are_not_lifetime_averages() -> None:
         "rollout/stall_rate": (0.5, 7),
         "rollout/final_ante_mean": (3.0, 7),
         "rollout/mean_ante_reached": (3.0, 7),
+        "rollout/tarot_uses_per_completed_episode_mean": (2.0, 7),
     }
 
 

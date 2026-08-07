@@ -45,7 +45,121 @@ from .constants import (
     TokenType,
 )
 from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
+from .strategy_context import compute_suit_target_utilities
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
+
+
+def _hypergeom_at_least_one(population: int, successes: int, draws: int) -> float:
+    population = max(int(population), 0)
+    successes = max(0, min(int(successes), population))
+    draws = max(0, min(int(draws), population))
+    if population <= 0 or successes <= 0 or draws <= 0:
+        return 0.0
+    if draws >= population:
+        return 1.0
+    return 1.0 - math.comb(population - successes, draws) / math.comb(population, draws)
+
+
+def strategy_probability_features(
+    state: RunState,
+    sub_phase: SubPhase,
+    *,
+    clear_probability: float = 0.0,
+) -> tuple[float, ...]:
+    """Return five opportunity features plus four suit-target utilities."""
+    from pylatro.runtime import consumable_limit
+
+    active = sub_phase == SubPhase.CHOOSE_ACTION
+    active_debuffs = active and not state.blind_disabled
+    pool = list(state.draw_pile if active else state.deck_cards)
+    boss_debuff_suit = ""
+    if not state.blind_disabled and not active and (state.blind_on_deck or "") == "Boss":
+        boss_key = state.round_resets.blind_choices.get("Boss", "")
+        boss = state.data.blinds.get(boss_key, {})
+        debuff = boss.get("debuff", {}) or {}
+        boss_debuff_suit = str(debuff.get("suit", "") or "")
+
+    def live(card) -> bool:
+        # Between blinds, ``card.debuff`` can still describe the blind that
+        # just ended. Only active-blind debuffs are authoritative; pre-blind
+        # suit exclusions come from the known upcoming boss instead.
+        return (not active_debuffs or not card.debuff) and (
+            not boss_debuff_suit or card.suit != boss_debuff_suit
+        )
+
+    # Ineligible cards remain physical failure draws. Removing them from the
+    # population would condition on never drawing a debuffed/boss-suit card
+    # and systematically overstate every opportunity probability.
+    live_pool = [card for card in pool if live(card)]
+    population = len(pool)
+    hand_size = max(int(state.current_round.hand_size if active else state.starting_params.hand_size), 1)
+    hands = max(int(state.current_round.hands_left if active else state.round_resets.hands), 1)
+    discards = max(int(state.current_round.discards_left if active else state.round_resets.discards), 0)
+    search_draws = min(
+        population,
+        (0 if active else hand_size) + 5 * discards + 5 * max(hands - 1, 0),
+    )
+
+    live_hand = [card for card in state.hand_cards if live(card)] if active else []
+    safe_blue_held = (
+        active
+        and clear_probability >= 0.65
+        and len(state.hand_cards) > 1
+        and any(card.seal == "Blue" for card in live_hand)
+    )
+    blue_successes = sum(card.seal == "Blue" for card in live_pool)
+    p_blue = 1.0 if safe_blue_held else _hypergeom_at_least_one(population, blue_successes, search_draws)
+
+    live_purple_now = active and discards > 0 and any(card.seal == "Purple" for card in live_hand)
+    # If Purple is not already in hand, one discard must remain after finding
+    # it so the seal itself can be discarded. With one discard left there is
+    # no future search-and-trigger opportunity.
+    purple_search_draws = min(
+        population,
+        (0 if active else hand_size) + 5 * max(discards - 1, 0),
+    )
+    purple_successes = sum(card.seal == "Purple" for card in live_pool)
+    p_purple = (
+        1.0
+        if live_purple_now
+        else _hypergeom_at_least_one(population, purple_successes, purple_search_draws)
+    )
+
+    def enhancement_probability(center_key: str) -> float:
+        if active and any(card.center_key == center_key for card in live_hand):
+            return 1.0
+        successes = sum(card.center_key == center_key for card in live_pool)
+        return _hypergeom_at_least_one(population, successes, search_draws)
+
+    capacity = max(consumable_limit(state), 0)
+    room_fraction = max(capacity - len(state.consumables), 0) / max(capacity, 1)
+    boss_key = state.round_resets.blind_choices.get("Boss", "")
+    boss = state.data.blinds.get(boss_key, {}) if boss_key else {}
+    known_boss_suit = (
+        ""
+        if state.blind_disabled
+        else str((boss.get("debuff", {}) or {}).get("suit", "") or "")
+    )
+    suit_utilities = compute_suit_target_utilities(
+        state.deck_cards,
+        state.jokers,
+        hand_play_counts={
+            name: int(hand.get("played", 0) or 0)
+            for name, hand in state.hands.items()
+        },
+        boss_debuff_suit=known_boss_suit,
+        # A completed blind can leave stale debuff flags on deck cards. The
+        # known upcoming boss is the only authoritative pre-blind exclusion.
+        respect_card_debuff=active_debuffs,
+    )
+    return (
+        min(max(p_blue, 0.0), 1.0),
+        min(max(p_purple, 0.0), 1.0),
+        enhancement_probability("m_gold"),
+        enhancement_probability("m_steel"),
+        min(max(room_fraction, 0.0), 1.0),
+        *suit_utilities,
+    )
 
 
 @cython.ccall
@@ -84,6 +198,7 @@ class Tokenizer:
         card_idx=cython.int,
         i=cython.int,
         ci=cython.int,
+        strategy_index=cython.int,
         p=cython.Py_ssize_t,
         loc=cython.int,
         tokens=cython.short[:, :],
@@ -148,10 +263,19 @@ class Tokenizer:
             from .risk import capture_state_risk
 
             risk = capture_state_risk(state, round_score)
-            clear_probability = risk.clear_probability
-            immediate_death_probability = risk.immediate_death_probability
+            if clear_probability is None:
+                clear_probability = risk.clear_probability
+            if immediate_death_probability is None:
+                immediate_death_probability = risk.immediate_death_probability
         scalars[11] = min(max(float(clear_probability), 0.0), 1.0)
         scalars[12] = min(max(float(immediate_death_probability), 0.0), 1.0)
+        strategy_probabilities = strategy_probability_features(
+            state,
+            sub_phase,
+            clear_probability=float(clear_probability),
+        )
+        for strategy_index in range(9):
+            scalars[13 + strategy_index] = strategy_probabilities[strategy_index]
 
         pos = DECK_START
         hand_cards = state.hand_cards

@@ -385,6 +385,15 @@ def main():
         help="Additional scale for optional planet-alignment shaping. Default: 1.0.",
     )
     parser.add_argument(
+        "--strategic-event-reward-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Independent scale for attributable Tarot, seal, Gold, and cash events. "
+            "Positive strategic credit remains capped at 1.0 per transition. Default: 1.0."
+        ),
+    )
+    parser.add_argument(
         "--planet-unmatched-use-penalty-coeff",
         type=float,
         default=0.0,
@@ -790,6 +799,7 @@ def main():
                     enable_score_build_potential=args.score_build_potential,
                     dense_reward_scale=args.dense_reward_scale,
                     consumable_reward_scale=args.consumable_reward_scale,
+                    strategic_event_reward_scale=args.strategic_event_reward_scale,
                 ),
             ),
             agent_config=agent_config,

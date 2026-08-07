@@ -8,7 +8,7 @@ run games at minimal cost; qualifying games are replayed with full observations.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import cython
 import numpy as np
@@ -16,6 +16,7 @@ import numpy as np
 from pylatro import can_use_consumable
 from pylatro.instances import move_joker
 from pylatro.runtime import consumable_limit, joker_limit
+from pylatro.shop import can_claim_pack_card
 from pylatro_cli.controller import GameController, GamePhase
 
 from ..constants import (
@@ -148,18 +149,18 @@ class FastRunner:
     # ── step (action-id based, no decode_action overhead) ──
 
     @cython.locals(action_id=cython.int, _step_count=cython.int)
-    def step(self, action_id: int) -> None:
+    def step(self, action_id: int) -> Any:
         self._step_count += 1
 
         try:
-            self._execute(action_id)
+            action_result = self._execute(action_id)
         except Exception:
             self._steps_since_progress += 1
             if not self._done and (
                 self._steps_since_progress >= self._max_steps or self._step_count >= self._max_steps
             ):
                 self._done = True
-            return
+            return None
 
         state = self._state
         phase = self._ctrl.phase
@@ -179,6 +180,7 @@ class FastRunner:
 
         if not self._done and (self._steps_since_progress >= self._max_steps or self._step_count >= self._max_steps):
             self._done = True
+        return action_result
 
     # ── internal state machine ──
 
@@ -193,7 +195,7 @@ class FastRunner:
         within=cython.int,
         joker_idx=cython.int,
     )
-    def _execute(self, aid: int) -> None:
+    def _execute(self, aid: int) -> Any:
         ctrl = self._ctrl
         state = self._state
         AR = ActionRange
@@ -249,38 +251,41 @@ class FastRunner:
             if ctrl.blind_beaten():
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
-                    return
+                    return result
                 ctrl.enter_shop()
                 self._sub_phase = SubPhase.SHOP
             elif ctrl.phase == GamePhase.GAME_OVER:
-                return
+                return result
             else:
                 self._sub_phase = SubPhase.CHOOSE_ACTION
+            return result
 
         elif AR.DISCARD_SUBSET_START <= aid <= AR.DISCARD_SUBSET_END:
             idx = aid - AR.DISCARD_SUBSET_START
             indices = subset_indices(idx)
             if any(slot >= len(state.hand_cards) for slot in indices):
                 return
-            ctrl.discard_selected(list(indices))
+            result = ctrl.discard_selected(list(indices))
             self._sub_phase = SubPhase.CHOOSE_ACTION
+            return result
 
         elif AR.CONSUMABLE_FLAT_START <= aid <= AR.CONSUMABLE_FLAT_END:
             rel = aid - int(AR.CONSUMABLE_FLAT_START)
             slot = rel // CONSUMABLE_ACTIONS_PER_SLOT
             within = rel - slot * CONSUMABLE_ACTIONS_PER_SLOT
             if within == CONSUMABLE_NO_TARGET_OFFSET:
-                ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=())
+                result = ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=())
             elif CONSUMABLE_HAND_SUBSET_OFFSET <= within < CONSUMABLE_HAND_SUBSET_OFFSET + NUM_CONSUMABLE_HAND_SUBSETS:
                 hand_targets = consumable_subset_indices(within - CONSUMABLE_HAND_SUBSET_OFFSET)
-                ctrl.use_consumable_on(slot, hand_targets=hand_targets, joker_targets=())
+                result = ctrl.use_consumable_on(slot, hand_targets=hand_targets, joker_targets=())
             else:
                 joker_idx = within - CONSUMABLE_JOKER_OFFSET
-                ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=(joker_idx,))
+                result = ctrl.use_consumable_on(slot, hand_targets=(), joker_targets=(joker_idx,))
             if ctrl.phase == GamePhase.HAND_PLAY:
                 self._sub_phase = SubPhase.CHOOSE_ACTION
             elif ctrl.phase == GamePhase.SHOP:
                 self._sub_phase = SubPhase.SHOP
+            return result
 
         elif AR.SHOP_BUY_START <= aid <= AR.SHOP_BUY_END:
             idx = aid - AR.SHOP_BUY_START
@@ -310,10 +315,11 @@ class FastRunner:
             self._sub_phase = SubPhase.BLIND_SELECT
 
         elif AR.PACK_CLAIM_START <= aid <= AR.PACK_CLAIM_END:
-            ctrl.claim_from_pack(aid - AR.PACK_CLAIM_START)
+            result = ctrl.claim_from_pack(aid - AR.PACK_CLAIM_START)
             if state.pack and state.pack.choices_remaining <= 0:
                 ctrl.close_current_pack(skipped=False)
                 self._sub_phase = SubPhase.SHOP
+            return result
 
         elif aid == AR.PACK_SKIP:
             ctrl.close_current_pack(skipped=True)
@@ -450,7 +456,7 @@ def _mask_booster(m, state, AR):
                 if len(state.jokers) < joker_limit(state) or is_negative:
                     m[_claim_start + i] = 1
             elif card_type in ("Tarot", "Planet", "Spectral"):
-                if len(state.consumables) < consumable_limit(state):
+                if can_claim_pack_card(state, card):
                     m[_claim_start + i] = 1
             else:
                 m[_claim_start + i] = 1

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
+from itertools import count
 from typing import Any
 
 from .data import GameData  # noqa: TC001
@@ -62,6 +63,14 @@ POKER_HANDS = (
 )
 
 
+_PLAYING_CARD_UIDS = count(1)
+
+
+def _next_playing_card_uid() -> int:
+    """Return a process-monotonic identity for one physical playing card."""
+    return next(_PLAYING_CARD_UIDS)
+
+
 @dataclass(slots=True)
 class StartingParams:
     dollars: int = 4
@@ -99,6 +108,7 @@ class CurrentRound:
     castle_card: dict[str, Any] = field(default_factory=lambda: {"suit": "Spades"})
     used_packs: list[str] = field(default_factory=list)
     round_dollars: int = 0
+    held_gold_settled: bool = False
     most_played_poker_hand: str = "High Card"
 
 
@@ -137,6 +147,10 @@ class PlayingCard:
     face_down: bool = False
     forced_selection: bool = False
     times_played: int = 0
+    # Reward attribution needs an identity that cannot be recycled after a
+    # destroyed Python object is collected.  This value is deliberately absent
+    # from policy features and compare=False preserves gameplay equality.
+    reward_uid: int = field(default_factory=_next_playing_card_uid, compare=False)
 
     @property
     def is_face(self) -> bool:
@@ -157,6 +171,13 @@ class ShopCard:
     rental: bool = False
     shop_voucher: bool = False
     booster_pos: int | None = None
+    # Booster consumables with a legal immediate continuation are applied on
+    # claim. Preserve the exact targets and result so attribution never has to
+    # infer them from aggregate state deltas.
+    auto_used: bool = False
+    use_result: Any = None
+    auto_used_hand_targets: tuple[int, ...] = ()
+    auto_used_joker_targets: tuple[int, ...] = ()
 
 
 @dataclass(slots=True)

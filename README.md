@@ -151,6 +151,7 @@ uv run python train.py ppo \
   --target-kl 0.03 --target-kl-p95 0.10 --target-kl-max 0.15 \
   --min-minibatch-fraction 0.50 \
   --dense-reward-scale 0.25 \
+  --strategic-event-reward-scale 1.0 \
   --score-build-potential \
   --planet-match-shaping \
   --planet-unmatched-use-penalty-coeff 0.25 \
@@ -172,8 +173,10 @@ only with a dedicated synergy Joker; Full House is not a strategic target. The
 same bounded potential strongly values Blue/Purple seals, Tarot
 deck fixing and money generation, score-improving Joker replacements, and
 midgame Standard-pack searches when scoring is already safe. Planet shaping
-rewards only these viable plans. Tokenizer v6 also exposes a conservative,
-boss-aware chance of clearing the immediate blind. Completed-blind chips are
+rewards only these viable plans. Tokenizer v7 also exposes a conservative,
+boss-aware chance of clearing the immediate blind, five strategic opportunity
+probabilities, and four suit-target utilities shared with contextual Tarot
+rewards. Completed-blind chips are
 discarded before the next shop's risk estimate. Danger, danger-weighted hands,
 and danger-weighted discards feed the policy head directly; active hand
 decisions are sharpened in Ante 1 or immediate danger. Unsafe shops retain
@@ -191,6 +194,12 @@ shop loop directly visible. A short idle horizon, action-family entropy bonus,
 hard KL guard, and two-eval regression stop protect the pretrained policy while
 retaining the `1e-5` learning rate. Reinitialize the value head when adding these
 rewards to a checkpoint trained with different reward semantics.
+
+The production CUDA recipe is also available as
+`scripts/run_ppo_v13_tarot_seal_strategy.sh`. By default it initializes from the
+best v12 checkpoint as a weights-only pretrained policy, then warms a fresh
+critic before unfreezing PPO. Override `PYLATRO_WORKSPACE`,
+`PYLATRO_SOURCE_CHECKPOINT`, or `PYLATRO_RUN_NAME` when using different paths.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 

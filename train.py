@@ -451,11 +451,61 @@ def main():
         type=float,
         default=0.7,
         help=(
-            "Explained-variance gate for unfreezing the policy after critic warmup. "
-            "The policy stays frozen until rollout EV clears this (capped at 4x "
-            "--critic-warmup-updates). Pass 0 for a purely count-based warmup. "
-            "Default: 0.7."
+            "Explained-variance threshold for unfreezing the policy after the minimum "
+            "critic warmup count. The complete finite window's rolling mean must "
+            "clear it. Pass 0 for a purely count-based warmup. Default: 0.7."
         ),
+    )
+    parser.add_argument(
+        "--critic-warmup-ev-window",
+        type=int,
+        default=3,
+        help=(
+            "Consecutive finite rollout-EV samples whose rolling mean must clear "
+            "--critic-warmup-min-ev before actor unfreeze. Must be >=2 for an "
+            "EV-gated warmup. Default: 3."
+        ),
+    )
+    parser.add_argument(
+        "--critic-warmup-max-updates",
+        type=int,
+        default=None,
+        help=(
+            "Fail-closed warmup limit. If sustained EV is still unready, save "
+            "ppo_warmup_unready.pt and stop with the actor frozen. Default: 4x "
+            "--critic-warmup-updates."
+        ),
+    )
+    parser.add_argument(
+        "--actor-ramp-updates",
+        type=int,
+        default=0,
+        help=(
+            "Protected actor updates after warmup. PPO clip epsilon ramps to its "
+            "configured value while critic gradients stay out of the shared policy "
+            "trunk. Default: 0 (historical immediate transition)."
+        ),
+    )
+    parser.add_argument(
+        "--actor-ramp-start-clip-fraction",
+        type=float,
+        default=0.5,
+        help=("Starting actor-ramp clip epsilon as a fraction of --clip-eps. Default: 0.5."),
+    )
+    parser.add_argument(
+        "--ppo-run-uuid",
+        default=None,
+        help="Provenance UUID generated once by the production launcher and persisted on strict resume.",
+    )
+    parser.add_argument(
+        "--ppo-source-sha256",
+        default=None,
+        help="SHA256 of the pinned weights-only source checkpoint for run provenance.",
+    )
+    parser.add_argument(
+        "--ppo-recipe-id",
+        default=None,
+        help="Stable production recipe identity persisted in every PPO checkpoint.",
     )
     parser.add_argument(
         "--reinit-value-head",
@@ -773,6 +823,13 @@ def main():
                 hand_ar_mixture_eps=ppo_eps,
                 critic_warmup_updates=args.critic_warmup_updates,
                 critic_warmup_min_ev=args.critic_warmup_min_ev,
+                critic_warmup_ev_window=args.critic_warmup_ev_window,
+                critic_warmup_max_updates=args.critic_warmup_max_updates,
+                actor_ramp_updates=args.actor_ramp_updates,
+                actor_ramp_start_clip_fraction=args.actor_ramp_start_clip_fraction,
+                ppo_run_uuid=args.ppo_run_uuid,
+                ppo_source_sha256=args.ppo_source_sha256,
+                ppo_recipe_id=args.ppo_recipe_id,
                 reinit_value_head=args.reinit_value_head,
                 reset_best_eval=args.reset_best_eval,
                 sil_coeff=args.sil_coeff,

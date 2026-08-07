@@ -4,19 +4,31 @@ import numpy as np
 import pytest
 import torch
 
+from pylatro import load_game_data
 from pylatro_agent import checkpoint as ckpt
+from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.constants import META_COUNT, SCALAR_DIM, TOKEN_DIM, TOKENIZER_SEMANTICS
 from pylatro_agent.embeddings import MetaEmbedding
 from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
     PPOConfig,
     RunningMeanStd,
+    _actor_transition_runtime,
+    _advance_ppo_transition_state,
     _apply_lr_override,
     _load_checkpoint_compatible,
     _load_state_dict_into_model,
     _make_policy_optimizer,
+    _mirror_latest_checkpoint,
     _optimizer_to,
+    _PPOTransitionState,
+    _record_critic_ev_and_decide,
+    _restore_ppo_transition_state,
+    _save_checkpoint,
+    _validate_resume_provenance,
+    train_ppo,
 )
+from pylatro_agent.vocab import build_vocab
 
 
 def _tiny_model() -> torch.nn.Module:
@@ -96,6 +108,308 @@ def test_save_and_load_ppo_full_checkpoint_round_trips_state(tmp_path) -> None:
     assert "python" in blob["rng_states"]
     assert "numpy" in blob["rng_states"]
     assert "torch_cpu" in blob["rng_states"]
+
+
+def _safe_transition_config() -> PPOConfig:
+    return PPOConfig(
+        clip_epsilon=0.1,
+        critic_warmup_updates=20,
+        critic_warmup_min_ev=0.4,
+        critic_warmup_ev_window=5,
+        critic_warmup_max_updates=80,
+        actor_ramp_updates=25,
+        actor_ramp_start_clip_fraction=0.5,
+    )
+
+
+def _bind_test_provenance(config: PPOConfig, *, run_uuid: str = "12345678-1234-5678-9234-567812345678") -> PPOConfig:
+    config.ppo_run_uuid = run_uuid
+    config.ppo_source_sha256 = "a" * 64
+    config.ppo_recipe_id = "pylatro-v14-safe-v1"
+    return config
+
+
+def test_internal_checkpoint_round_trips_complete_transition_state(tmp_path) -> None:
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=3e-6)
+    config = _bind_test_provenance(_safe_transition_config())
+    transition = _PPOTransitionState(
+        warmup_complete=False,
+        critic_warmup_ev_history=[0.31, 0.38, 0.42, 0.45],
+        critic_warmup_updates_completed=19,
+        actor_ramp_successful_updates=0,
+    )
+
+    path = _save_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        save_path=tmp_path,
+        update_count=19,
+        total_steps=19,
+        planned_updates=100,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=3e-6,
+        config=config,
+        transition_state=transition,
+        filename="transition.pt",
+    )
+    blob = ckpt.load_ppo_resume_payload(
+        path,
+        "cpu",
+        active_reward_config=RewardConfig(),
+    )
+    restored = _restore_ppo_transition_state(config, blob)
+    _validate_resume_provenance(config, blob)
+
+    assert restored == transition
+    assert blob["ppo_transition_state"]["version"] == 1
+    assert blob["ppo_config_fields"]["actor_ramp_updates"] == 25
+    assert blob["ppo_run_provenance"] == {
+        "run_uuid": config.ppo_run_uuid,
+        "source_sha256": config.ppo_source_sha256,
+        "recipe_id": config.ppo_recipe_id,
+    }
+
+
+def test_strict_resume_rejects_foreign_run_provenance() -> None:
+    config = _bind_test_provenance(_safe_transition_config())
+    foreign = {
+        "ppo_run_provenance": {
+            "run_uuid": "87654321-4321-6789-9234-567812345678",
+            "source_sha256": config.ppo_source_sha256,
+            "recipe_id": config.ppo_recipe_id,
+        }
+    }
+    with pytest.raises(RuntimeError, match="provenance mismatch"):
+        _validate_resume_provenance(config, foreign)
+
+
+def test_safety_enabled_internal_checkpoint_requires_transition_state(tmp_path) -> None:
+    model = _tiny_model()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=3e-6)
+    with pytest.raises(ValueError, match="require transition_state"):
+        _save_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            save_path=tmp_path,
+            update_count=1,
+            total_steps=1,
+            planned_updates=10,
+            entropy_coeff=0.01,
+            entropy_signal_ema=None,
+            lr=3e-6,
+            config=_safe_transition_config(),
+        )
+
+
+def test_warmup_boundary_orders_19_then_critic_update_then_first_actor() -> None:
+    config = _safe_transition_config()
+    state = _PPOTransitionState(
+        warmup_complete=False,
+        critic_warmup_ev_history=[0.39, 0.40, 0.41, 0.42],
+        critic_warmup_updates_completed=19,
+    )
+    resume_blob = {
+        "ppo_transition_state": state.to_payload(config),
+        "ppo_config_fields": {
+            name: getattr(config, name)
+            for name in (
+                "clip_epsilon",
+                "critic_warmup_updates",
+                "critic_warmup_min_ev",
+                "critic_warmup_ev_window",
+                "critic_warmup_max_updates",
+                "actor_ramp_updates",
+                "actor_ramp_start_clip_fraction",
+            )
+        },
+    }
+    restored = _restore_ppo_transition_state(config, resume_blob)
+    assert not restored.warmup_complete
+    assert restored.critic_warmup_updates_completed == 19
+    assert restored.critic_warmup_ev_history == pytest.approx([0.39, 0.40, 0.41, 0.42])
+
+    # At 19 completed critic updates, even a healthy complete window must
+    # still choose one final frozen critic update.
+    decision_at_19 = _record_critic_ev_and_decide(
+        restored,
+        config,
+        0.43,
+    )
+    assert decision_at_19.active
+    assert not restored.warmup_complete
+
+    _advance_ppo_transition_state(restored, config, in_critic_warmup=True, kl_rollback=False)
+    assert restored.critic_warmup_updates_completed == 20
+
+    # The next rollout uses the same record-and-decide helper as the loop; it
+    # latches the gate and the immediately following decision is actor ramp 1.
+    first_actor_decision = _record_critic_ev_and_decide(restored, config, 0.44)
+    assert first_actor_decision.ready
+    assert restored.warmup_complete
+    runtime = _actor_transition_runtime(config, restored, in_critic_warmup=False)
+    assert runtime.ramp_active
+    assert runtime.progress == 0.0
+    assert runtime.clip_epsilon == pytest.approx(0.05)
+
+    restored.actor_ramp_successful_updates = 7
+    runtime = _actor_transition_runtime(config, restored, in_critic_warmup=False)
+    assert runtime.protect_actor_from_critic
+    assert runtime.progress == pytest.approx(7 / 24)
+    assert runtime.clip_epsilon == pytest.approx(0.05 + 0.05 * (7 / 24))
+
+
+def test_warmup_tensorboard_runtime_is_inactive_with_no_operative_clip() -> None:
+    runtime = _actor_transition_runtime(
+        _safe_transition_config(),
+        _PPOTransitionState(warmup_complete=False, critic_warmup_updates_completed=4),
+        in_critic_warmup=True,
+    )
+    assert not runtime.ramp_active
+    assert runtime.progress == 0.0
+    assert np.isnan(runtime.logged_clip_epsilon)
+    assert runtime.protect_actor_from_critic
+
+
+def test_fail_closed_transition_restores_as_terminal() -> None:
+    config = _safe_transition_config()
+    state = _PPOTransitionState(
+        warmup_complete=False,
+        critic_warmup_ev_history=[0.1, 0.2, 0.3, 0.2, 0.1],
+        critic_warmup_updates_completed=80,
+        fail_closed=True,
+        fail_reason="critic_ev_gate_unready",
+    )
+    blob = {
+        "ppo_transition_state": state.to_payload(config),
+        "ppo_config_fields": {
+            name: getattr(config, name)
+            for name in (
+                "clip_epsilon",
+                "critic_warmup_updates",
+                "critic_warmup_min_ev",
+                "critic_warmup_ev_window",
+                "critic_warmup_max_updates",
+                "actor_ramp_updates",
+                "actor_ramp_start_clip_fraction",
+            )
+        },
+    }
+    restored = _restore_ppo_transition_state(config, blob)
+    assert restored.fail_closed
+    assert restored.critic_warmup_updates_completed == 80
+
+
+def test_fail_closed_checkpoint_mirrors_and_resume_returns_before_env_creation(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = load_game_data()
+    vocab = build_vocab(data)
+    agent_config = AgentConfig(
+        d_model=16,
+        n_layers=1,
+        n_heads=2,
+        d_ff=32,
+        hand_ar_mixture_eps=0.1,
+    )
+    model = BalatroAgent(agent_config, vocab)
+    optimizer = _make_policy_optimizer(model.parameters(), lr=3e-6)
+    config = _bind_test_provenance(_safe_transition_config())
+    config.device = "cpu"
+    config.save_dir = str(tmp_path)
+    config.log_dir = str(tmp_path / "runs")
+    transition = _PPOTransitionState(
+        warmup_complete=False,
+        critic_warmup_ev_history=[0.1, 0.2, 0.3, 0.2, 0.1],
+        critic_warmup_updates_completed=80,
+        fail_closed=True,
+        fail_reason="critic_ev_gate_unready",
+    )
+    fail_path = _save_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        save_path=tmp_path,
+        update_count=80,
+        total_steps=80,
+        planned_updates=2000,
+        entropy_coeff=0.01,
+        entropy_signal_ema=None,
+        lr=3e-6,
+        agent_config=agent_config,
+        config=config,
+        transition_state=transition,
+        filename="ppo_warmup_unready.pt",
+    )
+    latest_path = _mirror_latest_checkpoint(fail_path, tmp_path)
+    latest_blob = ckpt.load_ppo_resume_payload(
+        latest_path,
+        "cpu",
+        active_reward_config=RewardConfig(),
+    )
+    assert latest_blob["ppo_transition_state"]["fail_closed"] is True
+    assert latest_blob["ppo_run_provenance"]["run_uuid"] == config.ppo_run_uuid
+
+    env_created = False
+
+    def fail_if_env_created(*_args, **_kwargs):
+        nonlocal env_created
+        env_created = True
+        raise AssertionError("fail-closed strict resume must return before environment creation")
+
+    monkeypatch.setattr("pylatro_agent.training.ppo._make_vectorized_envs", fail_if_env_created)
+    resumed_model = train_ppo(
+        config,
+        agent_config=agent_config,
+        resume_path=str(latest_path),
+        data=data,
+    )
+    assert isinstance(resumed_model, BalatroAgent)
+    assert not env_created
+
+
+def test_transition_config_mismatch_is_rejected_directly() -> None:
+    saved_config = _safe_transition_config()
+    state = _PPOTransitionState(warmup_complete=True, critic_warmup_updates_completed=20)
+    blob = {
+        "ppo_transition_state": state.to_payload(saved_config),
+        "ppo_config_fields": {
+            name: getattr(saved_config, name)
+            for name in (
+                "clip_epsilon",
+                "critic_warmup_updates",
+                "critic_warmup_min_ev",
+                "critic_warmup_ev_window",
+                "critic_warmup_max_updates",
+                "actor_ramp_updates",
+                "actor_ramp_start_clip_fraction",
+            )
+        },
+    }
+    active_config = _safe_transition_config()
+    active_config.actor_ramp_updates = 24
+    with pytest.raises(RuntimeError, match="actor_ramp_updates"):
+        _restore_ppo_transition_state(active_config, blob)
+
+
+def test_legacy_resume_without_transition_state_is_safe_and_explicit(caplog) -> None:
+    with pytest.raises(RuntimeError, match="no ppo_transition_state"):
+        _restore_ppo_transition_state(_safe_transition_config(), {})
+
+    restored = _restore_ppo_transition_state(PPOConfig(), {})
+    assert restored.warmup_complete
+    assert any("legacy PPO checkpoint" in message for message in caplog.messages)
+
+
+def test_kl_rollback_does_not_advance_actor_ramp() -> None:
+    config = _safe_transition_config()
+    state = _PPOTransitionState(warmup_complete=True, actor_ramp_successful_updates=7)
+
+    _advance_ppo_transition_state(state, config, in_critic_warmup=False, kl_rollback=True)
+    assert state.actor_ramp_successful_updates == 7
+    _advance_ppo_transition_state(state, config, in_critic_warmup=False, kl_rollback=False)
+    assert state.actor_ramp_successful_updates == 8
 
 
 def test_resume_payload_restores_optimizer_and_rng(tmp_path) -> None:
@@ -188,11 +502,7 @@ def test_historical_unmarked_good_v6_checkpoint_is_pretrained_only(tmp_path) -> 
 def test_v6_pretrained_migration_preserves_initial_meta_outputs_exactly() -> None:
     torch.manual_seed(41)
     v6_reference = MetaEmbedding(d_model=16)
-    v6_state = {
-        key: value
-        for key, value in v6_reference.state_dict().items()
-        if not key.startswith("strategy_proj.")
-    }
+    v6_state = {key: value for key, value in v6_reference.state_dict().items() if not key.startswith("strategy_proj.")}
     torch.manual_seed(99)
     migrated = MetaEmbedding(d_model=16)
 

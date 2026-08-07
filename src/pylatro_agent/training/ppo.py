@@ -4,6 +4,8 @@ import copy
 import logging
 import math
 import random
+import shutil
+import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from functools import partial
@@ -442,9 +444,29 @@ class PPOConfig:
     # are multiplied by 0. After a reward-function change, advantages are garbage
     # until the critic tracks the new return distribution; warming it up
     # on-policy removes the window in which PPO earnestly optimizes noise.
-    # Unfreezing is gated on explained_variance > critic_warmup_min_ev (0 = no gate).
+    # Unfreezing is gated on a complete rolling EV window at or above
+    # critic_warmup_min_ev (0 = no EV gate).  The minimum update count is
+    # always honored before the EV gate can open.
     critic_warmup_updates: int = 0
     critic_warmup_min_ev: float = 0.7
+    critic_warmup_ev_window: int = 3
+    # None preserves the historical 4x warmup limit, but reaching it now stops
+    # safely with a checkpoint instead of exposing the actor to an unready
+    # critic. Set an explicit value to choose a different fail-closed limit.
+    critic_warmup_max_updates: int | None = None
+    # Optional protected actor transition. For this many actor updates after
+    # warmup, PPO's clip range grows linearly from
+    # clip_epsilon * actor_ramp_start_clip_fraction to clip_epsilon and critic
+    # gradients remain value-head-only so they cannot drift the shared policy
+    # trunk. Zero preserves the historical immediate transition.
+    actor_ramp_updates: int = 0
+    actor_ramp_start_clip_fraction: float = 0.5
+    # Optional cryptographic run identity. Production launchers provide all
+    # three fields; every checkpoint then persists them and strict resume
+    # requires an exact match before any environment is created.
+    ppo_run_uuid: str | None = None
+    ppo_source_sha256: str | None = None
+    ppo_recipe_id: str | None = None
     # Phase 3.2: reinitialize the value head when loading a pretrained checkpoint.
     # Required after any reward-function change so the critic doesn't start from a
     # stale return mapping. Pair with critic_warmup_updates to warm the fresh head.
@@ -584,6 +606,350 @@ class _UpdateStats:
     sil_grad_ppo_actor_norm_ratio: float | None = None
     sil_grad_ppo_actor_grad_cosine: float | None = None
     sil_grad_diagnostic_valid: bool = False
+
+
+@dataclass(frozen=True)
+class _CriticWarmupDecision:
+    """Pure, testable result of the critic-to-actor transition gate."""
+
+    active: bool
+    ready: bool
+    exhausted: bool
+    rolling_ev: float
+    finite_fraction: float
+    passing_samples: int
+    max_updates: int
+
+
+_PPO_TRANSITION_STATE_VERSION = 1
+
+
+@dataclass
+class _PPOTransitionState:
+    """Resume-critical state for the critic-to-actor transition."""
+
+    warmup_complete: bool
+    critic_warmup_ev_history: list[float] = field(default_factory=list)
+    critic_warmup_updates_completed: int = 0
+    actor_ramp_successful_updates: int = 0
+    fail_closed: bool = False
+    fail_reason: str | None = None
+
+    def to_payload(self, config: PPOConfig) -> dict[str, object]:
+        history_limit = max(config.critic_warmup_ev_window, 1)
+        return {
+            "version": _PPO_TRANSITION_STATE_VERSION,
+            "warmup_complete": bool(self.warmup_complete),
+            "critic_warmup_ev_history": [float(value) for value in self.critic_warmup_ev_history[-history_limit:]],
+            "critic_warmup_updates_completed": int(self.critic_warmup_updates_completed),
+            "actor_ramp_successful_updates": int(self.actor_ramp_successful_updates),
+            "fail_closed": bool(self.fail_closed),
+            "fail_reason": self.fail_reason,
+        }
+
+
+_TRANSITION_CONFIG_FIELDS = (
+    "clip_epsilon",
+    "critic_warmup_updates",
+    "critic_warmup_min_ev",
+    "critic_warmup_ev_window",
+    "critic_warmup_max_updates",
+    "actor_ramp_updates",
+    "actor_ramp_start_clip_fraction",
+)
+
+
+def _ppo_run_provenance(config: PPOConfig) -> dict[str, str] | None:
+    values = (config.ppo_run_uuid, config.ppo_source_sha256, config.ppo_recipe_id)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise ValueError("ppo_run_uuid, ppo_source_sha256, and ppo_recipe_id must be set together")
+    return {
+        "run_uuid": str(config.ppo_run_uuid),
+        "source_sha256": str(config.ppo_source_sha256).lower(),
+        "recipe_id": str(config.ppo_recipe_id),
+    }
+
+
+def _validate_resume_provenance(config: PPOConfig, resume_state: dict | None) -> None:
+    """Require exact active/saved run identity before strict resume proceeds."""
+
+    if resume_state is None:
+        return
+    active = _ppo_run_provenance(config)
+    saved = resume_state.get("ppo_run_provenance")
+    if active is None and saved is None:
+        return
+    if active is None:
+        raise RuntimeError(
+            "Strict resume checkpoint is provenance-bound; pass its explicit PPO run UUID, source SHA256, "
+            "and recipe identity."
+        )
+    if not isinstance(saved, dict):
+        raise RuntimeError("Strict resume checkpoint lacks required ppo_run_provenance")
+    normalized_saved = {
+        "run_uuid": str(saved.get("run_uuid", "")),
+        "source_sha256": str(saved.get("source_sha256", "")).lower(),
+        "recipe_id": str(saved.get("recipe_id", "")),
+    }
+    if normalized_saved != active:
+        raise RuntimeError(f"Strict resume PPO run provenance mismatch: saved={normalized_saved!r}, active={active!r}")
+
+
+def _new_ppo_transition_state(config: PPOConfig) -> _PPOTransitionState:
+    return _PPOTransitionState(warmup_complete=config.critic_warmup_updates <= 0)
+
+
+def _restore_ppo_transition_state(
+    config: PPOConfig,
+    resume_state: dict | None,
+) -> _PPOTransitionState:
+    """Restore the exact warmup/ramp phase, rejecting ambiguous legacy state."""
+
+    if resume_state is None:
+        return _new_ppo_transition_state(config)
+
+    payload = resume_state.get("ppo_transition_state")
+    safety_enabled = config.critic_warmup_updates > 0 or config.actor_ramp_updates > 0
+    if payload is None:
+        if safety_enabled:
+            raise RuntimeError(
+                "Strict resume checkpoint has no ppo_transition_state, so the critic warmup/actor ramp "
+                "phase cannot be recovered safely. Resume with the historical safety controls disabled, "
+                "or start a fresh run with --pretrained and --reinit-value-head."
+            )
+        logger.warning(
+            "Resuming legacy PPO checkpoint without transition state; warmup and actor ramp are disabled, "
+            "so the historical fully-unfrozen phase is preserved."
+        )
+        return _new_ppo_transition_state(config)
+    if not isinstance(payload, dict) or payload.get("version") != _PPO_TRANSITION_STATE_VERSION:
+        raise RuntimeError("Unsupported or malformed ppo_transition_state in strict resume checkpoint")
+
+    saved_fields = resume_state.get("ppo_config_fields") or {}
+    for field_name in _TRANSITION_CONFIG_FIELDS:
+        if field_name not in saved_fields:
+            raise RuntimeError(
+                f"Strict resume checkpoint lacks transition config field {field_name!r}; "
+                "the saved phase cannot be interpreted safely."
+            )
+        saved_value = saved_fields[field_name]
+        active_value = getattr(config, field_name)
+        if isinstance(active_value, float):
+            matches = saved_value is not None and math.isclose(
+                float(saved_value),
+                active_value,
+                rel_tol=1e-12,
+                abs_tol=1e-15,
+            )
+        else:
+            matches = saved_value == active_value
+        if not matches:
+            raise RuntimeError(
+                f"Strict resume transition config mismatch for {field_name}: "
+                f"saved={saved_value!r}, active={active_value!r}."
+            )
+
+    history_raw = payload.get("critic_warmup_ev_history", [])
+    if not isinstance(history_raw, list):
+        raise RuntimeError("Malformed critic_warmup_ev_history in ppo_transition_state")
+    history = [float(value) for value in history_raw]
+    if any(not np.isfinite(value) for value in history):
+        raise RuntimeError("ppo_transition_state critic EV history must contain only finite values")
+    if len(history) > max(config.critic_warmup_ev_window, 1):
+        raise RuntimeError("ppo_transition_state critic EV history exceeds the configured window")
+
+    critic_updates = int(payload.get("critic_warmup_updates_completed", -1))
+    actor_updates = int(payload.get("actor_ramp_successful_updates", -1))
+    if critic_updates < 0 or actor_updates < 0:
+        raise RuntimeError("ppo_transition_state update counters must be non-negative")
+    if actor_updates > config.actor_ramp_updates:
+        raise RuntimeError("ppo_transition_state actor ramp counter exceeds configured ramp length")
+
+    state = _PPOTransitionState(
+        warmup_complete=bool(payload.get("warmup_complete", False)),
+        critic_warmup_ev_history=history,
+        critic_warmup_updates_completed=critic_updates,
+        actor_ramp_successful_updates=actor_updates,
+        fail_closed=bool(payload.get("fail_closed", False)),
+        fail_reason=(str(payload["fail_reason"]) if payload.get("fail_reason") is not None else None),
+    )
+    if state.fail_closed and state.warmup_complete:
+        raise RuntimeError("Malformed ppo_transition_state: fail_closed warmup cannot be complete")
+    if not state.warmup_complete and state.actor_ramp_successful_updates:
+        raise RuntimeError("Malformed ppo_transition_state: actor ramp advanced before warmup completed")
+    max_warmup_updates = config.critic_warmup_max_updates
+    if max_warmup_updates is None:
+        max_warmup_updates = 4 * config.critic_warmup_updates
+    if (
+        config.critic_warmup_updates > 0
+        and state.warmup_complete
+        and state.critic_warmup_updates_completed < config.critic_warmup_updates
+    ):
+        raise RuntimeError("Malformed ppo_transition_state: warmup completed before its minimum update count")
+    if not state.warmup_complete and state.critic_warmup_updates_completed > max_warmup_updates:
+        raise RuntimeError("Malformed ppo_transition_state: critic warmup counter exceeds its fail-closed cap")
+    if state.fail_closed and state.critic_warmup_updates_completed < max_warmup_updates:
+        raise RuntimeError("Malformed ppo_transition_state: fail_closed set before the warmup cap")
+    return state
+
+
+def _advance_ppo_transition_state(
+    state: _PPOTransitionState,
+    config: PPOConfig,
+    *,
+    in_critic_warmup: bool,
+    kl_rollback: bool,
+) -> None:
+    """Advance only counters belonging to an optimizer update that actually committed."""
+
+    if in_critic_warmup and not kl_rollback:
+        state.critic_warmup_updates_completed += 1
+    elif not kl_rollback:
+        state.actor_ramp_successful_updates = min(
+            state.actor_ramp_successful_updates + 1,
+            config.actor_ramp_updates,
+        )
+
+
+def _critic_warmup_decision(
+    config: PPOConfig,
+    *,
+    completed_updates: int,
+    ev_history: list[float],
+) -> _CriticWarmupDecision:
+    """Return a fail-closed warmup decision.
+
+    EV-gated warmup requires both the configured minimum number of completed
+    critic updates and a *complete* window of consecutive finite EV samples
+    whose rolling mean clears the threshold. A lone favorable rollout can
+    therefore never unfreeze the actor. If the gate is still closed at the
+    maximum update count, ``exhausted`` requests a safe checkpoint-and-stop.
+    """
+
+    if config.critic_warmup_updates <= 0:
+        return _CriticWarmupDecision(False, True, False, float("nan"), 0.0, 0, 0)
+
+    max_updates = config.critic_warmup_max_updates
+    if max_updates is None:
+        max_updates = 4 * config.critic_warmup_updates
+
+    if config.critic_warmup_min_ev <= 0.0:
+        ready = completed_updates >= config.critic_warmup_updates
+        exhausted = not ready and completed_updates >= max_updates
+        return _CriticWarmupDecision(not ready and not exhausted, ready, exhausted, float("nan"), 0.0, 0, max_updates)
+
+    window_size = config.critic_warmup_ev_window
+    window = ev_history[-window_size:]
+    finite_values = [float(value) for value in window if np.isfinite(value)]
+    finite_fraction = len(finite_values) / window_size
+    rolling_ev = float(np.mean(finite_values)) if finite_values else float("nan")
+    passing_samples = sum(value >= config.critic_warmup_min_ev for value in finite_values)
+    evidence_ready = (
+        len(window) == window_size
+        and len(finite_values) == window_size
+        and (
+            rolling_ev > config.critic_warmup_min_ev
+            or math.isclose(
+                rolling_ev,
+                config.critic_warmup_min_ev,
+                rel_tol=1e-9,
+                abs_tol=1e-12,
+            )
+        )
+    )
+    ready = completed_updates >= config.critic_warmup_updates and evidence_ready
+    exhausted = not ready and completed_updates >= max_updates
+    return _CriticWarmupDecision(
+        active=not ready and not exhausted,
+        ready=ready,
+        exhausted=exhausted,
+        rolling_ev=rolling_ev,
+        finite_fraction=finite_fraction,
+        passing_samples=passing_samples,
+        max_updates=max_updates,
+    )
+
+
+def _record_critic_ev_and_decide(
+    state: _PPOTransitionState,
+    config: PPOConfig,
+    explained_variance: float,
+) -> _CriticWarmupDecision:
+    """Record one rollout EV and apply the same gate ordering used by training."""
+
+    if state.warmup_complete or config.critic_warmup_updates <= 0:
+        return _CriticWarmupDecision(False, True, False, float("nan"), 0.0, 0, 0)
+    if np.isfinite(explained_variance):
+        state.critic_warmup_ev_history.append(float(explained_variance))
+        state.critic_warmup_ev_history = state.critic_warmup_ev_history[-config.critic_warmup_ev_window :]
+    else:
+        # The gate requires a consecutive finite window. Persisting only the
+        # finite suffix makes restart semantics exact.
+        state.critic_warmup_ev_history.clear()
+    decision = _critic_warmup_decision(
+        config,
+        completed_updates=state.critic_warmup_updates_completed,
+        ev_history=state.critic_warmup_ev_history,
+    )
+    if decision.ready:
+        state.warmup_complete = True
+    return decision
+
+
+def _actor_transition(
+    config: PPOConfig,
+    *,
+    actor_updates_completed: int,
+) -> tuple[float, float, bool]:
+    """Return (clip epsilon, ramp progress, protect trunk) for the next actor update."""
+
+    ramp_updates = config.actor_ramp_updates
+    if ramp_updates <= 0 or actor_updates_completed >= ramp_updates:
+        return float(config.clip_epsilon), 1.0, False
+    progress = 1.0 if ramp_updates == 1 else actor_updates_completed / (ramp_updates - 1)
+    start_clip = config.clip_epsilon * config.actor_ramp_start_clip_fraction
+    clip_epsilon = start_clip + (config.clip_epsilon - start_clip) * progress
+    return float(clip_epsilon), float(progress), True
+
+
+@dataclass(frozen=True)
+class _ActorTransitionRuntime:
+    clip_epsilon: float
+    progress: float
+    protect_actor_from_critic: bool
+    ramp_active: bool
+    logged_clip_epsilon: float
+
+
+def _actor_transition_runtime(
+    config: PPOConfig,
+    state: _PPOTransitionState,
+    *,
+    in_critic_warmup: bool,
+) -> _ActorTransitionRuntime:
+    """Resolve operative actor controls and unambiguous TensorBoard values."""
+
+    clip_epsilon, progress, protect_actor = _actor_transition(
+        config,
+        actor_updates_completed=state.actor_ramp_successful_updates,
+    )
+    if in_critic_warmup:
+        return _ActorTransitionRuntime(
+            clip_epsilon=clip_epsilon,
+            progress=0.0,
+            protect_actor_from_critic=True,
+            ramp_active=False,
+            logged_clip_epsilon=float("nan"),
+        )
+    return _ActorTransitionRuntime(
+        clip_epsilon=clip_epsilon,
+        progress=progress,
+        protect_actor_from_critic=protect_actor,
+        ramp_active=protect_actor,
+        logged_clip_epsilon=clip_epsilon,
+    )
 
 
 @dataclass
@@ -1109,6 +1475,36 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("eval_regression_tolerance must be in (0, 1] when set")
     if config.eval_regression_patience <= 0:
         raise ValueError("eval_regression_patience must be positive")
+    if config.critic_warmup_updates < 0:
+        raise ValueError("critic_warmup_updates must be non-negative")
+    if not np.isfinite(config.critic_warmup_min_ev) or config.critic_warmup_min_ev > 1.0:
+        raise ValueError("critic_warmup_min_ev must be finite and <= 1")
+    if config.critic_warmup_ev_window <= 0:
+        raise ValueError("critic_warmup_ev_window must be positive")
+    if config.critic_warmup_updates > 0 and config.critic_warmup_min_ev > 0.0 and config.critic_warmup_ev_window < 2:
+        raise ValueError("critic_warmup_ev_window must be at least 2 for an EV-gated warmup")
+    if config.critic_warmup_max_updates is not None:
+        if config.critic_warmup_max_updates <= 0:
+            raise ValueError("critic_warmup_max_updates must be positive when set")
+        if config.critic_warmup_max_updates < config.critic_warmup_updates:
+            raise ValueError("critic_warmup_max_updates must be >= critic_warmup_updates")
+    if config.actor_ramp_updates < 0:
+        raise ValueError("actor_ramp_updates must be non-negative")
+    if not 0.0 < config.actor_ramp_start_clip_fraction <= 1.0:
+        raise ValueError("actor_ramp_start_clip_fraction must be in (0, 1]")
+    provenance = _ppo_run_provenance(config)
+    if provenance is not None:
+        try:
+            parsed_uuid = uuid.UUID(provenance["run_uuid"])
+        except ValueError as exc:
+            raise ValueError("ppo_run_uuid must be a valid UUID") from exc
+        if str(parsed_uuid) != provenance["run_uuid"]:
+            raise ValueError("ppo_run_uuid must use canonical lowercase UUID form")
+        source_sha256 = provenance["source_sha256"]
+        if len(source_sha256) != 64 or any(character not in "0123456789abcdef" for character in source_sha256):
+            raise ValueError("ppo_source_sha256 must be a 64-character hexadecimal SHA256")
+        if not provenance["recipe_id"].strip():
+            raise ValueError("ppo_recipe_id must be non-empty")
     if config.ppo_epochs <= 0:
         raise ValueError("ppo_epochs must be positive")
     if config.rollout_length <= 0:
@@ -1328,6 +1724,8 @@ def _run_ppo_update(
     device: torch.device,
     use_pin_memory: bool,
     policy_loss_scale: float = 1.0,
+    clip_epsilon: float | None = None,
+    protect_actor_from_critic: bool = False,
     sil_buffer: "EpisodeReplayBuffer | None" = None,
     sil_coeff_now: float = 0.0,
     grad_diagnostics_due: bool = False,
@@ -1350,6 +1748,9 @@ def _run_ppo_update(
     """
     model.eval()
     policy_frozen = policy_loss_scale <= 0.0
+    effective_clip_epsilon = config.clip_epsilon if clip_epsilon is None else float(clip_epsilon)
+    if effective_clip_epsilon <= 0.0:
+        raise ValueError("clip_epsilon override must be positive")
     stats = _UpdateStats(
         policy_losses=[],
         value_losses=[],
@@ -1502,7 +1903,14 @@ def _run_ppo_update(
             ratio = torch.exp(log_ratio)
             advantages = batch["advantages"]
             surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon) * advantages
+            surr2 = (
+                torch.clamp(
+                    ratio,
+                    1 - effective_clip_epsilon,
+                    1 + effective_clip_epsilon,
+                )
+                * advantages
+            )
             policy_loss = -torch.min(surr1, surr2).mean()
 
             # Value loss (normalize targets so critic trains in unit-variance space)
@@ -1595,7 +2003,7 @@ def _run_ppo_update(
                 # contribution while sharing this microbatch's clip + step.
                 policy_objective_loss = policy_objective_loss * policy_loss_scale
 
-                if config.critic_updates_trunk:
+                if config.critic_updates_trunk and not protect_actor_from_critic:
                     total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
                     total_loss.backward()
                 else:
@@ -1626,7 +2034,7 @@ def _run_ppo_update(
 
             with torch.no_grad():
                 on_policy_fraction = 1.0
-                clip_frac = ((ratio - 1.0).abs() > config.clip_epsilon).float().mean().item()
+                clip_frac = ((ratio - 1.0).abs() > effective_clip_epsilon).float().mean().item()
                 approx_kl = ((ratio - 1.0) - log_ratio).mean().item()
                 valid_action_count_mean = valid_action_counts.float().mean().item()
                 stats.on_policy_advantage_means.append(advantages.mean().item())
@@ -1930,6 +2338,7 @@ def _save_checkpoint(
     return_rms: "RunningMeanStd | None" = None,
     agent_config: "AgentConfig | None" = None,
     config: "PPOConfig | None" = None,
+    transition_state: "_PPOTransitionState | None" = None,
     filename: str | None = None,
     extra: dict | None = None,
 ) -> Path:
@@ -1955,6 +2364,15 @@ def _save_checkpoint(
             "max_no_progress_steps",
             "eval_regression_tolerance",
             "eval_regression_patience",
+            "critic_warmup_updates",
+            "critic_warmup_min_ev",
+            "critic_warmup_ev_window",
+            "critic_warmup_max_updates",
+            "actor_ramp_updates",
+            "actor_ramp_start_clip_fraction",
+            "ppo_run_uuid",
+            "ppo_source_sha256",
+            "ppo_recipe_id",
             "gamma",
             "win_ante",
             "target_entropy",
@@ -1963,6 +2381,17 @@ def _save_checkpoint(
         ):
             config_fields[key] = getattr(config, key)
     active_reward_config = _effective_reward_config(config) if config is not None else DEFAULT_REWARD_CONFIG
+    checkpoint_extra = dict(extra or {})
+    if config is not None:
+        provenance = _ppo_run_provenance(config)
+        if provenance is not None:
+            checkpoint_extra["ppo_run_provenance"] = provenance
+    if transition_state is not None:
+        if config is None:
+            raise ValueError("transition_state checkpointing requires PPOConfig")
+        checkpoint_extra["ppo_transition_state"] = transition_state.to_payload(config)
+    elif config is not None and (config.critic_warmup_updates > 0 or config.actor_ramp_updates > 0):
+        raise ValueError("Safety-enabled PPO checkpoints require transition_state")
     save_ppo_checkpoint(
         _unwrap_model(model),
         checkpoint_path,
@@ -1979,9 +2408,21 @@ def _save_checkpoint(
         agent_config=agent_config,
         reward_config=active_reward_config,
         ppo_config_fields=config_fields,
-        extra=extra,
+        extra=checkpoint_extra,
     )
     return checkpoint_path
+
+
+def _mirror_latest_checkpoint(checkpoint_path: Path, save_path: Path) -> Path:
+    """Mirror a committed checkpoint to the stable strict-resume path."""
+
+    latest_path = save_path / "ppo_latest.pt"
+    try:
+        latest_path.unlink(missing_ok=True)
+        shutil.copy2(checkpoint_path, latest_path)
+    except OSError:
+        logger.warning("Could not mirror latest checkpoint to %s", latest_path)
+    return latest_path
 
 
 def _smoothed_entropy_signal(previous: float | None, current: float, beta: float) -> float:
@@ -2565,7 +3006,11 @@ def _next_eval_regression_streak(
 
     if tolerance is None or best_win_rate is None:
         return 0
-    if best_win_rate - win_rate >= tolerance:
+    regression = best_win_rate - win_rate
+    # Eval rates are ratios of integer game counts, so a nominal boundary such
+    # as 0.87 - 0.77 can land just below 0.10 in binary floating point. Treat
+    # numerically equal boundaries as material regressions.
+    if regression > tolerance or math.isclose(regression, tolerance, rel_tol=1e-9, abs_tol=1e-12):
         return current_streak + 1
     return 0
 
@@ -2770,6 +3215,17 @@ def train_ppo(
                 "--critic-warmup-min-ev 0 so the random head converges before "
                 "the policy trains on its advantages."
             )
+    _validate_resume_provenance(config, resume_state)
+    transition_state = _restore_ppo_transition_state(config, resume_state)
+    if transition_state.fail_closed:
+        logger.error(
+            "Refusing to continue fail-closed PPO checkpoint %s (reason=%s, critic_updates=%d). "
+            "Start a fresh run from the pinned pretrained policy after changing the warmup recipe.",
+            resume_path,
+            transition_state.fail_reason,
+            transition_state.critic_warmup_updates_completed,
+        )
+        return model
     if config.danger_rollout_temperature is None:
         logger.info(
             "Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
@@ -3006,14 +3462,9 @@ def train_ppo(
     episode_tarot_uses: list[int] = []
     # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
     _low_minibatch_streak = 0
-    # Phase 3.2: latch set once explained variance clears critic_warmup_min_ev;
-    # the policy stays frozen until then (metric-gated unfreeze, not count-gated).
-    _critic_warmup_ev_cleared = False
-    # Warmup windows are relative to the start of THIS leg: update_count
-    # resumes at the checkpoint's absolute counter, and comparing it against
-    # critic_warmup_updates directly would instantly trip the 4x give-up cap
-    # on any resumed run, silently disabling the warmup.
-    _leg_start_update = update_count
+    # ``transition_state`` was restored before environment creation. Its
+    # warmup/ramp counters and rolling EV evidence span process legs exactly;
+    # later EV noise does not re-freeze a gate that already latched open.
     # Phase 6: rolling win_rate/ep_reward history for the correlation acceptance
     # criterion (corr > 0.5). Currently ~0/negative because dense shaping is
     # farmable independent of winning.
@@ -3023,6 +3474,7 @@ def train_ppo(
     best_eval_update: int | None = None
     eval_regression_streak = 0
     early_stop_requested = False
+    warmup_stop_requested = False
     if resume_state is not None and not config.reset_best_eval:
         best_eval_win_rate = resume_state.get("best_eval_win_rate")
         best_eval_update = resume_state.get("best_eval_update")
@@ -3407,8 +3859,8 @@ def train_ppo(
 
             # Phase 3.2: explained variance of the critic on this rollout.
             # 1 - Var(returns - values) / Var(returns). ~0.6 currently (derived
-            # from ppo/value_loss ~25 vs returns_std ~9.5); gate critic-warmup
-            # unfreezing on this exceeding critic_warmup_min_ev (>0.7).
+            # from ppo/value_loss ~25 vs returns_std ~9.5); the critic warmup
+            # gate consumes a complete rolling window of this signal.
             flat_returns = buffer._flat_returns
             explained_variance = float("nan")
             if len(flat_returns) > 1:
@@ -3611,45 +4063,150 @@ def train_ppo(
                         rollout_step,
                     )
 
-            # Phase 3.2: determine whether this update is in critic-warmup
-            # (policy frozen, only critic + survival train). Unfreezing is
-            # gated on the EV metric, not the update count: the policy stays
-            # frozen past critic_warmup_updates until EV clears
-            # critic_warmup_min_ev (latched, a later noisy dip does not
-            # re-freeze). A 4x hard cap prevents an unreachable gate from
-            # freezing the policy forever. With critic_warmup_min_ev <= 0 the
-            # warmup is purely count-based.
-            in_critic_warmup = False
-            if config.critic_warmup_updates > 0 and not _critic_warmup_ev_cleared:
-                leg_update = update_count - _leg_start_update
-                if config.critic_warmup_min_ev <= 0.0:
-                    in_critic_warmup = leg_update < config.critic_warmup_updates
-                elif (
-                    leg_update > 0
-                    and np.isfinite(explained_variance)
-                    and explained_variance >= config.critic_warmup_min_ev
-                ):
-                    _critic_warmup_ev_cleared = True
-                elif leg_update >= 4 * config.critic_warmup_updates:
-                    _critic_warmup_ev_cleared = True
-                    logger.warning(
-                        "Critic warmup EV gate (%.2f) not reached after %d updates "
-                        "(4x critic_warmup_updates cap); unfreezing anyway. EV=%.3f. "
-                        "Advantages may be noisy, consider a longer warmup or a "
-                        "higher value_loss_coeff.",
-                        config.critic_warmup_min_ev,
-                        update_count,
-                        explained_variance,
-                    )
-                else:
-                    in_critic_warmup = True
-            if in_critic_warmup:
-                writer.add_scalar("ppo/critic_warmup_active", 1.0, update_count + 1)
-                logger.info(
-                    "Critic warmup active at update %d (EV=%.3f, gate=%.2f); policy frozen.",
-                    update_count + 1,
+            # Fail-closed critic warmup. A complete consecutive EV window must
+            # clear the threshold after the minimum critic-update count. A
+            # single spike cannot latch the actor open. At the maximum count we
+            # save the exact critic/policy state and stop normally; we never
+            # force an unready critic onto the pretrained actor.
+            critic_updates_completed = transition_state.critic_warmup_updates_completed
+            if config.critic_warmup_updates > 0 and not transition_state.warmup_complete:
+                warmup_decision = _record_critic_ev_and_decide(
+                    transition_state,
+                    config,
                     explained_variance,
+                )
+                if warmup_decision.ready:
+                    logger.info(
+                        "Critic warmup gate cleared after %d critic updates: "
+                        "rolling_EV=%.3f, %d/%d samples >= %.3f; starting protected actor ramp.",
+                        critic_updates_completed,
+                        warmup_decision.rolling_ev,
+                        warmup_decision.passing_samples,
+                        config.critic_warmup_ev_window,
+                        config.critic_warmup_min_ev,
+                    )
+            else:
+                warmup_decision = _CriticWarmupDecision(
+                    active=False,
+                    ready=True,
+                    exhausted=False,
+                    rolling_ev=float("nan"),
+                    finite_fraction=0.0,
+                    passing_samples=0,
+                    max_updates=0,
+                )
+
+            in_critic_warmup = warmup_decision.active
+            writer.add_scalar("ppo/critic_warmup_active", float(in_critic_warmup), update_count + 1)
+            writer.add_scalar(
+                "ppo/critic_warmup_ev_rolling",
+                warmup_decision.rolling_ev,
+                update_count + 1,
+            )
+            writer.add_scalar(
+                "ppo/critic_warmup_ev_finite_fraction",
+                warmup_decision.finite_fraction,
+                update_count + 1,
+            )
+            writer.add_scalar(
+                "ppo/critic_warmup_ev_passing_samples",
+                float(warmup_decision.passing_samples),
+                update_count + 1,
+            )
+            writer.add_scalar(
+                "ppo/critic_warmup_gate_ready",
+                float(transition_state.warmup_complete),
+                update_count + 1,
+            )
+            writer.add_scalar(
+                "ppo/critic_warmup_updates_completed",
+                float(critic_updates_completed),
+                update_count + 1,
+            )
+            if in_critic_warmup:
+                logger.info(
+                    "Critic warmup %d/%d: EV=%.3f, rolling_EV=%.3f, evidence=%d/%d; policy frozen.",
+                    critic_updates_completed,
+                    warmup_decision.max_updates,
+                    explained_variance,
+                    warmup_decision.rolling_ev,
+                    warmup_decision.passing_samples,
+                    config.critic_warmup_ev_window,
+                )
+
+            if warmup_decision.exhausted:
+                warmup_stop_requested = True
+                transition_state.fail_closed = True
+                transition_state.fail_reason = "critic_ev_gate_unready"
+                writer.add_scalar("ppo/critic_warmup_safe_stop", 1.0, update_count + 1)
+                writer.flush()
+                warmup_path = _save_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    save_path=save_path,
+                    update_count=update_count,
+                    total_steps=total_steps,
+                    planned_updates=planned_updates,
+                    entropy_coeff=entropy_coeff,
+                    entropy_signal_ema=entropy_signal_ema,
+                    lr=config.lr,
+                    log_alpha=log_alpha,
+                    alpha_optimizer=alpha_optimizer,
+                    return_rms=return_rms,
+                    agent_config=agent_config,
+                    config=config,
+                    transition_state=transition_state,
+                    filename="ppo_warmup_unready.pt",
+                    extra={
+                        "best_eval_win_rate": best_eval_win_rate,
+                        "best_eval_update": best_eval_update,
+                        "schedule_total_steps": schedule_total_steps,
+                        "warmup_stop_reason": "critic_ev_gate_unready",
+                        "critic_warmup_rolling_ev": warmup_decision.rolling_ev,
+                    },
+                )
+                _mirror_latest_checkpoint(warmup_path, save_path)
+                logger.error(
+                    "Stopping safely: critic warmup EV gate %.3f was not sustained after %d updates "
+                    "(rolling_EV=%.3f, evidence=%d/%d). Policy remains frozen; checkpoint=%s",
                     config.critic_warmup_min_ev,
+                    critic_updates_completed,
+                    warmup_decision.rolling_ev,
+                    warmup_decision.passing_samples,
+                    config.critic_warmup_ev_window,
+                    warmup_path,
+                )
+                del buffer
+                break
+
+            actor_transition = _actor_transition_runtime(
+                config,
+                transition_state,
+                in_critic_warmup=in_critic_warmup,
+            )
+            actor_clip_epsilon = actor_transition.clip_epsilon
+            actor_ramp_progress = actor_transition.progress
+            protect_actor_from_critic = actor_transition.protect_actor_from_critic
+            writer.add_scalar("ppo/actor_ramp_active", float(actor_transition.ramp_active), update_count + 1)
+            writer.add_scalar("ppo/actor_ramp_progress", actor_transition.progress, update_count + 1)
+            writer.add_scalar(
+                "ppo/actor_ramp_successful_updates",
+                float(transition_state.actor_ramp_successful_updates),
+                update_count + 1,
+            )
+            writer.add_scalar(
+                "ppo/actor_clip_epsilon",
+                actor_transition.logged_clip_epsilon,
+                update_count + 1,
+            )
+            if actor_transition.ramp_active:
+                logger.info(
+                    "Protected actor ramp %d/%d: progress=%.2f, clip_epsilon=%.4f; "
+                    "critic gradients restricted to value head.",
+                    transition_state.actor_ramp_successful_updates + 1,
+                    config.actor_ramp_updates,
+                    actor_ramp_progress,
+                    actor_clip_epsilon,
                 )
 
             # SIL coefficient uses the same pinned schedule horizon so it decays
@@ -3660,6 +4217,8 @@ def train_ppo(
             # of the schedule.
             if in_critic_warmup:
                 sil_coeff_now = 0.0
+            elif protect_actor_from_critic:
+                sil_coeff_now *= actor_ramp_progress
             sil_grad_diagnostics_due = (
                 sil_coeff_now > 0.0
                 and config.sil_grad_diagnostics_interval > 0
@@ -3678,9 +4237,18 @@ def train_ppo(
                 device=device,
                 use_pin_memory=use_pin_memory,
                 policy_loss_scale=0.0 if in_critic_warmup else 1.0,
+                clip_epsilon=actor_clip_epsilon,
+                protect_actor_from_critic=protect_actor_from_critic,
                 sil_buffer=sil_buffer,
                 sil_coeff_now=sil_coeff_now,
                 grad_diagnostics_due=sil_grad_diagnostics_due,
+            )
+
+            _advance_ppo_transition_state(
+                transition_state,
+                config,
+                in_critic_warmup=in_critic_warmup,
+                kl_rollback=update_stats.kl_rollback,
             )
 
             update_policy_losses = update_stats.policy_losses
@@ -3868,6 +4436,7 @@ def train_ppo(
                     return_rms=return_rms,
                     agent_config=agent_config,
                     config=config,
+                    transition_state=transition_state,
                     extra={
                         "best_eval_win_rate": best_eval_win_rate,
                         "best_eval_update": best_eval_update,
@@ -3876,14 +4445,7 @@ def train_ppo(
                 )
                 # Always mirror the latest checkpoint so resume/eval always has
                 # a stable path without guessing the highest update number.
-                latest_path = save_path / "ppo_latest.pt"
-                try:
-                    latest_path.unlink(missing_ok=True)
-                    import shutil
-
-                    shutil.copy2(checkpoint_path, latest_path)
-                except OSError:
-                    logger.warning("Could not mirror latest checkpoint to %s", latest_path)
+                _mirror_latest_checkpoint(checkpoint_path, save_path)
                 logger.info("Saved checkpoint: %s", checkpoint_path)
 
             eval_win_rate: float | None = None
@@ -3949,6 +4511,7 @@ def train_ppo(
                         return_rms=return_rms,
                         agent_config=agent_config,
                         config=config,
+                        transition_state=transition_state,
                         filename="ppo_best_eval.pt",
                         extra={
                             "best_eval_win_rate": best_eval_win_rate,
@@ -4171,11 +4734,18 @@ def train_ppo(
                 writer.close()
             except Exception:
                 logger.exception("Failed to close TensorBoard writer cleanly")
-    logger.info(
-        "PPO training complete after %d updates and %d env steps.",
-        update_count,
-        total_steps,
-    )
+    if warmup_stop_requested:
+        logger.error(
+            "PPO stopped safely with actor frozen after %d completed updates and %d env steps.",
+            update_count,
+            total_steps,
+        )
+    else:
+        logger.info(
+            "PPO training complete after %d updates and %d env steps.",
+            update_count,
+            total_steps,
+        )
     return model
 
 

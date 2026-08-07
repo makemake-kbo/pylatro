@@ -9,6 +9,8 @@ from pylatro_agent.reward import RewardConfig
 from pylatro_agent.survival import DEFAULT_MAX_ANTES
 from pylatro_agent.training.ppo import (
     PPOConfig,
+    _actor_transition,
+    _critic_warmup_decision,
     _effective_reward_config,
     _entropy_alpha_loss,
     _extract_step_info_value,
@@ -512,6 +514,44 @@ def test_ppo_config_rejects_nonpositive_eval_regression_patience() -> None:
         _validate_ppo_config(PPOConfig(eval_regression_patience=0))
 
 
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        (PPOConfig(critic_warmup_updates=-1), "critic_warmup_updates"),
+        (
+            PPOConfig(critic_warmup_updates=2, critic_warmup_min_ev=0.4, critic_warmup_ev_window=1),
+            "critic_warmup_ev_window",
+        ),
+        (
+            PPOConfig(critic_warmup_updates=4, critic_warmup_max_updates=3),
+            "critic_warmup_max_updates",
+        ),
+        (PPOConfig(actor_ramp_updates=-1), "actor_ramp_updates"),
+        (PPOConfig(actor_ramp_start_clip_fraction=0.0), "actor_ramp_start_clip_fraction"),
+        (PPOConfig(ppo_run_uuid="12345678-1234-5678-9234-567812345678"), "must be set together"),
+        (
+            PPOConfig(
+                ppo_run_uuid="not-a-uuid",
+                ppo_source_sha256="a" * 64,
+                ppo_recipe_id="recipe",
+            ),
+            "valid UUID",
+        ),
+        (
+            PPOConfig(
+                ppo_run_uuid="12345678-1234-5678-9234-567812345678",
+                ppo_source_sha256="bad",
+                ppo_recipe_id="recipe",
+            ),
+            "64-character",
+        ),
+    ],
+)
+def test_ppo_config_rejects_invalid_safe_unfreeze_controls(config: PPOConfig, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _validate_ppo_config(config)
+
+
 def test_ppo_config_rejects_negative_counterfactual_interval() -> None:
     with pytest.raises(ValueError, match="counterfactual_diagnostic_interval"):
         _validate_ppo_config(PPOConfig(counterfactual_diagnostic_interval=-1))
@@ -719,6 +759,108 @@ def test_eval_regression_streak_requires_consecutive_material_drops() -> None:
         )
         == 0
     )
+
+
+def test_eval_regression_boundary_is_robust_to_float_roundoff() -> None:
+    assert 0.87 - 0.77 < 0.10
+    assert (
+        _next_eval_regression_streak(
+            win_rate=0.77,
+            best_win_rate=0.87,
+            current_streak=0,
+            tolerance=0.10,
+        )
+        == 1
+    )
+
+
+def test_critic_warmup_requires_minimum_count_and_complete_rolling_ev_window() -> None:
+    config = PPOConfig(
+        critic_warmup_updates=4,
+        critic_warmup_min_ev=0.4,
+        critic_warmup_ev_window=3,
+        critic_warmup_max_updates=8,
+    )
+
+    single_spike = _critic_warmup_decision(
+        config,
+        completed_updates=4,
+        ev_history=[0.9],
+    )
+    assert single_spike.active
+    assert not single_spike.ready
+
+    too_early = _critic_warmup_decision(
+        config,
+        completed_updates=3,
+        ev_history=[0.41, 0.42, 0.43],
+    )
+    assert too_early.active
+    assert not too_early.ready
+
+    ready = _critic_warmup_decision(
+        config,
+        completed_updates=4,
+        ev_history=[0.37, 0.41, 0.42],
+    )
+    assert ready.ready
+    assert not ready.active
+    assert ready.rolling_ev == pytest.approx(0.4)
+
+
+def test_critic_warmup_rejects_nonfinite_or_weak_window_and_fails_closed_at_cap() -> None:
+    config = PPOConfig(
+        critic_warmup_updates=2,
+        critic_warmup_min_ev=0.4,
+        critic_warmup_ev_window=3,
+        critic_warmup_max_updates=6,
+    )
+
+    assert not _critic_warmup_decision(
+        config,
+        completed_updates=5,
+        ev_history=[0.5, float("nan"), 0.7],
+    ).ready
+    exhausted = _critic_warmup_decision(
+        config,
+        completed_updates=6,
+        ev_history=[0.2, 0.3, 0.39],
+    )
+    assert exhausted.exhausted
+    assert not exhausted.active
+    assert not exhausted.ready
+
+    # Readiness wins at the boundary; a healthy critic is not stopped merely
+    # because it cleared the gate on the last allowed update.
+    boundary_ready = _critic_warmup_decision(
+        config,
+        completed_updates=6,
+        ev_history=[0.39, 0.40, 0.41],
+    )
+    assert boundary_ready.ready
+    assert not boundary_ready.exhausted
+
+
+def test_count_only_critic_warmup_still_honors_minimum_update_count() -> None:
+    config = PPOConfig(
+        critic_warmup_updates=3,
+        critic_warmup_min_ev=0.0,
+        critic_warmup_ev_window=1,
+    )
+    assert _critic_warmup_decision(config, completed_updates=2, ev_history=[]).active
+    assert _critic_warmup_decision(config, completed_updates=3, ev_history=[]).ready
+
+
+def test_actor_transition_ramps_clip_and_protects_trunk_for_full_window() -> None:
+    config = PPOConfig(
+        clip_epsilon=0.1,
+        actor_ramp_updates=3,
+        actor_ramp_start_clip_fraction=0.5,
+    )
+    assert _actor_transition(config, actor_updates_completed=0) == pytest.approx((0.05, 0.0, True))
+    assert _actor_transition(config, actor_updates_completed=1) == pytest.approx((0.075, 0.5, True))
+    assert _actor_transition(config, actor_updates_completed=2) == pytest.approx((0.1, 1.0, True))
+    assert _actor_transition(config, actor_updates_completed=3) == pytest.approx((0.1, 1.0, False))
 
 
 def test_terminal_loss_metrics_are_compact_and_numeric() -> None:
@@ -1055,3 +1197,38 @@ def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
     policy_state_after = optimizer.state[model.policy_head.weight]
     assert int(policy_state_after["step"]) == steps_before
     assert torch.equal(policy_state_after["exp_avg"], exp_avg_before)
+
+
+def test_protected_actor_ramp_keeps_critic_loss_out_of_policy_trunk() -> None:
+    """The ramp may train PPO, but critic error must remain value-head-only."""
+
+    action = int(ActionRange.SHOP_LEAVE)
+    model = _TinyDecoupledCriticModel()
+    torch.nn.init.constant_(model.value_head.weight, 0.5)
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
+    config = _freeze_test_config(critic_updates_trunk=True)
+    buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0])
+    buffer.returns[:2] = 10.0
+    trunk_before = model.trunk.weight.detach().clone()
+    policy_before = model.policy_head.weight.detach().clone()
+    value_before = model.value_head.weight.detach().clone()
+
+    _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        return_rms=None,
+        entropy_coeff=0.0,
+        config=config,
+        accum_steps=1,
+        effective_batch_size=2,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+        policy_loss_scale=1.0,
+        clip_epsilon=0.05,
+        protect_actor_from_critic=True,
+    )
+
+    assert torch.equal(model.policy_head.weight.detach(), policy_before)
+    assert torch.equal(model.trunk.weight.detach(), trunk_before)
+    assert not torch.allclose(model.value_head.weight.detach(), value_before)

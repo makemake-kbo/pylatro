@@ -147,7 +147,7 @@ uv run python train.py ppo \
   --pretrained checkpoints/supervised/supervised_epoch10.pt \
   --envs 16 --rollout-length 256 --batch 352 --ppo-epochs 4 \
   --updates 2000 --device cuda --win-ante 4 --hl-gauss \
-  --gamma 0.997 --lr 1e-5 --clip-eps 0.1 \
+  --gamma 0.997 --lr 3e-6 --clip-eps 0.1 \
   --target-kl 0.03 --target-kl-p95 0.10 --target-kl-max 0.15 \
   --min-minibatch-fraction 0.50 \
   --dense-reward-scale 0.25 \
@@ -162,8 +162,11 @@ uv run python train.py ppo \
   --danger-shop-leave-logit-penalty 2.0 \
   --max-idle-steps 32 \
   --eval-games 100 --eval-interval 10 \
-  --eval-regression-tolerance 0.10 --eval-regression-patience 2 \
-  --reinit-value-head --critic-warmup-updates 15 --critic-warmup-min-ev 0.4
+  --eval-regression-tolerance 0.05 --eval-regression-patience 2 \
+  --reinit-value-head \
+  --critic-warmup-updates 20 --critic-warmup-min-ev 0.4 \
+  --critic-warmup-ev-window 5 --critic-warmup-max-updates 80 \
+  --actor-ramp-updates 25 --actor-ramp-start-clip-fraction 0.5
 ```
 
 `--score-build-potential` uses draw reliability and projected score to value Pair
@@ -191,15 +194,32 @@ shop/terminal metrics expose dying with money, weak full Joker slots, and
 last-shop survival calibration. Non-improving Joker reorderings receive an
 immediate penalty, and action-family fractions plus no-progress streaks make a
 shop loop directly visible. A short idle horizon, action-family entropy bonus,
-hard KL guard, and two-eval regression stop protect the pretrained policy while
-retaining the `1e-5` learning rate. Reinitialize the value head when adding these
-rewards to a checkpoint trained with different reward semantics.
+hard KL guard, and two-eval regression stop protect the pretrained policy. The
+v14 recipe lowers the shared step size to `3e-6`. Actor unfreeze requires a full
+rolling EV window after the minimum critic warmup; an unready critic at the
+maximum warmup count is checkpointed and stopped, never force-unfrozen. During
+the protected actor ramp, the PPO clip range grows from `0.05` to `0.10` and
+critic gradients remain value-head-only so they cannot move the shared policy trunk. Reinitialize
+the value head when adding these rewards to a checkpoint trained with different
+reward semantics. Full PPO checkpoints persist the rolling EV evidence, total
+critic warmup updates, gate/fail-closed status, and successful actor-ramp update
+count, so strict resume continues the exact transition phase. Legacy checkpoints
+without that state are rejected when either safety phase is enabled.
 
 The production CUDA recipe is also available as
-`scripts/run_ppo_v13_tarot_seal_strategy.sh`. By default it initializes from the
-best v12 checkpoint as a weights-only pretrained policy, then warms a fresh
-critic before unfreezing PPO. Override `PYLATRO_WORKSPACE`,
-`PYLATRO_SOURCE_CHECKPOINT`, or `PYLATRO_RUN_NAME` when using different paths.
+`scripts/run_ppo_v14_safe_tarot_seal_strategy.sh`. By default it initializes a
+fresh v14 directory from the original best v12 update-280 policy and refuses any
+v13 source/run override. It may resume only `ppo_latest.pt` inside its own v14
+directory. The source is pinned to SHA-256
+`5a81807c38213d0aadd5d984158652daafd259df0e416d70097698dd75cc0660` and
+must also report tokenizer v6, reward model v12, update 280, and best-eval update
+280 before the launcher generates a fresh run UUID and writes its run/source
+ownership marker. The UUID, pinned source SHA, and recipe identity are passed
+into training and cryptographically bind every normal, best, and fail-closed
+checkpoint to that directory; strict resume rejects a foreign checkpoint even
+when its v14 hyperparameters match. Override
+`PYLATRO_WORKSPACE`, `PYLATRO_SOURCE_CHECKPOINT`, `PYLATRO_SOURCE_SHA256`, or
+`PYLATRO_RUN_NAME` only for an equivalently validated non-v13 source.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 

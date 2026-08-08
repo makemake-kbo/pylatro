@@ -305,7 +305,7 @@ def test_fast_runner_and_env_report_same_one_shot_held_gold_event() -> None:
     assert fast_result.held_gold_payout == 6
     assert info["strategic_held_gold_count"] == 2
     assert info["strategic_held_gold_payout"] == 6
-    assert info["reward_strategic_held_gold_payout"] == pytest.approx(0.18)
+    assert info["reward_strategic_held_gold_payout"] == pytest.approx(0.30)
 
 
 def test_fast_runner_disabled_boss_cashout_exposes_next_suit_boss() -> None:

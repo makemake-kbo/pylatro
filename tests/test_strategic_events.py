@@ -342,7 +342,100 @@ def test_pack_auto_use_and_cash_payout_are_authoritative() -> None:
     assert event.tarot_source == "pack_auto_use"
     assert event.pack_auto_use
     assert event.tarot_uses == 1
+    assert event.tarot_acquired == 1
+    assert event.tarot_pack_auto_uses == 1
     assert event.attributable_cash_payout == 10
+
+
+def test_planet_pack_auto_use_counts_as_both_acquisition_and_use() -> None:
+    prev = {
+        "planet_usage_total": 7,
+        "pack_card_details": ({"key": "c_mercury", "set": "Planet"},),
+        "deck_stats": {"cards": ()},
+    }
+    curr = {**prev, "planet_usage_total": 8}
+    result = SimpleNamespace(
+        auto_used=True,
+        center_key="c_mercury",
+        use_result=UseConsumableResult("c_mercury"),
+    )
+
+    event = derive_strategic_event(
+        prev,
+        curr,
+        _decoded(ActionType.PACK_CLAIM),
+        result,
+        set(),
+    )
+
+    assert event.planet_acquired == 1
+    assert event.planet_uses == 1
+    assert event.planet_pack_auto_uses == 1
+
+
+def test_sold_consumable_is_not_misreported_as_use_or_overwrite() -> None:
+    prev = {
+        "planet_usage_total": 1,
+        "tarot_usage_total": 1,
+        "consumable_details": ({"key": "c_mercury", "set": "Planet"},),
+        "deck_stats": {"cards": ()},
+    }
+    curr = {**prev, "consumable_details": ()}
+
+    event = derive_strategic_event(
+        prev,
+        curr,
+        _decoded(ActionType.SHOP_SELL_CONSUMABLE),
+        SimpleNamespace(),
+        set(),
+    )
+
+    assert event.planet_sold == 1
+    assert event.planet_uses == 0
+    assert event.planet_overwritten == 0
+
+
+@pytest.mark.parametrize(("tarot_key", "payout"), (("c_hermit", 12), ("c_temperance", 9)))
+def test_only_cash_tarots_receive_their_attributable_engine_payout(
+    tarot_key: str,
+    payout: int,
+) -> None:
+    prev = {
+        "tarot_usage_total": 2,
+        "consumable_details": ({"key": tarot_key, "set": "Tarot"},),
+        "deck_stats": {"cards": ()},
+    }
+    curr = {**prev, "tarot_usage_total": 3, "consumable_details": ()}
+
+    event = derive_strategic_event(
+        prev,
+        curr,
+        _decoded(ActionType.USE_CONSUMABLE_NO_TARGET),
+        UseConsumableResult(tarot_key, dollars_delta=payout),
+        set(),
+    )
+
+    assert event.tarot_family == "cash"
+    assert event.attributable_cash_payout == payout
+
+
+def test_non_tarot_cash_effect_is_not_misattributed_as_tarot_value() -> None:
+    prev = {
+        "tarot_usage_total": 2,
+        "consumable_details": ({"key": "c_immolate", "set": "Spectral"},),
+        "deck_stats": {"cards": ()},
+    }
+
+    event = derive_strategic_event(
+        prev,
+        prev,
+        _decoded(ActionType.USE_CONSUMABLE_HAND_SUBSET),
+        UseConsumableResult("c_immolate", dollars_delta=20),
+        set(),
+    )
+
+    assert event.tarot_uses == 0
+    assert event.attributable_cash_payout == 0
 
 
 def test_pack_seal_claim_is_attributed_from_the_selected_card() -> None:
@@ -384,6 +477,66 @@ def test_contextual_suit_tarot_rewards_only_reliable_fixed_plan_improvement() ->
     assert post_quality > pre_quality
     assert blocked_reward <= 0.0
     assert no_op_reward == 0.0
+
+
+def test_reversing_a_rewarded_suit_fix_cannot_collect_another_positive_reward() -> None:
+    original_cards = _flush_deck()
+    prev = _plan_snapshot(deepcopy(original_cards))
+    fixed_cards = deepcopy(original_cards)
+    converted = next(card for card in fixed_cards if card["suit"] == "Hearts")
+    converted["suit"] = "Spades"
+    fixed = _plan_snapshot(fixed_cards)
+
+    forward, _, _ = contextual_tarot_fix_reward(prev, fixed, "c_world")
+    reverse, _, _ = contextual_tarot_fix_reward(fixed, prev, "c_sun")
+
+    assert forward > 0.0
+    assert reverse <= 0.0
+
+
+def test_boss_aware_conversion_rewards_moving_cards_away_from_debuffed_suit() -> None:
+    cards = [_card(index, rank, suit) for index, (rank, suit) in enumerate(
+        (("A", "Hearts"), ("K", "Hearts"), ("Q", "Clubs"), ("J", "Diamonds")),
+        start=1,
+    )]
+    prev = _plan_snapshot(deepcopy(cards))
+    prev["boss_debuff_suit"] = "Hearts"
+    cards[0]["suit"] = "Spades"
+    curr = _plan_snapshot(cards)
+    curr["boss_debuff_suit"] = "Hearts"
+
+    reward, pre_quality, post_quality = contextual_tarot_fix_reward(prev, curr, "c_world")
+
+    assert reward > 0.0
+    assert post_quality > pre_quality
+
+
+def test_strength_rewards_rank_consolidation_into_the_active_pair_anchor() -> None:
+    ranks = ("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A")
+    suits = ("Spades", "Hearts", "Clubs", "Diamonds")
+    cards = [
+        _card(index + 1, rank, suit)
+        for index, (suit, rank) in enumerate((suit, rank) for suit in suits for rank in ranks)
+    ]
+    prev = _plan_snapshot(deepcopy(cards))
+    for hand_type, detail in prev["hand_details"].items():
+        if hand_type != "Pair":
+            detail.update({"chips": 1, "mult": 1, "played": 0})
+    prev["hand_details"]["Pair"].update({"chips": 100, "mult": 10, "played": 6})
+    prev["hand_play_counts"] = dict.fromkeys(prev["hand_play_counts"], 0)
+    prev["hand_play_counts"]["Pair"] = 6
+    fixed_cards = deepcopy(cards)
+    target_rank = max(card["rank"] for card in fixed_cards)
+    changed = next(card for card in fixed_cards if card["rank"] != target_rank)
+    changed["rank"] = target_rank
+    curr = _plan_snapshot(fixed_cards)
+    curr["hand_details"] = deepcopy(prev["hand_details"])
+    curr["hand_play_counts"] = deepcopy(prev["hand_play_counts"])
+
+    reward, pre_quality, post_quality = contextual_tarot_fix_reward(prev, curr, "c_strength")
+
+    assert reward > 0.0
+    assert post_quality > pre_quality
 
 
 def test_hanged_man_never_rewards_cutting_plan_or_protected_cards() -> None:

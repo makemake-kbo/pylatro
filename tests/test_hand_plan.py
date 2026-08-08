@@ -219,7 +219,10 @@ def test_generated_planet_only_has_value_for_a_reliable_plan() -> None:
     two_pair_planet["consumable_details"] = (
         {"key": "c_uranus", "set": "Planet", "hand_type": "Two Pair"},
     )
-    config = RewardConfig(enable_score_build_potential=True)
+    config = RewardConfig(
+        enable_score_build_potential=True,
+        potential_w_planet_option=0.25,
+    )
 
     assert state_potential_breakdown(pair_planet, config)["planet_option_value"] > 0.0
     assert state_potential_breakdown(two_pair_planet, config)["planet_option_value"] == 0.0
@@ -227,16 +230,33 @@ def test_generated_planet_only_has_value_for_a_reliable_plan() -> None:
     synergized = deepcopy(two_pair_planet)
     synergized["joker_details"] = (_joker("j_trousers", mult=8.0),)
     assert state_potential_breakdown(synergized, config)["planet_option_value"] > 0.0
+    assert (
+        state_potential_breakdown(
+            pair_planet,
+            RewardConfig(enable_score_build_potential=True),
+        )["planet_option_value"]
+        == 0.0
+    )
 
 
 def test_generated_tarot_creates_option_value_until_converted() -> None:
     base = _snapshot(_standard_deck())
     tarot = deepcopy(base)
     tarot["consumable_details"] = ({"key": "c_death", "set": "Tarot"},)
-    config = RewardConfig(enable_score_build_potential=True)
+    config = RewardConfig(
+        enable_score_build_potential=True,
+        potential_w_tarot_option=0.20,
+    )
 
     assert state_potential_breakdown(base, config)["tarot_option_value"] == 0.0
     assert state_potential_breakdown(tarot, config)["tarot_option_value"] > 0.0
+    assert (
+        state_potential_breakdown(
+            tarot,
+            RewardConfig(enable_score_build_potential=True),
+        )["tarot_option_value"]
+        == 0.0
+    )
 
 
 def test_hermit_and_temperance_receive_attributable_cash_reward() -> None:
@@ -269,8 +289,8 @@ def test_hermit_and_temperance_receive_attributable_cash_reward() -> None:
     hermit_reward = default_reward_components(state, prev, hermit, False, False, config)
     temperance_reward = default_reward_components(state, prev, temperance, False, False, config)
     no_payout_reward = default_reward_components(state, prev, no_payout, False, False, config)
-    assert hermit_reward["strategic_cash_payout"] == 0.30
-    assert temperance_reward["strategic_cash_payout"] == 0.24
+    assert hermit_reward["strategic_cash_payout"] == 0.50
+    assert temperance_reward["strategic_cash_payout"] == 0.40
     assert no_payout_reward["strategic_cash_payout"] == 0.0
 
 
@@ -301,15 +321,23 @@ def test_planet_reward_rejects_two_pair_and_unfixed_flush() -> None:
         "progress_made": True,
     }
     flush_use = {**prev, "planet_use_observed": True, "planet_use_hand_type": "Flush", "progress_made": True}
+    four_kind_use = {
+        **prev,
+        "planet_use_observed": True,
+        "planet_use_hand_type": "Four of a Kind",
+        "progress_made": True,
+    }
     config = RewardConfig(enable_planet_match_rewards=True)
     state = SimpleNamespace(win_ante=4, round_resets=SimpleNamespace(ante=3))
 
     pair = default_reward_components(state, prev, pair_use, False, False, config)
     two_pair = default_reward_components(state, prev, two_pair_use, False, False, config)
     flush = default_reward_components(state, prev, flush_use, False, False, config)
+    four_kind = default_reward_components(state, prev, four_kind_use, False, False, config)
     assert pair["planet_match_bonus"] > 0.0
     assert two_pair["planet_match_bonus"] == 0.0
     assert flush["planet_match_bonus"] == 0.0
+    assert four_kind["planet_match_bonus"] == 0.0
 
 
 def test_two_pair_planet_gets_smaller_bonus_with_dedicated_synergy() -> None:

@@ -104,7 +104,9 @@ def test_default_config_is_the_single_potential_reward() -> None:
     assert config.enable_score_build_potential is False
     assert not hasattr(config, "reward_version")
     assert config.strategic_event_reward_scale == 1.0
-    assert REWARD_MODEL_VERSION == 13
+    assert config.potential_w_tarot_option == 0.0
+    assert config.potential_w_planet_option == 0.0
+    assert REWARD_MODEL_VERSION == 14
 
 
 def test_attributable_strategic_event_rewards_are_bounded_and_dense_scale_independent() -> None:
@@ -125,18 +127,18 @@ def test_attributable_strategic_event_rewards_are_bounded_and_dense_scale_indepe
 
     components = default_reward_components(_state(ante=3), prev, curr, False, False, config)
 
-    assert components["strategic_cash_payout"] == pytest.approx(0.30)
-    assert components["strategic_gold_creation"] == pytest.approx(0.15)
-    assert components["strategic_purple_generation"] == pytest.approx(0.10)
-    assert components["strategic_blue_generation"] == pytest.approx(0.08)
-    assert components["strategic_seal_claim"] == pytest.approx(0.12)
+    assert components["strategic_cash_payout"] == pytest.approx(0.50)
+    assert components["strategic_gold_creation"] == pytest.approx(0.075)
+    assert components["strategic_purple_generation"] == pytest.approx(0.12)
+    assert components["strategic_blue_generation"] == pytest.approx(0.12)
+    assert components["strategic_seal_claim"] == pytest.approx(0.06)
     assert components["strategic_tarot_fix"] == pytest.approx(0.12)
     positive = sum(
         max(components[name], 0.0)
         for name in reward_module.REWARD_COMPONENT_NAMES
         if name.startswith("strategic_")
     )
-    assert positive == pytest.approx(0.87)
+    assert positive == pytest.approx(0.995)
 
 
 def test_strategic_cash_requires_attributable_engine_payout() -> None:
@@ -148,12 +150,12 @@ def test_strategic_cash_requires_attributable_engine_payout() -> None:
     purple = default_reward_components(_state(), prev, purple_success, False, False)
 
     assert unrelated["strategic_cash_payout"] == 0.0
-    assert purple["strategic_purple_generation"] == pytest.approx(0.10)
+    assert purple["strategic_purple_generation"] == pytest.approx(0.12)
     assert purple["total"] > 0.0
 
 
-@pytest.mark.parametrize(("count", "expected"), ((1, 0.09), (4, 0.36), (8, 0.72)))
-def test_held_gold_reward_is_per_paid_card_without_cash_cap(count: int, expected: float) -> None:
+@pytest.mark.parametrize(("count", "expected"), ((1, 0.15), (4, 0.60), (8, 1.0)))
+def test_held_gold_reward_uses_three_dollar_value_with_global_cap(count: int, expected: float) -> None:
     curr = _info(
         strategic_held_gold_count=count,
         strategic_held_gold_payout=3 * count,
@@ -181,7 +183,7 @@ def test_priority_seal_claim_reward_has_no_late_ante_runway_discount() -> None:
         False,
     )
 
-    assert components["strategic_seal_claim"] == pytest.approx(0.12)
+    assert components["strategic_seal_claim"] == pytest.approx(0.06)
 
 
 def test_negative_contextual_tarot_fix_reward_survives_positive_cap() -> None:

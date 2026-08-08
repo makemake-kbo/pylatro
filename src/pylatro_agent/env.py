@@ -32,6 +32,7 @@ from .diagnostics import (
 )
 from .diagnostics import (
     build_step_diagnostics,
+    consumable_funnel_state_diagnostics,
     finish_exact_play_counterfactual,
     prepare_exact_play_counterfactual,
     step_event_diagnostics,
@@ -227,6 +228,9 @@ class BalatroEnv(gymnasium.Env):
 
         decoded = decode_action(action)
         action_diagnostics = self._action_diagnostics(decoded)
+        action_diagnostics.update(
+            consumable_funnel_state_diagnostics(self._prev_info, self.action_masks())
+        )
         counterfactual_probe = None
         if decoded.action_type == ActionType.PLAY_SUBSET:
             self._play_diagnostic_count += 1
@@ -290,7 +294,12 @@ class BalatroEnv(gymnasium.Env):
                 }
             )
 
-        event_diagnostics = step_event_diagnostics(self._prev_info, curr_info, decoded)
+        event_diagnostics = step_event_diagnostics(
+            self._prev_info,
+            curr_info,
+            decoded,
+            next_action_mask=None if terminated else self.action_masks(),
+        )
         action_diagnostics.update(event_diagnostics)
         strategic_event = derive_strategic_event(
             self._prev_info,
@@ -402,6 +411,16 @@ class BalatroEnv(gymnasium.Env):
         else:
             curr_info["stalled"] = False
 
+        if terminated or truncated:
+            for consumable_set in ("Planet", "Tarot"):
+                expired = sum(
+                    isinstance(detail, dict) and detail.get("set") == consumable_set
+                    for detail in (curr_info.get("consumable_details") or ())
+                )
+                action_diagnostics[
+                    f"strategic_{consumable_set.lower()}_expired"
+                ] = int(expired)
+
         # Surface action diagnostics used by optional reward components.
         curr_info.update(action_diagnostics)
 
@@ -433,6 +452,7 @@ class BalatroEnv(gymnasium.Env):
             "steps_since_progress": self._steps_since_progress,
             "stalled": curr_info["stalled"],
             "tarot_usage_total": curr_info.get("tarot_usage_total", 0),
+            "planet_usage_total": curr_info.get("planet_usage_total", 0),
         }
         for component_name, component_value in reward_components.items():
             info[f"reward_{component_name}"] = component_value

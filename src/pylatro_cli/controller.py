@@ -73,6 +73,10 @@ class GameController:
         self.round_score += result.score.total
         # If blind beaten, caller transitions to shop; otherwise draw and check loss.
         if self.blind_beaten():
+            result.blue_seals_activated = sum(
+                card.seal == "Blue" and not card.debuff
+                for card in result.score.held_cards
+            )
             result.blue_planets_generated = [
                 consumable.center_key
                 for consumable in pylatro.resolve_blue_seals(

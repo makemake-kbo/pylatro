@@ -45,8 +45,11 @@ class RewardConfig:
     potential_w_readiness: float = 0.40
     potential_w_scaling_option: float = 0.22
     potential_w_economy: float = 0.30
-    potential_w_tarot_option: float = 0.20
-    potential_w_planet_option: float = 0.25
+    # Inventory is observable to the policy, but possession alone is not a
+    # strategic event. Non-zero option weights make acquiring a consumable pay
+    # once and using it pay that potential back, which taught PPO to hoard it.
+    potential_w_tarot_option: float = 0.0
+    potential_w_planet_option: float = 0.0
     potential_w_seals: float = 1.25
     # Visible shop rescue is diagnostic-only in the potential.  A positive
     # option potential would become an implicit penalty when the policy leaves
@@ -64,7 +67,7 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 13
+REWARD_MODEL_VERSION = 14
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -130,6 +133,11 @@ PLANET_PLAYED_HAND_BONUS = 0.25
 PLANET_UNMATCHED_MIN_PROGRESS = 0.25
 JOKER_UPGRADE_BONUS = 0.40
 DANGER_REROLL_BONUS = 0.20
+ATTRIBUTABLE_CASH_REWARD_PER_DOLLAR = 0.05
+ATTRIBUTABLE_CASH_REWARD_CAP = 0.50
+GOLD_CREATION_REWARD = 0.075
+SEAL_CLAIM_REWARD = 0.03
+SEAL_GENERATION_REWARD = 0.12
 
 _BLIND_INDEX = {"small": 0, "big": 1, "boss": 2}
 _FOOL_PROTECT_TARGETS = {"c_death", "c_hermit", "c_temperance"}
@@ -621,12 +629,20 @@ def _apply_strategic_event_rewards(
         0.0,
     )
 
-    components["strategic_cash_payout"] = min(0.03 * payout, 0.30)
-    components["strategic_held_gold_payout"] = 0.09 * paid_gold_cards
-    components["strategic_gold_creation"] = 0.15 * gold_created
-    components["strategic_purple_generation"] = 0.10 * purple_generated
-    components["strategic_blue_generation"] = 0.08 * blue_generated
-    components["strategic_seal_claim"] = 0.06 * seals_claimed
+    components["strategic_cash_payout"] = min(
+        ATTRIBUTABLE_CASH_REWARD_PER_DOLLAR * payout,
+        ATTRIBUTABLE_CASH_REWARD_CAP,
+    )
+    # A Gold card's realized $3 payout uses the same per-dollar value as
+    # Hermit/Temperance. Creation gets half of that one-round cash equivalent;
+    # later payouts remain separately attributable and are not counted here.
+    components["strategic_held_gold_payout"] = (
+        ATTRIBUTABLE_CASH_REWARD_PER_DOLLAR * 3.0 * paid_gold_cards
+    )
+    components["strategic_gold_creation"] = GOLD_CREATION_REWARD * gold_created
+    components["strategic_purple_generation"] = SEAL_GENERATION_REWARD * purple_generated
+    components["strategic_blue_generation"] = SEAL_GENERATION_REWARD * blue_generated
+    components["strategic_seal_claim"] = SEAL_CLAIM_REWARD * seals_claimed
     components["strategic_tarot_fix"] = _clip(
         float(curr_info.get("strategic_tarot_fix_reward", 0.0) or 0.0),
         -0.20,

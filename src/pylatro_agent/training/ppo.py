@@ -1110,7 +1110,20 @@ class _RolloutMetrics:
     consumable_use_set_counts: Counter = field(default_factory=Counter)
     consumable_claim_set_counts: Counter = field(default_factory=Counter)
     consumable_buy_set_counts: Counter = field(default_factory=Counter)
+    consumable_offered_counts: Counter = field(default_factory=Counter)
+    consumable_claimable_counts: Counter = field(default_factory=Counter)
+    consumable_eligible_offer_opportunities: Counter = field(default_factory=Counter)
+    consumable_inventory_full_blocked_counts: Counter = field(default_factory=Counter)
+    consumable_acquired_counts: Counter = field(default_factory=Counter)
+    consumable_exact_use_counts: Counter = field(default_factory=Counter)
+    consumable_pack_auto_use_counts: Counter = field(default_factory=Counter)
+    consumable_sold_counts: Counter = field(default_factory=Counter)
+    consumable_overwritten_counts: Counter = field(default_factory=Counter)
+    consumable_expired_counts: Counter = field(default_factory=Counter)
+    consumable_owned_states: Counter = field(default_factory=Counter)
+    consumable_legal_use_opportunities: Counter = field(default_factory=Counter)
     pack_claim_seal_counts: Counter = field(default_factory=Counter)
+    pack_offered_seal_counts: Counter = field(default_factory=Counter)
     pack_skip_state_counts: Counter = field(default_factory=Counter)
     step_rewards: list[float] = field(default_factory=list)
     progress_flags: list[float] = field(default_factory=list)
@@ -1165,6 +1178,16 @@ class _RolloutMetrics:
     planet_claim_play_share: list[float] = field(default_factory=list)
     planet_claim_main_hand_match: list[float] = field(default_factory=list)
     planet_pack_skip: list[float] = field(default_factory=list)
+    planet_use_alignment_counts: Counter = field(default_factory=Counter)
+    planet_use_hand_counts: Counter = field(default_factory=Counter)
+    planet_active_plan_owned: int = 0
+    planet_active_plan_legal: int = 0
+    planet_active_plan_uses: int = 0
+    tarot_use_family_counts: Counter = field(default_factory=Counter)
+    tarot_fix_reliability_deltas: list[float] = field(default_factory=list)
+    attributable_cash_payouts: list[float] = field(default_factory=list)
+    gold_cards_created: int = 0
+    held_gold_payout_dollars: int = 0
     shop_offered_joker_counts: Counter = field(default_factory=Counter)
     shop_bought_joker_counts: Counter = field(default_factory=Counter)
     shop_sold_joker_counts: Counter = field(default_factory=Counter)
@@ -1194,6 +1217,8 @@ class _RolloutMetrics:
     hand_plan_readiness: list[float] = field(default_factory=list)
     purple_seal_tarots_generated: int = 0
     blue_seal_planets_generated: int = 0
+    purple_seals_activated: int = 0
+    blue_seals_activated: int = 0
     hologram_scaling_counts: list[float] = field(default_factory=list)
     hologram_x_mult_deltas: list[float] = field(default_factory=list)
     hologram_build_score_deltas: list[float] = field(default_factory=list)
@@ -1231,6 +1256,161 @@ def _write_rollout_episode_metrics(writer, rm: _RolloutMetrics, step: int) -> No
         metrics["tarot_uses_per_completed_episode_mean"] = rm.completed_episode_tarot_uses
     for tag, values in metrics.items():
         writer.add_scalar(f"rollout/{tag}", float(np.mean(values)), step)
+
+
+def _write_consumable_strategy_metrics(
+    writer,
+    rm: _RolloutMetrics,
+    step: int,
+) -> None:
+    """Write bounded Planet/Tarot funnel metrics with explicit denominators."""
+
+    steps_per_thousand = max(len(rm.step_rewards) / 1000.0, 1e-9)
+    for consumable_set in ("Planet", "Tarot"):
+        tag = consumable_set.lower()
+        selected = (
+            rm.consumable_buy_set_counts[consumable_set]
+            + rm.consumable_claim_set_counts[consumable_set]
+        )
+        inventory_uses = max(
+            rm.consumable_exact_use_counts[consumable_set]
+            - rm.consumable_pack_auto_use_counts[consumable_set],
+            0,
+        )
+        counts = {
+            "offered": rm.consumable_offered_counts[consumable_set],
+            "claimable": rm.consumable_claimable_counts[consumable_set],
+            "acquired": rm.consumable_acquired_counts[consumable_set],
+            "used": rm.consumable_exact_use_counts[consumable_set],
+            "pack_auto_used": rm.consumable_pack_auto_use_counts[consumable_set],
+            "sold": rm.consumable_sold_counts[consumable_set],
+            "overwritten": rm.consumable_overwritten_counts[consumable_set],
+            "expired": rm.consumable_expired_counts[consumable_set],
+            "inventory_full_blocked": rm.consumable_inventory_full_blocked_counts[
+                consumable_set
+            ],
+        }
+        for name, count in counts.items():
+            writer.add_scalar(
+                f"strategy/consumables/{tag}/{name}_per_1k_steps",
+                count / steps_per_thousand,
+                step,
+            )
+        eligible = rm.consumable_eligible_offer_opportunities[consumable_set]
+        if eligible:
+            writer.add_scalar(
+                f"strategy/consumables/{tag}/claim_rate_given_eligible_offer",
+                selected / eligible,
+                step,
+            )
+        legal = rm.consumable_legal_use_opportunities[consumable_set]
+        if legal:
+            writer.add_scalar(
+                f"strategy/consumables/{tag}/use_rate_given_owned_legal",
+                inventory_uses / legal,
+                step,
+            )
+        offered = rm.consumable_offered_counts[consumable_set]
+        if offered:
+            writer.add_scalar(
+                f"strategy/consumables/{tag}/inventory_full_blocked_offer_rate",
+                rm.consumable_inventory_full_blocked_counts[consumable_set] / offered,
+                step,
+            )
+        writer.add_scalar(
+            f"strategy/consumables/{tag}/owned_state_fraction",
+            rm.consumable_owned_states[consumable_set] / max(len(rm.step_rewards), 1),
+            step,
+        )
+
+    planet_uses = sum(rm.planet_use_alignment_counts.values())
+    if planet_uses:
+        writer.add_scalar(
+            "strategy/planets/matched_use_rate",
+            rm.planet_use_alignment_counts["matched"] / planet_uses,
+            step,
+        )
+        writer.add_scalar(
+            "strategy/planets/unmatched_use_rate",
+            rm.planet_use_alignment_counts["unmatched"] / planet_uses,
+            step,
+        )
+    for hand_name in POKER_HAND_NAMES:
+        count = rm.planet_use_hand_counts[hand_name]
+        if count:
+            hand_tag = hand_name.lower().replace(" ", "_")
+            writer.add_scalar(
+                f"strategy/planets/uses_by_hand/{hand_tag}_per_1k_steps",
+                count / steps_per_thousand,
+                step,
+            )
+    writer.add_scalar(
+        "strategy/planets/active_plan_owned_states_per_1k_steps",
+        rm.planet_active_plan_owned / steps_per_thousand,
+        step,
+    )
+    if rm.planet_active_plan_legal:
+        writer.add_scalar(
+            "strategy/planets/active_plan_use_rate_given_legal",
+            rm.planet_active_plan_uses / rm.planet_active_plan_legal,
+            step,
+        )
+
+    tarot_uses = sum(rm.tarot_use_family_counts.values())
+    for family in (
+        "cash",
+        "gold",
+        "deck_cut",
+        "rank_fix",
+        "suit_fix",
+        "creation",
+        "joker",
+        "enhancement",
+    ):
+        if tarot_uses:
+            writer.add_scalar(
+                f"strategy/tarots/use_family/{family}_share",
+                rm.tarot_use_family_counts[family] / tarot_uses,
+                step,
+            )
+    if rm.tarot_fix_reliability_deltas:
+        writer.add_scalar(
+            "strategy/tarots/fix_reliability_delta_mean",
+            float(np.mean(rm.tarot_fix_reliability_deltas)),
+            step,
+        )
+    if rm.attributable_cash_payouts:
+        writer.add_scalar(
+            "strategy/tarots/attributable_cash_per_use_mean",
+            float(np.mean(rm.attributable_cash_payouts)),
+            step,
+        )
+    writer.add_scalar(
+        "strategy/gold/cards_created_per_1k_steps",
+        rm.gold_cards_created / steps_per_thousand,
+        step,
+    )
+    writer.add_scalar(
+        "strategy/gold/payout_dollars_per_1k_steps",
+        rm.held_gold_payout_dollars / steps_per_thousand,
+        step,
+    )
+    for seal in ("Blue", "Purple"):
+        writer.add_scalar(
+            f"strategy/seals/offered/{seal.lower()}_per_1k_steps",
+            rm.pack_offered_seal_counts[seal] / steps_per_thousand,
+            step,
+        )
+        writer.add_scalar(
+            f"strategy/seals/activated/{seal.lower()}_per_1k_steps",
+            (
+                rm.blue_seals_activated
+                if seal == "Blue"
+                else rm.purple_seals_activated
+            )
+            / steps_per_thousand,
+            step,
+        )
 
 
 def _write_action_behavior_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
@@ -2788,6 +2968,14 @@ def _extract_step_info_value(info_dict: dict, key: str, env_idx: int, *, done: b
     return default if value is _MISSING else value
 
 
+def _extract_step_count(info_dict: dict, key: str, env_idx: int, *, done: bool) -> int:
+    return int(_extract_step_info_value(info_dict, key, env_idx, done=done, default=0) or 0)
+
+
+def _extract_step_flag(info_dict: dict, key: str, env_idx: int, *, done: bool) -> bool:
+    return bool(_extract_step_info_value(info_dict, key, env_idx, done=done, default=False))
+
+
 def _effective_reward_config(config: PPOConfig) -> RewardConfig:
     """Return an isolated reward config whose potential discount matches PPO."""
     base = config.reward_config if config.reward_config is not None else DEFAULT_REWARD_CONFIG
@@ -2971,9 +3159,154 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
         consumable_set = _extract_step_info_value(infos, info_key, env_idx, done=done, default="")
         if consumable_set:
             counter[str(consumable_set)] += 1
+    for consumable_set in ("Planet", "Tarot"):
+        tag = consumable_set.lower()
+        for info_key, counter in (
+            (f"consumable_{tag}_offered_count", rm.consumable_offered_counts),
+            (f"consumable_{tag}_claimable_count", rm.consumable_claimable_counts),
+            (
+                f"consumable_{tag}_inventory_full_blocked_count",
+                rm.consumable_inventory_full_blocked_counts,
+            ),
+            (f"strategic_{tag}_acquired", rm.consumable_acquired_counts),
+            (f"strategic_{tag}_uses", rm.consumable_exact_use_counts),
+            (f"strategic_{tag}_pack_auto_uses", rm.consumable_pack_auto_use_counts),
+            (f"strategic_{tag}_sold", rm.consumable_sold_counts),
+            (f"strategic_{tag}_overwritten", rm.consumable_overwritten_counts),
+            (f"strategic_{tag}_expired", rm.consumable_expired_counts),
+        ):
+            counter[consumable_set] += _extract_step_count(
+                infos, info_key, env_idx, done=done
+            )
+        rm.consumable_owned_states[consumable_set] += int(
+            _extract_step_flag(
+                infos, f"consumable_{tag}_owned_state", env_idx, done=done
+            )
+        )
+        rm.consumable_legal_use_opportunities[consumable_set] += int(
+            _extract_step_flag(
+                infos,
+                f"consumable_{tag}_legal_use_opportunity",
+                env_idx,
+                done=done,
+            )
+        )
+        rm.consumable_eligible_offer_opportunities[consumable_set] += int(
+            _extract_step_flag(
+                infos,
+                f"consumable_{tag}_eligible_offer_opportunity",
+                env_idx,
+                done=done,
+            )
+        )
+
+    rm.planet_active_plan_owned += int(
+        _extract_step_flag(
+            infos, "consumable_planet_active_plan_owned", env_idx, done=done
+        )
+    )
+    rm.planet_active_plan_legal += int(
+        _extract_step_flag(
+            infos, "consumable_planet_active_plan_legal", env_idx, done=done
+        )
+    )
+
+    exact_planet_uses = _extract_step_count(
+        infos, "strategic_planet_uses", env_idx, done=done
+    )
+    planet_pack_auto_uses = _extract_step_count(
+        infos, "strategic_planet_pack_auto_uses", env_idx, done=done
+    )
+    if exact_planet_uses:
+        prefix = (
+            "planet_use"
+            if _extract_step_flag(infos, "planet_use_observed", env_idx, done=done)
+            else "planet_claim"
+        )
+        supported = _extract_step_flag(
+            infos, f"{prefix}_plan_supported", env_idx, done=done
+        )
+        alignment = "matched" if supported else "unmatched"
+        rm.planet_use_alignment_counts[alignment] += exact_planet_uses
+        hand_type = str(
+            _extract_step_info_value(
+                infos,
+                f"{prefix}_hand_type",
+                env_idx,
+                done=done,
+                default="",
+            )
+            or ""
+        )
+        if hand_type:
+            rm.planet_use_hand_counts[hand_type] += exact_planet_uses
+        if _extract_step_flag(
+            infos, f"{prefix}_active_plan_match", env_idx, done=done
+        ):
+            rm.planet_active_plan_uses += max(
+                exact_planet_uses - planet_pack_auto_uses,
+                0,
+            )
+
+    tarot_uses = _extract_step_count(infos, "strategic_tarot_uses", env_idx, done=done)
+    tarot_family = str(
+        _extract_step_info_value(
+            infos,
+            "strategic_tarot_family",
+            env_idx,
+            done=done,
+            default="",
+        )
+        or ""
+    )
+    if tarot_uses and tarot_family:
+        rm.tarot_use_family_counts[tarot_family] += tarot_uses
+        if tarot_family in {"deck_cut", "rank_fix", "suit_fix"}:
+            rm.tarot_fix_reliability_deltas.append(
+                float(
+                    _extract_step_info_value(
+                        infos,
+                        "strategic_tarot_fix_reliability_delta",
+                        env_idx,
+                        done=done,
+                        default=0.0,
+                    )
+                )
+            )
+        if tarot_family == "cash":
+            rm.attributable_cash_payouts.append(
+                float(
+                    _extract_step_info_value(
+                        infos,
+                        "strategic_attributable_cash_payout",
+                        env_idx,
+                        done=done,
+                        default=0.0,
+                    )
+                )
+            )
+
+    rm.gold_cards_created += _extract_step_count(
+        infos, "strategic_gold_created_tarot", env_idx, done=done
+    ) + _extract_step_count(
+        infos, "strategic_gold_created_midas", env_idx, done=done
+    )
+    rm.held_gold_payout_dollars += _extract_step_count(
+        infos, "strategic_held_gold_payout", env_idx, done=done
+    )
     claimed_seal = _extract_step_info_value(infos, "pack_claim_seal", env_idx, done=done, default="")
     if claimed_seal:
         rm.pack_claim_seal_counts[str(claimed_seal)] += 1
+    for seal in ("Blue", "Purple"):
+        rm.pack_offered_seal_counts[seal] += _extract_step_count(
+            infos, f"seal_{seal.lower()}_offered_count", env_idx, done=done
+        )
+    rm.blue_seals_activated += _extract_step_count(
+        infos, "strategic_blue_seals_activated", env_idx, done=done
+    )
+    rm.purple_seals_activated += _extract_step_count(
+        infos, "strategic_purple_seals_activated", env_idx, done=done
+    )
     if _extract_step_info_value(infos, "shop_leave_observed", env_idx, done=done, default=False):
         rm.shop_leave_flags.append(1.0)
         rm.shop_unsafe_leave_flags.append(
@@ -4478,6 +4811,7 @@ def train_ppo(
                 rm.blue_seal_planets_generated / steps_per_thousand,
                 rollout_step,
             )
+            _write_consumable_strategy_metrics(writer, rm, rollout_step)
             plan_total = sum(rm.hand_plan_type_counts.values())
             if plan_total:
                 for hand_name, count in rm.hand_plan_type_counts.items():

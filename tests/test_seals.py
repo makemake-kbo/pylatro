@@ -15,6 +15,7 @@ def test_purple_seal_generates_tarot_when_discarded() -> None:
 
     assert len(state.consumables) == 1
     assert data.centers[state.consumables[0].center_key]["set"] == "Tarot"
+    assert result.purple_seals_activated == 1
     assert result.generated_consumables == [state.consumables[0].center_key]
 
 
@@ -28,6 +29,7 @@ def test_debuffed_purple_seal_does_not_generate_tarot_when_discarded() -> None:
     result = discard_cards(state, [0])
 
     assert state.consumables == []
+    assert result.purple_seals_activated == 0
     assert result.generated_consumables == []
 
 
@@ -41,6 +43,7 @@ def test_purple_seal_reports_only_successful_generation() -> None:
 
     result = discard_cards(state, [0])
 
+    assert result.purple_seals_activated == 1
     assert result.generated_consumables == []
     assert len(state.consumables) == consumable_limit(state)
 
@@ -64,7 +67,22 @@ def test_blue_seal_generates_winning_hands_planet() -> None:
     planet = data.centers[state.consumables[0].center_key]
     assert planet["set"] == "Planet"
     assert planet["config"]["hand_type"] == "High Card"
+    assert result.blue_seals_activated == 1
     assert result.blue_planets_generated == [state.consumables[0].center_key]
+
+
+def test_blue_seal_activation_is_reported_when_inventory_blocks_generation() -> None:
+    controller = _winning_controller("full_blue_seal_effect")
+    state = controller.state
+    assert state is not None
+    state.hand_cards[0].seal = "Blue"
+    for _ in range(consumable_limit(state)):
+        add_consumable(state, "c_fool")
+
+    result = controller.play_selected([1])
+
+    assert result.blue_seals_activated == 1
+    assert result.blue_planets_generated == []
 
 
 def _winning_controller(seed: str) -> GameController:

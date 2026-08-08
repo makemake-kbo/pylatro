@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from pylatro import create_run_state, load_game_data, select_blind, start_blind
-from pylatro_agent.action import ActionType
-from pylatro_agent.constants import SubPhase
-from pylatro_agent.diagnostics import action_diagnostics, step_event_diagnostics
+from pylatro_agent.action import ActionType, encode_action
+from pylatro_agent.constants import NUM_ACTIONS, ActionRange, SubPhase
+from pylatro_agent.diagnostics import (
+    action_diagnostics,
+    consumable_funnel_state_diagnostics,
+    step_event_diagnostics,
+)
 from pylatro_agent.hand_candidates import HandCandidate
 from pylatro_agent.masks import compute_action_mask
 from pylatro_agent.subset_actions import subset_index
@@ -243,3 +248,64 @@ def test_seal_generation_events_are_exported() -> None:
 
     assert discard["purple_seal_tarot_generated_count"] == 1
     assert play["blue_seal_planet_generated_count"] == 1
+
+
+def test_pack_offer_funnel_distinguishes_full_slots_from_legal_auto_use() -> None:
+    prev = {"pack_card_details": ()}
+    curr = {
+        "pack_card_details": (
+            {"key": "c_mercury", "set": "Planet"},
+            {"key": "c_death", "set": "Tarot"},
+        ),
+        "consumable_details": (
+            {"key": "c_fool", "set": "Tarot"},
+            {"key": "c_hermit", "set": "Tarot"},
+        ),
+        "consumable_limit": 2,
+    }
+    mask = np.zeros(NUM_ACTIONS, dtype=np.bool_)
+    mask[int(ActionRange.PACK_CLAIM_START)] = True
+
+    diagnostics = step_event_diagnostics(
+        prev,
+        curr,
+        SimpleNamespace(action_type=ActionType.SHOP_BUY, index=0),
+        next_action_mask=mask,
+    )
+
+    assert diagnostics["consumable_planet_offered_count"] == 1
+    assert diagnostics["consumable_planet_claimable_count"] == 1
+    assert diagnostics["consumable_planet_inventory_full_blocked_count"] == 0
+    assert diagnostics["consumable_tarot_offered_count"] == 1
+    assert diagnostics["consumable_tarot_claimable_count"] == 0
+    assert diagnostics["consumable_tarot_inventory_full_blocked_count"] == 1
+
+
+def test_consumable_funnel_uses_exact_legal_action_blocks() -> None:
+    info = {
+        "sub_phase": SubPhase.CHOOSE_ACTION,
+        "consumable_details": (
+            {"key": "c_mercury", "set": "Planet", "hand_type": "Pair"},
+            {"key": "c_death", "set": "Tarot"},
+        ),
+    }
+    mask = np.zeros(NUM_ACTIONS, dtype=np.bool_)
+    mask[encode_action(ActionType.USE_CONSUMABLE_NO_TARGET, 0)] = True
+
+    diagnostics = consumable_funnel_state_diagnostics(info, mask)
+
+    assert diagnostics["consumable_planet_owned_count"] == 1
+    assert diagnostics["consumable_planet_legal_use_opportunity"] is True
+    assert diagnostics["consumable_tarot_owned_count"] == 1
+    assert diagnostics["consumable_tarot_legal_use_opportunity"] is False
+
+    pack_info = {
+        "sub_phase": SubPhase.BOOSTER_PACK,
+        "pack_card_details": ({"key": "c_mercury", "set": "Planet"},),
+    }
+    pack_mask = np.zeros(NUM_ACTIONS, dtype=np.bool_)
+    pack_mask[int(ActionRange.PACK_CLAIM_START)] = True
+    pack_diagnostics = consumable_funnel_state_diagnostics(pack_info, pack_mask)
+
+    assert pack_diagnostics["consumable_planet_eligible_offer_opportunity"] is True
+    assert pack_diagnostics["consumable_tarot_eligible_offer_opportunity"] is False

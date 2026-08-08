@@ -33,6 +33,7 @@ from pylatro_agent.training.ppo import (
     _validate_ppo_config,
     _write_action_behavior_metrics,
     _write_ante1_metrics,
+    _write_consumable_strategy_metrics,
     _write_risk_calibration_metrics,
     _write_rollout_episode_metrics,
     _write_terminal_loss_metrics,
@@ -1105,7 +1106,18 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
         "_planet_use_main_hand_match": np.array([True]),
         "planet_use_key": np.array(["c_pluto"], dtype=object),
         "_planet_use_key": np.array([True]),
+        "planet_use_hand_type": np.array(["High Card"], dtype=object),
+        "planet_use_plan_supported": np.array([True]),
+        "planet_use_active_plan_match": np.array([True]),
+        "strategic_planet_uses": np.array([1]),
+        "strategic_planet_acquired": np.array([1]),
+        "consumable_planet_owned_state": np.array([True]),
+        "consumable_planet_legal_use_opportunity": np.array([True]),
+        "consumable_planet_active_plan_owned": np.array([True]),
+        "consumable_planet_active_plan_legal": np.array([True]),
         "pack_claim_seal": np.array(["Blue"], dtype=object),
+        "seal_blue_offered_count": np.array([1]),
+        "strategic_blue_seals_activated": np.array([1]),
         "purple_seal_tarot_generated_count": np.array([1]),
         "blue_seal_planet_generated_count": np.array([1]),
     }
@@ -1132,9 +1144,63 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     assert rm.planet_use_played_hand == [1.0]
     assert rm.planet_use_main_hand_match == [0.0]
     assert rm.planet_use_key_counts["c_pluto"] == 1
+    assert rm.consumable_exact_use_counts["Planet"] == 1
+    assert rm.planet_use_alignment_counts["matched"] == 1
+    assert rm.planet_use_hand_counts["High Card"] == 1
+    assert rm.planet_active_plan_owned == 1
+    assert rm.planet_active_plan_legal == 1
+    assert rm.planet_active_plan_uses == 1
     assert rm.pack_claim_seal_counts["Blue"] == 1
+    assert rm.pack_offered_seal_counts["Blue"] == 1
+    assert rm.blue_seals_activated == 1
     assert rm.purple_seal_tarots_generated == 1
     assert rm.blue_seal_planets_generated == 1
+
+    auto_use_rm = _RolloutMetrics()
+    _record_action_diagnostics(
+        auto_use_rm,
+        {
+            "strategic_planet_uses": np.array([1]),
+            "strategic_planet_pack_auto_uses": np.array([1]),
+            "planet_claim_observed": np.array([True]),
+            "planet_claim_plan_supported": np.array([True]),
+            "planet_claim_active_plan_match": np.array([True]),
+        },
+        0,
+        done=False,
+    )
+    assert auto_use_rm.planet_use_alignment_counts["matched"] == 1
+    assert auto_use_rm.planet_active_plan_uses == 0
+
+
+def test_consumable_strategy_metrics_use_explicit_opportunity_denominators() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics()
+    rm.step_rewards = [0.0] * 1_000
+    rm.consumable_offered_counts["Planet"] = 4
+    rm.consumable_claimable_counts["Planet"] = 2
+    rm.consumable_eligible_offer_opportunities["Planet"] = 2
+    rm.consumable_buy_set_counts["Planet"] = 1
+    rm.consumable_acquired_counts["Planet"] = 1
+    rm.consumable_exact_use_counts["Planet"] = 1
+    rm.consumable_legal_use_opportunities["Planet"] = 2
+    rm.planet_use_alignment_counts["matched"] = 1
+    rm.blue_seals_activated = 1
+    writer = _Writer()
+
+    _write_consumable_strategy_metrics(writer, rm, 17)
+
+    assert writer.scalars["strategy/consumables/planet/acquired_per_1k_steps"] == (1.0, 17)
+    assert writer.scalars["strategy/consumables/planet/claim_rate_given_eligible_offer"] == (0.5, 17)
+    assert writer.scalars["strategy/consumables/planet/use_rate_given_owned_legal"] == (0.5, 17)
+    assert writer.scalars["strategy/planets/unmatched_use_rate"] == (0.0, 17)
+    assert writer.scalars["strategy/seals/activated/blue_per_1k_steps"] == (1.0, 17)
 
 
 def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_signals() -> None:

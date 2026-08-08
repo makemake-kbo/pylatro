@@ -57,6 +57,8 @@ SCALAR_PREFIXES = [
     'joker/marginal_ratio/', 'joker/modeled_fraction/',
     'terminal/',
     'strategy/hand_plan/', 'strategy/seals/claims/',
+    'strategy/consumables/', 'strategy/planets/', 'strategy/tarots/',
+    'strategy/gold/', 'strategy/seals/offered/', 'strategy/seals/activated/',
 ]
 
 run_path = sys.argv[1]

@@ -29,6 +29,7 @@ class DiscardResult:
     discarded: list[PlayingCard]
     destroyed: list[PlayingCard]
     drawn: list[PlayingCard]
+    purple_seals_activated: int = 0
     generated_consumables: list[str] = field(default_factory=list)
 
 
@@ -38,6 +39,7 @@ class PlayResult:
     played: list[PlayingCard]
     destroyed: list[PlayingCard]
     drawn: list[PlayingCard]
+    blue_seals_activated: int = 0
     blue_planets_generated: list[str] = field(default_factory=list)
     held_gold_count: int = 0
     held_gold_payout: int = 0
@@ -113,6 +115,7 @@ def discard_cards(
     discarded: list[PlayingCard] = []
     destroyed: list[PlayingCard] = []
     generated_consumables: list[str] = []
+    purple_seals_activated = 0
 
     face_tally = sum(1 for card in selected if _is_face(state, card))
     for index, card in enumerate(selected):
@@ -134,6 +137,7 @@ def discard_cards(
             state.discard_pile.append(card)
             discarded.append(card)
             if card.seal == "Purple" and not card.debuff:
+                purple_seals_activated += 1
                 generated = add_generated_consumable(state, "Tarot", append="purple_seal")
                 if generated is not None:
                     generated_consumables.append(generated.center_key)
@@ -151,6 +155,7 @@ def discard_cards(
         discarded=discarded,
         destroyed=destroyed,
         drawn=drawn,
+        purple_seals_activated=purple_seals_activated,
         generated_consumables=generated_consumables,
     )
 

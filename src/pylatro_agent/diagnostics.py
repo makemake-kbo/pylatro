@@ -8,6 +8,7 @@ counterfactual diagnostics are emitted by BalatroEnv for PPO metrics only.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from math import log
@@ -17,7 +18,7 @@ from pylatro.flow import play_cards
 from pylatro.instances import remove_joker
 
 from .action import ActionType
-from .constants import ActionRange, SubPhase
+from .constants import MAX_CONSUMABLE_SLOTS, ActionRange, SubPhase
 from .hand_candidates import generate_hand_candidates
 from .hand_plan import estimate_hand_plans
 from .masks import compute_action_mask
@@ -146,7 +147,7 @@ def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any
         (int(hand.get("played", 0) or 0) for hand in state.hands.values()),
         default=0,
     )
-    return {
+    diagnostics = {
         f"{prefix}_observed": True,
         f"{prefix}_key": center_key,
         f"{prefix}_hand_type": hand_type,
@@ -157,6 +158,96 @@ def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any
         f"{prefix}_main_hand": main_hand,
         f"{prefix}_main_hand_match": bool(hand_type and hand_type == main_hand),
     }
+    try:
+        plans = estimate_hand_plans(capture_build_features(state))
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        plans = None
+    plan = plans.for_hand(hand_type) if plans is not None else None
+    diagnostics[f"{prefix}_plan_supported"] = bool(
+        plan is not None and plan.draw_reliability >= 0.20
+    )
+    diagnostics[f"{prefix}_active_plan_match"] = bool(
+        plan is not None
+        and plans is not None
+        and plan.draw_reliability >= 0.20
+        and hand_type == plans.best.hand_type
+    )
+    return diagnostics
+
+
+def consumable_funnel_state_diagnostics(
+    info: Mapping[str, Any],
+    action_mask,
+) -> dict[str, Any]:
+    """Describe ownership and exact legal-use opportunities in one pre-state."""
+
+    details = tuple(info.get("consumable_details") or ())
+    choose_action = str(info.get("sub_phase", "")) == str(SubPhase.CHOOSE_ACTION)
+    blocks = None
+    if choose_action and action_mask is not None:
+        blocks = action_mask[
+            int(ActionRange.CONSUMABLE_FLAT_START) : int(ActionRange.CONSUMABLE_FLAT_END) + 1
+        ].reshape(MAX_CONSUMABLE_SLOTS, -1)
+
+    diagnostics: dict[str, Any] = {}
+    legal_slots: dict[str, set[int]] = {"Planet": set(), "Tarot": set()}
+    owned_slots: dict[str, set[int]] = {"Planet": set(), "Tarot": set()}
+    for slot, detail in enumerate(details[:MAX_CONSUMABLE_SLOTS]):
+        if not isinstance(detail, Mapping) or detail.get("set") not in owned_slots:
+            continue
+        consumable_set = str(detail["set"])
+        owned_slots[consumable_set].add(slot)
+        if blocks is not None and bool(blocks[slot].any()):
+            legal_slots[consumable_set].add(slot)
+
+    for consumable_set in ("Planet", "Tarot"):
+        prefix = f"consumable_{consumable_set.lower()}"
+        diagnostics[f"{prefix}_owned_count"] = len(owned_slots[consumable_set])
+        diagnostics[f"{prefix}_owned_state"] = bool(owned_slots[consumable_set])
+        diagnostics[f"{prefix}_legal_use_opportunity"] = bool(legal_slots[consumable_set])
+
+        offer_details = ()
+        action_start = None
+        sub_phase = str(info.get("sub_phase", ""))
+        if sub_phase == str(SubPhase.SHOP):
+            offer_details = tuple(info.get("shop_cards") or ())
+            action_start = int(ActionRange.SHOP_BUY_START)
+        elif sub_phase == str(SubPhase.BOOSTER_PACK):
+            offer_details = tuple(info.get("pack_card_details") or ())
+            action_start = int(ActionRange.PACK_CLAIM_START)
+        diagnostics[f"{prefix}_eligible_offer_opportunity"] = bool(
+            action_start is not None
+            and action_mask is not None
+            and any(
+                isinstance(detail, Mapping)
+                and detail.get("set") == consumable_set
+                and action_start + index < len(action_mask)
+                and bool(action_mask[action_start + index])
+                for index, detail in enumerate(offer_details)
+            )
+        )
+
+    plans = None
+    if owned_slots["Planet"]:
+        try:
+            plans = estimate_hand_plans(info)
+        except (KeyError, OverflowError, TypeError, ValueError):
+            plans = None
+    active_slots: set[int] = set()
+    if plans is not None:
+        for slot in owned_slots["Planet"]:
+            detail = details[slot]
+            hand_type = str(detail.get("hand_type") or "")
+            plan = plans.for_hand(hand_type)
+            if (
+                plan is not None
+                and plan.draw_reliability >= 0.20
+                and hand_type == plans.best.hand_type
+            ):
+                active_slots.add(slot)
+    diagnostics["consumable_planet_active_plan_owned"] = bool(active_slots)
+    diagnostics["consumable_planet_active_plan_legal"] = bool(active_slots & legal_slots["Planet"])
+    return diagnostics
 
 
 def _legal_play_candidates(state, play_candidates, action_mask=None):
@@ -422,10 +513,72 @@ def _shop_joker_ids(info: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
+def _record_consumable_offer_surface(
+    diagnostics: dict[str, Any],
+    curr_info: Mapping[str, Any],
+    *,
+    surface: str,
+    action_mask=None,
+) -> None:
+    """Record one newly visible shop/pack decision surface with bounded tags."""
+
+    details_key = "shop_cards" if surface == "shop" else "pack_card_details"
+    details = tuple(curr_info.get(details_key) or ())
+    inventory = tuple(curr_info.get("consumable_details") or ())
+    inventory_count = len(inventory)
+    capacity = max(int(curr_info.get("consumable_limit", 0) or 0), 0)
+    dollars = max(float(curr_info.get("dollars", 0) or 0), 0.0)
+
+    for consumable_set in ("Planet", "Tarot"):
+        offered_indices = [
+            index
+            for index, detail in enumerate(details)
+            if isinstance(detail, Mapping) and detail.get("set") == consumable_set
+        ]
+        if surface == "shop":
+            claimable_indices = [
+                index
+                for index in offered_indices
+                if float(details[index].get("cost", 0) or 0) <= dollars
+                and inventory_count < capacity
+            ]
+            full_blocked = sum(
+                float(details[index].get("cost", 0) or 0) <= dollars
+                and inventory_count >= capacity
+                for index in offered_indices
+            )
+        else:
+            claimable_indices = []
+            for index in offered_indices:
+                action_id = int(ActionRange.PACK_CLAIM_START) + index
+                if action_mask is not None and action_id < len(action_mask) and bool(action_mask[action_id]):
+                    claimable_indices.append(index)
+            full_blocked = sum(
+                inventory_count >= capacity and index not in claimable_indices
+                for index in offered_indices
+            )
+        prefix = f"consumable_{consumable_set.lower()}"
+        diagnostics[f"{prefix}_offered_count"] = len(offered_indices)
+        diagnostics[f"{prefix}_claimable_count"] = len(claimable_indices)
+        diagnostics[f"{prefix}_inventory_full_blocked_count"] = int(full_blocked)
+
+    if surface == "pack":
+        for seal in ("Blue", "Purple"):
+            offered_indices = [
+                index
+                for index, detail in enumerate(details)
+                if isinstance(detail, Mapping) and str(detail.get("seal") or "") == seal
+            ]
+            prefix = f"seal_{seal.lower()}"
+            diagnostics[f"{prefix}_offered_count"] = len(offered_indices)
+
+
 def step_event_diagnostics(
     prev_info: dict[str, Any],
     curr_info: dict[str, Any],
     decoded,
+    *,
+    next_action_mask=None,
 ) -> dict[str, Any]:
     """Describe bounded joker/shop events produced by one environment step."""
     diagnostics: dict[str, Any] = {}
@@ -456,6 +609,28 @@ def step_event_diagnostics(
             joker = joker_details[decoded.index]
             if isinstance(joker, dict):
                 diagnostics["shop_sold_joker_id"] = str(joker.get("key") or "")
+
+    shop_surface = bool(curr_info.get("in_shop")) and (
+        not bool(prev_info.get("in_shop"))
+        or decoded.action_type
+        in {
+            ActionType.SHOP_BUY,
+            ActionType.SHOP_REROLL,
+            ActionType.SHOP_SELL_CONSUMABLE,
+        }
+    )
+    pack_surface = bool(curr_info.get("pack_card_details")) and (
+        not bool(prev_info.get("pack_card_details")) or decoded.action_type == ActionType.PACK_CLAIM
+    )
+    if shop_surface:
+        _record_consumable_offer_surface(diagnostics, curr_info, surface="shop")
+    elif pack_surface:
+        _record_consumable_offer_surface(
+            diagnostics,
+            curr_info,
+            surface="pack",
+            action_mask=next_action_mask,
+        )
 
     before_consumables = Counter(
         (str(item.get("key") or ""), str(item.get("set") or ""))

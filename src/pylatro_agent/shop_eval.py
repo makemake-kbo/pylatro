@@ -379,6 +379,7 @@ def capture_build_features(state: RunState) -> dict[str, Any]:
         "joker_limit": joker_limit(state),
         "consumable_limit": consumable_limit(state),
         "tarot_usage_total": int(state.consumeable_usage_total.get("tarot", 0) or 0),
+        "planet_usage_total": int(state.consumeable_usage_total.get("planet", 0) or 0),
         "boss_debuff_suit": (
             "" if state.blind_disabled else str(boss_debuff.get("suit", "") or "")
         ),

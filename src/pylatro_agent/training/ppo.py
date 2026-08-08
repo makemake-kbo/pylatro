@@ -4744,15 +4744,41 @@ def train_ppo(
                 if regression_early_stop:
                     early_stop_requested = True
                     writer.flush()
+                    regression_stop_path = _save_checkpoint(
+                        model=model,
+                        optimizer=optimizer,
+                        save_path=save_path,
+                        update_count=update_count,
+                        total_steps=total_steps,
+                        planned_updates=planned_updates,
+                        entropy_coeff=entropy_coeff,
+                        entropy_signal_ema=entropy_signal_ema,
+                        lr=config.lr,
+                        log_alpha=log_alpha,
+                        alpha_optimizer=alpha_optimizer,
+                        return_rms=return_rms,
+                        agent_config=agent_config,
+                        config=config,
+                        transition_state=transition_state,
+                        filename="ppo_regression_stop.pt",
+                        extra={
+                            "best_eval_win_rate": best_eval_win_rate,
+                            "best_eval_update": best_eval_update,
+                            "schedule_total_steps": schedule_total_steps,
+                            "eval_regression_streak": eval_regression_streak,
+                        },
+                    )
+                    _mirror_latest_checkpoint(regression_stop_path, save_path)
                     logger.error(
                         "Stopping PPO after %d consecutive eval regressions: "
                         "win_rate=%.3f, best=%.3f at update %s, tolerance=%.3f. "
-                        "Best checkpoint remains ppo_best_eval.pt.",
+                        "Best checkpoint remains ppo_best_eval.pt; exact resume checkpoint=%s.",
                         eval_regression_streak,
                         win_rate,
                         best_eval_win_rate,
                         best_eval_update,
                         config.eval_regression_tolerance,
+                        regression_stop_path,
                     )
                 # eval runs `eval_games` full games in-process; release the
                 # forward-pass allocations it cached before the next rollout.

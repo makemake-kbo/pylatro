@@ -218,6 +218,8 @@ def _run_controlled_transition_loop(
     transition_state: _PPOTransitionState,
     update_count: int,
     additional_updates: int,
+    config_overrides: dict[str, object] | None = None,
+    eval_win_rates: list[float] | None = None,
 ) -> list[dict[str, object]]:
     """Drive train_ppo with real phase/checkpoint orchestration and tiny compute."""
 
@@ -240,6 +242,8 @@ def _run_controlled_transition_loop(
     config.win_probability_loss_coeff = 0.0
     config.save_dir = str(tmp_path)
     config.log_dir = str(tmp_path / "runs")
+    for name, value in (config_overrides or {}).items():
+        setattr(config, name, value)
     agent_config = AgentConfig(d_model=16, n_layers=1, n_heads=2, d_ff=32)
 
     def make_grouped_optimizer(parameters, lr: float) -> torch.optim.Adam:
@@ -254,7 +258,8 @@ def _run_controlled_transition_loop(
         )
 
     source_model = _LoopTestAgent(agent_config, None)
-    source_optimizer = make_grouped_optimizer(source_model.parameters(), config.critic_warmup_lr)
+    resume_lr = config.lr if transition_state.warmup_complete else config.critic_warmup_lr
+    source_optimizer = make_grouped_optimizer(source_model.parameters(), resume_lr)
     target_update = update_count + additional_updates
     resume_state = {
         "state_dict": source_model.state_dict(),
@@ -265,7 +270,7 @@ def _run_controlled_transition_loop(
         "entropy_coeff": config.entropy_coeff,
         "entropy_signal_ema": None,
         "lr": config.lr,
-        "ppo_active_lr": config.critic_warmup_lr,
+        "ppo_active_lr": resume_lr,
         "ppo_transition_state": transition_state.to_payload(config),
         "ppo_config_fields": {
             name: getattr(config, name)
@@ -317,7 +322,15 @@ def _run_controlled_transition_loop(
     monkeypatch.setattr(ppo_module, "_make_policy_optimizer", make_grouped_optimizer)
     monkeypatch.setattr(ppo_module.RolloutBuffer, "compute_returns_and_advantages", perfect_explained_variance)
     monkeypatch.setattr(ppo_module, "_run_ppo_update", observe_real_update)
-    monkeypatch.setattr(ppo_module, "evaluate_model", lambda *_args, **_kwargs: 0.0)
+    if eval_win_rates is None:
+        monkeypatch.setattr(ppo_module, "evaluate_model", lambda *_args, **_kwargs: 0.0)
+    else:
+        remaining_eval_win_rates = iter(eval_win_rates)
+        monkeypatch.setattr(
+            ppo_module,
+            "evaluate_model",
+            lambda *_args, **_kwargs: next(remaining_eval_win_rates),
+        )
     monkeypatch.setattr(tensorboard_module, "SummaryWriter", _LoopTestWriter)
     monkeypatch.setattr(ckpt, "load_ppo_resume_payload", lambda *_args, **_kwargs: resume_state)
 
@@ -625,6 +638,41 @@ def test_train_ppo_real_loop_switches_lr_before_first_actor_step_and_checkpoints
         [3e-6, 3e-6]
     )
     assert 0 in actor_checkpoint["optimizer_state_dict"]["state"]
+
+
+def test_eval_regression_stop_saves_exact_latest_resume_checkpoint(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _PPOTransitionState(
+        warmup_complete=True,
+        critic_warmup_updates_completed=20,
+        actor_ramp_successful_updates=25,
+    )
+
+    calls = _run_controlled_transition_loop(
+        monkeypatch,
+        tmp_path,
+        transition_state=state,
+        update_count=100,
+        additional_updates=3,
+        config_overrides={
+            "checkpoint_interval": 1000,
+            "eval_interval": 1,
+            "eval_regression_tolerance": 0.05,
+            "eval_regression_patience": 1,
+        },
+        eval_win_rates=[0.9, 0.7],
+    )
+
+    assert len(calls) == 2
+    stop_checkpoint = torch.load(tmp_path / "ppo_regression_stop.pt", map_location="cpu", weights_only=False)
+    latest_checkpoint = torch.load(tmp_path / "ppo_latest.pt", map_location="cpu", weights_only=False)
+    assert stop_checkpoint["update_count"] == 102
+    assert stop_checkpoint["best_eval_win_rate"] == pytest.approx(0.9)
+    assert stop_checkpoint["eval_regression_streak"] == 1
+    assert latest_checkpoint["update_count"] == 102
+    assert latest_checkpoint["state_dict"].keys() == stop_checkpoint["state_dict"].keys()
 
 
 def test_train_ppo_real_loop_fails_closed_at_cap_without_optimizer_update(

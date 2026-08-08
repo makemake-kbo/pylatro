@@ -196,6 +196,8 @@ last-shop survival calibration. Non-improving Joker reorderings receive an
 immediate penalty, and action-family fractions plus no-progress streaks make a
 shop loop directly visible. A short idle horizon, action-family entropy bonus,
 hard KL guard, and two-eval regression stop protect the pretrained policy. The
+regression stop writes and mirrors an exact full resume checkpoint before
+exiting, so a managed restart does not fall back to an older periodic save. The
 v14 trains the freshly reinitialized value head at `1e-5` while keeping the
 policy and shared trunk frozen. Actor unfreeze requires a full
 rolling EV window after the minimum critic warmup; an unready critic at the

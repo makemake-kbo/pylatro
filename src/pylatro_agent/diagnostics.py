@@ -17,11 +17,13 @@ from pylatro.flow import play_cards
 from pylatro.instances import remove_joker
 
 from .action import ActionType
+from .constants import ActionRange, SubPhase
 from .hand_candidates import generate_hand_candidates
 from .hand_plan import estimate_hand_plans
+from .masks import compute_action_mask
 from .risk import best_confident_joker_rescue
 from .shop_eval import BuildEval, capture_build_features, evaluate_build
-from .subset_actions import subset_indices
+from .subset_actions import subset_index, subset_indices
 
 MAX_DIAGNOSTIC_JOKERS = 12
 MAX_DIAGNOSTIC_EVENTS = 12
@@ -157,7 +159,34 @@ def _planet_diagnostics(state, center_key: str, *, prefix: str) -> dict[str, Any
     }
 
 
-def action_diagnostics(state, decoded) -> dict[str, Any]:
+def _legal_play_candidates(state, play_candidates, action_mask=None):
+    """Filter generated play candidates through the operative action grammar."""
+
+    if action_mask is None:
+        action_mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+    play_mask = action_mask[
+        int(ActionRange.PLAY_SUBSET_START) : int(ActionRange.PLAY_SUBSET_END) + 1
+    ]
+    legal = []
+    for candidate in play_candidates:
+        try:
+            candidate_index = subset_index(candidate.indices)
+        except KeyError:
+            # Hand slots outside the bounded action grammar are not playable.
+            continue
+        if play_mask[candidate_index]:
+            legal.append(candidate)
+    return tuple(legal)
+
+
+def action_diagnostics(
+    state,
+    decoded,
+    *,
+    action_mask=None,
+    round_score: float = 0.0,
+    blind_target: float = 0.0,
+) -> dict[str, Any]:
     """Return policy-quality diagnostics for the pre-action state.
 
     Mirrors the env's _action_diagnostics, when this returns fields,
@@ -185,8 +214,21 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
             diagnostics["hand_play_not_in_candidates"] = True
             return diagnostics
 
+        legal_play_candidates = _legal_play_candidates(
+            state,
+            play_candidates,
+            action_mask=action_mask,
+        )
+        if not legal_play_candidates:
+            diagnostics["hand_play_not_in_candidates"] = True
+            diagnostics["hand_play_no_legal_candidates"] = True
+            return diagnostics
+
         if int(state.round_resets.ante) == 1:
-            chip_best = max(play_candidates, key=lambda candidate: candidate.raw_score)
+            chip_best = max(
+                legal_play_candidates,
+                key=lambda candidate: candidate.raw_score,
+            )
             diagnostics.update(
                 {
                     "ante1_chip_best_score": float(chip_best.raw_score),
@@ -200,22 +242,66 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
         )
         if chosen is None:
             diagnostics["hand_play_not_in_candidates"] = True
-            diagnostics["hand_play_best_hand"] = play_candidates[0].hand_name
+            diagnostics["hand_play_best_hand"] = legal_play_candidates[0].hand_name
             return diagnostics
 
-        best = play_candidates[0]
+        best = legal_play_candidates[0]
+        chosen_is_legal = any(
+            candidate.indices == chosen.indices for candidate in legal_play_candidates
+        )
+        if not chosen_is_legal:
+            diagnostics.update(
+                {
+                    "hand_play_in_candidates": True,
+                    "hand_play_illegal_candidate": True,
+                    "hand_play_best_hand": best.hand_name,
+                }
+            )
+            return diagnostics
+
+        value_ratio = float(chosen.estimated_score / max(best.estimated_score, 1e-9))
         diagnostics.update({
             "hand_play_in_candidates": True,
             "hand_play_top1": chosen.indices == best.indices,
-            "hand_play_top3": any(c.indices == chosen.indices for c in play_candidates[:3]),
-            "hand_play_candidate_value_ratio": float(
-                chosen.estimated_score / max(best.estimated_score, 1e-9)
+            "hand_play_top3": any(
+                c.indices == chosen.indices for c in legal_play_candidates[:3]
             ),
+            "hand_play_candidate_value_ratio": value_ratio,
+            # Explicit aliases make the corrected denominator discoverable;
+            # legacy fields above retain their names for existing dashboards.
+            "hand_play_legal_top1": chosen.indices == best.indices,
+            "hand_play_legal_candidate_value_ratio": value_ratio,
             "hand_play_chosen_hand": chosen.hand_name,
             "hand_play_best_hand": best.hand_name,
         })
         if int(state.round_resets.ante) == 1:
-            diagnostics["ante1_chip_chosen_score"] = float(chosen.raw_score)
+            conservative_best = max(
+                legal_play_candidates,
+                key=lambda candidate: candidate.raw_score,
+            )
+            conservative_ratio = float(
+                chosen.raw_score / max(conservative_best.raw_score, 1e-9)
+            )
+            diagnostics.update(
+                {
+                    "ante1_play_observed": True,
+                    "ante1_chip_chosen_score": float(chosen.raw_score),
+                    "ante1_conservative_chosen_best_ratio": conservative_ratio,
+                }
+            )
+            if blind_target > 0.0:
+                remaining_target = max(float(blind_target) - float(round_score), 0.0)
+                proxy_available = conservative_best.raw_score >= remaining_target
+                proxy_chosen = proxy_available and chosen.raw_score >= remaining_target
+                diagnostics.update(
+                    {
+                        "ante1_one_hand_clear_proxy_observed": True,
+                        "ante1_one_hand_clear_proxy_available": proxy_available,
+                        "ante1_one_hand_clear_proxy_chosen": proxy_chosen,
+                        "ante1_one_hand_clear_proxy_missed": proxy_available
+                        and not proxy_chosen,
+                    }
+                )
         return diagnostics
 
     if decoded.action_type == ActionType.DISCARD_SUBSET:
@@ -231,7 +317,17 @@ def action_diagnostics(state, decoded) -> dict[str, Any]:
         if int(state.round_resets.ante) == 1:
             play_candidates, _discard_candidates = generate_hand_candidates(state)
             if play_candidates:
-                chip_best = max(play_candidates, key=lambda candidate: candidate.raw_score)
+                legal_play_candidates = _legal_play_candidates(
+                    state,
+                    play_candidates,
+                    action_mask=action_mask,
+                )
+                if not legal_play_candidates:
+                    return diagnostics
+                chip_best = max(
+                    legal_play_candidates,
+                    key=lambda candidate: candidate.raw_score,
+                )
                 diagnostics.update(
                     {
                         "ante1_chip_best_score": float(chip_best.raw_score),

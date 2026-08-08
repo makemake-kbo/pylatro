@@ -149,7 +149,13 @@ def test_fast_action_diagnostics_match_env_diagnostics() -> None:
 
     decoded = decode_action(int(play_idx))
     env_diag = env._action_diagnostics(decoded)
-    shared_diag = action_diagnostics(env._controller.state, decoded)
+    shared_diag = action_diagnostics(
+        env._controller.state,
+        decoded,
+        action_mask=env.action_masks(),
+        round_score=env._controller.round_score,
+        blind_target=env._controller.blind_target(),
+    )
     assert env_diag == shared_diag
     # Sanity check: the diagnostic actually contains hand_play_* fields.
     assert "hand_play_observed" in env_diag

@@ -46,6 +46,35 @@ def test_env_action_mask_has_valid_actions(game_data, vocab):
     assert mask.sum() > 0, "Must have at least one valid action"
 
 
+def test_env_emits_ante1_realized_play_and_clear_efficiency(game_data, vocab):
+    from pylatro_agent.action import ActionType, decode_action
+
+    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, enable_teacher=False)
+    env.reset()
+    env.step(int(ActionRange.BLIND_PLAY))
+    target = env._controller.blind_target()
+    env._controller.round_score = target - 1
+    hands_before = env.state.current_round.hands_left
+    play_action = next(
+        int(action)
+        for action in np.flatnonzero(env.action_masks())
+        if decode_action(int(action)).action_type == ActionType.PLAY_SUBSET
+    )
+
+    _, _, terminated, truncated, info = env.step(play_action)
+
+    assert not terminated and not truncated
+    assert info["ante1_play_observed"] is True
+    assert info["ante1_play_realized_score"] > 0.0
+    assert info["ante1_play_realized_to_remaining_target"] == info["ante1_play_realized_score"]
+    assert info["ante1_play_hand"]
+    assert info["ante1_blind_cleared"] is True
+    assert info["ante1_blind_clear_type"] == "small"
+    assert info["ante1_blind_clear_hands_used"] == 1
+    assert info["ante1_blind_clear_hands_unused"] == hands_before - 1
+    assert info["ante1_blind_clear_discards_used"] == 0
+
+
 def test_env_next_ante_suit_boss_is_visible_after_disabled_boss_cashout(game_data, vocab):
     env = BalatroEnv(seed=91, data=game_data, vocab=vocab, enable_teacher=False)
     env.reset()

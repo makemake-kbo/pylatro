@@ -213,6 +213,20 @@ without that state are rejected when either safety phase is enabled. Checkpoints
 also persist the configured actor/warmup LRs and active optimizer LR; strict
 resume rejects a phase/LR mismatch instead of silently stepping at the wrong rate.
 
+Ante-1 TensorBoard reporting uses rollout-local counts. In particular,
+`terminal/loss_ante/1_fraction` remains conditional on non-stall losses for
+backwards compatibility, while
+`terminal/ante1_death_per_nonstall_completed_episode` divides Ante-1 deaths by
+all completed non-stall episodes; the adjacent `*_count` tags expose both
+numerator and denominator and emit zero when no eligible episode completes.
+Under `ante1/`, blind clear/death counts are split by small/big/boss. Clear
+hands/discards means divide by `ante1/clear/count`; realized score progress and
+hand shares divide by their adjacent play/hand denominator counts. The
+`conservative_*` and `one_hand_clear_proxy/*` fields use the legal candidate
+generator's Joker-blind chip proxy, not exact counterfactual scoring. Existing
+chosen/best hand tags now rank only play actions admitted by the operative
+action mask.
+
 The production CUDA recipe is also available as
 `scripts/run_ppo_v14_safe_tarot_seal_strategy.sh`. By default it initializes a
 fresh corrected-v14 directory from the original best v12 update-280 policy and refuses any

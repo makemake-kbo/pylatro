@@ -32,6 +32,7 @@ from pylatro_agent.training.ppo import (
     _smoothed_entropy_signal,
     _validate_ppo_config,
     _write_action_behavior_metrics,
+    _write_ante1_metrics,
     _write_risk_calibration_metrics,
     _write_rollout_episode_metrics,
     _write_terminal_loss_metrics,
@@ -874,6 +875,8 @@ def test_terminal_loss_metrics_are_compact_and_numeric() -> None:
             self.scalars[tag] = (value, step)
 
     rm = _RolloutMetrics(
+        completed_episode_rewards=[1.0, 2.0, 3.0, 4.0],
+        completed_episode_stalls=[0.0, 0.0, 0.0, 1.0],
         terminal_loss_antes=[2, 3, 3],
         terminal_loss_score_ratios=[0.25, 0.5, 0.75],
         terminal_loss_blind_counts={"small": 1, "big": 0, "boss": 2},
@@ -886,6 +889,12 @@ def test_terminal_loss_metrics_are_compact_and_numeric() -> None:
     _write_terminal_loss_metrics(writer, rm, step=9, win_ante=4)
 
     assert writer.scalars["terminal/loss_count"] == (3.0, 9)
+    assert writer.scalars["terminal/completed_episode_count"] == (4.0, 9)
+    assert writer.scalars["terminal/stall_episode_count"] == (1.0, 9)
+    assert writer.scalars["terminal/nonstall_completed_episode_count"] == (3.0, 9)
+    assert writer.scalars["terminal/loss_ante/denominator_count"] == (3.0, 9)
+    assert writer.scalars["terminal/loss_ante/1_count"] == (0.0, 9)
+    assert writer.scalars["terminal/ante1_death_per_nonstall_completed_episode"] == (0.0, 9)
     assert writer.scalars["terminal/loss_ante_mean"] == pytest.approx((8 / 3, 9))
     assert writer.scalars["terminal/loss_ante/1_fraction"] == (0.0, 9)
     assert writer.scalars["terminal/loss_ante/2_fraction"] == pytest.approx((1 / 3, 9))
@@ -896,11 +905,13 @@ def test_terminal_loss_metrics_are_compact_and_numeric() -> None:
     assert writer.scalars["terminal/loss_score_ratio_mean"] == (0.5, 9)
     assert writer.scalars["terminal/loss_score_ratio_p50"] == (0.5, 9)
     assert writer.scalars["terminal/loss_last_play/top1_fraction"] == (0.5, 9)
+    assert writer.scalars["terminal/loss_last_play/legal_top1_fraction"] == (0.5, 9)
     assert writer.scalars["terminal/loss_last_play/value_ratio_mean"] == (0.75, 9)
+    assert writer.scalars["terminal/loss_last_play/legal_candidate_value_ratio_mean"] == (0.75, 9)
     assert writer.scalars["terminal/boss_loss/bl_hook_count"] == (2.0, 9)
 
 
-def test_terminal_loss_metrics_emit_only_zero_count_without_losses() -> None:
+def test_terminal_loss_metrics_emit_zero_safe_denominators_without_completions() -> None:
     class _Writer:
         def __init__(self) -> None:
             self.scalars: dict[str, tuple[float, int]] = {}
@@ -911,7 +922,103 @@ def test_terminal_loss_metrics_emit_only_zero_count_without_losses() -> None:
     writer = _Writer()
     _write_terminal_loss_metrics(writer, _RolloutMetrics(), step=3, win_ante=4)
 
-    assert writer.scalars == {"terminal/loss_count": (0.0, 3)}
+    assert writer.scalars["terminal/completed_episode_count"] == (0.0, 3)
+    assert writer.scalars["terminal/nonstall_completed_episode_count"] == (0.0, 3)
+    assert writer.scalars["terminal/loss_count"] == (0.0, 3)
+    assert writer.scalars["terminal/loss_ante/denominator_count"] == (0.0, 3)
+    assert writer.scalars["terminal/loss_ante/1_count"] == (0.0, 3)
+    assert writer.scalars["terminal/loss_ante/1_fraction"] == (0.0, 3)
+    assert writer.scalars["terminal/ante1_death_per_nonstall_completed_episode"] == (0.0, 3)
+
+
+def test_terminal_ante1_death_rate_excludes_stalls_from_denominator() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        completed_episode_rewards=[0.0, 0.0, 0.0, 0.0],
+        completed_episode_stalls=[0.0, 1.0, 0.0, 0.0],
+        terminal_loss_antes=[1, 2],
+    )
+    writer = _Writer()
+
+    _write_terminal_loss_metrics(writer, rm, step=5, win_ante=4)
+
+    assert writer.scalars["terminal/nonstall_completed_episode_count"] == (3.0, 5)
+    assert writer.scalars["terminal/loss_ante/1_fraction"] == (0.5, 5)
+    assert writer.scalars["terminal/ante1_death_per_nonstall_completed_episode"] == pytest.approx((1 / 3, 5))
+
+
+def test_terminal_ante1_death_rate_is_zero_with_completions_but_no_losses() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        completed_episode_rewards=[1.0, 1.0],
+        completed_episode_stalls=[0.0, 0.0],
+    )
+    writer = _Writer()
+
+    _write_terminal_loss_metrics(writer, rm, step=6, win_ante=4)
+
+    assert writer.scalars["terminal/nonstall_completed_episode_count"] == (2.0, 6)
+    assert writer.scalars["terminal/loss_count"] == (0.0, 6)
+    assert writer.scalars["terminal/loss_ante/1_fraction"] == (0.0, 6)
+    assert writer.scalars["terminal/ante1_death_per_nonstall_completed_episode"] == (0.0, 6)
+
+
+def test_ante1_metrics_are_scoped_and_publish_mean_denominators() -> None:
+    class _Writer:
+        def __init__(self) -> None:
+            self.scalars: dict[str, tuple[float, int]] = {}
+
+        def add_scalar(self, tag: str, value: float, step: int) -> None:
+            self.scalars[tag] = (value, step)
+
+    rm = _RolloutMetrics(
+        terminal_loss_antes=[1, 2],
+        ante1_death_blind_counts={"small": 1},
+        ante1_blind_clear_counts={"small": 2, "big": 1},
+        ante1_clear_hands_used=[1.0, 2.0, 3.0],
+        ante1_clear_hands_unused=[3.0, 2.0, 1.0],
+        ante1_clear_discards_used=[0.0, 1.0, 2.0],
+        ante1_play_count=4,
+        ante1_play_hand_counts={"Pair": 3, "High Card": 1},
+        ante1_play_realized_to_remaining_target=[0.5, 1.5],
+        ante1_conservative_chosen_best_ratios=[0.5, 1.0],
+        ante1_one_hand_clear_proxy_observed=4,
+        ante1_one_hand_clear_proxy_available=2,
+        ante1_one_hand_clear_proxy_chosen=1,
+        ante1_one_hand_clear_proxy_missed=1,
+    )
+    writer = _Writer()
+
+    _write_ante1_metrics(writer, rm, step=8)
+
+    assert writer.scalars["ante1/death/count"] == (1.0, 8)
+    assert writer.scalars["ante1/blind/small/death_count"] == (1.0, 8)
+    assert writer.scalars["ante1/blind/small/clear_count"] == (2.0, 8)
+    assert writer.scalars["ante1/clear/count"] == (3.0, 8)
+    assert writer.scalars["ante1/clear/hands_used_mean"] == (2.0, 8)
+    assert writer.scalars["ante1/clear/hands_unused_mean"] == (2.0, 8)
+    assert writer.scalars["ante1/clear/discards_used_mean"] == (1.0, 8)
+    assert writer.scalars["ante1/play/realized_progress_count"] == (2.0, 8)
+    assert writer.scalars["ante1/play/realized_score_to_remaining_target_mean"] == (1.0, 8)
+    assert writer.scalars["ante1/play/conservative_proxy_comparison_count"] == (2.0, 8)
+    assert writer.scalars["ante1/play/conservative_chosen_best_ratio_mean"] == (0.75, 8)
+    assert writer.scalars["ante1/one_hand_clear_proxy/opportunity_count"] == (4.0, 8)
+    assert writer.scalars["ante1/one_hand_clear_proxy/missed_count"] == (1.0, 8)
+    assert writer.scalars["ante1/hand_type/denominator_count"] == (4.0, 8)
+    assert writer.scalars["ante1/hand_type/pair_share"] == (0.75, 8)
+    assert writer.scalars["ante1/hand_type/high_card_share"] == (0.25, 8)
 
 
 def test_risk_calibration_metrics_report_false_safe_ante1_deaths() -> None:
@@ -963,6 +1070,19 @@ def test_next_blind_calibration_does_not_charge_a_later_same_ante_death() -> Non
 def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     rm = _RolloutMetrics()
     infos = {
+        "ante1_play_observed": np.array([True]),
+        "ante1_play_hand": np.array(["Pair"], dtype=object),
+        "ante1_play_realized_to_remaining_target": np.array([0.8]),
+        "ante1_conservative_chosen_best_ratio": np.array([0.7]),
+        "ante1_one_hand_clear_proxy_observed": np.array([True]),
+        "ante1_one_hand_clear_proxy_available": np.array([True]),
+        "ante1_one_hand_clear_proxy_chosen": np.array([False]),
+        "ante1_one_hand_clear_proxy_missed": np.array([True]),
+        "ante1_blind_cleared": np.array([True]),
+        "ante1_blind_clear_type": np.array(["small"], dtype=object),
+        "ante1_blind_clear_hands_used": np.array([2]),
+        "ante1_blind_clear_hands_unused": np.array([2]),
+        "ante1_blind_clear_discards_used": np.array([1]),
         "hand_play_observed": np.array([True]),
         "_hand_play_observed": np.array([True]),
         "hand_play_in_candidates": np.array([True]),
@@ -992,6 +1112,17 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
 
     _record_action_diagnostics(rm, infos, 0, done=False)
 
+    assert rm.ante1_play_count == 1
+    assert rm.ante1_play_hand_counts["Pair"] == 1
+    assert rm.ante1_play_realized_to_remaining_target == pytest.approx([0.8])
+    assert rm.ante1_conservative_chosen_best_ratios == pytest.approx([0.7])
+    assert rm.ante1_one_hand_clear_proxy_available == 1
+    assert rm.ante1_one_hand_clear_proxy_chosen == 0
+    assert rm.ante1_one_hand_clear_proxy_missed == 1
+    assert rm.ante1_blind_clear_counts["small"] == 1
+    assert rm.ante1_clear_hands_used == [2.0]
+    assert rm.ante1_clear_hands_unused == [2.0]
+    assert rm.ante1_clear_discards_used == [1.0]
     assert rm.hand_play_in_candidates == [1.0]
     assert rm.hand_play_top1 == [0.0]
     assert rm.hand_play_top3 == [1.0]

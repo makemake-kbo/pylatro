@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+from pylatro import create_run_state, load_game_data, select_blind, start_blind
 from pylatro_agent.action import ActionType
+from pylatro_agent.constants import SubPhase
 from pylatro_agent.diagnostics import action_diagnostics, step_event_diagnostics
+from pylatro_agent.hand_candidates import HandCandidate
+from pylatro_agent.masks import compute_action_mask
+from pylatro_agent.subset_actions import subset_index
 
 _CENTERS = {
     "c_pluto": {"set": "Planet", "config": {"hand_type": "High Card"}},
@@ -33,6 +40,105 @@ def _pack_state(pack_keys: list[str], hands: dict[str, dict]) -> SimpleNamespace
 def _claim(state: SimpleNamespace, index: int) -> dict:
     decoded = SimpleNamespace(action_type=ActionType.PACK_CLAIM, index=index)
     return action_diagnostics(state, decoded)
+
+
+@pytest.fixture(scope="module")
+def game_data():
+    return load_game_data()
+
+
+def _boss_choose_state(game_data, boss_key: str):
+    state = create_run_state("diagnostic_mask", 1, "b_red", data=game_data)
+    state.round_resets.blind_choices["Boss"] = boss_key
+    state.blind_on_deck = "Boss"
+    select_blind(state, "Boss")
+    start_blind(state, "Boss")
+    return state
+
+
+def test_play_best_filters_psychic_illegal_generated_top1(game_data, monkeypatch) -> None:
+    from pylatro_agent import diagnostics as diagnostics_module
+
+    state = _boss_choose_state(game_data, "bl_psychic")
+    illegal = HandCandidate(
+        kind="play",
+        indices=(0,),
+        hand_name="High Card",
+        estimated_score=200.0,
+        raw_score=200.0,
+    )
+    legal = HandCandidate(
+        kind="play",
+        indices=(0, 1, 2, 3, 4),
+        hand_name="Pair",
+        estimated_score=100.0,
+        raw_score=100.0,
+    )
+    monkeypatch.setattr(
+        diagnostics_module,
+        "generate_hand_candidates",
+        lambda _state: ((illegal, legal), ()),
+    )
+    mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+    decoded = SimpleNamespace(
+        action_type=ActionType.PLAY_SUBSET,
+        index=subset_index(legal.indices),
+    )
+
+    diagnostics = action_diagnostics(
+        state,
+        decoded,
+        action_mask=mask,
+        blind_target=300.0,
+    )
+
+    assert diagnostics["hand_play_top1"] is True
+    assert diagnostics["hand_play_legal_top1"] is True
+    assert diagnostics["hand_play_best_hand"] == "Pair"
+    assert diagnostics["hand_play_candidate_value_ratio"] == 1.0
+    assert diagnostics["ante1_conservative_chosen_best_ratio"] == 1.0
+
+    state.round_resets.ante = 2
+    diagnostics = action_diagnostics(state, decoded, action_mask=mask)
+    assert "ante1_play_observed" not in diagnostics
+    assert "ante1_conservative_chosen_best_ratio" not in diagnostics
+
+
+def test_play_best_filters_eye_repeated_hand_mask_path(game_data, monkeypatch) -> None:
+    from pylatro_agent import diagnostics as diagnostics_module
+
+    state = _boss_choose_state(game_data, "bl_eye")
+    aces = [card for card in state.deck_cards if card.rank == "A"][:2]
+    other = next(card for card in state.deck_cards if card.rank == "7")
+    state.hand_cards = [*aces, other]
+    state.eye_hands = {"High Card": True}
+    illegal = HandCandidate(
+        kind="play",
+        indices=(2,),
+        hand_name="High Card",
+        estimated_score=200.0,
+    )
+    legal = HandCandidate(
+        kind="play",
+        indices=(0, 1),
+        hand_name="Pair",
+        estimated_score=100.0,
+    )
+    monkeypatch.setattr(
+        diagnostics_module,
+        "generate_hand_candidates",
+        lambda _state: ((illegal, legal), ()),
+    )
+    mask = compute_action_mask(state, SubPhase.CHOOSE_ACTION)
+    decoded = SimpleNamespace(
+        action_type=ActionType.PLAY_SUBSET,
+        index=subset_index(legal.indices),
+    )
+
+    diagnostics = action_diagnostics(state, decoded, action_mask=mask)
+
+    assert diagnostics["hand_play_top1"] is True
+    assert diagnostics["hand_play_best_hand"] == "Pair"
 
 
 def test_pack_claim_best_available_false_when_main_hand_planet_present() -> None:

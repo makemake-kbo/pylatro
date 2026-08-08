@@ -51,6 +51,7 @@ SCALAR_TAGS = [
 ]
 
 SCALAR_PREFIXES = [
+    'ante1/',
     'actions/type/',
     'shop/offered_joker/', 'shop/bought_joker/', 'shop/sold_joker/',
     'joker/marginal_ratio/', 'joker/modeled_fraction/',

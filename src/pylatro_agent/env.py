@@ -321,6 +321,46 @@ class BalatroEnv(gymnasium.Env):
                     actual_score=actual_score,
                 )
             )
+        if (
+            decoded.action_type == ActionType.PLAY_SUBSET
+            and int(self._prev_info.get("ante", 0) or 0) == 1
+        ):
+            realized_score = float(action_result.score.total)
+            previous_score = float(self._prev_info.get("round_score", 0.0) or 0.0)
+            blind_target = float(self._prev_info.get("blind_target", 0.0) or 0.0)
+            remaining_target = max(blind_target - previous_score, 0.0)
+            action_diagnostics.update(
+                {
+                    "ante1_play_observed": True,
+                    "ante1_play_hand": str(action_result.score.hand_name),
+                    "ante1_play_realized_score": realized_score,
+                }
+            )
+            if remaining_target > 0.0:
+                action_diagnostics["ante1_play_realized_to_remaining_target"] = (
+                    realized_score / remaining_target
+                )
+            if blind_target > 0.0 and previous_score + realized_score >= blind_target:
+                action_diagnostics.update(
+                    {
+                        "ante1_blind_cleared": True,
+                        "ante1_blind_clear_type": str(
+                            self._prev_info.get("blind_on_deck", "") or ""
+                        ).lower(),
+                        "ante1_blind_clear_hands_used": int(
+                            state.current_round.hands_played
+                        ),
+                        # cash_out replenishes hands_left before step() returns,
+                        # so the exact pre-play remainder is the stable source.
+                        "ante1_blind_clear_hands_unused": max(
+                            int(self._prev_info.get("hands_left", 0) or 0) - 1,
+                            0,
+                        ),
+                        "ante1_blind_clear_discards_used": int(
+                            state.current_round.discards_used
+                        ),
+                    }
+                )
 
         # Detailed leave-one-out build diagnostics are expensive. When score-build
         # potential is active they also provide the cache consumed by the reward;
@@ -607,7 +647,13 @@ class BalatroEnv(gymnasium.Env):
         """
         if self._controller is None or self._controller.state is None:
             return {}
-        return _shared_action_diagnostics(self._controller.state, decoded)
+        return _shared_action_diagnostics(
+            self._controller.state,
+            decoded,
+            action_mask=self.action_masks(),
+            round_score=float(self._controller.round_score),
+            blind_target=float(self._controller.blind_target()),
+        )
 
     def _capture_state_info(self) -> dict:
         if self._controller is None or self._controller.state is None:

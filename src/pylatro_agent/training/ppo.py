@@ -34,6 +34,7 @@ from ..constants import (
     MAX_SEQ_LEN,
     META_START,
     NUM_ACTIONS,
+    POKER_HAND_NAMES,
     SCALAR_DIM,
     TOKEN_DIM,
 )
@@ -1131,9 +1132,22 @@ class _RolloutMetrics:
     terminal_loss_cash_ge_10: list[float] = field(default_factory=list)
     terminal_loss_joker_full_weak: list[float] = field(default_factory=list)
     terminal_loss_blind_counts: Counter = field(default_factory=Counter)
+    ante1_death_blind_counts: Counter = field(default_factory=Counter)
     terminal_boss_loss_counts: Counter = field(default_factory=Counter)
     terminal_loss_last_play_top1: list[float] = field(default_factory=list)
     terminal_loss_last_play_value_ratios: list[float] = field(default_factory=list)
+    ante1_blind_clear_counts: Counter = field(default_factory=Counter)
+    ante1_clear_hands_used: list[float] = field(default_factory=list)
+    ante1_clear_hands_unused: list[float] = field(default_factory=list)
+    ante1_clear_discards_used: list[float] = field(default_factory=list)
+    ante1_play_count: int = 0
+    ante1_play_hand_counts: Counter = field(default_factory=Counter)
+    ante1_play_realized_to_remaining_target: list[float] = field(default_factory=list)
+    ante1_conservative_chosen_best_ratios: list[float] = field(default_factory=list)
+    ante1_one_hand_clear_proxy_observed: int = 0
+    ante1_one_hand_clear_proxy_available: int = 0
+    ante1_one_hand_clear_proxy_chosen: int = 0
+    ante1_one_hand_clear_proxy_missed: int = 0
     reward_component_values: defaultdict = field(default_factory=lambda: defaultdict(list))
     pre_choose_action_flags: list[float] = field(default_factory=list)
     hand_play_observed: list[float] = field(default_factory=list)
@@ -1257,16 +1271,37 @@ def _write_action_behavior_metrics(writer, rm: _RolloutMetrics, step: int) -> No
 def _write_terminal_loss_metrics(writer, rm: _RolloutMetrics, step: int, *, win_ante: int) -> None:
     """Write a compact, numeric diagnosis of non-stall episode losses."""
     loss_count = len(rm.terminal_loss_antes)
-    writer.add_scalar("terminal/loss_count", float(loss_count), step)
-    if not loss_count:
-        return
+    completed_count = len(rm.completed_episode_rewards)
+    stall_count = int(sum(rm.completed_episode_stalls))
+    nonstall_completed_count = max(completed_count - stall_count, 0)
+    ante1_death_count = rm.terminal_loss_antes.count(1)
 
-    writer.add_scalar("terminal/loss_ante_mean", float(np.mean(rm.terminal_loss_antes)), step)
+    writer.add_scalar("terminal/completed_episode_count", float(completed_count), step)
+    writer.add_scalar("terminal/stall_episode_count", float(stall_count), step)
+    writer.add_scalar(
+        "terminal/nonstall_completed_episode_count",
+        float(nonstall_completed_count),
+        step,
+    )
+    writer.add_scalar("terminal/loss_count", float(loss_count), step)
+    writer.add_scalar("terminal/loss_ante/denominator_count", float(loss_count), step)
+    writer.add_scalar("terminal/loss_ante/1_count", float(ante1_death_count), step)
+    writer.add_scalar(
+        "terminal/ante1_death_per_nonstall_completed_episode",
+        (ante1_death_count / nonstall_completed_count)
+        if nonstall_completed_count
+        else 0.0,
+        step,
+    )
+
+    if loss_count:
+        writer.add_scalar("terminal/loss_ante_mean", float(np.mean(rm.terminal_loss_antes)), step)
     for ante in range(1, win_ante + 1):
-        fraction = rm.terminal_loss_antes.count(ante) / loss_count
+        fraction = rm.terminal_loss_antes.count(ante) / loss_count if loss_count else 0.0
         writer.add_scalar(f"terminal/loss_ante/{ante}_fraction", fraction, step)
+    writer.add_scalar("terminal/loss_blind/denominator_count", float(loss_count), step)
     for blind in ("small", "big", "boss"):
-        fraction = rm.terminal_loss_blind_counts[blind] / loss_count
+        fraction = rm.terminal_loss_blind_counts[blind] / loss_count if loss_count else 0.0
         writer.add_scalar(f"terminal/loss_blind/{blind}_fraction", fraction, step)
 
     if rm.terminal_loss_score_ratios:
@@ -1293,19 +1328,129 @@ def _write_terminal_loss_metrics(writer, rm: _RolloutMetrics, step: int, *, win_
             step,
         )
     if rm.terminal_loss_last_play_top1:
+        legal_top1_fraction = float(np.mean(rm.terminal_loss_last_play_top1))
         writer.add_scalar(
             "terminal/loss_last_play/top1_fraction",
-            float(np.mean(rm.terminal_loss_last_play_top1)),
+            legal_top1_fraction,
+            step,
+        )
+        writer.add_scalar(
+            "terminal/loss_last_play/legal_top1_fraction",
+            legal_top1_fraction,
             step,
         )
     if rm.terminal_loss_last_play_value_ratios:
+        legal_value_ratio = float(np.mean(rm.terminal_loss_last_play_value_ratios))
         writer.add_scalar(
             "terminal/loss_last_play/value_ratio_mean",
-            float(np.mean(rm.terminal_loss_last_play_value_ratios)),
+            legal_value_ratio,
+            step,
+        )
+        writer.add_scalar(
+            "terminal/loss_last_play/legal_candidate_value_ratio_mean",
+            legal_value_ratio,
             step,
         )
     for boss_key, count in rm.terminal_boss_loss_counts.items():
         writer.add_scalar(f"terminal/boss_loss/{boss_key}_count", float(count), step)
+
+
+def _write_ante1_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
+    """Write bounded Ante-1 scoring telemetry with explicit denominators."""
+
+    ante1_death_count = rm.terminal_loss_antes.count(1)
+    writer.add_scalar("ante1/death/count", float(ante1_death_count), step)
+    for blind in ("small", "big", "boss"):
+        writer.add_scalar(
+            f"ante1/blind/{blind}/death_count",
+            float(rm.ante1_death_blind_counts.get(blind, 0)),
+            step,
+        )
+        writer.add_scalar(
+            f"ante1/blind/{blind}/clear_count",
+            float(rm.ante1_blind_clear_counts.get(blind, 0)),
+            step,
+        )
+
+    clear_count = sum(rm.ante1_blind_clear_counts.values())
+    writer.add_scalar("ante1/clear/count", float(clear_count), step)
+    writer.add_scalar(
+        "ante1/clear/hands_used_mean",
+        float(np.mean(rm.ante1_clear_hands_used))
+        if rm.ante1_clear_hands_used
+        else 0.0,
+        step,
+    )
+    writer.add_scalar(
+        "ante1/clear/hands_unused_mean",
+        float(np.mean(rm.ante1_clear_hands_unused))
+        if rm.ante1_clear_hands_unused
+        else 0.0,
+        step,
+    )
+    writer.add_scalar(
+        "ante1/clear/discards_used_mean",
+        float(np.mean(rm.ante1_clear_discards_used))
+        if rm.ante1_clear_discards_used
+        else 0.0,
+        step,
+    )
+
+    writer.add_scalar("ante1/play/count", float(rm.ante1_play_count), step)
+    realized_count = len(rm.ante1_play_realized_to_remaining_target)
+    writer.add_scalar(
+        "ante1/play/realized_progress_count",
+        float(realized_count),
+        step,
+    )
+    writer.add_scalar(
+        "ante1/play/realized_score_to_remaining_target_mean",
+        float(np.mean(rm.ante1_play_realized_to_remaining_target))
+        if realized_count
+        else 0.0,
+        step,
+    )
+    comparison_count = len(rm.ante1_conservative_chosen_best_ratios)
+    writer.add_scalar(
+        "ante1/play/conservative_proxy_comparison_count",
+        float(comparison_count),
+        step,
+    )
+    writer.add_scalar(
+        "ante1/play/conservative_chosen_best_ratio_mean",
+        float(np.mean(rm.ante1_conservative_chosen_best_ratios))
+        if comparison_count
+        else 0.0,
+        step,
+    )
+
+    writer.add_scalar(
+        "ante1/one_hand_clear_proxy/opportunity_count",
+        float(rm.ante1_one_hand_clear_proxy_observed),
+        step,
+    )
+    for outcome, count in (
+        ("available", rm.ante1_one_hand_clear_proxy_available),
+        ("chosen", rm.ante1_one_hand_clear_proxy_chosen),
+        ("missed", rm.ante1_one_hand_clear_proxy_missed),
+    ):
+        writer.add_scalar(
+            f"ante1/one_hand_clear_proxy/{outcome}_count",
+            float(count),
+            step,
+        )
+
+    hand_total = sum(rm.ante1_play_hand_counts.values())
+    writer.add_scalar("ante1/hand_type/denominator_count", float(hand_total), step)
+    for hand_name in POKER_HAND_NAMES:
+        tag_name = hand_name.lower().replace(" ", "_")
+        writer.add_scalar(
+            f"ante1/hand_type/{tag_name}_share",
+            (rm.ante1_play_hand_counts.get(hand_name, 0) / hand_total)
+            if hand_total
+            else 0.0,
+            step,
+        )
 
 
 def _write_risk_calibration_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
@@ -2685,6 +2830,133 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
     """Aggregate optional env-provided decision-quality diagnostics."""
     if _extract_step_info_value(
         infos,
+        "ante1_play_observed",
+        env_idx,
+        done=done,
+        default=False,
+    ):
+        rm.ante1_play_count += 1
+        hand_name = _extract_step_info_value(
+            infos,
+            "ante1_play_hand",
+            env_idx,
+            done=done,
+            default="",
+        )
+        if hand_name:
+            rm.ante1_play_hand_counts[str(hand_name)] += 1
+        realized_progress = _extract_step_info_value(
+            infos,
+            "ante1_play_realized_to_remaining_target",
+            env_idx,
+            done=done,
+            default=None,
+        )
+        if realized_progress is not None:
+            rm.ante1_play_realized_to_remaining_target.append(float(realized_progress))
+        conservative_ratio = _extract_step_info_value(
+            infos,
+            "ante1_conservative_chosen_best_ratio",
+            env_idx,
+            done=done,
+            default=None,
+        )
+        if conservative_ratio is not None:
+            rm.ante1_conservative_chosen_best_ratios.append(float(conservative_ratio))
+        if _extract_step_info_value(
+            infos,
+            "ante1_one_hand_clear_proxy_observed",
+            env_idx,
+            done=done,
+            default=False,
+        ):
+            rm.ante1_one_hand_clear_proxy_observed += 1
+            rm.ante1_one_hand_clear_proxy_available += int(
+                bool(
+                    _extract_step_info_value(
+                        infos,
+                        "ante1_one_hand_clear_proxy_available",
+                        env_idx,
+                        done=done,
+                        default=False,
+                    )
+                )
+            )
+            rm.ante1_one_hand_clear_proxy_chosen += int(
+                bool(
+                    _extract_step_info_value(
+                        infos,
+                        "ante1_one_hand_clear_proxy_chosen",
+                        env_idx,
+                        done=done,
+                        default=False,
+                    )
+                )
+            )
+            rm.ante1_one_hand_clear_proxy_missed += int(
+                bool(
+                    _extract_step_info_value(
+                        infos,
+                        "ante1_one_hand_clear_proxy_missed",
+                        env_idx,
+                        done=done,
+                        default=False,
+                    )
+                )
+            )
+    if _extract_step_info_value(
+        infos,
+        "ante1_blind_cleared",
+        env_idx,
+        done=done,
+        default=False,
+    ):
+        blind = str(
+            _extract_step_info_value(
+                infos,
+                "ante1_blind_clear_type",
+                env_idx,
+                done=done,
+                default="",
+            )
+            or ""
+        ).lower()
+        rm.ante1_blind_clear_counts[blind] += 1
+        rm.ante1_clear_hands_used.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "ante1_blind_clear_hands_used",
+                    env_idx,
+                    done=done,
+                    default=0,
+                )
+            )
+        )
+        rm.ante1_clear_hands_unused.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "ante1_blind_clear_hands_unused",
+                    env_idx,
+                    done=done,
+                    default=0,
+                )
+            )
+        )
+        rm.ante1_clear_discards_used.append(
+            float(
+                _extract_step_info_value(
+                    infos,
+                    "ante1_blind_clear_discards_used",
+                    env_idx,
+                    done=done,
+                    default=0,
+                )
+            )
+        )
+    if _extract_step_info_value(
+        infos,
         "joker_replacement_sequence",
         env_idx,
         done=done,
@@ -2795,10 +3067,16 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
                 float(
                     _extract_step_info_value(
                         infos,
-                        "hand_play_top1",
+                        "hand_play_legal_top1",
                         env_idx,
                         done=done,
-                        default=False,
+                        default=_extract_step_info_value(
+                            infos,
+                            "hand_play_top1",
+                            env_idx,
+                            done=done,
+                            default=False,
+                        ),
                     )
                 )
             )
@@ -2815,10 +3093,16 @@ def _record_action_diagnostics(rm: _RolloutMetrics, infos: dict, env_idx: int, *
             )
             value_ratio = _extract_step_info_value(
                 infos,
-                "hand_play_candidate_value_ratio",
+                "hand_play_legal_candidate_value_ratio",
                 env_idx,
                 done=done,
-                default=None,
+                default=_extract_step_info_value(
+                    infos,
+                    "hand_play_candidate_value_ratio",
+                    env_idx,
+                    done=done,
+                    default=None,
+                ),
             )
             if value_ratio is not None:
                 rm.hand_play_value_ratios.append(float(value_ratio))
@@ -3890,6 +4174,8 @@ def train_ppo(
                             _extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or ""
                         ).lower()
                         rm.terminal_loss_blind_counts[end_blind] += 1
+                        if ep_ante == 1:
+                            rm.ante1_death_blind_counts[end_blind] += 1
                         if end_blind == "boss":
                             boss_key = str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
                             if boss_key:
@@ -3902,11 +4188,33 @@ def train_ppo(
                         )
                         if blind_target > 0.0:
                             rm.terminal_loss_score_ratios.append(round_score / blind_target)
-                        last_play_top1 = _extract_step_info_value(infos, "hand_play_top1", i, done=True, default=None)
+                        last_play_top1 = _extract_step_info_value(
+                            infos,
+                            "hand_play_legal_top1",
+                            i,
+                            done=True,
+                            default=_extract_step_info_value(
+                                infos,
+                                "hand_play_top1",
+                                i,
+                                done=True,
+                                default=None,
+                            ),
+                        )
                         if last_play_top1 is not None:
                             rm.terminal_loss_last_play_top1.append(float(bool(last_play_top1)))
                         last_play_value_ratio = _extract_step_info_value(
-                            infos, "hand_play_candidate_value_ratio", i, done=True, default=None
+                            infos,
+                            "hand_play_legal_candidate_value_ratio",
+                            i,
+                            done=True,
+                            default=_extract_step_info_value(
+                                infos,
+                                "hand_play_candidate_value_ratio",
+                                i,
+                                done=True,
+                                default=None,
+                            ),
                         )
                         if last_play_value_ratio is not None:
                             rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
@@ -4033,6 +4341,7 @@ def train_ppo(
             _write_rollout_episode_metrics(writer, rm, rollout_step)
             _write_action_behavior_metrics(writer, rm, rollout_step)
             _write_terminal_loss_metrics(writer, rm, rollout_step, win_ante=effective_win_ante)
+            _write_ante1_metrics(writer, rm, rollout_step)
             if rm.clear_probabilities:
                 writer.add_scalar(
                     "strategy/risk/clear_probability_mean",

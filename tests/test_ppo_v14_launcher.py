@@ -57,6 +57,40 @@ def _launcher_env(tmp_path: Path, source: Path, source_sha256: str) -> dict[str,
     }
 
 
+def _capture_launcher_args(tmp_path: Path, *, win_ante: str) -> list[str]:
+    source = tmp_path / "source.pt"
+    source_sha256 = _write_source(source)
+    capture_path = tmp_path / "argv.json"
+    python_wrapper = tmp_path / "python-wrapper"
+    python_wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "if sys.argv[1].endswith('validate_ppo_run_checkpoint.py'):\n"
+        "    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
+        "with open(os.environ['PYLATRO_CAPTURE_ARGS'], 'w') as stream:\n"
+        "    json.dump(sys.argv[1:], stream)\n"
+    )
+    python_wrapper.chmod(0o755)
+    env = _launcher_env(tmp_path, source, source_sha256)
+    env.update(
+        {
+            "PYLATRO_PYTHON": str(python_wrapper),
+            "PYLATRO_CAPTURE_ARGS": str(capture_path),
+            "PYLATRO_VALIDATE_ONLY": "0",
+            "PYLATRO_WIN_ANTE": win_ante,
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(LAUNCHER_PATH)],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(capture_path.read_text())
+
+
 def test_v14_launcher_and_validator_pin_distinct_phase_learning_rates() -> None:
     launcher = LAUNCHER_PATH.read_text()
     assert validator.V14_TRANSITION_CONFIG["lr"] == pytest.approx(3e-6)
@@ -70,6 +104,28 @@ def test_v14_launcher_and_validator_pin_distinct_phase_learning_rates() -> None:
     assert "--batch 352" not in launcher
     assert "criticlr1e5_micro160" in launcher
     assert 'recipe_id="pylatro-v14-safe-v4"' in launcher
+
+
+def test_launcher_accepts_explicit_win_ante_override(tmp_path: Path) -> None:
+    args = _capture_launcher_args(tmp_path, win_ante="5")
+    win_ante_index = args.index("--win-ante")
+    assert args[win_ante_index + 1] == "5"
+
+
+def test_launcher_rejects_invalid_win_ante_override(tmp_path: Path) -> None:
+    source = tmp_path / "source.pt"
+    source_sha256 = _write_source(source)
+    env = _launcher_env(tmp_path, source, source_sha256)
+    env["PYLATRO_WIN_ANTE"] = "five"
+    result = subprocess.run(
+        ["bash", str(LAUNCHER_PATH)],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "PYLATRO_WIN_ANTE must be an integer from 1 through 8" in result.stdout + result.stderr
 
 
 def test_source_validator_checks_hash_and_exact_metadata(tmp_path: Path) -> None:

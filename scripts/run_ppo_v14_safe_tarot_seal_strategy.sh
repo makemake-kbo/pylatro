@@ -16,6 +16,7 @@ log_dir="${workspace_root}/runs/${run_name}"
 source_checkpoint="${PYLATRO_SOURCE_CHECKPOINT:-${workspace_root}/checkpoints/ppo_strategy_v12_structural_fixes_bestv10/ppo_best_eval.pt}"
 source_sha256="${PYLATRO_SOURCE_SHA256:-5a81807c38213d0aadd5d984158652daafd259df0e416d70097698dd75cc0660}"
 source_sha256="${source_sha256,,}"
+win_ante="${PYLATRO_WIN_ANTE:-4}"
 recipe_id="pylatro-v14-safe-v4"
 run_name_lower="${run_name,,}"
 source_checkpoint_lower="${source_checkpoint,,}"
@@ -24,6 +25,11 @@ source_checkpoint_lower="${source_checkpoint,,}"
 # regressed v13 policy, even through an accidental environment override.
 if [[ "${run_name_lower}" == *v13* || "${source_checkpoint_lower}" == *v13* ]]; then
   echo "Refusing to start v14 from a v13 run/checkpoint." >&2
+  exit 2
+fi
+
+if [[ ! "${win_ante}" =~ ^[1-8]$ ]]; then
+  echo "PYLATRO_WIN_ANTE must be an integer from 1 through 8 (got ${win_ante@Q})." >&2
   exit 2
 fi
 
@@ -79,7 +85,7 @@ exec "${python_bin}" train.py ppo \
   --micro-batch-size 160 \
   --ppo-epochs 4 \
   --device cuda \
-  --win-ante 4 \
+  --win-ante "${win_ante}" \
   --hl-gauss \
   --gamma 0.997 \
   --lr 3e-6 \

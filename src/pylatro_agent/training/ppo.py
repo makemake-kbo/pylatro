@@ -46,13 +46,13 @@ from ..diagnostics import (
 from ..env import BalatroEnv
 from ..reward import DEFAULT_REWARD_CONFIG, REWARD_INFO_KEYS, RewardConfig
 from ..risk import uncalibrate_analytic_death_probability
-from ..survival import compute_ante_survival_targets
+from ..survival import compute_ante_survival_targets, hazard_outcome_probabilities
 from ..value_head import hl_gauss_projection
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
 from .sil import (
     EpisodeReplayBuffer,
-    SILEpisodeTracker,
+    EpisodeTracker,
     sil_percentile_gate,
 )
 
@@ -505,6 +505,15 @@ class PPOConfig:
     # architecture but PPO never trained it, leaving it stale/random after a
     # reward-driven value-head reset.
     win_probability_loss_coeff: float = 0.05
+    # Always-on completed-episode replay for terminal-critic supervision.
+    # Episode assembly is independent of SIL and crosses rollout boundaries.
+    # Replay updates touch only the conditional per-Ante survival and win
+    # output layers: the actor objective, shared trunk, and mixed-return value
+    # output are unchanged in this first plumbing ablation.
+    terminal_replay_batch_size: int = 128
+    terminal_replay_min_episodes: int = 8
+    terminal_replay_samples_per_episode: int = 8
+    terminal_replay_updates_per_ppo_update: int = 1
     # When True, the critic loss is included in the main backward pass so
     # value gradients flow through the shared trunk (the PPO default for
     # shared-backbone models). With the flag off, a 2-layer ValueHead must fit
@@ -592,10 +601,10 @@ class PPOConfig:
     # 0.0 disables. The buffer is in-memory only; it refills over the first
     # ~buffer/wins-per-update updates after a resume.
     sil_coeff: float = 0.0
-    sil_buffer_episodes: int = 256  # FIFO capacity. Wins + ordinary losses are
-    # both stored now (32 envs * rollout 256 / ~100-step episodes churn ~80
-    # completed episodes per update), so 256 keeps roughly three updates of
-    # history while staying bounded.
+    # Legacy name retained for CLI/checkpoint compatibility. This is now the
+    # shared completed-episode replay capacity used by the always-on terminal
+    # critic and by SIL when SIL is enabled. Wins + ordinary losses are stored.
+    sil_buffer_episodes: int = 256
     sil_batch_size: int = 64  # transitions sampled per PPO micro-batch
     # Skip SIL until the replay buffer holds this many completed episodes. Wins
     # and ordinary (non-stalled) losses both count: the buffer stores both now,
@@ -1967,6 +1976,14 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("survival_loss_coeff must be non-negative")
     if config.win_probability_loss_coeff < 0.0:
         raise ValueError("win_probability_loss_coeff must be non-negative")
+    if config.terminal_replay_batch_size <= 0:
+        raise ValueError("terminal_replay_batch_size must be positive")
+    if config.terminal_replay_min_episodes <= 0:
+        raise ValueError("terminal_replay_min_episodes must be positive")
+    if config.terminal_replay_samples_per_episode <= 0:
+        raise ValueError("terminal_replay_samples_per_episode must be positive")
+    if config.terminal_replay_updates_per_ppo_update < 0:
+        raise ValueError("terminal_replay_updates_per_ppo_update must be non-negative")
     if config.target_kl is not None and config.target_kl <= 0.0:
         raise ValueError("target_kl must be positive when set")
     if config.target_kl_p95 is not None and config.target_kl_p95 <= 0.0:
@@ -2585,6 +2602,251 @@ class _SILGroupResult:
 
     loss: torch.Tensor | None
     diagnostics: dict[str, float]
+
+
+@dataclass
+class _TerminalReplayResult:
+    """Metrics from head-only completed-episode terminal supervision."""
+
+    updates_applied: int
+    samples: int
+    diagnostics: dict[str, float]
+
+
+def _terminal_aux_parameters(
+    model: nn.Module,
+    *,
+    train_survival: bool,
+    train_win_probability: bool,
+) -> list[nn.Parameter]:
+    """Return only terminal output-layer parameters, excluding shared pooling."""
+
+    value_head = getattr(_unwrap_model(model), "value_head", None)
+    if value_head is None:
+        return []
+    prefixes: list[str] = []
+    if train_survival:
+        prefixes.append("ante_survival.")
+    if train_win_probability:
+        prefixes.append("win_prob.")
+    return [
+        parameter
+        for name, parameter in value_head.named_parameters()
+        if parameter.requires_grad and any(name.startswith(prefix) for prefix in prefixes)
+    ]
+
+
+def _run_terminal_replay_updates(
+    model: nn.Module,
+    optimizer: Adam,
+    episode_buffer: EpisodeReplayBuffer,
+    config: PPOConfig,
+    device: torch.device,
+) -> _TerminalReplayResult:
+    """Train terminal heads from complete recent episodes without actor credit.
+
+    The survival vector is treated as a sequence of conditional hazards and is
+    converted into a normalized categorical distribution over first death in
+    each remaining Ante plus reaching the target. Complete Monte Carlo outcomes
+    supervise that distribution. The separate win-probability output retains a
+    binary calibration loss for compatibility and cross-checking.
+
+    Only ``value_head.ante_survival`` and ``value_head.win_prob`` receive
+    gradients. In particular, replay cannot update the policy/shared trunk,
+    ``value_head.pool_proj``, or ``value_head.expected_score``. PPO's actor
+    advantage therefore remains the historical mixed-return GAE path in this
+    plumbing-only ablation.
+    """
+
+    diagnostics: dict[str, float] = {
+        "buffer_episodes": float(episode_buffer.num_episodes),
+        "buffer_transitions": float(episode_buffer.num_transitions),
+        "buffer_win_fraction": float(episode_buffer.win_fraction),
+        "label_coverage": float(episode_buffer.labeled_transition_fraction),
+        "cross_rollout_transition_fraction": float(
+            episode_buffer.cross_rollout_transition_fraction
+        ),
+        "episodes_added_total": float(episode_buffer.episodes_added_total),
+        "stalled_episodes_dropped_total": float(
+            episode_buffer.stalled_episodes_dropped_total
+        ),
+        "overflow_episodes_dropped_total": float(
+            episode_buffer.overflow_episodes_dropped_total
+        ),
+    }
+    no_update = _TerminalReplayResult(0, 0, diagnostics)
+    if config.terminal_replay_updates_per_ppo_update <= 0:
+        return no_update
+    if episode_buffer.num_episodes < config.terminal_replay_min_episodes:
+        return no_update
+
+    train_survival = config.survival_loss_coeff > 0.0
+    train_win_probability = config.win_probability_loss_coeff > 0.0
+    terminal_params = _terminal_aux_parameters(
+        model,
+        train_survival=train_survival,
+        train_win_probability=train_win_probability,
+    )
+    if not terminal_params or not (train_survival or train_win_probability):
+        return no_update
+
+    metric_sums: defaultdict[str, float] = defaultdict(float)
+    metric_counts: defaultdict[str, int] = defaultdict(int)
+
+    def record_metric(
+        key: str,
+        values: torch.Tensor,
+        mask: torch.Tensor | None = None,
+    ) -> None:
+        detached = values.detach()
+        if mask is not None:
+            detached = detached[mask]
+        if detached.numel() == 0:
+            return
+        metric_sums[key] += float(detached.float().sum().item())
+        metric_counts[key] += int(detached.numel())
+
+    updates_applied = 0
+    samples_seen = 0
+    model.eval()
+    for _ in range(config.terminal_replay_updates_per_ppo_update):
+        sampled = episode_buffer.sample(
+            config.terminal_replay_batch_size,
+            device,
+            samples_per_episode=config.terminal_replay_samples_per_episode,
+            include_teacher_forced=True,
+        )
+        if sampled is None:
+            break
+
+        optimizer.zero_grad()
+        _, value_dict = _grammar_distribution(
+            model,
+            sampled,
+            temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
+            detach_value_features=True,
+        )
+        hazards = value_dict.get("ante_survival")
+        if hazards is None:
+            optimizer.zero_grad()
+            break
+        outcome_probabilities = hazard_outcome_probabilities(
+            hazards,
+            sampled["current_antes"],
+            sampled["win_antes"],
+        )
+        outcome_targets = sampled["terminal_outcome_target"]
+        selected_outcome_probability = outcome_probabilities.gather(
+            1,
+            outcome_targets.unsqueeze(1),
+        ).squeeze(1)
+        outcome_nll_per_row = -selected_outcome_probability.clamp_min(1e-7).log()
+        outcome_loss = outcome_nll_per_row.mean()
+
+        win_targets = sampled["win_probability_target"]
+        win_probability = value_dict.get("win_prob")
+        if win_probability is not None:
+            win_bce_per_row = F.binary_cross_entropy(
+                win_probability,
+                win_targets,
+                reduction="none",
+            )
+            win_loss = win_bce_per_row.mean()
+        else:
+            win_bce_per_row = outcome_nll_per_row.new_zeros(outcome_nll_per_row.shape)
+            win_loss = outcome_loss.new_zeros(())
+
+        loss = (
+            config.survival_loss_coeff * outcome_loss
+            + config.win_probability_loss_coeff * win_loss
+        )
+        _accumulate_critic_grads_into_value_head(loss, terminal_params)
+        nn.utils.clip_grad_norm_(terminal_params, config.max_grad_norm)
+        optimizer.step()
+        optimizer.zero_grad()
+        updates_applied += 1
+        samples_seen += int(outcome_targets.numel())
+
+        with torch.no_grad():
+            one_hot_outcome = F.one_hot(
+                outcome_targets,
+                num_classes=outcome_probabilities.shape[1],
+            ).to(dtype=outcome_probabilities.dtype)
+            outcome_brier = (outcome_probabilities - one_hot_outcome).square().sum(dim=-1)
+            climatology = one_hot_outcome.mean(dim=0, keepdim=True)
+            climatology_brier = (climatology - one_hot_outcome).square().sum(dim=-1)
+            hazard_success_probability = outcome_probabilities[:, -1]
+            hazard_win_brier = (hazard_success_probability - win_targets).square()
+            record_metric("outcome_nll", outcome_nll_per_row)
+            record_metric("outcome_brier", outcome_brier)
+            record_metric("outcome_climatology_brier", climatology_brier)
+            record_metric("hazard_win_brier", hazard_win_brier)
+
+            if win_probability is not None:
+                win_brier = (win_probability - win_targets).square()
+                win_climatology = win_targets.mean()
+                win_climatology_brier = (win_climatology - win_targets).square()
+                record_metric("win_log_loss", win_bce_per_row)
+                record_metric("win_brier", win_brier)
+                record_metric("win_climatology_brier", win_climatology_brier)
+                record_metric(
+                    "win_hazard_consistency_mae",
+                    (win_probability - hazard_success_probability).abs(),
+                )
+
+            cross_rollout = sampled["cross_rollout_flags"] > 0.5
+            current_antes = sampled["current_antes"].long()
+            calibration_buckets = [
+                ("cross_rollout", cross_rollout),
+                ("same_rollout", ~cross_rollout),
+                *[
+                    (f"ante_{ante}", current_antes == int(ante))
+                    for ante in current_antes.unique().tolist()
+                ],
+            ]
+            for prefix, bucket_mask in calibration_buckets:
+                if not bucket_mask.any():
+                    continue
+                bucket_outcomes = one_hot_outcome[bucket_mask]
+                bucket_climatology = bucket_outcomes.mean(dim=0, keepdim=True)
+                bucket_climatology_brier = (
+                    bucket_climatology - bucket_outcomes
+                ).square().sum(dim=-1)
+                record_metric(f"{prefix}/outcome_nll", outcome_nll_per_row, bucket_mask)
+                record_metric(f"{prefix}/outcome_brier", outcome_brier, bucket_mask)
+                record_metric(
+                    f"{prefix}/outcome_climatology_brier",
+                    bucket_climatology_brier,
+                )
+                record_metric(f"{prefix}/hazard_win_brier", hazard_win_brier, bucket_mask)
+                if win_probability is not None:
+                    bucket_win_targets = win_targets[bucket_mask]
+                    bucket_win_climatology = bucket_win_targets.mean()
+                    record_metric(f"{prefix}/win_brier", win_brier, bucket_mask)
+                    record_metric(f"{prefix}/win_log_loss", win_bce_per_row, bucket_mask)
+                    record_metric(
+                        f"{prefix}/win_climatology_brier",
+                        (bucket_win_climatology - bucket_win_targets).square(),
+                    )
+
+    for key, total in metric_sums.items():
+        diagnostics[key] = total / metric_counts[key]
+    for metric_name, metric_value in list(diagnostics.items()):
+        for brier_name in ("outcome_brier", "win_brier"):
+            if not metric_name.endswith(brier_name):
+                continue
+            prefix = metric_name[: -len(brier_name)]
+            climatology_name = prefix + brier_name.replace(
+                "_brier",
+                "_climatology_brier",
+            )
+            climatology_value = diagnostics.get(climatology_name)
+            if climatology_value is not None and climatology_value > 0.0:
+                skill_name = prefix + brier_name.replace("_brier", "_brier_skill")
+                diagnostics[skill_name] = 1.0 - metric_value / climatology_value
+    diagnostics["updates_applied"] = float(updates_applied)
+    diagnostics["samples"] = float(samples_seen)
+    return _TerminalReplayResult(updates_applied, samples_seen, diagnostics)
 
 
 def _compute_sil_group_loss(
@@ -4252,17 +4514,13 @@ def train_ppo(
             resume_state.get("best_eval_win_rate"),
             resume_state.get("best_eval_update"),
         )
-    # Self-imitation: bounded replay of all completed non-stalled episodes
-    # (wins and ordinary losses) plus a per-env tracker that assembles them
-    # across rollout boundaries (episodes are ~100 steps and routinely outlive
-    # a single rollout). Only created when SIL is enabled (sil_coeff > 0); the
-    # runtime decayed coefficient (resolve_sil_coeff) may still hit zero near
-    # the end of training, in which case _run_ppo_update skips replay work.
-    sil_buffer: EpisodeReplayBuffer | None = None
-    sil_tracker: SILEpisodeTracker | None = None
-    if config.sil_coeff > 0.0:
-        sil_buffer = EpisodeReplayBuffer(config.sil_buffer_episodes, seed=config.seed)
-        sil_tracker = SILEpisodeTracker(config.num_envs, gamma=config.gamma)
+    # Always-on complete-episode assembly. The legacy SIL replay capacity is
+    # reused so terminal critic replay and optional SIL share one compact copy
+    # of recent observations. SIL still sees no buffer when its coefficient is
+    # disabled, preserving its exact actor-loss switch.
+    episode_buffer = EpisodeReplayBuffer(config.sil_buffer_episodes, seed=config.seed)
+    episode_tracker = EpisodeTracker(config.num_envs, gamma=config.gamma)
+    sil_buffer = episode_buffer if config.sil_coeff > 0.0 else None
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
     env_ep_reward = np.zeros(config.num_envs, dtype=np.float64)
     env_ep_length = np.zeros(config.num_envs, dtype=np.int64)
@@ -4342,6 +4600,43 @@ def train_ppo(
                     truncated,
                     infos,
                 )
+                terminal_rewards_np = np.asarray(
+                    [
+                        float(
+                            _extract_step_info_value(
+                                infos,
+                                "reward_terminal",
+                                env_idx,
+                                done=bool(dones[env_idx]),
+                                default=0.0,
+                            )
+                            or 0.0
+                        )
+                        for env_idx in range(config.num_envs)
+                    ],
+                    dtype=np.float32,
+                )
+                reported_rewards_np = np.asarray(
+                    [
+                        float(
+                            _extract_step_info_value(
+                                infos,
+                                "reward_total",
+                                env_idx,
+                                done=bool(dones[env_idx]),
+                                default=rewards[env_idx],
+                            )
+                        )
+                        for env_idx in range(config.num_envs)
+                    ],
+                    dtype=np.float32,
+                )
+                if not np.allclose(reported_rewards_np, rewards, rtol=0.0, atol=1e-6):
+                    max_error = float(np.max(np.abs(reported_rewards_np - rewards)))
+                    raise RuntimeError(
+                        "Environment reward_total does not reconstruct the rollout reward "
+                        f"(max absolute error {max_error:.3g})"
+                    )
                 bootstrap_values_np = np.zeros(config.num_envs, dtype=np.float32)
                 if np.any(ppo_truncated) and "final_obs" in infos:
                     final_obs_arr = infos["final_obs"]
@@ -4371,12 +4666,17 @@ def train_ppo(
                     truncated=ppo_truncated,
                     bootstrap_values=bootstrap_values_np,
                 )
-                if sil_tracker is not None:
-                    # Same pre-step obs the rollout buffer stores; the tracker
-                    # copies compactly so the shared _ObsBuffer arrays are safe
-                    # to overwrite next step. Rewards feed the return-to-go
-                    # used for SIL advantage gating.
-                    sil_tracker.record_step(obs_buf.as_numpy_dict(), actions_np, rewards)
+                # Same pre-step observations the rollout buffer stores. The
+                # tracker clones compact arrays before the shared _ObsBuffer is
+                # overwritten and persists episode prefixes across updates.
+                episode_tracker.record_step(
+                    obs_buf.as_numpy_dict(),
+                    actions_np,
+                    rewards,
+                    terminal_rewards=terminal_rewards_np,
+                    behavior_log_probs=log_probs_np,
+                    policy_version=update_count,
+                )
 
                 # Track per-env episode stats
                 env_ep_reward += rewards
@@ -4457,6 +4757,16 @@ def train_ppo(
                     ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
                     ep_stalled = bool(stalled_flags[i])
                     ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+                    ep_terminal_blind = str(
+                        _extract_step_info_value(
+                            infos,
+                            "blind_on_deck",
+                            i,
+                            done=True,
+                            default="",
+                        )
+                        or ""
+                    ).lower()
                     ep_tarot_uses = int(
                         _extract_step_info_value(
                             infos,
@@ -4503,9 +4813,7 @@ def train_ppo(
                         rm.terminal_loss_dollars.append(terminal_dollars)
                         rm.terminal_loss_cash_ge_10.append(float(terminal_dollars >= 10.0))
                         rm.terminal_loss_joker_full_weak.append(float(terminal_full_weak))
-                        end_blind = str(
-                            _extract_step_info_value(infos, "blind_on_deck", i, done=True, default="") or ""
-                        ).lower()
+                        end_blind = ep_terminal_blind
                         rm.terminal_loss_blind_counts[end_blind] += 1
                         if ep_ante == 1:
                             rm.ante1_death_blind_counts[end_blind] += 1
@@ -4594,18 +4902,19 @@ def train_ppo(
                         env_last_shop_raw_analytic_clear_pred[i] = np.nan
                         env_last_shop_ante[i] = 0
                         env_last_shop_blind_index[i] = 0
-                    if sil_tracker is not None and sil_buffer is not None:
-                        # Insert wins and ordinary completed losses; drop only
-                        # episodes the environment itself flags as
-                        # infrastructure/no-progress stalls (a legal
-                        # policy-caused loss is kept).
-                        sil_tracker.finish_episode(
-                            int(i),
-                            won=ep_won,
-                            stalled=ep_stalled,
-                            final_ante=ep_ante,
-                            buffer=sil_buffer,
-                        )
+                    # Insert wins and ordinary completed losses for terminal
+                    # critic replay. Infrastructure/no-progress stalls are
+                    # deliberately excluded because their final-Ante outcome
+                    # is censored rather than a policy loss.
+                    episode_tracker.finish_episode(
+                        int(i),
+                        won=ep_won,
+                        stalled=ep_stalled,
+                        final_ante=ep_ante,
+                        win_ante=effective_win_ante,
+                        terminal_blind=ep_terminal_blind,
+                        buffer=episode_buffer,
+                    )
                     # Fill ante-survival targets for every step in this episode.
                     # Truncated-by-stall episodes have no conclusive outcome on
                     # their final ante, so leave mask=0 and skip the fill.
@@ -5087,6 +5396,13 @@ def train_ppo(
                 in_critic_warmup=in_critic_warmup,
                 kl_rollback=update_stats.kl_rollback,
             )
+            terminal_replay_result = _run_terminal_replay_updates(
+                model,
+                optimizer,
+                episode_buffer,
+                config,
+                device,
+            )
 
             update_policy_losses = update_stats.policy_losses
             update_value_losses = update_stats.value_losses
@@ -5177,6 +5493,13 @@ def train_ppo(
                 _phase_learning_rate(config, in_critic_warmup=True),
                 update_count,
             )
+            for metric_name, metric_value in terminal_replay_result.diagnostics.items():
+                if math.isfinite(metric_value):
+                    writer.add_scalar(
+                        f"terminal_replay/{metric_name}",
+                        metric_value,
+                        update_count,
+                    )
             if sil_buffer is not None:
                 writer.add_scalar("sil/buffer_win_fraction", float(sil_buffer.win_fraction), update_count)
                 writer.add_scalar("sil/coeff", float(sil_coeff_now), update_count)

@@ -14,11 +14,13 @@ win. This module implements the redesign:
   by both PPO training and the offline critic probe, so the two cannot drift.
 
 The SIL loss is actor-only: it never adds a value term. ``sil_coeff == 0`` is
-the exact no-SIL switch and preserves the historical PPO path.
+the exact no-SIL actor-loss switch. The completed-episode storage is also used
+by PPO's independent terminal-critic replay and is therefore assembled even
+when SIL is disabled.
 
 Episodes routinely span rollout boundaries (episode length ~100 steps vs
 rollout_length per env), so transitions are accumulated per env in
-:class:`SILEpisodeTracker` across updates rather than sliced out of the
+:class:`EpisodeTracker` across updates rather than sliced out of the
 per-update :class:`~pylatro_agent.training.rollout_buffer.RolloutBuffer`.
 """
 
@@ -30,6 +32,10 @@ import numpy as np
 import torch
 
 from ..constants import NUM_ACTIONS
+from ..survival import (
+    DEFAULT_MAX_ANTES,
+    compute_conditional_ante_survival_targets,
+)
 
 _MASK_PACKED_BYTES = (NUM_ACTIONS + 7) // 8
 
@@ -176,6 +182,34 @@ class EpisodeReplayBuffer:
             return 0.0
         return self.num_wins / len(self._episodes)
 
+    @property
+    def labeled_transition_fraction(self) -> float:
+        """Fraction of stored transitions carrying a complete terminal label."""
+
+        if self._num_transitions <= 0:
+            return 0.0
+        labeled = sum(
+            int(np.asarray(ep.get("terminal_label_mask", ())).sum())
+            if "terminal_label_mask" in ep
+            else int(ep["actions"].shape[0])
+            for ep in self._episodes
+        )
+        return labeled / self._num_transitions
+
+    @property
+    def cross_rollout_transition_fraction(self) -> float:
+        """Fraction of stored rows that precede their episode's final rollout."""
+
+        if self._num_transitions <= 0:
+            return 0.0
+        cross_rollout = 0
+        for ep in self._episodes:
+            versions = np.asarray(ep.get("policy_versions", ()), dtype=np.int64)
+            if versions.size:
+                completion_version = int(ep.get("completion_policy_version", versions[-1]))
+                cross_rollout += int(np.count_nonzero(versions != completion_version))
+        return cross_rollout / self._num_transitions
+
     def add_episode(self, episode: dict) -> None:
         """Insert a completed episode dict (already validated as non-stalled).
 
@@ -288,6 +322,67 @@ class EpisodeReplayBuffer:
         episode_ids = np.asarray([float(ep["episode_id"]) for ep, t in picks], dtype=np.float32)
         outcomes = np.asarray([1.0 if ep["won"] else 0.0 for ep, t in picks], dtype=np.float32)
         episode_returns = np.asarray([float(ep["total_reward"]) for ep, t in picks], dtype=np.float32)
+        current_antes = np.asarray(
+            [
+                int(ep["current_antes"][t])
+                if "current_antes" in ep
+                else max(1, round(float(ep["scalars"][t, 2])))
+                for ep, t in picks
+            ],
+            dtype=np.int64,
+        )
+        win_antes = np.asarray(
+            [int(ep.get("win_ante", DEFAULT_MAX_ANTES)) for ep, _t in picks],
+            dtype=np.int64,
+        )
+        policy_versions = np.asarray(
+            [int(ep.get("policy_versions", np.zeros(ep["actions"].shape[0], dtype=np.int64))[t]) for ep, t in picks],
+            dtype=np.int64,
+        )
+        completion_versions = np.asarray(
+            [int(ep.get("completion_policy_version", policy_versions[row])) for row, (ep, _t) in enumerate(picks)],
+            dtype=np.int64,
+        )
+        cross_rollout = (policy_versions != completion_versions).astype(np.float32)
+        terminal_returns = np.asarray(
+            [
+                float(ep["terminal_returns"][t])
+                if "terminal_returns" in ep
+                else float(ep["returns"][t])
+                for ep, t in picks
+            ],
+            dtype=np.float32,
+        )
+        behavior_log_probs = np.asarray(
+            [
+                float(ep["behavior_log_probs"][t])
+                if "behavior_log_probs" in ep
+                else 0.0
+                for ep, t in picks
+            ],
+            dtype=np.float32,
+        )
+        survival_targets: list[np.ndarray] = []
+        survival_masks: list[np.ndarray] = []
+        outcome_targets: list[int] = []
+        for row, (ep, t) in enumerate(picks):
+            if "conditional_survival_targets" in ep:
+                survival_target = np.asarray(ep["conditional_survival_targets"][t], dtype=np.float32)
+                survival_mask = np.asarray(ep["conditional_survival_masks"][t], dtype=np.float32)
+            else:
+                survival_target, survival_mask = compute_conditional_ante_survival_targets(
+                    int(ep.get("final_ante", 1)),
+                    bool(ep["won"]),
+                    current_ante=int(current_antes[row]),
+                    win_ante=int(win_antes[row]),
+                )
+            survival_targets.append(survival_target)
+            survival_masks.append(survival_mask)
+            outcome_targets.append(
+                DEFAULT_MAX_ANTES
+                if bool(ep["won"])
+                else min(max(int(ep.get("final_ante", 1)), 1), DEFAULT_MAX_ANTES) - 1
+            )
         return {
             "tokens": torch.as_tensor(tokens.astype(np.int64), device=device),
             "token_types": torch.as_tensor(token_types.astype(np.int64), device=device),
@@ -317,17 +412,29 @@ class EpisodeReplayBuffer:
             "episode_ids": torch.as_tensor(episode_ids, device=device),
             "episode_outcomes": torch.as_tensor(outcomes, device=device),
             "episode_returns": torch.as_tensor(episode_returns, device=device),
+            "terminal_returns": torch.as_tensor(terminal_returns, device=device),
+            "behavior_log_probs": torch.as_tensor(behavior_log_probs, device=device),
+            "current_antes": torch.as_tensor(current_antes, device=device),
+            "win_antes": torch.as_tensor(win_antes, device=device),
+            "policy_versions": torch.as_tensor(policy_versions, device=device),
+            "completion_policy_versions": torch.as_tensor(completion_versions, device=device),
+            "cross_rollout_flags": torch.as_tensor(cross_rollout, device=device),
+            "terminal_outcome_target": torch.as_tensor(outcome_targets, dtype=torch.long, device=device),
+            "ante_survival_target": torch.as_tensor(np.stack(survival_targets), device=device),
+            "ante_survival_mask": torch.as_tensor(np.stack(survival_masks), device=device),
+            "win_probability_target": torch.as_tensor(outcomes, device=device),
+            "win_probability_mask": torch.ones(len(picks), dtype=torch.float32, device=device),
         }
 
 
-class SILEpisodeTracker:
+class EpisodeTracker:
     """Accumulate per-env transitions across rollouts; emit complete episodes.
 
     ``record_step`` must be called once per vector-env step with the pre-step
     observations (the same arrays handed to the rollout buffer), the executed
-    actions, the rewards, and the per-env teacher-forced mask. The executed
-    action may have been teacher-forced; that provenance is recorded so SIL can
-    exclude teacher-forced rows from the actor loss by default.
+    actions, rewards, terminal reward component, behavior log probability, and
+    policy/update version. Teacher-forced provenance is retained so optional
+    SIL can exclude those rows from its actor loss by default.
     ``finish_episode`` at each done.
 
     Episodes longer than ``max_episode_steps`` are dropped (overflow) rather
@@ -350,9 +457,17 @@ class SILEpisodeTracker:
         actions: np.ndarray,
         rewards: np.ndarray,
         teacher_forced: np.ndarray | None = None,
+        *,
+        terminal_rewards: np.ndarray | None = None,
+        behavior_log_probs: np.ndarray | None = None,
+        policy_version: int = 0,
     ) -> None:
         if teacher_forced is None:
             teacher_forced = np.zeros(self.num_envs, dtype=bool)
+        if terminal_rewards is None:
+            terminal_rewards = np.zeros(self.num_envs, dtype=np.float32)
+        if behavior_log_probs is None:
+            behavior_log_probs = np.zeros(self.num_envs, dtype=np.float32)
         from ..history import HistoryArrays
 
         empty_history = HistoryArrays.empty().as_dict()
@@ -386,6 +501,10 @@ class SILEpisodeTracker:
                     history_obs["history_event_mask"][i].astype(np.int8),
                     history_obs["history_round_mask"][i].astype(np.int8),
                     history_obs["history_omitted"][i].astype(np.float32),
+                    float(terminal_rewards[i]),
+                    float(behavior_log_probs[i]),
+                    int(policy_version),
+                    max(1, round(float(obs["scalars"][i, 2]))),
                 )
             )
 
@@ -396,6 +515,8 @@ class SILEpisodeTracker:
         won: bool,
         stalled: bool,
         final_ante: int = 0,
+        win_ante: int = DEFAULT_MAX_ANTES,
+        terminal_blind: str = "",
         buffer: EpisodeReplayBuffer,
     ) -> None:
         steps = self._steps[env_idx]
@@ -414,13 +535,28 @@ class SILEpisodeTracker:
         if not steps:
             return
         returns = np.empty(len(steps), dtype=np.float32)
+        terminal_returns = np.empty(len(steps), dtype=np.float32)
         acc = 0.0
+        terminal_acc = 0.0
         total_reward = 0.0
         for t in range(len(steps) - 1, -1, -1):
             r = steps[t][6]
             total_reward += r
             acc = r + self.gamma * acc
             returns[t] = acc
+            terminal_acc = steps[t][17] + self.gamma * terminal_acc
+            terminal_returns[t] = terminal_acc
+        conditional_targets: list[np.ndarray] = []
+        conditional_masks: list[np.ndarray] = []
+        for step_data in steps:
+            target, mask = compute_conditional_ante_survival_targets(
+                final_ante,
+                won,
+                current_ante=step_data[20],
+                win_ante=win_ante,
+            )
+            conditional_targets.append(target)
+            conditional_masks.append(mask)
         buffer.add_episode(
             {
                 "tokens": np.stack([s[0] for s in steps]),
@@ -440,9 +576,29 @@ class SILEpisodeTracker:
                 "history_event_mask": np.stack([s[14] for s in steps]),
                 "history_round_mask": np.stack([s[15] for s in steps]),
                 "history_omitted": np.stack([s[16] for s in steps]),
+                "terminal_returns": terminal_returns,
+                "behavior_log_probs": np.asarray([s[18] for s in steps], dtype=np.float32),
+                "policy_versions": np.asarray([s[19] for s in steps], dtype=np.int64),
+                "completion_policy_version": int(steps[-1][19]),
+                "current_antes": np.asarray([s[20] for s in steps], dtype=np.int8),
+                "conditional_survival_targets": np.stack(conditional_targets),
+                "conditional_survival_masks": np.stack(conditional_masks),
+                "terminal_label_mask": np.ones(len(steps), dtype=np.int8),
                 "won": bool(won),
                 "final_ante": int(final_ante),
+                "win_ante": int(win_ante),
+                "terminal_blind": str(terminal_blind),
+                "terminal_outcome_class": (
+                    DEFAULT_MAX_ANTES
+                    if won
+                    else min(max(int(final_ante), 1), DEFAULT_MAX_ANTES) - 1
+                ),
                 "episode_length": len(steps),
                 "total_reward": float(total_reward),
             }
         )
+
+
+# Backwards-compatible name for external callers and older tests. Episode
+# assembly is now always-on PPO infrastructure rather than SIL-owned state.
+SILEpisodeTracker = EpisodeTracker

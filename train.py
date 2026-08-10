@@ -569,6 +569,30 @@ def main():
         ),
     )
     parser.add_argument(
+        "--terminal-replay-batch-size",
+        type=int,
+        default=128,
+        help="Complete-episode transitions sampled per terminal-critic replay update.",
+    )
+    parser.add_argument(
+        "--terminal-replay-min-episodes",
+        type=int,
+        default=8,
+        help="Wait for this many completed non-stalled episodes before terminal replay.",
+    )
+    parser.add_argument(
+        "--terminal-replay-samples-per-episode",
+        type=int,
+        default=8,
+        help="Maximum sampled terminal-critic transitions contributed by one episode.",
+    )
+    parser.add_argument(
+        "--terminal-replay-updates-per-ppo-update",
+        type=int,
+        default=1,
+        help="Head-only terminal replay optimizer updates after each PPO update; 0 disables training but not assembly.",
+    )
+    parser.add_argument(
         "--sil-coeff",
         type=float,
         default=0.0,
@@ -587,9 +611,9 @@ def main():
         type=int,
         default=256,
         help=(
-            "Max completed episodes kept in the SIL replay buffer (FIFO). Wins "
-            "and ordinary losses are both stored now, so the default is larger "
-            "than the historical win-only 64 (default: 256)."
+            "Max completed episodes kept in the shared terminal/SIL replay "
+            "buffer (FIFO). The buffer is assembled even when SIL is disabled "
+            "so episode prefixes can receive terminal critic labels (default: 256)."
         ),
     )
     parser.add_argument(
@@ -853,6 +877,10 @@ def main():
                 ppo_recipe_id=args.ppo_recipe_id,
                 reinit_value_head=args.reinit_value_head,
                 reset_best_eval=args.reset_best_eval,
+                terminal_replay_batch_size=args.terminal_replay_batch_size,
+                terminal_replay_min_episodes=args.terminal_replay_min_episodes,
+                terminal_replay_samples_per_episode=args.terminal_replay_samples_per_episode,
+                terminal_replay_updates_per_ppo_update=args.terminal_replay_updates_per_ppo_update,
                 sil_coeff=args.sil_coeff,
                 sil_buffer_episodes=args.sil_buffer_episodes,
                 sil_batch_size=args.sil_batch_size,

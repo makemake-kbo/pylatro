@@ -47,6 +47,28 @@ def test_run_game_single_pass_marks_progress() -> None:
     assert any(progress_flags)
 
 
+def test_run_game_single_pass_leaves_safety_stalls_unlabeled(monkeypatch) -> None:
+    data = load_game_data()
+    vocab = build_vocab(data)
+    real_runner = fast_generate.FastRunner
+
+    def one_step_runner(seed, game_data, *, win_ante):
+        return real_runner(seed, game_data, max_steps=1, win_ante=win_ante)
+
+    monkeypatch.setattr(fast_generate, "FastRunner", one_step_runner)
+    records, _, won = fast_generate._run_game_single_pass(
+        0,
+        data,
+        Tokenizer(vocab=vocab),
+        HeuristicAgent(),
+        0.995,
+    )
+
+    assert records
+    assert not won
+    assert {record["terminal_outcome_mask"] for record in records} == {0.0}
+
+
 def test_fast_runner_joker_masks_match_main_masks() -> None:
     data = load_game_data()
     runner = FastRunner(42, data)

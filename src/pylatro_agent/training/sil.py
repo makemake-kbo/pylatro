@@ -32,10 +32,7 @@ import numpy as np
 import torch
 
 from ..constants import NUM_ACTIONS
-from ..survival import (
-    DEFAULT_MAX_ANTES,
-    compute_conditional_ante_survival_targets,
-)
+from ..survival import DEFAULT_MAX_ANTES, terminal_outcome_class
 
 _MASK_PACKED_BYTES = (NUM_ACTIONS + 7) // 8
 
@@ -362,26 +359,13 @@ class EpisodeReplayBuffer:
             ],
             dtype=np.float32,
         )
-        survival_targets: list[np.ndarray] = []
-        survival_masks: list[np.ndarray] = []
         outcome_targets: list[int] = []
-        for row, (ep, t) in enumerate(picks):
-            if "conditional_survival_targets" in ep:
-                survival_target = np.asarray(ep["conditional_survival_targets"][t], dtype=np.float32)
-                survival_mask = np.asarray(ep["conditional_survival_masks"][t], dtype=np.float32)
-            else:
-                survival_target, survival_mask = compute_conditional_ante_survival_targets(
-                    int(ep.get("final_ante", 1)),
-                    bool(ep["won"]),
-                    current_ante=int(current_antes[row]),
-                    win_ante=int(win_antes[row]),
-                )
-            survival_targets.append(survival_target)
-            survival_masks.append(survival_mask)
+        for ep, _t in picks:
             outcome_targets.append(
-                DEFAULT_MAX_ANTES
-                if bool(ep["won"])
-                else min(max(int(ep.get("final_ante", 1)), 1), DEFAULT_MAX_ANTES) - 1
+                terminal_outcome_class(
+                    won=bool(ep["won"]),
+                    final_ante=int(ep.get("final_ante", 1)),
+                )
             )
         return {
             "tokens": torch.as_tensor(tokens.astype(np.int64), device=device),
@@ -420,10 +404,7 @@ class EpisodeReplayBuffer:
             "completion_policy_versions": torch.as_tensor(completion_versions, device=device),
             "cross_rollout_flags": torch.as_tensor(cross_rollout, device=device),
             "terminal_outcome_target": torch.as_tensor(outcome_targets, dtype=torch.long, device=device),
-            "ante_survival_target": torch.as_tensor(np.stack(survival_targets), device=device),
-            "ante_survival_mask": torch.as_tensor(np.stack(survival_masks), device=device),
-            "win_probability_target": torch.as_tensor(outcomes, device=device),
-            "win_probability_mask": torch.ones(len(picks), dtype=torch.float32, device=device),
+            "terminal_outcome_mask": torch.ones(len(picks), dtype=torch.float32, device=device),
         }
 
 
@@ -546,17 +527,6 @@ class EpisodeTracker:
             returns[t] = acc
             terminal_acc = steps[t][17] + self.gamma * terminal_acc
             terminal_returns[t] = terminal_acc
-        conditional_targets: list[np.ndarray] = []
-        conditional_masks: list[np.ndarray] = []
-        for step_data in steps:
-            target, mask = compute_conditional_ante_survival_targets(
-                final_ante,
-                won,
-                current_ante=step_data[20],
-                win_ante=win_ante,
-            )
-            conditional_targets.append(target)
-            conditional_masks.append(mask)
         buffer.add_episode(
             {
                 "tokens": np.stack([s[0] for s in steps]),
@@ -581,17 +551,14 @@ class EpisodeTracker:
                 "policy_versions": np.asarray([s[19] for s in steps], dtype=np.int64),
                 "completion_policy_version": int(steps[-1][19]),
                 "current_antes": np.asarray([s[20] for s in steps], dtype=np.int8),
-                "conditional_survival_targets": np.stack(conditional_targets),
-                "conditional_survival_masks": np.stack(conditional_masks),
                 "terminal_label_mask": np.ones(len(steps), dtype=np.int8),
                 "won": bool(won),
                 "final_ante": int(final_ante),
                 "win_ante": int(win_ante),
                 "terminal_blind": str(terminal_blind),
-                "terminal_outcome_class": (
-                    DEFAULT_MAX_ANTES
-                    if won
-                    else min(max(int(final_ante), 1), DEFAULT_MAX_ANTES) - 1
+                "terminal_outcome_class": terminal_outcome_class(
+                    won=won,
+                    final_ante=final_ante,
                 ),
                 "episode_length": len(steps),
                 "total_reward": float(total_reward),

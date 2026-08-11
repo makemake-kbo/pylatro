@@ -386,11 +386,10 @@ def evaluate_history_ablation(
             group: {
                 "count": 0.0,
                 "return_abs_error": 0.0,
-                "win_brier": 0.0,
-                "win_bce": 0.0,
-                "survival_count": 0.0,
-                "survival_brier": 0.0,
-                "survival_bce": 0.0,
+                "outcome_count": 0.0,
+                "outcome_brier": 0.0,
+                "outcome_nll": 0.0,
+                "derived_win_brier": 0.0,
                 "policy_nll": 0.0,
             }
             for group in groups
@@ -443,16 +442,23 @@ def evaluate_history_ablation(
                         model_batch[key] = torch.zeros_like(batch[key])
                 distribution, values = _grammar_distribution(model, model_batch)
                 policy_nll = -distribution.log_prob(batch["actions"])
-                return_error = (values["expected_score"] - batch["value_target"]).abs()
-                win_probability = values["win_prob"].clamp(1e-7, 1.0 - 1e-7)
-                win_brier = (win_probability - batch["won"]).square()
-                win_bce = F.binary_cross_entropy(win_probability, batch["won"], reduction="none")
-                survival_probability = values["ante_survival"].clamp(1e-7, 1.0 - 1e-7)
-                survival_mask = batch["ante_survival_mask"]
-                survival_brier = (survival_probability - batch["ante_survival_target"]).square()
-                survival_bce = F.binary_cross_entropy(
-                    survival_probability, batch["ante_survival_target"], reduction="none"
-                )
+                return_error = (values["expected_return"] - batch["value_target"]).abs()
+                outcome_mask = batch["terminal_outcome_mask"]
+                outcome_target = batch["terminal_outcome_target"]
+                outcome_one_hot = F.one_hot(
+                    outcome_target,
+                    num_classes=values["outcome_probabilities"].shape[1],
+                ).to(dtype=values["outcome_probabilities"].dtype)
+                outcome_brier = (
+                    values["outcome_probabilities"] - outcome_one_hot
+                ).square().sum(dim=-1)
+                outcome_nll = -values["outcome_probabilities"].gather(
+                    1, outcome_target.unsqueeze(1)
+                ).squeeze(1).clamp_min(1e-7).log()
+                win_target = (
+                    outcome_target == values["outcome_probabilities"].shape[1] - 1
+                ).float()
+                derived_win_brier = (values["win_prob"] - win_target).square()
                 for group, mask in group_masks.items():
                     count = int(mask.sum().item())
                     if not count:
@@ -460,17 +466,18 @@ def evaluate_history_ablation(
                     target = totals[mode][group]
                     target["count"] += count
                     target["return_abs_error"] += float(return_error[mask].sum().item())
-                    target["win_brier"] += float(win_brier[mask].sum().item())
-                    target["win_bce"] += float(win_bce[mask].sum().item())
                     target["policy_nll"] += float(policy_nll[mask].sum().item())
-                    group_survival_mask = survival_mask[mask]
-                    survival_count = float(group_survival_mask.sum().item())
-                    target["survival_count"] += survival_count
-                    target["survival_brier"] += float(
-                        (survival_brier[mask] * group_survival_mask).sum().item()
+                    group_outcome_mask = outcome_mask[mask]
+                    outcome_count = float(group_outcome_mask.sum().item())
+                    target["outcome_count"] += outcome_count
+                    target["outcome_brier"] += float(
+                        (outcome_brier[mask] * group_outcome_mask).sum().item()
                     )
-                    target["survival_bce"] += float(
-                        (survival_bce[mask] * group_survival_mask).sum().item()
+                    target["outcome_nll"] += float(
+                        (outcome_nll[mask] * group_outcome_mask).sum().item()
+                    )
+                    target["derived_win_brier"] += float(
+                        (derived_win_brier[mask] * group_outcome_mask).sum().item()
                     )
 
     if was_training:
@@ -482,14 +489,13 @@ def evaluate_history_ablation(
             count = raw["count"]
             if not count:
                 continue
-            survival_count = max(raw["survival_count"], 1.0)
+            outcome_count = max(raw["outcome_count"], 1.0)
             report[mode][group] = {
                 "count": count,
                 "expected_return_mae": raw["return_abs_error"] / count,
-                "win_brier": raw["win_brier"] / count,
-                "win_bce": raw["win_bce"] / count,
-                "ante_survival_brier": raw["survival_brier"] / survival_count,
-                "ante_survival_bce": raw["survival_bce"] / survival_count,
+                "outcome_brier": raw["outcome_brier"] / outcome_count,
+                "outcome_nll": raw["outcome_nll"] / outcome_count,
+                "derived_win_brier": raw["derived_win_brier"] / outcome_count,
                 "policy_nll": raw["policy_nll"] / count,
             }
     reliance: dict[str, dict[str, float]] = {}

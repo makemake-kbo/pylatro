@@ -10,7 +10,13 @@ import torch.nn as nn
 
 from .action_grammar import ActionGrammarDistribution, ActionGrammarHead
 from .backbone import TransformerBackbone
-from .constants import HISTORY_ROUNDS, HISTORY_START, MAX_SEQ_LEN
+from .constants import (
+    CURRENT_ANTE_SCALAR_INDEX,
+    HISTORY_ROUNDS,
+    HISTORY_START,
+    MAX_SEQ_LEN,
+    WIN_ANTE_SCALAR_INDEX,
+)
 from .embeddings import ContentEmbeddingLayer
 from .value_head import ValueHead
 
@@ -31,15 +37,6 @@ class AgentConfig:
     # every legal hand play. Set per training stage: 0.5 during
     # supervised BC (dense cheap labels train the AR head), 0.1 during PPO.
     hand_ar_mixture_eps: float = 0.0
-    # HL-Gauss categorical value head. 0 uses scalar MSE; >0 switches
-    # expected_score to a histogram over this many return atoms spanning
-    # [value_v_min, value_v_max], trained with cross-entropy in PPO. The
-    # range must cover the reward config's achievable lambda-returns: with
-    # Terminals (+10 win, -6.5 worst death) plus bounded shaping,
-    # [-8, 12] leaves ~1.5 reward units of margin on each side.
-    value_bins: int = 0
-    value_v_min: float = -8.0
-    value_v_max: float = 12.0
     # Soft, analytic-risk prior applied only in shops. At high immediate-death
     # probability it makes leaving less likely and rerolling more likely, but
     # never changes the legal-action mask. Zero disables the fixed prior while
@@ -68,12 +65,7 @@ class BalatroAgent(nn.Module):
         )
 
         # Value head
-        self.value_head = ValueHead(
-            d,
-            value_bins=config.value_bins,
-            value_v_min=config.value_v_min,
-            value_v_max=config.value_v_max,
-        )
+        self.value_head = ValueHead(d)
 
     def forward(
         self,
@@ -93,7 +85,6 @@ class BalatroAgent(nn.Module):
         history_omitted: torch.Tensor | None = None,
         temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
-        detach_value_features: bool = False,
         return_raw_outputs: bool = False,
     ) -> tuple[ActionGrammarDistribution | dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         """Return the structured policy distribution and value predictions."""
@@ -116,13 +107,12 @@ class BalatroAgent(nn.Module):
         )
         x = self.backbone(x, padding_mask=(attention_mask == 0))
         grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
-        # Critic warmup and the protected actor ramp intentionally train the
-        # value head against fixed policy features. Detaching here keeps the
-        # critic out of the shared trunk by construction and lets PPO backward
-        # policy + critic in one traversal instead of retaining the full graph
-        # for a second value-head-only autograd pass.
-        value_features = x.detach() if detach_value_features else x
-        value_dict = self.value_head(value_features, attention_mask)
+        value_dict = self.value_head(
+            x,
+            attention_mask,
+            current_antes=scalars[:, CURRENT_ANTE_SCALAR_INDEX],
+            win_antes=scalars[:, WIN_ANTE_SCALAR_INDEX],
+        )
         if return_raw_outputs:
             # DataParallel can gather nested tensor containers, but not an
             # ActionGrammarDistribution (which also closes over the unsharded
@@ -172,7 +162,6 @@ class BalatroAgent(nn.Module):
         history_omitted: torch.Tensor | None = None,
         temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
-        detach_value_features: bool = False,
     ) -> tuple[ActionGrammarDistribution, dict[str, torch.Tensor]]:
         """Named entry point used by rollout and training code."""
         return self(
@@ -192,7 +181,6 @@ class BalatroAgent(nn.Module):
             history_omitted,
             temperature=temperature,
             hand_ar_mixture_eps=hand_ar_mixture_eps,
-            detach_value_features=detach_value_features,
         )
 
     def count_parameters(self) -> int:

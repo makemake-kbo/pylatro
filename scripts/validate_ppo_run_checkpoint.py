@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate pinned v14 source provenance and owned v14 resume checkpoints."""
+"""Validate pinned v8 source provenance and strict v8 resume checkpoints."""
 
 from __future__ import annotations
 
@@ -11,28 +11,15 @@ from pathlib import Path
 
 import torch
 
-SOURCE_METADATA = {
-    "tokenizer_version": 6,
-    "reward_model_version": 12,
-    "update_count": 280,
-    "best_eval_update": 280,
-}
-
-V14_TRANSITION_CONFIG = {
+TOKENIZER_VERSION = 8
+TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
+V8_PPO_CONFIG = {
     "mini_batch_size": 320,
     "micro_batch_size": 160,
     "lr": 3e-6,
     "clip_epsilon": 0.1,
-    "critic_warmup_updates": 20,
-    "critic_warmup_lr": 1e-5,
-    "critic_warmup_min_ev": 0.4,
-    "critic_warmup_ev_window": 5,
-    "critic_warmup_max_updates": 80,
-    "actor_ramp_updates": 25,
-    "actor_ramp_start_clip_fraction": 0.5,
 }
-
-MARKER_VERSION = 1
+MARKER_VERSION = 2
 
 
 def file_sha256(path: Path) -> str:
@@ -53,15 +40,19 @@ def _load_checkpoint(path: Path) -> dict:
 def validate_source(path: Path, expected_sha256: str) -> None:
     actual_sha256 = file_sha256(path)
     if actual_sha256 != expected_sha256.lower():
-        raise RuntimeError(f"source SHA256 mismatch: expected={expected_sha256.lower()}, actual={actual_sha256}")
+        raise RuntimeError(
+            f"source SHA256 mismatch: expected={expected_sha256.lower()}, actual={actual_sha256}"
+        )
     payload = _load_checkpoint(path)
-    mismatches = [
-        f"{key}: expected={expected!r}, actual={payload.get(key)!r}"
-        for key, expected in SOURCE_METADATA.items()
-        if payload.get(key) != expected
-    ]
-    if mismatches:
-        raise RuntimeError("source checkpoint metadata mismatch: " + "; ".join(mismatches))
+    if payload.get("tokenizer_version") != TOKENIZER_VERSION:
+        raise RuntimeError(
+            f"source tokenizer_version must be {TOKENIZER_VERSION}; fresh v8 supervised training is required"
+        )
+    if payload.get("tokenizer_semantics") != TOKENIZER_SEMANTICS:
+        raise RuntimeError(
+            f"source tokenizer_semantics must be {TOKENIZER_SEMANTICS!r}; "
+            "fresh v8 supervised training is required"
+        )
 
 
 def create_marker(path: Path, *, run_name: str, source_sha256: str, recipe_id: str) -> str:
@@ -72,7 +63,7 @@ def create_marker(path: Path, *, run_name: str, source_sha256: str, recipe_id: s
         "run_uuid": run_uuid,
         "source_sha256": source_sha256.lower(),
         "recipe_id": recipe_id,
-        "source_metadata": SOURCE_METADATA,
+        "tokenizer_version": TOKENIZER_VERSION,
     }
     with path.open("x", encoding="utf-8") as handle:
         json.dump(payload, handle, sort_keys=True)
@@ -88,7 +79,7 @@ def validate_marker(path: Path, *, run_name: str, source_sha256: str, recipe_id:
         "run_name": run_name,
         "source_sha256": source_sha256.lower(),
         "recipe_id": recipe_id,
-        "source_metadata": SOURCE_METADATA,
+        "tokenizer_version": TOKENIZER_VERSION,
     }
     mismatches = [
         f"{key}: expected={value!r}, actual={payload.get(key)!r}"
@@ -116,37 +107,25 @@ def validate_resume(
     payload = _load_checkpoint(path)
     if payload.get("checkpoint_format") != "ppo_full":
         raise RuntimeError("resume checkpoint is not a full PPO checkpoint")
-    if payload.get("tokenizer_version") != 7:
-        raise RuntimeError(f"resume tokenizer_version must be 7, got {payload.get('tokenizer_version')!r}")
-    transition = payload.get("ppo_transition_state")
-    if not isinstance(transition, dict) or transition.get("version") != 1:
-        raise RuntimeError("resume checkpoint lacks the v14 transition-state marker")
+    if payload.get("tokenizer_version") != TOKENIZER_VERSION:
+        raise RuntimeError(
+            f"resume tokenizer_version must be {TOKENIZER_VERSION}, got {payload.get('tokenizer_version')!r}"
+        )
+    if payload.get("tokenizer_semantics") != TOKENIZER_SEMANTICS:
+        raise RuntimeError(
+            f"resume tokenizer_semantics must be {TOKENIZER_SEMANTICS!r}, "
+            f"got {payload.get('tokenizer_semantics')!r}"
+        )
     saved_config = payload.get("ppo_config_fields") or {}
     mismatches = [
         f"{key}: expected={expected!r}, actual={saved_config.get(key)!r}"
-        for key, expected in V14_TRANSITION_CONFIG.items()
+        for key, expected in V8_PPO_CONFIG.items()
         if saved_config.get(key) != expected
     ]
     if mismatches:
-        raise RuntimeError("resume transition recipe mismatch: " + "; ".join(mismatches))
-    expected_active_lr = (
-        V14_TRANSITION_CONFIG["lr"]
-        if bool(transition.get("warmup_complete", False))
-        else V14_TRANSITION_CONFIG["critic_warmup_lr"]
-    )
-    if payload.get("ppo_active_lr") != expected_active_lr:
-        raise RuntimeError(
-            "resume active optimizer LR mismatch: "
-            f"expected={expected_active_lr!r}, actual={payload.get('ppo_active_lr')!r}"
-        )
-    optimizer_state = payload.get("optimizer_state_dict") or {}
-    param_groups = optimizer_state.get("param_groups") or []
-    group_lrs = [group.get("lr") for group in param_groups if isinstance(group, dict)]
-    if not group_lrs or len(group_lrs) != len(param_groups) or any(lr != expected_active_lr for lr in group_lrs):
-        raise RuntimeError(
-            "resume optimizer-group LR mismatch: "
-            f"expected={expected_active_lr!r}, actual={group_lrs!r}"
-        )
+        raise RuntimeError("resume recipe mismatch: " + "; ".join(mismatches))
+    if payload.get("ppo_transition_state") is not None:
+        raise RuntimeError("v8 resume checkpoint unexpectedly contains legacy transition state")
     expected_provenance = {
         "run_uuid": run_uuid,
         "source_sha256": source_sha256.lower(),
@@ -170,18 +149,13 @@ def main() -> None:
     resume_parser.add_argument("--run-uuid", required=True)
     resume_parser.add_argument("--source-sha256", required=True)
     resume_parser.add_argument("--recipe-id", required=True)
-    marker_create_parser = subparsers.add_parser("marker-create")
-    marker_create_parser.add_argument("path", type=Path)
-    marker_create_parser.add_argument("--run-name", required=True)
-    marker_create_parser.add_argument("--source-sha256", required=True)
-    marker_create_parser.add_argument("--recipe-id", required=True)
-    marker_validate_parser = subparsers.add_parser("marker-validate")
-    marker_validate_parser.add_argument("path", type=Path)
-    marker_validate_parser.add_argument("--run-name", required=True)
-    marker_validate_parser.add_argument("--source-sha256", required=True)
-    marker_validate_parser.add_argument("--recipe-id", required=True)
+    for mode in ("marker-create", "marker-validate"):
+        marker = subparsers.add_parser(mode)
+        marker.add_argument("path", type=Path)
+        marker.add_argument("--run-name", required=True)
+        marker.add_argument("--source-sha256", required=True)
+        marker.add_argument("--recipe-id", required=True)
     args = parser.parse_args()
-
     try:
         if args.mode == "source":
             validate_source(args.path, args.expected_sha256)

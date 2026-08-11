@@ -14,7 +14,6 @@ nothing but forward ``--model`` here.
 from __future__ import annotations
 
 import argparse
-import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -105,10 +104,8 @@ def _resolve_stake(raw: str) -> int:
 def _infer_agent_config(payload: dict, device):
     """Reconstruct an AgentConfig from a checkpoint.
 
-    Prefers the stored ``agent_config`` snapshot (full PPO / newer weights-only
-    checkpoints). For bare checkpoints it infers the architecture-defining
-    fields from the state-dict tensor shapes so any historical checkpoint still
-    loads: layer count, model width, FFN width, and the value-head kind.
+    Prefers the stored ``agent_config`` snapshot. For v8 checkpoints without
+    one, it infers the transformer dimensions from tensor shapes.
     """
     from .agent import AgentConfig
 
@@ -120,37 +117,20 @@ def _infer_agent_config(payload: dict, device):
     sd = payload["state_dict"]
     layer_idxs = [int(k.split(".")[2]) for k in sd if k.startswith("backbone.layers.") and k.split(".")[2].isdigit()]
     n_layers = (max(layer_idxs) + 1) if layer_idxs else AgentConfig.n_layers
-    d_model = int(sd["value_head.win_prob.weight"].shape[1])
+    d_model = int(sd["value_head.ante_survival.weight"].shape[1])
     d_ff = int(sd["backbone.layers.0.ffn.0.weight"].shape[0])
-    expected_out = int(sd["value_head.expected_score.weight"].shape[0])
-    value_bins = expected_out if expected_out > 1 else 0
-    return AgentConfig(d_model=d_model, n_layers=n_layers, d_ff=d_ff, value_bins=value_bins)
+    return AgentConfig(d_model=d_model, n_layers=n_layers, d_ff=d_ff)
 
 
 def _load_model(model_path: str, vocab, device):
     from .agent import BalatroAgent
     from .checkpoint import load_checkpoint_payload
 
-    payload = load_checkpoint_payload(model_path, device, allow_compatible_tokenizer=True)
+    payload = load_checkpoint_payload(model_path, device)
     config = _infer_agent_config(payload, device)
     model = BalatroAgent(config, vocab).to(device)
     state_dict = payload["state_dict"]
-    current = model.state_dict()
-    compatible = {
-        key: value
-        for key, value in state_dict.items()
-        if key in current and current[key].shape == value.shape
-    }
-    result = model.load_state_dict(compatible, strict=False)
-    # bin_centers/bin_edges are non-persistent config buffers, expected missing.
-    missing = [k for k in result.missing_keys if not k.startswith("value_head.bin_")]
-    if missing:
-        print(f"  [warn] {len(missing)} missing weight(s), e.g. {missing[:3]}", file=sys.stderr)
-    if result.unexpected_keys:
-        print(
-            f"  [warn] {len(result.unexpected_keys)} unexpected weight(s), e.g. {result.unexpected_keys[:3]}",
-            file=sys.stderr,
-        )
+    model.load_state_dict(state_dict, strict=True)
     model.eval()
     return model, config
 
@@ -387,7 +367,7 @@ def _play(args) -> int:
     model, config = _load_model(args.model, vocab, device)
     print(
         f"  d_model={config.d_model} n_layers={config.n_layers} "
-        f"value_bins={config.value_bins} params={model.count_parameters():,}"
+        f"critic=conditional_hazard_residual params={model.count_parameters():,}"
     )
     print(
         f"Deck: {_center_name(data, deck_key)} ({deck_key})  |  "

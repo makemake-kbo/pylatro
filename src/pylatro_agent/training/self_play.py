@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import torch
@@ -12,8 +12,9 @@ from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
+from ..reward import reward_checkpoint_metadata
 from ..vocab import build_vocab
-from .ppo import PPOConfig, evaluate_model, train_ppo
+from .ppo import PPOConfig, _effective_reward_config, evaluate_model, train_ppo
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,15 @@ def train_self_play(
         logger.info(f"Stake {current_stake} win rate: {win_rate:.3f}")
 
         checkpoint_path = save_path / f"self_play_stake{current_stake}.pt"
-        save_checkpoint(model, checkpoint_path)
+        save_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+        save_checkpoint(
+            save_model,
+            checkpoint_path,
+            extra={
+                "agent_config": asdict(save_model.config),
+                **reward_checkpoint_metadata(_effective_reward_config(ppo_config)),
+            },
+        )
         current_model_path = str(checkpoint_path)
 
         if win_rate >= config.win_rate_threshold:

@@ -71,6 +71,14 @@ def test_tokenize_shape(run_state, vocab):
     assert obs.attention_mask.shape == (MAX_SEQ_LEN,)
 
 
+def test_tokenize_records_configured_win_ante(run_state, vocab):
+    run_state.win_ante = 5
+    obs = Tokenizer(vocab=vocab).tokenize(run_state, SubPhase.CHOOSE_ACTION)
+
+    assert obs.scalars[2] == run_state.round_resets.ante
+    assert obs.scalars[22] == 5.0
+
+
 def test_strategy_probability_scalars_expose_live_card_opportunities(run_state, vocab):
     run_state.round_resets.blind_choices["Boss"] = "bl_hook"
     for card in run_state.deck_cards:

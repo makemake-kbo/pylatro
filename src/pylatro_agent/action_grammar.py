@@ -154,9 +154,8 @@ class ActionGrammarHead(nn.Module):
             nn.GELU(),
         )
         # Give the action heads a short, explicit path from danger to behavior.
-        # Zero initialization preserves every loaded policy logit exactly; PPO
-        # can then learn how danger, remaining hands, and remaining discards
-        # should change its action preferences after critic warmup.
+        # Start neutral; PPO can learn how danger, remaining hands, and
+        # remaining discards should change action preferences.
         self.danger_policy_proj = nn.Linear(3, state_dim, bias=False)
         nn.init.zeros_(self.danger_policy_proj.weight)
         self.danger_shop_leave_logit_penalty = max(float(danger_shop_leave_logit_penalty), 0.0)

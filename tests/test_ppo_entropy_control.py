@@ -4,17 +4,23 @@ import numpy as np
 import pytest
 import torch
 
-from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM, TOKENIZER_VERSION, ActionRange
+from pylatro_agent.constants import (
+    MAX_SEQ_LEN,
+    NUM_ACTIONS,
+    SCALAR_DIM,
+    TOKEN_DIM,
+    TOKENIZER_SEMANTICS,
+    TOKENIZER_VERSION,
+    ActionRange,
+)
 from pylatro_agent.reward import RewardConfig
-from pylatro_agent.survival import DEFAULT_MAX_ANTES
+from pylatro_agent.survival import DEFAULT_MAX_ANTES, hazard_outcome_probabilities
 from pylatro_agent.training.ppo import (
     PPOConfig,
-    _actor_transition,
-    _critic_warmup_decision,
     _effective_reward_config,
     _entropy_alpha_loss,
     _extract_step_info_value,
-    _load_checkpoint_compatible,
+    _load_v8_checkpoint_strict,
     _make_alpha_optimizer,
     _make_policy_optimizer,
     _mean_valid_action_type_count,
@@ -28,7 +34,6 @@ from pylatro_agent.training.ppo import (
     _RolloutMetrics,
     _run_ppo_update,
     _sample_weighted_mean,
-    _set_optimizer_lr_for_phase,
     _smoothed_entropy_signal,
     _validate_ppo_config,
     _write_action_behavior_metrics,
@@ -75,17 +80,22 @@ class _TinyPpoModel(torch.nn.Module):
         logits = self.logits.unsqueeze(0).expand(batch, -1)
         values = self.value.expand(batch)
         survival = torch.full((batch, DEFAULT_MAX_ANTES), 0.5, dtype=logits.dtype, device=logits.device)
+        outcomes = hazard_outcome_probabilities(survival, scalars[:, 2], scalars[:, 22])
         return _TinyPpoDistribution(logits, action_mask, temperature), {
+            "expected_return": values,
             "expected_score": values,
+            "return_residual": values,
+            "terminal_value": torch.zeros_like(values),
             "ante_survival": survival,
+            "outcome_probabilities": outcomes,
+            "win_prob": outcomes[:, -1],
         }
 
 
 class _TinyAuxPpoModel(_TinyPpoModel):
     def __init__(self) -> None:
         super().__init__()
-        self.survival_logits = torch.nn.Parameter(torch.linspace(-0.8, 0.6, DEFAULT_MAX_ANTES))
-        self.win_logit = torch.nn.Parameter(torch.tensor(-0.35))
+        self.hazard_logits = torch.nn.Parameter(torch.linspace(-0.8, 0.6, DEFAULT_MAX_ANTES))
 
     def action_distribution(
         self,
@@ -96,43 +106,20 @@ class _TinyAuxPpoModel(_TinyPpoModel):
         action_mask: torch.Tensor,
         temperature: float = 1.0,
     ) -> tuple[_TinyPpoDistribution, dict[str, torch.Tensor]]:
-        del tokens, token_types, scalars, attention_mask
+        del tokens, token_types, attention_mask
         batch = action_mask.shape[0]
         logits = self.logits.unsqueeze(0).expand(batch, -1)
+        values = self.value.expand(batch)
+        hazards = self.hazard_logits.sigmoid().unsqueeze(0).expand(batch, -1)
+        outcomes = hazard_outcome_probabilities(hazards, scalars[:, 2], scalars[:, 22])
         return _TinyPpoDistribution(logits, action_mask, temperature), {
-            "expected_score": self.value.expand(batch),
-            "ante_survival": self.survival_logits.sigmoid().unsqueeze(0).expand(batch, -1),
-            "win_prob": self.win_logit.sigmoid().expand(batch),
-        }
-
-
-class _TinyDecoupledCriticModel(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.trunk = torch.nn.Linear(1, 1, bias=False)
-        self.policy_head = torch.nn.Linear(1, NUM_ACTIONS, bias=False)
-        self.value_head = torch.nn.Linear(1, 1, bias=False)
-        torch.nn.init.constant_(self.trunk.weight, 1.0)
-        torch.nn.init.zeros_(self.policy_head.weight)
-        torch.nn.init.zeros_(self.value_head.weight)
-
-    def action_distribution(
-        self,
-        tokens: torch.Tensor,
-        token_types: torch.Tensor,
-        scalars: torch.Tensor,
-        attention_mask: torch.Tensor,
-        action_mask: torch.Tensor,
-        temperature: float = 1.0,
-    ) -> tuple[_TinyPpoDistribution, dict[str, torch.Tensor]]:
-        batch = action_mask.shape[0]
-        h = self.trunk(torch.ones(batch, 1, device=action_mask.device))
-        logits = self.policy_head(h)
-        values = self.value_head(h).squeeze(-1)
-        survival = torch.full((batch, DEFAULT_MAX_ANTES), 0.5, dtype=logits.dtype, device=logits.device)
-        return _TinyPpoDistribution(logits, action_mask, temperature), {
+            "expected_return": values,
             "expected_score": values,
-            "ante_survival": survival,
+            "return_residual": values,
+            "terminal_value": torch.zeros_like(values),
+            "ante_survival": hazards,
+            "outcome_probabilities": outcomes,
+            "win_prob": outcomes[:, -1],
         }
 
 
@@ -140,10 +127,13 @@ def _dummy_obs(num_envs: int) -> dict[str, np.ndarray]:
     action_mask = np.zeros((num_envs, NUM_ACTIONS), dtype=np.float32)
     action_mask[:, int(ActionRange.SHOP_REROLL)] = 1.0
     action_mask[:, int(ActionRange.SHOP_LEAVE)] = 1.0
+    scalars = np.zeros((num_envs, SCALAR_DIM), dtype=np.float32)
+    scalars[:, 2] = 1.0
+    scalars[:, 22] = 8.0
     return {
         "tokens": np.zeros((num_envs, MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
         "token_types": np.zeros((num_envs, MAX_SEQ_LEN), dtype=np.int8),
-        "scalars": np.zeros((num_envs, SCALAR_DIM), dtype=np.float32),
+        "scalars": scalars,
         "attention_mask": np.ones((num_envs, MAX_SEQ_LEN), dtype=np.int8),
         "action_mask": action_mask,
     }
@@ -208,21 +198,13 @@ def _make_auxiliary_mask_buffer(*, all_zero: bool = False) -> RolloutBuffer:
     if all_zero:
         return buffer
 
-    survival_mask = np.zeros((sample_count, DEFAULT_MAX_ANTES), dtype=np.float32)
-    survival_mask[:4] = 1.0
-    survival_mask[4:8, :2] = 1.0
-    survival_mask[8:, 0] = 1.0
-    survival_target = np.indices(survival_mask.shape).sum(axis=0) % 2
-    buffer.ante_survival_masks[:sample_count] = survival_mask
-    buffer.ante_survival_targets[:sample_count] = survival_target.astype(np.float32)
-
-    buffer.win_probability_masks[:sample_count] = np.array(
+    buffer.terminal_outcome_masks[:sample_count] = np.array(
         [1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1],
         dtype=np.float32,
     )
-    buffer.win_probability_targets[:sample_count] = np.array(
-        [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-        dtype=np.float32,
+    buffer.terminal_outcome_targets[:sample_count] = np.array(
+        [8, 0, 0, 2, 0, 0, 8, 4, 0, 0, 1],
+        dtype=np.int64,
     )
     return buffer
 
@@ -236,9 +218,7 @@ def _run_auxiliary_update(*, effective_batch_size: int, accum_steps: int, all_ze
         clip_epsilon=0.2,
         entropy_coeff=0.0,
         value_loss_coeff=0.0,
-        survival_loss_coeff=1.0,
-        win_probability_loss_coeff=1.0,
-        critic_updates_trunk=True,
+        outcome_loss_coeff=1.0,
         max_grad_norm=100.0,
         target_kl=None,
         rollout_temperature=1.0,
@@ -255,7 +235,6 @@ def _run_auxiliary_update(*, effective_batch_size: int, accum_steps: int, all_ze
         model=model,
         optimizer=optimizer,
         buffer=_make_auxiliary_mask_buffer(all_zero=all_zero),
-        return_rms=None,
         entropy_coeff=0.0,
         config=config,
         accum_steps=accum_steps,
@@ -277,31 +256,23 @@ def test_auxiliary_losses_match_unsplit_logical_batch_with_uneven_masks() -> Non
     split_model, split_stats, split_grads = _run_auxiliary_update(effective_batch_size=4, accum_steps=3)
 
     assert split_stats.sample_counts == [4, 4, 3]
-    assert len(set(split_stats.survival_valid_counts)) > 1
-    assert len(set(split_stats.win_probability_valid_counts)) > 1
+    assert len(set(split_stats.outcome_valid_counts)) > 1
     for name, full_parameter in full_model.named_parameters():
         torch.testing.assert_close(split_model.state_dict()[name], full_parameter, rtol=1e-6, atol=1e-7)
         torch.testing.assert_close(split_grads[name], full_grads[name], rtol=1e-6, atol=1e-7)
 
-    full_survival = _sample_weighted_mean(full_stats.survival_losses, full_stats.survival_valid_counts)
-    split_survival = _sample_weighted_mean(split_stats.survival_losses, split_stats.survival_valid_counts)
-    full_win = _sample_weighted_mean(full_stats.win_probability_losses, full_stats.win_probability_valid_counts)
-    split_win = _sample_weighted_mean(split_stats.win_probability_losses, split_stats.win_probability_valid_counts)
-    assert split_survival == pytest.approx(full_survival, rel=1e-7, abs=1e-8)
-    assert split_win == pytest.approx(full_win, rel=1e-7, abs=1e-8)
+    full_outcome = _sample_weighted_mean(full_stats.outcome_nlls, full_stats.outcome_valid_counts)
+    split_outcome = _sample_weighted_mean(split_stats.outcome_nlls, split_stats.outcome_valid_counts)
+    assert split_outcome == pytest.approx(full_outcome, rel=1e-7, abs=1e-8)
 
 
 def test_auxiliary_losses_are_safe_with_all_zero_valid_masks() -> None:
     model, stats, grads = _run_auxiliary_update(effective_batch_size=4, accum_steps=3, all_zero=True)
 
-    assert stats.survival_valid_counts == [0.0, 0.0, 0.0]
-    assert stats.win_probability_valid_counts == [0.0, 0.0, 0.0]
-    assert _sample_weighted_mean(stats.survival_losses, stats.survival_valid_counts) == 0.0
-    assert _sample_weighted_mean(stats.win_probability_losses, stats.win_probability_valid_counts) == 0.0
-    assert torch.equal(model.survival_logits, torch.linspace(-0.8, 0.6, DEFAULT_MAX_ANTES))
-    assert torch.equal(model.win_logit, torch.tensor(-0.35))
-    assert torch.count_nonzero(grads["survival_logits"]) == 0
-    assert torch.count_nonzero(grads["win_logit"]) == 0
+    assert stats.outcome_valid_counts == [0.0, 0.0, 0.0]
+    assert _sample_weighted_mean(stats.outcome_nlls, stats.outcome_valid_counts) == 0.0
+    assert torch.equal(model.hazard_logits, torch.linspace(-0.8, 0.6, DEFAULT_MAX_ANTES))
+    assert torch.count_nonzero(grads["hazard_logits"]) == 0
 
 
 def test_alpha_loss_gradient_decreases_alpha_when_entropy_above_target() -> None:
@@ -374,7 +345,7 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
         clip_epsilon=0.2,
         entropy_coeff=0.0,
         value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
+        outcome_loss_coeff=0.0,
         target_kl=None,
         rollout_temperature=1.0,
     )
@@ -388,7 +359,6 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
         model=model,
         optimizer=optimizer,
         buffer=buffer,
-        return_rms=None,
         entropy_coeff=0.0,
         config=config,
         accum_steps=1,
@@ -405,53 +375,13 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
     assert min(stats.approx_kls) >= 0.0
 
 
-def test_critic_updates_trunk_false_routes_value_loss_to_value_head_only() -> None:
-    action = int(ActionRange.SHOP_LEAVE)
-    model = _TinyDecoupledCriticModel()
-    # Nonzero value head so a critic backward through the trunk would leave a
-    # visible gradient — with the zero init the trunk assertion holds vacuously
-    # under any critic_updates_trunk setting.
-    torch.nn.init.constant_(model.value_head.weight, 0.5)
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0])
-    buffer.returns[:2] = 10.0
-    config = PPOConfig(
-        ppo_epochs=1,
-        mini_batch_size=2,
-        clip_epsilon=0.2,
-        entropy_coeff=0.0,
-        value_loss_coeff=1.0,
-        survival_loss_coeff=0.0,
-        target_kl=None,
-        rollout_temperature=1.0,
-        critic_updates_trunk=False,
-    )
-
-    trunk_before = model.trunk.weight.detach().clone()
-    value_before = model.value_head.weight.detach().clone()
-    _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-    )
-
-    assert torch.equal(model.trunk.weight.detach(), trunk_before)
-    assert not torch.allclose(model.value_head.weight.detach(), value_before)
-
-
-def test_load_checkpoint_compatible_rejects_architecture_mismatch(tmp_path) -> None:
+def test_strict_v8_checkpoint_load_rejects_architecture_mismatch(tmp_path) -> None:
     model = torch.nn.Linear(2, 2)
     ckpt = tmp_path / "bad.pt"
     torch.save(
         {
             "tokenizer_version": TOKENIZER_VERSION,
+            "tokenizer_semantics": TOKENIZER_SEMANTICS,
             "state_dict": {
                 "weight": torch.zeros(3, 2),
                 "bias": torch.zeros(3),
@@ -461,7 +391,7 @@ def test_load_checkpoint_compatible_rejects_architecture_mismatch(tmp_path) -> N
     )
 
     with pytest.raises(RuntimeError, match="architecture-incompatible"):
-        _load_checkpoint_compatible(model, str(ckpt), torch.device("cpu"))
+        _load_v8_checkpoint_strict(model, str(ckpt), torch.device("cpu"))
 
 
 def test_ppo_config_rejects_nonpositive_rollout_temperature() -> None:
@@ -520,18 +450,6 @@ def test_ppo_config_rejects_nonpositive_eval_regression_patience() -> None:
 @pytest.mark.parametrize(
     ("config", "message"),
     [
-        (PPOConfig(critic_warmup_updates=-1), "critic_warmup_updates"),
-        (PPOConfig(critic_warmup_lr=0.0), "critic_warmup_lr"),
-        (
-            PPOConfig(critic_warmup_updates=2, critic_warmup_min_ev=0.4, critic_warmup_ev_window=1),
-            "critic_warmup_ev_window",
-        ),
-        (
-            PPOConfig(critic_warmup_updates=4, critic_warmup_max_updates=3),
-            "critic_warmup_max_updates",
-        ),
-        (PPOConfig(actor_ramp_updates=-1), "actor_ramp_updates"),
-        (PPOConfig(actor_ramp_start_clip_fraction=0.0), "actor_ramp_start_clip_fraction"),
         (PPOConfig(ppo_run_uuid="12345678-1234-5678-9234-567812345678"), "must be set together"),
         (
             PPOConfig(
@@ -551,7 +469,7 @@ def test_ppo_config_rejects_nonpositive_eval_regression_patience() -> None:
         ),
     ],
 )
-def test_ppo_config_rejects_invalid_safe_unfreeze_controls(config: PPOConfig, message: str) -> None:
+def test_ppo_config_rejects_invalid_provenance(config: PPOConfig, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         _validate_ppo_config(config)
 
@@ -609,12 +527,16 @@ def test_extract_step_info_value_prefers_final_info_for_done_envs() -> None:
     assert _extract_step_info_value(infos, "reward_total", 1, done=True) == pytest.approx(0.5)
 
 
-def test_effective_reward_config_pins_potential_gamma_without_mutating_input() -> None:
-    original = RewardConfig(gamma=0.9)
-    effective = _effective_reward_config(PPOConfig(gamma=0.997, reward_config=original))
+def test_effective_reward_config_pins_gamma_and_win_ante_without_mutating_input() -> None:
+    original = RewardConfig(gamma=0.9, potential_win_ante=8)
+    effective = _effective_reward_config(
+        PPOConfig(gamma=0.997, win_ante=4, reward_config=original)
+    )
 
     assert effective.gamma == pytest.approx(0.997)
+    assert effective.potential_win_ante == 4
     assert original.gamma == pytest.approx(0.9)
+    assert original.potential_win_ante == 8
 
 
 def test_stall_is_absorbing_but_ordinary_truncation_bootstraps_from_final_value() -> None:
@@ -776,95 +698,6 @@ def test_eval_regression_boundary_is_robust_to_float_roundoff() -> None:
         )
         == 1
     )
-
-
-def test_critic_warmup_requires_minimum_count_and_complete_rolling_ev_window() -> None:
-    config = PPOConfig(
-        critic_warmup_updates=4,
-        critic_warmup_min_ev=0.4,
-        critic_warmup_ev_window=3,
-        critic_warmup_max_updates=8,
-    )
-
-    single_spike = _critic_warmup_decision(
-        config,
-        completed_updates=4,
-        ev_history=[0.9],
-    )
-    assert single_spike.active
-    assert not single_spike.ready
-
-    too_early = _critic_warmup_decision(
-        config,
-        completed_updates=3,
-        ev_history=[0.41, 0.42, 0.43],
-    )
-    assert too_early.active
-    assert not too_early.ready
-
-    ready = _critic_warmup_decision(
-        config,
-        completed_updates=4,
-        ev_history=[0.37, 0.41, 0.42],
-    )
-    assert ready.ready
-    assert not ready.active
-    assert ready.rolling_ev == pytest.approx(0.4)
-
-
-def test_critic_warmup_rejects_nonfinite_or_weak_window_and_fails_closed_at_cap() -> None:
-    config = PPOConfig(
-        critic_warmup_updates=2,
-        critic_warmup_min_ev=0.4,
-        critic_warmup_ev_window=3,
-        critic_warmup_max_updates=6,
-    )
-
-    assert not _critic_warmup_decision(
-        config,
-        completed_updates=5,
-        ev_history=[0.5, float("nan"), 0.7],
-    ).ready
-    exhausted = _critic_warmup_decision(
-        config,
-        completed_updates=6,
-        ev_history=[0.2, 0.3, 0.39],
-    )
-    assert exhausted.exhausted
-    assert not exhausted.active
-    assert not exhausted.ready
-
-    # Readiness wins at the boundary; a healthy critic is not stopped merely
-    # because it cleared the gate on the last allowed update.
-    boundary_ready = _critic_warmup_decision(
-        config,
-        completed_updates=6,
-        ev_history=[0.39, 0.40, 0.41],
-    )
-    assert boundary_ready.ready
-    assert not boundary_ready.exhausted
-
-
-def test_count_only_critic_warmup_still_honors_minimum_update_count() -> None:
-    config = PPOConfig(
-        critic_warmup_updates=3,
-        critic_warmup_min_ev=0.0,
-        critic_warmup_ev_window=1,
-    )
-    assert _critic_warmup_decision(config, completed_updates=2, ev_history=[]).active
-    assert _critic_warmup_decision(config, completed_updates=3, ev_history=[]).ready
-
-
-def test_actor_transition_ramps_clip_and_protects_trunk_for_full_window() -> None:
-    config = PPOConfig(
-        clip_epsilon=0.1,
-        actor_ramp_updates=3,
-        actor_ramp_start_clip_fraction=0.5,
-    )
-    assert _actor_transition(config, actor_updates_completed=0) == pytest.approx((0.05, 0.0, True))
-    assert _actor_transition(config, actor_updates_completed=1) == pytest.approx((0.075, 0.5, True))
-    assert _actor_transition(config, actor_updates_completed=2) == pytest.approx((0.1, 1.0, True))
-    assert _actor_transition(config, actor_updates_completed=3) == pytest.approx((0.1, 1.0, False))
 
 
 def test_terminal_loss_metrics_are_compact_and_numeric() -> None:
@@ -1290,7 +1123,7 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
         clip_epsilon=0.2,
         entropy_coeff=0.0,
         value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
+        outcome_loss_coeff=0.0,
         target_kl=None,
         rollout_temperature=1.0,
     )
@@ -1299,7 +1132,6 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
         model=model,
         optimizer=optimizer,
         buffer=buffer,
-        return_rms=None,
         entropy_coeff=0.0,
         config=config,
         accum_steps=1,
@@ -1314,128 +1146,3 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
     assert stats.on_policy_return_means
     assert stats.on_policy_fractions[0] == 1.0
     assert stats.on_policy_positive_advantage_fractions[0] == pytest.approx(0.5)
-
-
-def _freeze_test_config(**overrides) -> PPOConfig:
-    base = dict(
-        ppo_epochs=1,
-        mini_batch_size=2,
-        clip_epsilon=0.2,
-        entropy_coeff=0.0,
-        value_loss_coeff=1.0,
-        survival_loss_coeff=0.0,
-        target_kl=None,
-        rollout_temperature=1.0,
-    )
-    base.update(overrides)
-    return PPOConfig(**base)
-
-
-def test_critic_warmup_freeze_keeps_policy_bitwise_identical() -> None:
-    """policy_loss_scale=0 must be a TRUE freeze.
-
-    Two historical leaks: (1) with critic_updates_trunk=True the critic loss
-    backpropagated through the shared trunk and drifted the policy logits;
-    (2) the zero-scaled policy backward left zero-valued grads on policy
-    params, so restored Adam momentum kept moving them. Both must be dead:
-    policy-producing params stay bit-identical and their Adam state untouched,
-    while the value head still trains.
-    """
-    action = int(ActionRange.SHOP_LEAVE)
-    model = _TinyDecoupledCriticModel()
-    # Non-zero value head so the critic loss reaches the trunk if leaked.
-    torch.nn.init.constant_(model.value_head.weight, 0.5)
-    config = _freeze_test_config(
-        lr=0.1,
-        critic_updates_trunk=True,
-        critic_warmup_updates=1,
-        critic_warmup_lr=0.2,
-    )
-    optimizer = _make_policy_optimizer(model.parameters(), lr=config.lr)
-
-    # 1) Unfrozen update with signal: builds Adam momentum on policy params.
-    warm_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, 1.0])
-    warm_buffer.returns[:2] = 5.0
-    _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=warm_buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-        policy_loss_scale=1.0,
-    )
-    policy_state = optimizer.state.get(model.policy_head.weight)
-    assert policy_state, "warm update should create Adam state on policy params"
-    steps_before = int(policy_state["step"])
-    exp_avg_before = policy_state["exp_avg"].clone()
-    trunk_before = model.trunk.weight.detach().clone()
-    policy_before = model.policy_head.weight.detach().clone()
-    value_before = model.value_head.weight.detach().clone()
-
-    # 2) Frozen update with a large value error that would move the trunk if
-    #    the critic loss leaked past the value head.
-    frozen_buffer = _make_signal_buffer(actions=[action, action], advantages=[1.0, -1.0])
-    frozen_buffer.returns[:2] = 10.0
-    frozen_lr = _set_optimizer_lr_for_phase(optimizer, config, in_critic_warmup=True)
-    stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=frozen_buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-        policy_loss_scale=0.0,
-    )
-
-    assert torch.equal(model.policy_head.weight.detach(), policy_before)
-    assert torch.equal(model.trunk.weight.detach(), trunk_before)
-    assert not torch.allclose(model.value_head.weight.detach(), value_before)
-    assert frozen_lr == pytest.approx(0.2)
-    assert stats.actual_lr == pytest.approx(0.2)
-    policy_state_after = optimizer.state[model.policy_head.weight]
-    assert int(policy_state_after["step"]) == steps_before
-    assert torch.equal(policy_state_after["exp_avg"], exp_avg_before)
-
-
-def test_protected_actor_ramp_keeps_critic_loss_out_of_policy_trunk() -> None:
-    """The ramp may train PPO, but critic error must remain value-head-only."""
-
-    action = int(ActionRange.SHOP_LEAVE)
-    model = _TinyDecoupledCriticModel()
-    torch.nn.init.constant_(model.value_head.weight, 0.5)
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.1)
-    config = _freeze_test_config(critic_updates_trunk=True)
-    buffer = _make_signal_buffer(actions=[action, action], advantages=[0.0, 0.0])
-    buffer.returns[:2] = 10.0
-    trunk_before = model.trunk.weight.detach().clone()
-    policy_before = model.policy_head.weight.detach().clone()
-    value_before = model.value_head.weight.detach().clone()
-
-    _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=buffer,
-        return_rms=None,
-        entropy_coeff=0.0,
-        config=config,
-        accum_steps=1,
-        effective_batch_size=2,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-        policy_loss_scale=1.0,
-        clip_epsilon=0.05,
-        protect_actor_from_critic=True,
-    )
-
-    assert torch.equal(model.policy_head.weight.detach(), policy_before)
-    assert torch.equal(model.trunk.weight.detach(), trunk_before)
-    assert not torch.allclose(model.value_head.weight.detach(), value_before)

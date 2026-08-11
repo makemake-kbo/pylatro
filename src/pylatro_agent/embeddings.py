@@ -12,6 +12,7 @@ from .constants import (
     BLIND_SELECT_START,
     CONSUMABLE_MAX,
     CONSUMABLE_START,
+    CURRENT_ANTE_SCALAR_INDEX,
     DECK_MAX,
     DECK_START,
     HAND_CANDIDATE_MAX,
@@ -36,6 +37,7 @@ from .constants import (
     SHOP_START,
     VOUCHER_MAX,
     VOUCHER_START,
+    WIN_ANTE_SCALAR_INDEX,
 )
 
 if TYPE_CHECKING:
@@ -61,18 +63,17 @@ class MetaEmbedding(nn.Module):
         self.money_proj = nn.Linear(1, d_model)
         self.interest_proj = nn.Linear(1, d_model)
         self.ante_emb = nn.Embedding(12, d_model)
+        self.win_ante_emb = nn.Embedding(12, d_model)
         self.blind_type_emb = nn.Embedding(4, d_model)
         self.boss_emb = nn.Embedding(35, d_model)  # 35 = fixed cap on boss vocab
         self.target_proj = nn.Linear(4, d_model)
         self.risk_proj = nn.Linear(2, d_model)
-        # Tokenizer v6 appends risk features to a v5-compatible policy.  A zero
-        # start preserves the loaded policy exactly; PPO can learn how much to
-        # trust the estimator after critic warmup unfreezes the actor.
+        # Keep the risk adapter initially neutral so the policy can learn how
+        # much to trust the analytic estimate during training.
         nn.init.zeros_(self.risk_proj.weight)
         nn.init.zeros_(self.risk_proj.bias)
-        # Tokenizer v7's nine append-only strategy features enter through one
-        # bias-free zero adapter. This reaches both the transformer/value path
-        # and every policy head while preserving v6 logits exactly.
+        # The nine strategy features enter through one bias-free zero adapter
+        # shared by the transformer/value path and every policy head.
         self.strategy_proj = nn.Linear(9, d_model, bias=False)
         nn.init.zeros_(self.strategy_proj.weight)
         self.hands_proj = nn.Linear(1, d_model)
@@ -88,7 +89,9 @@ class MetaEmbedding(nn.Module):
 
         out[:, 0] = self.money_proj(scalars[:, 0:1])
         out[:, 1] = self.interest_proj(scalars[:, 1:2])
-        out[:, 2] = self.ante_emb(scalars[:, 2].long().clamp(0, 11))
+        current_ante = scalars[:, CURRENT_ANTE_SCALAR_INDEX].long().clamp(0, 11)
+        win_ante = scalars[:, WIN_ANTE_SCALAR_INDEX].long().clamp(1, 11)
+        out[:, 2] = self.ante_emb(current_ante) + self.win_ante_emb(win_ante)
         # Blind type + boss from token
         # meta token packs blind_type*100 + boss_id (see tokenizer._encode_meta)
         bt = tokens[:, 3, 0] // 100

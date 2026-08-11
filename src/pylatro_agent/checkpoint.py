@@ -53,8 +53,6 @@ def save_checkpoint(
 def load_checkpoint_payload(
     path: str | Path,
     device: torch.device | str,
-    *,
-    allow_compatible_tokenizer: bool = False,
 ) -> dict[str, Any]:
     """Load a checkpoint and verify its tokenizer version.
 
@@ -79,56 +77,29 @@ def load_checkpoint_payload(
             "retrain with the current tokenizer."
         )
     saved_version = blob.get("tokenizer_version")
-    append_only_compatible = (
-        allow_compatible_tokenizer
-        and TOKENIZER_VERSION == 7
-        and saved_version in {5, 6}
-    )
-    if saved_version != TOKENIZER_VERSION and not append_only_compatible:
+    if saved_version != TOKENIZER_VERSION:
         raise RuntimeError(
             f"Checkpoint {path} was saved with tokenizer_version="
             f"{saved_version!r}, but current TOKENIZER_VERSION="
-            f"{TOKENIZER_VERSION}. Observation format has changed; "
-            "retrain or pin the tokenizer version."
+            f"{TOKENIZER_VERSION}. The v8 conditional-survival critic is "
+            "architecture-incompatible with every v7 and older checkpoint; "
+            "fresh v8 supervised training is required."
         )
-    if append_only_compatible:
-        logger.warning(
-            "Loading tokenizer_version=%s checkpoint into append-only tokenizer_version=7; "
-            "new risk/strategy adapters remain freshly zero-initialized.",
-            saved_version,
-        )
-    _validate_tokenizer_semantics(blob, path, allow_append_only_compatible=append_only_compatible)
+    _validate_tokenizer_semantics(blob, path)
     return blob
 
 
 def _validate_tokenizer_semantics(
     blob: dict[str, Any],
     path: str | Path,
-    *,
-    allow_append_only_compatible: bool = False,
 ) -> None:
-    """Reject known shape-compatible tokenizer semantic mismatches.
-
-    Old weights-only v6 files contain no semantic marker and generally cannot
-    be distinguished. Full PPO checkpoints from the faulty 100fbf0 generation
-    can be identified by reward_model_version=11 and are rejected explicitly.
-    """
-    saved_version = blob.get("tokenizer_version")
+    """Reject a shape-compatible checkpoint with different v8 semantics."""
     saved_semantics = blob.get("tokenizer_semantics")
-    compatible_v6_semantics = (
-        allow_append_only_compatible
-        and saved_version == 6
-        and saved_semantics == "v6_projected_score_blind_ratio"
-    )
-    if saved_semantics is not None and saved_semantics != TOKENIZER_SEMANTICS and not compatible_v6_semantics:
+    if saved_semantics != TOKENIZER_SEMANTICS:
         raise RuntimeError(
             f"Checkpoint {path} uses tokenizer_semantics={saved_semantics!r}, but the active "
-            f"semantics are {TOKENIZER_SEMANTICS!r}. Candidate token meanings are incompatible."
-        )
-    if saved_version == 6 and saved_semantics is None and blob.get("reward_model_version") == 11:
-        raise RuntimeError(
-            f"Checkpoint {path} is a known faulty tokenizer-v6/reward-model-11 artifact from "
-            "the 100fbf0 candidate-field remap. Use a bef33f6/6060673-era checkpoint instead."
+            f"semantics are {TOKENIZER_SEMANTICS!r}. Only checkpoints produced by fresh "
+            "v8 supervised training are supported."
         )
 
 
@@ -180,7 +151,6 @@ def save_ppo_checkpoint(
     lr: float,
     log_alpha: torch.Tensor | None = None,
     alpha_optimizer: torch.optim.Optimizer | None = None,
-    return_rms: Any = None,
     agent_config: Any = None,
     reward_config: Any = None,
     ppo_config_fields: dict[str, Any] | None = None,
@@ -217,12 +187,6 @@ def save_ppo_checkpoint(
         payload["log_alpha"] = log_alpha.detach().cpu()
     if alpha_optimizer is not None:
         payload["alpha_optimizer_state_dict"] = alpha_optimizer.state_dict()
-    if return_rms is not None:
-        payload["return_rms"] = {
-            "mean": float(return_rms.mean),
-            "var": float(return_rms.var),
-            "count": float(return_rms.count),
-        }
     if agent_config is not None:
         if dataclasses.is_dataclass(agent_config):
             payload["agent_config"] = dataclasses.asdict(cast("Any", agent_config))
@@ -279,8 +243,9 @@ def load_ppo_resume_payload(
         raise RuntimeError(
             f"Checkpoint {path} was saved with tokenizer_version="
             f"{saved_version!r}, but current TOKENIZER_VERSION="
-            f"{TOKENIZER_VERSION}. Observation format has changed; "
-            "retrain or pin the tokenizer version."
+            f"{TOKENIZER_VERSION}. The v8 conditional-survival critic is "
+            "architecture-incompatible with every v7 and older checkpoint; "
+            "fresh v8 supervised training is required."
         )
     _validate_tokenizer_semantics(blob, path)
 
@@ -290,9 +255,8 @@ def load_ppo_resume_payload(
     if not saved_fingerprint:
         raise RuntimeError(
             f"Checkpoint {path} has no reward fingerprint, so strict --resume cannot "
-            "verify that its critic targets match the active reward model. Load it "
-            "through --pretrained instead, with --reinit-value-head "
-            "--critic-warmup-updates 15 --critic-warmup-min-ev 0."
+            "verify that its critic targets match the active reward model. Fresh "
+            "v8 supervised training is required."
         )
     active_fingerprint = reward_config_fingerprint(active_reward_config)
     if saved_fingerprint != active_fingerprint:
@@ -301,9 +265,8 @@ def load_ppo_resume_payload(
             f"(saved={str(saved_fingerprint)[:12]}, active={active_fingerprint[:12]}, "
             f"saved_version={blob.get('reward_model_version')!r}, "
             f"active_version={REWARD_MODEL_VERSION}). Strict --resume would restore "
-            "a critic and Adam state trained on different return targets. Use "
-            "--pretrained instead, with --reinit-value-head "
-            "--critic-warmup-updates 15 --critic-warmup-min-ev 0."
+            "a critic and Adam state trained on different return targets. Fresh "
+            "v8 supervised training is required."
         )
 
     saved_fields = blob.get("ppo_config_fields") or {}
@@ -315,7 +278,6 @@ def load_ppo_resume_payload(
                 f"Checkpoint {path} win_ante mismatch "
                 f"(saved={saved_win_ante}, active={effective_active_win_ante}). "
                 "Strict --resume would restore critic and optimizer state from a "
-                "different terminal task. Use --pretrained --reinit-value-head "
-                "--critic-warmup-updates 15 --critic-warmup-min-ev 0 instead."
+                "different terminal task. Fresh v8 supervised training is required."
             )
     return blob

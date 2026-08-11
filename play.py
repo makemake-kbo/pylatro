@@ -79,9 +79,8 @@ def play_model(
     payload = load_checkpoint_payload(checkpoint, dev)
     saved_config = payload.get("agent_config")
     if isinstance(saved_config, dict):
-        # PPO checkpoints persist their architecture (incl. value_bins for the
-        # HL-Gauss head); trust it over CLI flags so any checkpoint replays
-        # without the caller knowing its layer count or head shape.
+        # PPO checkpoints persist the exact v8 architecture; trust it over CLI
+        # flags so callers need not know the saved transformer dimensions.
         config = AgentConfig(**saved_config)
     else:
         config = AgentConfig(d_model=d_model, n_layers=n_layers, d_ff=d_ff)

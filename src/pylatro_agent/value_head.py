@@ -1,119 +1,160 @@
-"""Value head, predicts win probability, expected score, and ante survival.
-
-The expected-score output supports two parameterizations:
-
-* Scalar (``value_bins=0``, the legacy default): ``Linear(d, 1)`` trained
-  with MSE against lambda-returns.
-* HL-Gauss categorical (``value_bins>0``): ``Linear(d, value_bins)`` logits
-  over a fixed grid of return atoms spanning ``[value_v_min, value_v_max]``,
-  trained with cross-entropy against a Gaussian-smeared projection of the
-  scalar return target (Farebrother et al. 2024, "Stop Regressing"). The
-  scalar value consumed by GAE/logging/SIL is the mean of the predicted
-  histogram, so downstream PPO code is identical in both modes. The
-  categorical loss keeps critic gradients bounded on near-terminal
-  coin-flip states where MSE against a bimodal (+win / -loss) target
-  produces large alternating-sign errors through the shared trunk.
-"""
+"""Conditional terminal-outcome critic with a scalar return correction."""
 
 from __future__ import annotations
 
-import math
+from typing import cast
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-# Ratio of the label-smoothing Gaussian's sigma to the bin width. 0.75 is the
-# sweet spot reported by the HL-Gauss paper: wide enough that each target
-# spreads over ~3 bins (dense gradient), narrow enough to stay unimodal.
-HL_GAUSS_SIGMA_RATIO = 0.75
+from .reward import outcome_value
+from .survival import (
+    DEFAULT_MAX_ANTES,
+    _validated_ante_tensor,
+    hazard_outcome_probabilities,
+)
 
 
-def hl_gauss_projection(
-    targets: torch.Tensor, bin_edges: torch.Tensor, sigma: float
+def outcome_nll(
+    outcome_probabilities: torch.Tensor,
+    targets: torch.Tensor,
+    mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Project scalar targets onto bin probabilities via a Gaussian CDF.
+    """Categorical terminal-outcome NLL with a valid-label denominator."""
 
-    Args:
-        targets: (batch,) scalar return targets.
-        bin_edges: (n_bins + 1,) monotonically increasing bin edges.
-        sigma: Gaussian smearing width, in return units.
-    Returns:
-        (batch, n_bins) probabilities, each row summing to 1. Targets are
-        clamped to the atom range first: far outside the grid the Gaussian
-        puts ~zero mass in every bin and renormalization cannot rescue an
-        all-zero row, which would silently drop that sample from the loss.
-        Clamped targets degrade to edge-bin-heavy distributions instead.
+    selected = outcome_probabilities.gather(1, targets.long().reshape(-1, 1)).squeeze(1)
+    per_row = -selected.clamp_min(1e-7).log()
+    if mask is None:
+        return per_row.mean()
+    valid = mask.to(dtype=per_row.dtype).reshape(-1)
+    return (per_row * valid).sum() / valid.sum().clamp(min=1.0)
+
+
+def return_huber_loss(
+    value_outputs: dict[str, torch.Tensor],
+    return_targets: torch.Tensor,
+) -> torch.Tensor:
+    """Regress the residual while treating terminal calibration as fixed."""
+
+    residual_target = return_targets - value_outputs["terminal_value"].detach()
+    return F.huber_loss(
+        value_outputs["return_residual"],
+        residual_target,
+        delta=1.0,
+    )
+
+
+def terminal_outcome_utilities(
+    win_antes: torch.Tensor,
+    *,
+    max_antes: int = DEFAULT_MAX_ANTES,
+    dtype: torch.dtype | None = None,
+    device: torch.device | None = None,
+) -> torch.Tensor:
+    """Return utilities for death-at-Ante classes and the final win class.
+
+    The result has shape ``(batch, max_antes + 1)``. Utilities for impossible
+    death classes are harmless because their probabilities are exactly zero.
     """
-    centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
-    targets = targets.clamp(min=float(centers[0]), max=float(centers[-1]))
-    z = (bin_edges.unsqueeze(0) - targets.unsqueeze(-1)) / (sigma * math.sqrt(2.0))
-    cdf = 0.5 * (1.0 + torch.erf(z))
-    probs = cdf[..., 1:] - cdf[..., :-1]
-    return probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+
+    goals = _validated_ante_tensor(
+        win_antes.to(device=device),
+        name="win_antes",
+        max_antes=max_antes,
+    )
+    table = _terminal_utility_table(max_antes).to(
+        device=goals.device,
+        dtype=dtype or torch.float32,
+    )
+    return table.index_select(0, goals - 1)
+
+
+def _terminal_utility_table(max_antes: int) -> torch.Tensor:
+    """Build the small goal-by-outcome utility lookup in reward-model terms."""
+
+    return torch.tensor(
+        [
+            [
+                *[
+                    outcome_value(won=False, ante=ante, win_ante=goal)
+                    for ante in range(1, max_antes + 1)
+                ],
+                outcome_value(won=True, ante=goal, win_ante=goal),
+            ]
+            for goal in range(1, max_antes + 1)
+        ],
+        dtype=torch.float32,
+    )
 
 
 class ValueHead(nn.Module):
-    def __init__(
-        self,
-        d_model: int = 256,
-        max_ante: int = 8,
-        value_bins: int = 0,
-        value_v_min: float = -8.0,
-        value_v_max: float = 12.0,
-    ):
+    """Predict terminal hazards and the non-terminal correction to return.
+
+    ``ante_survival`` parameterizes the terminal outcome distribution. The
+    scalar ``return_residual`` represents discounting, dense shaping, and any
+    other difference between terminal utility and the PPO return target.
+    """
+
+    def __init__(self, d_model: int = 256, max_ante: int = DEFAULT_MAX_ANTES):
         super().__init__()
-        self.max_ante = max_ante
-        self.value_bins = value_bins
-        self.pool_proj = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.GELU(),
+        self.max_ante = int(max_ante)
+        self.pool_proj = nn.Sequential(nn.Linear(d_model, d_model), nn.GELU())
+        self.ante_survival = nn.Linear(d_model, self.max_ante)
+        self.return_residual = nn.Linear(d_model, 1)
+        self.register_buffer(
+            "_terminal_utilities",
+            _terminal_utility_table(self.max_ante),
+            persistent=False,
         )
-        self.win_prob = nn.Linear(d_model, 1)
-        # Keep expected_score registered before ante_survival. Full PPO
-        # checkpoints restore Adam state by parameter position, and legacy
-        # scalar heads used this order.
-        if value_bins > 0:
-            if value_bins < 2:
-                raise ValueError("value_bins must be 0 (scalar head) or >= 2")
-            if value_v_max <= value_v_min:
-                raise ValueError("value_v_max must exceed value_v_min")
-            self.expected_score = nn.Linear(d_model, value_bins)
-            centers = torch.linspace(value_v_min, value_v_max, value_bins)
-            width = (value_v_max - value_v_min) / (value_bins - 1)
-            edges = torch.cat([centers - width / 2, centers[-1:] + width / 2])
-            # Derived from config, not learned: keep out of the state_dict so
-            # scalar-head checkpoints load into categorical models with only
-            # the expected_score.* tensors reported as incompatible.
-            self.register_buffer("bin_centers", centers, persistent=False)
-            self.register_buffer("bin_edges", edges, persistent=False)
-            self.hl_gauss_sigma = HL_GAUSS_SIGMA_RATIO * width
-        else:
-            self.expected_score = nn.Linear(d_model, 1)
-        self.ante_survival = nn.Linear(d_model, max_ante)
 
-    def forward(self, backbone_out: torch.Tensor, padding_mask: torch.Tensor) -> dict[str, torch.Tensor]:
-        """
-        Args:
-            backbone_out: (batch, seq_len, d_model)
-            padding_mask: (batch, seq_len), 1 for real tokens, 0 for pad
-        Returns:
-            dict with win_prob (batch,), expected_score (batch,), ante_survival
-            (batch, max_ante); categorical mode adds expected_score_logits
-            (batch, value_bins) for the HL-Gauss cross-entropy loss.
-        """
-        # Mean pool non-padded tokens
-        mask = padding_mask.unsqueeze(-1).float()  # (batch, seq, 1)
+    def forward(
+        self,
+        backbone_out: torch.Tensor,
+        padding_mask: torch.Tensor,
+        current_antes: torch.Tensor | None = None,
+        win_antes: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Return canonical critic predictions and exact compatibility aliases."""
+
+        mask = padding_mask.unsqueeze(-1).to(dtype=backbone_out.dtype)
         pooled = (backbone_out * mask).sum(1) / mask.sum(1).clamp(min=1)
-        h = self.pool_proj(pooled)
+        hidden = self.pool_proj(pooled)
+        hazards = torch.sigmoid(self.ante_survival(hidden))
 
-        out = {
-            "win_prob": torch.sigmoid(self.win_prob(h).squeeze(-1)),
-            "ante_survival": torch.sigmoid(self.ante_survival(h)),
+        batch_size = backbone_out.shape[0]
+        if current_antes is None:
+            current_antes = torch.ones(batch_size, device=backbone_out.device)
+        if win_antes is None:
+            win_antes = torch.full(
+                (batch_size,), self.max_ante, device=backbone_out.device
+            )
+        outcome_probabilities = hazard_outcome_probabilities(
+            hazards,
+            current_antes,
+            win_antes,
+        )
+        # ``hazard_outcome_probabilities`` validates this same tensor before
+        # it reaches the utility lookup, so no second device synchronization
+        # is needed on the critic hot path.
+        goals = win_antes.to(device=backbone_out.device, dtype=torch.long).reshape(-1)
+        utilities = torch.index_select(
+            cast("torch.Tensor", self._terminal_utilities).to(dtype=backbone_out.dtype),
+            0,
+            goals - 1,
+        )
+        terminal_value = (outcome_probabilities * utilities).sum(dim=-1)
+        return_residual = self.return_residual(hidden).squeeze(-1)
+        expected_return = terminal_value + return_residual
+        win_prob = outcome_probabilities[:, -1]
+        return {
+            "ante_survival": hazards,
+            "outcome_probabilities": outcome_probabilities,
+            "terminal_value": terminal_value,
+            "return_residual": return_residual,
+            "expected_return": expected_return,
+            # Live/API compatibility aliases. These deliberately reference the
+            # canonical tensors rather than recomputing equivalent values.
+            "expected_score": expected_return,
+            "win_prob": win_prob,
         }
-        if self.value_bins > 0:
-            logits = self.expected_score(h)
-            out["expected_score_logits"] = logits
-            out["expected_score"] = (logits.softmax(dim=-1) * self.bin_centers).sum(dim=-1)
-        else:
-            out["expected_score"] = self.expected_score(h).squeeze(-1)
-        return out

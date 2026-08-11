@@ -23,7 +23,13 @@ HEALTH_TAGS = [
     "ppo/entropy_normalized",
     "ppo/action_type_entropy_normalized",
     "ppo/explained_variance",
-    "ppo/value_mse",
+    "critic/outcome_nll",
+    "critic/outcome_brier",
+    "critic/derived_win_brier",
+    "critic/return_huber",
+    "critic/terminal_value_mean",
+    "critic/return_residual_mean",
+    "critic/expected_return_mean",
     "eval/win_rate",
 ]
 

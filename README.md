@@ -143,11 +143,23 @@ For a run that explicitly learns to seek and use Tarots and Planets, enable
 build-aware shaping, Planet alignment, and conservative exploration:
 
 ```bash
+# First create the matching v8 supervised source. Reward options are embedded
+# in the checkpoint and must match PPO exactly.
+uv run python train.py supervised \
+  --games 5000 --epochs 10 --device cuda --win-ante 4 --gamma 0.997 \
+  --outcome-loss-coeff 0.10 \
+  --dense-reward-scale 0.25 \
+  --strategic-event-reward-scale 1.0 \
+  --score-build-potential --planet-match-shaping \
+  --planet-unmatched-use-penalty-coeff 0.25 \
+  --planet-unmatched-claim-penalty-coeff 0.10
+
 uv run python train.py ppo \
   --pretrained checkpoints/supervised/supervised_epoch10.pt \
   --envs 16 --rollout-length 256 --batch 320 --micro-batch-size 160 --ppo-epochs 4 \
-  --updates 2000 --device cuda --win-ante 4 --hl-gauss \
+  --updates 2000 --device cuda --win-ante 4 \
   --gamma 0.997 --lr 3e-6 --clip-eps 0.1 \
+  --outcome-loss-coeff 0.10 \
   --target-kl 0.03 --target-kl-p95 0.10 --target-kl-max 0.15 \
   --min-minibatch-fraction 0.50 \
   --dense-reward-scale 0.25 \
@@ -162,12 +174,7 @@ uv run python train.py ppo \
   --danger-shop-leave-logit-penalty 2.0 \
   --max-idle-steps 32 \
   --eval-games 100 --eval-interval 10 \
-  --eval-regression-tolerance 0.05 --eval-regression-patience 2 \
-  --reinit-value-head \
-  --critic-warmup-updates 20 --critic-warmup-lr 1e-5 \
-  --critic-warmup-min-ev 0.4 \
-  --critic-warmup-ev-window 5 --critic-warmup-max-updates 80 \
-  --actor-ramp-updates 25 --actor-ramp-start-clip-fraction 0.5
+  --eval-regression-tolerance 0.05 --eval-regression-patience 2
 ```
 
 `--score-build-potential` uses draw reliability and projected score to value Pair
@@ -177,10 +184,16 @@ only with a dedicated synergy Joker; Full House is not a strategic target. The
 same bounded potential strongly values Blue/Purple seals, Tarot
 deck fixing and money generation, score-improving Joker replacements, and
 midgame Standard-pack searches when scoring is already safe. Planet shaping
-rewards only these viable plans. Tokenizer v7 also exposes a conservative,
+rewards only these viable plans. Tokenizer v8 also exposes a conservative,
 boss-aware chance of clearing the immediate blind, five strategic opportunity
-probabilities, and four suit-target utilities shared with contextual Tarot
-rewards. Completed-blind chips are
+probabilities, four suit-target utilities shared with contextual Tarot rewards,
+and the configured victory Ante. The critic embeds current and target
+Ante together and predicts one conditional survival-hazard vector. That vector
+defines a normalized distribution over death in each Ante or reaching the
+target. Terminal value is the distribution-weighted outcome utility; a single
+scalar residual accounts for discounting and dense shaping, and their sum is
+the value used by GAE, bootstrapping, SIL, and explained variance.
+Completed-blind chips are
 discarded before the next shop's risk estimate. Danger, danger-weighted hands,
 and danger-weighted discards feed the policy head directly; active hand
 decisions are sharpened in Ante 1 or immediate danger. Unsafe shops retain
@@ -190,28 +203,24 @@ reaches the 65% safety threshold, then saturates.
 Banked cash is valuable only when that chance is credible; unsafe rerolls and
 realized, confidently modeled Joker upgrades get positive-only credit, with no
 reward penalty for declining any individual offer.
-The win and ante-survival heads are trained during PPO and the compact TensorBoard
+One categorical terminal-outcome NLL trains the hazard model; stalls are
+excluded as censored outcomes. Return Huber loss trains the residual against
+`return_target - terminal_value.detach()`, so return noise cannot distort
+outcome calibration. Complete-episode replay crosses rollout boundaries and
+updates only the hazard output layer. `win_prob` and `expected_score` remain
+derived compatibility aliases for final-outcome mass and composed expected
+return. The compact TensorBoard
 shop/terminal metrics expose dying with money, weak full Joker slots, and
 last-shop survival calibration. Non-improving Joker reorderings receive an
 immediate penalty, and action-family fractions plus no-progress streaks make a
 shop loop directly visible. A short idle horizon, action-family entropy bonus,
 hard KL guard, and two-eval regression stop protect the pretrained policy. The
 regression stop writes and mirrors an exact full resume checkpoint before
-exiting, so a managed restart does not fall back to an older periodic save. The
-v14 trains the freshly reinitialized value head at `1e-5` while keeping the
-policy and shared trunk frozen. Actor unfreeze requires a full
-rolling EV window after the minimum critic warmup; an unready critic at the
-maximum warmup count is checkpointed and stopped, never force-unfrozen. During
-the protected actor ramp, the optimizer switches to the `3e-6` actor/base LR
-before its first step, the PPO clip range grows from `0.05` to `0.10`, and
-critic gradients remain value-head-only so they cannot move the shared policy trunk. Reinitialize
-the value head when adding these rewards to a checkpoint trained with different
-reward semantics. Full PPO checkpoints persist the rolling EV evidence, total
-critic warmup updates, gate/fail-closed status, and successful actor-ramp update
-count, so strict resume continues the exact transition phase. Legacy checkpoints
-without that state are rejected when either safety phase is enabled. Checkpoints
-also persist the configured actor/warmup LRs and active optimizer LR; strict
-resume rejects a phase/LR mismatch instead of silently stepping at the wrong rate.
+exiting, so a managed restart does not fall back to an older periodic save.
+All v7 and older checkpoints are intentionally unsupported, including
+policy-only initialization: begin with fresh v8 supervised training. Full v8
+PPO checkpoints still support exact strict resume of model, optimizer,
+counters, entropy controller, RNG, and schedule state.
 
 Ante-1 TensorBoard reporting uses rollout-local counts. In particular,
 `terminal/loss_ante/1_fraction` remains conditional on non-stall losses for
@@ -227,27 +236,14 @@ generator's Joker-blind chip proxy, not exact counterfactual scoring. Existing
 chosen/best hand tags now rank only play actions admitted by the operative
 action mask.
 
-The production CUDA recipe is also available as
-`scripts/run_ppo_v14_safe_tarot_seal_strategy.sh`. By default it initializes a
-fresh corrected-v14 directory from the original best v12 update-280 policy and refuses any
-v13 source/run override. It may resume only `ppo_latest.pt` inside its own v14
-directory. The source is pinned to SHA-256
-`5a81807c38213d0aadd5d984158652daafd259df0e416d70097698dd75cc0660` and
-must also report tokenizer v6, reward model v12, update 280, and best-eval update
-280 before the launcher generates a fresh run UUID and writes its run/source
-ownership marker. The UUID, pinned source SHA, and recipe identity are passed
-into training and cryptographically bind every normal, best, and fail-closed
-checkpoint to that directory; strict resume rejects a foreign checkpoint even
-when its v14 hyperparameters match. The corrected recipe preserves a logical
-batch of `320` while accumulating two physical microbatches of at most `160`.
-During warmup and the protected ramp the critic consumes detached backbone
-features, so policy and critic share one backward without leaking critic
-gradients into the policy trunk or retaining the transformer graph. The gate
-transition is checkpointed before the first actor step. Its provenance ID is
-`pylatro-v14-safe-v4` with a new default run directory, deliberately refusing
-the earlier recipes that exhausted GPU memory at actor unfreeze. Override
-`PYLATRO_WORKSPACE`, `PYLATRO_SOURCE_CHECKPOINT`, `PYLATRO_SOURCE_SHA256`, or
-`PYLATRO_RUN_NAME` only for an equivalently validated non-v13 source.
+The production CUDA recipe is available as
+`scripts/run_ppo_v14_safe_tarot_seal_strategy.sh` (the filename is retained for
+deployment compatibility). It now requires a pinned v8 supervised checkpoint,
+uses the hazard/residual critic, and may resume only a strict v8
+`ppo_latest.pt`. Set `PYLATRO_SOURCE_SHA256` to the supervised checkpoint hash.
+The launcher keeps a logical batch of `320` while accumulating two physical
+microbatches of at most `160`, and binds checkpoints to the run UUID, source
+hash, and `pylatro-v8-conditional-survival-v1` recipe identity.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 

@@ -95,7 +95,7 @@ class CheckpointPolicy:
         self.device = torch.device(device)
         self.sample = sample
         self.temperature = temperature
-        payload = load_checkpoint_payload(checkpoint, self.device, allow_compatible_tokenizer=True)
+        payload = load_checkpoint_payload(checkpoint, self.device)
         saved_config = payload.get("agent_config")
         config = (
             AgentConfig(**saved_config)
@@ -103,13 +103,16 @@ class CheckpointPolicy:
             else AgentConfig(d_model=d_model, n_layers=n_layers, d_ff=d_ff)
         )
         self.model = BalatroAgent(config, vocab).to(self.device)
-        current = self.model.state_dict()
-        compatible = {
-            key: value
-            for key, value in payload["state_dict"].items()
-            if key in current and current[key].shape == value.shape
-        }
-        self.model.load_state_dict(compatible, strict=False)
+        state_dict = payload["state_dict"]
+        if any(key.startswith("module.") for key in state_dict):
+            state_dict = {key.removeprefix("module."): value for key, value in state_dict.items()}
+        try:
+            self.model.load_state_dict(state_dict, strict=True)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Checkpoint {checkpoint} does not exactly match the v8 architecture. "
+                "Fresh v8 supervised training is required."
+            ) from exc
         self.model.eval()
         logger.info(
             "Loaded live checkpoint %s (%s parameters)",

@@ -3,11 +3,12 @@ from __future__ import annotations
 import pickle
 
 import numpy as np
+import pytest
 import torch
 
 from pylatro import JokerInstance, load_game_data
 from pylatro_agent.agent import AgentConfig, BalatroAgent
-from pylatro_agent.constants import HISTORY_START
+from pylatro_agent.constants import HISTORY_START, TOKENIZER_SEMANTICS, TOKENIZER_VERSION
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.history import (
     BURGLAR_FLAG,
@@ -18,6 +19,7 @@ from pylatro_agent.history import (
     PendingPlay,
     PlayHistoryTracker,
 )
+from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.fast_runner import FastRunner
 from pylatro_agent.training.model_generate import load_records, save_records
 from pylatro_agent.vocab import build_vocab
@@ -174,15 +176,43 @@ def test_history_padding_is_inert_and_real_history_reaches_shared_heads() -> Non
 def test_cached_observation_datasets_are_tokenizer_versioned(tmp_path) -> None:
     path = tmp_path / "records.pkl"
     records = [{"obs": {}, "action": 0}]
-    save_records(records, path)
-    assert load_records(path) == records
+    reward_config = RewardConfig(
+        gamma=0.99,
+        potential_win_ante=4,
+        dense_reward_scale=0.25,
+    )
+    save_records(records, path, reward_config=reward_config)
+    assert load_records(path, reward_config=reward_config) == records
+
+    with pytest.raises(ValueError, match="reward fingerprint mismatch"):
+        load_records(
+            path,
+            reward_config=RewardConfig(
+                gamma=0.99,
+                potential_win_ante=4,
+                dense_reward_scale=1.0,
+            ),
+        )
 
     legacy_path = tmp_path / "legacy.pkl"
     with legacy_path.open("wb") as handle:
         pickle.dump(records, handle)
     try:
-        load_records(legacy_path)
+        load_records(legacy_path, reward_config=reward_config)
     except ValueError as exc:
         assert "regenerate" in str(exc)
     else:
         raise AssertionError("legacy observation dataset was accepted")
+
+    metadata_less_path = tmp_path / "metadata_less.pkl"
+    with metadata_less_path.open("wb") as handle:
+        pickle.dump(
+            {
+                "tokenizer_version": TOKENIZER_VERSION,
+                "tokenizer_semantics": TOKENIZER_SEMANTICS,
+                "records": records,
+            },
+            handle,
+        )
+    with pytest.raises(ValueError, match="predates reward metadata"):
+        load_records(metadata_less_path, reward_config=reward_config)

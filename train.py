@@ -164,6 +164,12 @@ def main():
         default=0.25,
         help="Weight on the critic (value) loss (default: 0.25).",
     )
+    parser.add_argument(
+        "--outcome-loss-coeff",
+        type=float,
+        default=0.10,
+        help="Weight on categorical terminal-outcome NLL (default: 0.10).",
+    )
     parser.add_argument("--d-model", type=int, default=384, help="Model dimension (default: 384)")
     parser.add_argument("--n-layers", type=int, default=12, help="Transformer layers (default: 12)")
     parser.add_argument("--n-heads", type=int, default=8, help="Transformer attention heads (default: 8)")
@@ -444,74 +450,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--critic-warmup-updates",
-        type=int,
-        default=0,
-        help=(
-            "Phase 3.2: number of PPO updates to train only the critic (+survival head) "
-            "with the policy frozen. After a reward-function change, advantages are "
-            "garbage until the critic tracks the new return distribution; warming it up "
-            "on-policy removes the window in which PPO earnestly optimizes noise. "
-            "Pair with --reinit-value-head. Default: 0 (disabled)."
-        ),
-    )
-    parser.add_argument(
-        "--critic-warmup-lr",
-        type=float,
-        default=None,
-        help=(
-            "Learning rate used only while the policy is frozen and critic gradients are restricted "
-            "to the value head. The optimizer switches back to --lr before the first actor update. "
-            "Default: --lr."
-        ),
-    )
-    parser.add_argument(
-        "--critic-warmup-min-ev",
-        type=float,
-        default=0.7,
-        help=(
-            "Explained-variance threshold for unfreezing the policy after the minimum "
-            "critic warmup count. The complete finite window's rolling mean must "
-            "clear it. Pass 0 for a purely count-based warmup. Default: 0.7."
-        ),
-    )
-    parser.add_argument(
-        "--critic-warmup-ev-window",
-        type=int,
-        default=3,
-        help=(
-            "Consecutive finite rollout-EV samples whose rolling mean must clear "
-            "--critic-warmup-min-ev before actor unfreeze. Must be >=2 for an "
-            "EV-gated warmup. Default: 3."
-        ),
-    )
-    parser.add_argument(
-        "--critic-warmup-max-updates",
-        type=int,
-        default=None,
-        help=(
-            "Fail-closed warmup limit. If sustained EV is still unready, save "
-            "ppo_warmup_unready.pt and stop with the actor frozen. Default: 4x "
-            "--critic-warmup-updates."
-        ),
-    )
-    parser.add_argument(
-        "--actor-ramp-updates",
-        type=int,
-        default=0,
-        help=(
-            "Protected actor updates after warmup. PPO clip epsilon ramps to its "
-            "configured value while critic gradients stay out of the shared policy "
-            "trunk. Default: 0 (historical immediate transition)."
-        ),
-    )
-    parser.add_argument(
-        "--actor-ramp-start-clip-fraction",
-        type=float,
-        default=0.5,
-        help=("Starting actor-ramp clip epsilon as a fraction of --clip-eps. Default: 0.5."),
-    )
-    parser.add_argument(
         "--ppo-run-uuid",
         default=None,
         help="Provenance UUID generated once by the production launcher and persisted on strict resume.",
@@ -525,28 +463,6 @@ def main():
         "--ppo-recipe-id",
         default=None,
         help="Stable production recipe identity persisted in every PPO checkpoint.",
-    )
-    parser.add_argument(
-        "--reinit-value-head",
-        action="store_true",
-        help=(
-            "Phase 3.2/2.4: reinitialize the value head when loading --pretrained. "
-            "Required after any reward-function change so the critic doesn't start from "
-            "a stale return mapping."
-        ),
-    )
-    parser.add_argument(
-        "--hl-gauss",
-        action="store_true",
-        help=(
-            "Use the HL-Gauss categorical value head (51 return atoms over "
-            "[-8, 12], cross-entropy loss) instead of the scalar MSE head. "
-            "Bounded critic gradients on near-terminal coin-flip states and a "
-            "distributional representation of bimodal win/loss returns. The "
-            "head shape differs from scalar checkpoints, so initialize from one "
-            "with --pretrained and --reinit-value-head rather than --resume. Pair "
-            "it with --critic-warmup-updates 15 --critic-warmup-min-ev 0."
-        ),
     )
     parser.add_argument(
         "--advantage-clip-sigma",
@@ -751,6 +667,13 @@ def main():
         help="Per-env stall limit during data generation (default: 2000)",
     )
     args = parser.parse_args()
+    from pylatro_agent.survival import validate_critic_win_ante
+
+    if args.win_ante is not None:
+        try:
+            validate_critic_win_ante(args.win_ante, name="--win-ante")
+        except ValueError as exc:
+            parser.error(str(exc))
 
     device = args.device
     if device is None:
@@ -771,10 +694,6 @@ def main():
         n_layers=args.n_layers,
         n_heads=args.n_heads,
         d_ff=args.d_ff,
-        # 0 uses the scalar head; 51 atoms over [-8, 12] uses HL-Gauss.
-        # In supervised mode a categorical head still trains (MSE through the
-        # histogram mean); the HL-Gauss cross-entropy loss is PPO-only.
-        value_bins=51 if args.hl_gauss else 0,
         danger_shop_leave_logit_penalty=args.danger_shop_leave_logit_penalty,
     )
 
@@ -782,6 +701,7 @@ def main():
     log_dir = args.log_dir
 
     if args.phase == "supervised":
+        from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
 
         sup_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.5
@@ -789,6 +709,7 @@ def main():
             SupervisedConfig(
                 num_games=args.games,
                 batch_size=args.batch,
+                gamma=args.gamma,
                 max_epochs=args.epochs,
                 action_entropy_coeff=args.supervised_entropy_coeff,
                 num_workers=args.workers,
@@ -800,6 +721,19 @@ def main():
                 log_dir=log_dir or "runs/supervised",
                 hand_ar_mixture_eps=sup_eps,
                 outcome_weight_beta=args.outcome_weight_beta,
+                outcome_loss_coeff=args.outcome_loss_coeff,
+                win_ante=args.win_ante or 8,
+                reward_config=RewardConfig(
+                    gamma=args.gamma,
+                    potential_win_ante=args.win_ante or 8,
+                    enable_planet_match_rewards=args.planet_match_shaping,
+                    planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+                    planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
+                    enable_score_build_potential=args.score_build_potential,
+                    dense_reward_scale=args.dense_reward_scale,
+                    consumable_reward_scale=args.consumable_reward_scale,
+                    strategic_event_reward_scale=args.strategic_event_reward_scale,
+                ),
             ),
             agent_config=agent_config,
         )
@@ -836,6 +770,7 @@ def main():
                 clip_epsilon=args.clip_eps,
                 gae_lambda=args.gae_lambda,
                 value_loss_coeff=args.value_loss_coeff,
+                outcome_loss_coeff=args.outcome_loss_coeff,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/ppo",
                 log_dir=log_dir or "runs/ppo",
@@ -865,17 +800,9 @@ def main():
                 eval_regression_patience=args.eval_regression_patience,
                 eval_device=args.eval_device,
                 hand_ar_mixture_eps=ppo_eps,
-                critic_warmup_updates=args.critic_warmup_updates,
-                critic_warmup_lr=args.critic_warmup_lr,
-                critic_warmup_min_ev=args.critic_warmup_min_ev,
-                critic_warmup_ev_window=args.critic_warmup_ev_window,
-                critic_warmup_max_updates=args.critic_warmup_max_updates,
-                actor_ramp_updates=args.actor_ramp_updates,
-                actor_ramp_start_clip_fraction=args.actor_ramp_start_clip_fraction,
                 ppo_run_uuid=args.ppo_run_uuid,
                 ppo_source_sha256=args.ppo_source_sha256,
                 ppo_recipe_id=args.ppo_recipe_id,
-                reinit_value_head=args.reinit_value_head,
                 reset_best_eval=args.reset_best_eval,
                 terminal_replay_batch_size=args.terminal_replay_batch_size,
                 terminal_replay_min_episodes=args.terminal_replay_min_episodes,
@@ -934,6 +861,7 @@ def main():
         from pathlib import Path
 
         from pylatro import load_game_data
+        from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.model_generate import (
             ModelGenerateConfig,
             generate_training_data_from_model,
@@ -944,8 +872,22 @@ def main():
         from pylatro_agent.vocab import build_vocab
 
         data_path = Path(args.data_path) if args.data_path else None
+        training_reward_config = RewardConfig(
+            gamma=args.gamma,
+            potential_win_ante=args.win_ante or 8,
+            enable_planet_match_rewards=args.planet_match_shaping,
+            planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+            planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
+            enable_score_build_potential=args.score_build_potential,
+            dense_reward_scale=args.dense_reward_scale,
+            consumable_reward_scale=args.consumable_reward_scale,
+            strategic_event_reward_scale=args.strategic_event_reward_scale,
+        )
         if data_path is not None and data_path.exists():
-            records = load_records(data_path)
+            records = load_records(
+                data_path,
+                reward_config=training_reward_config,
+            )
         else:
             game_data = load_game_data()
             build_vocab(game_data)  # validate vocab builds
@@ -960,28 +902,39 @@ def main():
                     num_games=args.games,
                     num_envs=args.envs,
                     min_ante=args.min_ante,
+                    gamma=args.gamma,
                     device=device,
                     sample_temperature=args.sample_temperature,
                     max_no_progress_steps=args.max_no_progress_steps_gen,
                     async_envs=not args.sync_envs,
                     log_dir=gen_log_dir,
+                    win_ante=args.win_ante or 8,
+                    reward_config=training_reward_config,
                 ),
                 agent_config=inf_config,
                 data=game_data,
             )
             if data_path is not None:
-                save_records(records, data_path)
+                save_records(
+                    records,
+                    data_path,
+                    reward_config=training_reward_config,
+                )
 
         train_supervised(
             SupervisedConfig(
                 num_games=args.games,
                 batch_size=args.batch,
+                gamma=args.gamma,
                 max_epochs=args.epochs,
                 num_workers=args.workers,
                 min_ante=args.min_ante,
                 device=device,
                 save_dir=checkpoint_dir or "checkpoints/pretrain_from_checkpoint",
                 log_dir=log_dir or "runs/pretrain_from_checkpoint",
+                outcome_loss_coeff=args.outcome_loss_coeff,
+                win_ante=args.win_ante or 8,
+                reward_config=training_reward_config,
             ),
             agent_config=agent_config,
             records=records,

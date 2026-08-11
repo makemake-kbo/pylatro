@@ -65,13 +65,25 @@ def test_rollout_buffer_stops_bootstrap_on_termination() -> None:
     np.testing.assert_allclose(buffer.returns[0], 1.0, rtol=1e-6)
 
 
-def test_rollout_buffer_labels_completed_episode_win_probability() -> None:
+def test_rollout_buffer_labels_completed_episode_outcomes() -> None:
     buffer = RolloutBuffer(num_envs=1, rollout_length=3)
 
-    buffer.set_episode_outcome(env_idx=0, start_step=1, end_step=2, won=True)
+    buffer.set_episode_outcome(
+        env_idx=0, start_step=1, end_step=2, won=True, final_ante=4
+    )
 
-    np.testing.assert_array_equal(buffer.win_probability_targets, [0.0, 1.0, 1.0])
-    np.testing.assert_array_equal(buffer.win_probability_masks, [0.0, 1.0, 1.0])
+    np.testing.assert_array_equal(buffer.terminal_outcome_targets, [0, 8, 8])
+    np.testing.assert_array_equal(buffer.terminal_outcome_masks, [0.0, 1.0, 1.0])
+
+    loss_buffer = RolloutBuffer(num_envs=1, rollout_length=2)
+    loss_buffer.set_episode_outcome(
+        env_idx=0, start_step=0, end_step=1, won=False, final_ante=3
+    )
+    np.testing.assert_array_equal(loss_buffer.terminal_outcome_targets, [2, 2])
+    np.testing.assert_array_equal(loss_buffer.terminal_outcome_masks, [1.0, 1.0])
+
+    stalled_buffer = RolloutBuffer(num_envs=1, rollout_length=2)
+    np.testing.assert_array_equal(stalled_buffer.terminal_outcome_masks, [0.0, 0.0])
 
 
 def test_rollout_buffer_truncation_does_not_leak_gae_across_episode_boundary() -> None:

@@ -28,10 +28,10 @@ from pylatro_cli.controller import GamePhase
 
 from ..action import ActionType, decode_action
 from ..heuristic import HeuristicAgent
-from ..reward import default_reward
+from ..reward import RewardConfig, default_reward
 from ..shop_eval import capture_build_features
 from ..strategic_events import derive_strategic_event
-from ..survival import compute_ante_survival_targets
+from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..tokenizer import Tokenizer
 from ..vocab import Vocab, build_vocab
 from .fast_runner import FastRunner, _blind_target
@@ -165,12 +165,15 @@ def _run_game_single_pass(
     tokenizer: Tokenizer,
     agent: HeuristicAgent,
     gamma: float,
+    win_ante: int = 8,
+    reward_config: RewardConfig | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool]:
-    runner = FastRunner(seed, data)
+    runner = FastRunner(seed, data, win_ante=win_ante)
     records: list[dict[str, Any]] = []
     rewards: list[float] = []
     steps_since_progress = 0
     won = False
+    episode_stalled = False
     rewarded_gold_card_ids: set[int] = set()
 
     prev_info = _capture_info(runner)
@@ -202,10 +205,16 @@ def _run_game_single_pass(
         else:
             steps_since_progress += 1
 
-        stalled = False
+        # FastRunner also terminates at its safety limit. That is censoring,
+        # not evidence for a death-at-Ante outcome.
+        stalled = terminated and runner.phase not in (
+            GamePhase.GAME_OVER,
+            GamePhase.GAME_WON,
+        )
         if not terminated and steps_since_progress >= 2000:
             terminated = True
             stalled = True
+        episode_stalled = episode_stalled or stalled
 
         curr_info["stalled"] = stalled
         curr_info["progress_made"] = progress_made
@@ -243,7 +252,19 @@ def _run_game_single_pass(
         )
         curr_info.update(action_diagnostics)
 
-        reward = default_reward(state, current_prev_info, curr_info, terminated, won)
+        if reward_config is None:
+            reward = default_reward(
+                state, current_prev_info, curr_info, terminated, won
+            )
+        else:
+            reward = default_reward(
+                state,
+                current_prev_info,
+                curr_info,
+                terminated,
+                won,
+                reward_config,
+            )
         rewards.append(float(reward))
 
         records.append({"obs": current_obs, "action": action, "reward": float(reward)})
@@ -256,13 +277,14 @@ def _run_game_single_pass(
         obs = _build_obs(runner, tokenizer)
 
     return_targets = _discounted_returns(rewards, gamma)
-    survival_target, survival_mask = compute_ante_survival_targets(runner.max_ante, won)
+    outcome_target = terminal_outcome_class(won=won, final_ante=runner.max_ante)
     for rec, rt in zip(records, return_targets, strict=True):
         rec["won"] = won
         rec["max_ante"] = runner.max_ante
         rec["return_target"] = rt
-        rec["ante_survival_target"] = survival_target
-        rec["ante_survival_mask"] = survival_mask
+        rec["win_ante"] = int(win_ante)
+        rec["terminal_outcome_target"] = outcome_target
+        rec["terminal_outcome_mask"] = 0.0 if episode_stalled else 1.0
 
     return records, runner.max_ante, won
 
@@ -271,8 +293,9 @@ def _run_game_fast_no_obs(
     seed: int,
     data: GameData,
     agent: HeuristicAgent,
+    win_ante: int = 8,
 ) -> tuple[int, bool]:
-    runner = FastRunner(seed, data, max_steps=2000)
+    runner = FastRunner(seed, data, max_steps=2000, win_ante=win_ante)
     while not runner.done:
         mask = runner.compute_mask()
         action = agent.select_action(
@@ -286,7 +309,7 @@ def _run_game_fast_no_obs(
 
 
 def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
-    seed_start, min_ante, gamma, keep_below_ratio = args
+    seed_start, min_ante, gamma, keep_below_ratio, win_ante, reward_config = args
     data = load_game_data()
     vocab = build_vocab(data)
     tokenizer = Tokenizer(vocab=vocab)
@@ -301,7 +324,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 break
 
         if min_ante > 2:
-            max_ante, won = _run_game_fast_no_obs(seed, data, agent)
+            max_ante, won = _run_game_fast_no_obs(seed, data, agent, win_ante)
             with _shared_total_attempted.get_lock():
                 _shared_total_attempted.value += 1
             seed += 1
@@ -332,6 +355,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 tokenizer,
                 agent,
                 gamma,
+                win_ante,
+                reward_config,
             )
             with _shared_busy.get_lock():
                 _shared_busy.value -= 1
@@ -353,6 +378,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 tokenizer,
                 agent,
                 gamma,
+                win_ante,
+                reward_config,
             )
             with _shared_busy.get_lock():
                 _shared_busy.value -= 1
@@ -453,8 +480,20 @@ def _generate_batch(
     min_ante: int,
     gamma: float,
     keep_below_threshold_ratio: float,
+    win_ante: int,
+    reward_config: RewardConfig | None,
 ) -> list[dict[str, Any]]:
-    worker_args = [(i * 1_000_000, min_ante, gamma, keep_below_threshold_ratio) for i in range(num_workers)]
+    worker_args = [
+        (
+            i * 1_000_000,
+            min_ante,
+            gamma,
+            keep_below_threshold_ratio,
+            win_ante,
+            reward_config,
+        )
+        for i in range(num_workers)
+    ]
 
     stop_event = threading.Event()
 
@@ -512,7 +551,10 @@ def generate_training_data(
     num_workers: int = 0,
     keep_below_threshold_ratio: float = 0.0,
     chunk_size: int = 10_000,
+    win_ante: int = 8,
+    reward_config: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
+    validate_critic_win_ante(win_ante)
     num_workers = _get_num_workers(num_workers)
     logger.info(
         "Fast-generating %d games across %d workers (min_ante=%d, gamma=%.3f, chunk_size=%d)",
@@ -530,6 +572,8 @@ def generate_training_data(
             min_ante,
             gamma,
             keep_below_threshold_ratio,
+            win_ante,
+            reward_config,
         )
         logger.info(
             "Fast-generated %d training records from %d requested games",
@@ -558,6 +602,8 @@ def generate_training_data(
             min_ante,
             gamma,
             keep_below_threshold_ratio,
+            win_ante,
+            reward_config,
         )
         total_records += len(records)
 

@@ -21,10 +21,13 @@ def model() -> BalatroAgent:
 
 
 def _inputs(batch_size: int) -> tuple[torch.Tensor, ...]:
+    scalars = torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32)
+    scalars[:, 2] = 1.0
+    scalars[:, 22] = 8.0
     return (
         torch.zeros(batch_size, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long),
         torch.zeros(batch_size, MAX_SEQ_LEN, dtype=torch.long),
-        torch.zeros(batch_size, SCALAR_DIM, dtype=torch.float32),
+        scalars,
         torch.ones(batch_size, MAX_SEQ_LEN, dtype=torch.long),
         torch.ones(batch_size, NUM_ACTIONS, dtype=torch.float32),
     )
@@ -37,7 +40,14 @@ def test_forward_returns_structured_distribution_and_values(model: BalatroAgent)
     assert distribution.action_type_probs.shape == (2, NUM_GRAMMAR_ACTIONS)
     assert values["win_prob"].shape == (2,)
     assert values["expected_score"].shape == (2,)
+    assert values["expected_return"].shape == (2,)
+    assert values["return_residual"].shape == (2,)
+    assert values["terminal_value"].shape == (2,)
     assert values["ante_survival"].shape == (2, 8)
+    assert values["outcome_probabilities"].shape == (2, 9)
+    torch.testing.assert_close(
+        values["outcome_probabilities"].sum(dim=-1), torch.ones(2)
+    )
 
 
 def test_distribution_samples_only_valid_actions(model: BalatroAgent) -> None:
@@ -68,37 +78,6 @@ def test_named_distribution_entry_point_matches_forward_contract(
     assert isinstance(distribution, ActionGrammarDistribution)
     assert distribution.sample().shape == (3,)
     assert values["expected_score"].shape == (3,)
-
-
-def test_detached_value_features_keep_critic_gradient_out_of_backbone(
-    model: BalatroAgent,
-) -> None:
-    inputs = _inputs(2)
-
-    model.zero_grad(set_to_none=True)
-    distribution, _values = model.action_distribution(*inputs, detach_value_features=True)
-    actions = torch.zeros(2, dtype=torch.long)
-    policy_loss = -distribution.log_prob(actions).mean()
-    policy_loss.backward()
-    policy_backbone_grads = {
-        name: parameter.grad.detach().clone()
-        for name, parameter in model.backbone.named_parameters()
-        if parameter.grad is not None
-    }
-    assert policy_backbone_grads
-
-    model.zero_grad(set_to_none=True)
-    distribution, values = model.action_distribution(*inputs, detach_value_features=True)
-    combined_loss = -distribution.log_prob(actions).mean() + 100.0 * values["expected_score"].mean()
-    combined_loss.backward()
-
-    for name, parameter in model.backbone.named_parameters():
-        expected = policy_backbone_grads.get(name)
-        if expected is None:
-            assert parameter.grad is None
-        else:
-            assert torch.allclose(parameter.grad, expected)
-    assert any(parameter.grad is not None for parameter in model.value_head.parameters())
 
 
 def test_data_parallel_path_uses_tensor_outputs_and_rebuilds_distribution(

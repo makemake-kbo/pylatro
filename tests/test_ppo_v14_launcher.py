@@ -1,3 +1,5 @@
+"""Deployment-launcher checks; filename remains v14 for compatibility."""
+
 from __future__ import annotations
 
 import hashlib
@@ -18,7 +20,7 @@ LAUNCHER_PATH = REPO_ROOT / "scripts" / "run_ppo_v14_safe_tarot_seal_strategy.sh
 
 
 def _load_validator_module():
-    spec = importlib.util.spec_from_file_location("pylatro_v14_validator", VALIDATOR_PATH)
+    spec = importlib.util.spec_from_file_location("pylatro_v8_validator", VALIDATOR_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -32,15 +34,15 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _write_source(path: Path, **overrides) -> str:
-    payload = {
-        "tokenizer_version": 6,
-        "reward_model_version": 12,
-        "update_count": 280,
-        "best_eval_update": 280,
-    }
-    payload.update(overrides)
-    torch.save(payload, path)
+def _write_source(path: Path, *, version: int = 8) -> str:
+    torch.save(
+        {
+            "tokenizer_version": version,
+            "tokenizer_semantics": validator.TOKENIZER_SEMANTICS,
+            "state_dict": {},
+        },
+        path,
+    )
     return _sha256(path)
 
 
@@ -50,36 +52,92 @@ def _launcher_env(tmp_path: Path, source: Path, source_sha256: str) -> dict[str,
         "PYLATRO_WORKSPACE": str(tmp_path / "workspace"),
         "PYLATRO_REPO_DIR": str(REPO_ROOT),
         "PYLATRO_PYTHON": sys.executable,
-        "PYLATRO_RUN_NAME": "ppo_strategy_v14_launcher_test",
+        "PYLATRO_RUN_NAME": "ppo_v8_launcher_test",
         "PYLATRO_SOURCE_CHECKPOINT": str(source),
         "PYLATRO_SOURCE_SHA256": source_sha256,
         "PYLATRO_VALIDATE_ONLY": "1",
     }
 
 
-def _capture_launcher_args(tmp_path: Path, *, win_ante: str) -> list[str]:
-    source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    capture_path = tmp_path / "argv.json"
-    python_wrapper = tmp_path / "python-wrapper"
-    python_wrapper.write_text(
-        "#!/usr/bin/env python3\n"
-        "import json, os, sys\n"
-        "if sys.argv[1].endswith('validate_ppo_run_checkpoint.py'):\n"
-        "    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
-        "with open(os.environ['PYLATRO_CAPTURE_ARGS'], 'w') as stream:\n"
-        "    json.dump(sys.argv[1:], stream)\n"
-    )
-    python_wrapper.chmod(0o755)
-    env = _launcher_env(tmp_path, source, source_sha256)
-    env.update(
+def _valid_resume(
+    path: Path, *, run_uuid: str, source_sha256: str, recipe_id: str
+) -> None:
+    torch.save(
         {
-            "PYLATRO_PYTHON": str(python_wrapper),
-            "PYLATRO_CAPTURE_ARGS": str(capture_path),
-            "PYLATRO_VALIDATE_ONLY": "0",
-            "PYLATRO_WIN_ANTE": win_ante,
-        }
+            "checkpoint_format": "ppo_full",
+            "tokenizer_version": 8,
+            "tokenizer_semantics": validator.TOKENIZER_SEMANTICS,
+            "ppo_config_fields": dict(validator.V8_PPO_CONFIG),
+            "ppo_run_provenance": {
+                "run_uuid": run_uuid,
+                "source_sha256": source_sha256,
+                "recipe_id": recipe_id,
+            },
+        },
+        path,
     )
+
+
+def test_launcher_recipe_uses_only_v8_critic_controls() -> None:
+    launcher = LAUNCHER_PATH.read_text()
+    assert validator.V8_PPO_CONFIG["lr"] == pytest.approx(3e-6)
+    assert validator.V8_PPO_CONFIG["mini_batch_size"] == 320
+    assert validator.V8_PPO_CONFIG["micro_batch_size"] == 160
+    assert "--outcome-loss-coeff 0.10" in launcher
+    assert "--critic-warmup" not in launcher
+    assert "--actor-ramp" not in launcher
+    assert "--hl-gauss" not in launcher
+    assert "--reinit-value-head" not in launcher
+    assert 'recipe_id="pylatro-v8-conditional-survival-v1"' in launcher
+
+
+def test_source_validator_accepts_v8_and_rejects_v7(tmp_path: Path) -> None:
+    source = tmp_path / "v8.pt"
+    source_hash = _write_source(source)
+    validator.validate_source(source, source_hash)
+    with pytest.raises(RuntimeError, match="SHA256 mismatch"):
+        validator.validate_source(source, "0" * 64)
+
+    old = tmp_path / "v7.pt"
+    old_hash = _write_source(old, version=7)
+    with pytest.raises(RuntimeError, match="fresh v8 supervised training"):
+        validator.validate_source(old, old_hash)
+
+
+def test_resume_validator_requires_v8_recipe_and_no_transition_state(tmp_path: Path) -> None:
+    resume = tmp_path / "resume.pt"
+    run_uuid = str(uuid.uuid4())
+    source_hash = "a" * 64
+    recipe_id = "pylatro-v8-conditional-survival-v1"
+    _valid_resume(
+        resume,
+        run_uuid=run_uuid,
+        source_sha256=source_hash,
+        recipe_id=recipe_id,
+    )
+    validator.validate_resume(
+        resume,
+        run_uuid=run_uuid,
+        source_sha256=source_hash,
+        recipe_id=recipe_id,
+    )
+
+    payload = torch.load(resume, map_location="cpu", weights_only=False)
+    payload["ppo_transition_state"] = {"version": 1}
+    torch.save(payload, resume)
+    with pytest.raises(RuntimeError, match="legacy transition state"):
+        validator.validate_resume(
+            resume,
+            run_uuid=run_uuid,
+            source_sha256=source_hash,
+            recipe_id=recipe_id,
+        )
+
+
+def test_launcher_creates_v8_owner_marker_after_source_validation(tmp_path: Path) -> None:
+    source = tmp_path / "source.pt"
+    source_hash = _write_source(source)
+    env = _launcher_env(tmp_path, source, source_hash)
     result = subprocess.run(
         ["bash", str(LAUNCHER_PATH)],
         env=env,
@@ -88,34 +146,23 @@ def _capture_launcher_args(tmp_path: Path, *, win_ante: str) -> list[str]:
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    return json.loads(capture_path.read_text())
+    marker = (
+        tmp_path
+        / "workspace"
+        / "checkpoints"
+        / env["PYLATRO_RUN_NAME"]
+        / ".pylatro-v8-run"
+    )
+    payload = json.loads(marker.read_text())
+    assert payload["tokenizer_version"] == 8
+    assert payload["source_sha256"] == source_hash
+    assert str(uuid.UUID(payload["run_uuid"])) == payload["run_uuid"]
 
 
-def test_v14_launcher_and_validator_pin_distinct_phase_learning_rates() -> None:
-    launcher = LAUNCHER_PATH.read_text()
-    assert validator.V14_TRANSITION_CONFIG["lr"] == pytest.approx(3e-6)
-    assert validator.V14_TRANSITION_CONFIG["critic_warmup_lr"] == pytest.approx(1e-5)
-    assert validator.V14_TRANSITION_CONFIG["mini_batch_size"] == 320
-    assert validator.V14_TRANSITION_CONFIG["micro_batch_size"] == 160
-    assert "--lr 3e-6" in launcher
-    assert "--critic-warmup-lr 1e-5" in launcher
-    assert "--batch 320" in launcher
-    assert "--micro-batch-size 160" in launcher
-    assert "--batch 352" not in launcher
-    assert "criticlr1e5_micro160" in launcher
-    assert 'recipe_id="pylatro-v14-safe-v4"' in launcher
-
-
-def test_launcher_accepts_explicit_win_ante_override(tmp_path: Path) -> None:
-    args = _capture_launcher_args(tmp_path, win_ante="5")
-    win_ante_index = args.index("--win-ante")
-    assert args[win_ante_index + 1] == "5"
-
-
-def test_launcher_rejects_invalid_win_ante_override(tmp_path: Path) -> None:
+def test_launcher_rejects_invalid_win_ante(tmp_path: Path) -> None:
     source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    env = _launcher_env(tmp_path, source, source_sha256)
+    source_hash = _write_source(source)
+    env = _launcher_env(tmp_path, source, source_hash)
     env["PYLATRO_WIN_ANTE"] = "five"
     result = subprocess.run(
         ["bash", str(LAUNCHER_PATH)],
@@ -125,222 +172,18 @@ def test_launcher_rejects_invalid_win_ante_override(tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 2
-    assert "PYLATRO_WIN_ANTE must be an integer from 1 through 8" in result.stdout + result.stderr
-
-
-def test_source_validator_checks_hash_and_exact_metadata(tmp_path: Path) -> None:
-    source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    validator.validate_source(source, source_sha256)
-
-    with pytest.raises(RuntimeError, match="SHA256 mismatch"):
-        validator.validate_source(source, "0" * 64)
-
-    renamed_v13 = tmp_path / "renamed_v13.pt"
-    renamed_sha256 = _write_source(renamed_v13, update_count=50, best_eval_update=40)
-    with pytest.raises(RuntimeError, match="metadata mismatch"):
-        validator.validate_source(renamed_v13, renamed_sha256)
-
-
-def test_resume_validator_requires_v14_transition_recipe(tmp_path: Path) -> None:
-    resume = tmp_path / "v14_resume.pt"
-    run_uuid = str(uuid.uuid4())
-    source_sha256 = "a" * 64
-    recipe_id = "pylatro-v14-safe-v4"
-    torch.save(
-        {
-            "checkpoint_format": "ppo_full",
-            "tokenizer_version": 7,
-            "ppo_transition_state": {"version": 1, "warmup_complete": False},
-            "ppo_config_fields": dict(validator.V14_TRANSITION_CONFIG),
-            "ppo_active_lr": 1e-5,
-            "optimizer_state_dict": {"param_groups": [{"lr": 1e-5}]},
-            "ppo_run_provenance": {
-                "run_uuid": run_uuid,
-                "source_sha256": source_sha256,
-                "recipe_id": recipe_id,
-            },
-        },
-        resume,
-    )
-    validator.validate_resume(
-        resume,
-        run_uuid=run_uuid,
-        source_sha256=source_sha256,
-        recipe_id=recipe_id,
-    )
-
-    payload = torch.load(resume, map_location="cpu", weights_only=False)
-    payload["ppo_config_fields"]["actor_ramp_updates"] = 0
-    torch.save(payload, resume)
-    with pytest.raises(RuntimeError, match="transition recipe mismatch"):
-        validator.validate_resume(
-            resume,
-            run_uuid=run_uuid,
-            source_sha256=source_sha256,
-            recipe_id=recipe_id,
-        )
-
-    payload["ppo_config_fields"] = dict(validator.V14_TRANSITION_CONFIG)
-    payload["ppo_config_fields"]["critic_warmup_lr"] = 3e-6
-    torch.save(payload, resume)
-    with pytest.raises(RuntimeError, match="critic_warmup_lr"):
-        validator.validate_resume(
-            resume,
-            run_uuid=run_uuid,
-            source_sha256=source_sha256,
-            recipe_id=recipe_id,
-        )
-
-    payload["ppo_config_fields"] = dict(validator.V14_TRANSITION_CONFIG)
-    payload["ppo_active_lr"] = 3e-6
-    torch.save(payload, resume)
-    with pytest.raises(RuntimeError, match="active optimizer LR"):
-        validator.validate_resume(
-            resume,
-            run_uuid=run_uuid,
-            source_sha256=source_sha256,
-            recipe_id=recipe_id,
-        )
-
-
-def test_launcher_marks_identity_only_after_validation_and_rejects_unowned_resume(tmp_path: Path) -> None:
-    source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    env = _launcher_env(tmp_path, source, source_sha256)
-
-    first = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert first.returncode == 0, first.stdout + first.stderr
-    checkpoint_dir = tmp_path / "workspace" / "checkpoints" / env["PYLATRO_RUN_NAME"]
-    marker = checkpoint_dir / ".pylatro-v14-safe-run"
-    marker_payload = json.loads(marker.read_text())
-    assert marker_payload["run_name"] == env["PYLATRO_RUN_NAME"]
-    assert marker_payload["source_sha256"] == source_sha256
-    assert marker_payload["source_metadata"] == validator.SOURCE_METADATA
-    assert str(uuid.UUID(marker_payload["run_uuid"])) == marker_payload["run_uuid"]
-
-    # A renamed/copy-in v13 checkpoint lacks the transition marker and is
-    # rejected even inside a directory that otherwise has a valid owner file.
-    torch.save(
-        {
-            "checkpoint_format": "ppo_full",
-            "tokenizer_version": 7,
-            "ppo_config_fields": dict(validator.V14_TRANSITION_CONFIG),
-        },
-        checkpoint_dir / "ppo_latest.pt",
-    )
-    copied_v13 = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert copied_v13.returncode == 2
-    assert "transition-state marker" in copied_v13.stdout + copied_v13.stderr
-
-
-def test_launcher_does_not_mark_invalid_source(tmp_path: Path) -> None:
-    source = tmp_path / "renamed_regressed_checkpoint.pt"
-    source_sha256 = _write_source(source, update_count=50, best_eval_update=40)
-    env = _launcher_env(tmp_path, source, source_sha256)
-
-    result = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 2
-    checkpoint_dir = tmp_path / "workspace" / "checkpoints" / env["PYLATRO_RUN_NAME"]
-    assert not (checkpoint_dir / ".pylatro-v14-safe-run").exists()
-    assert "metadata mismatch" in result.stdout + result.stderr
-
-
-def test_launcher_rejects_mismatched_ownership_identity(tmp_path: Path) -> None:
-    source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    env = _launcher_env(tmp_path, source, source_sha256)
-    first = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert first.returncode == 0
-
-    marker = tmp_path / "workspace" / "checkpoints" / env["PYLATRO_RUN_NAME"] / ".pylatro-v14-safe-run"
-    marker_payload = json.loads(marker.read_text())
-    marker_payload["run_name"] = "some-other-run"
-    marker.write_text(json.dumps(marker_payload))
-    second = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert second.returncode == 2
-    assert "ownership marker mismatch" in second.stdout + second.stderr
-
-
-def test_launcher_rejects_foreign_v14_checkpoint_uuid(tmp_path: Path) -> None:
-    source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    env = _launcher_env(tmp_path, source, source_sha256)
-    first = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert first.returncode == 0
-    checkpoint_dir = tmp_path / "workspace" / "checkpoints" / env["PYLATRO_RUN_NAME"]
-    torch.save(
-        {
-            "checkpoint_format": "ppo_full",
-            "tokenizer_version": 7,
-            "ppo_transition_state": {"version": 1, "warmup_complete": False},
-            "ppo_config_fields": dict(validator.V14_TRANSITION_CONFIG),
-            "ppo_active_lr": 1e-5,
-            "optimizer_state_dict": {"param_groups": [{"lr": 1e-5}]},
-            "ppo_run_provenance": {
-                "run_uuid": str(uuid.uuid4()),
-                "source_sha256": source_sha256,
-                "recipe_id": "pylatro-v14-safe-v4",
-            },
-        },
-        checkpoint_dir / "ppo_latest.pt",
-    )
-
-    foreign = subprocess.run(
-        ["bash", str(LAUNCHER_PATH)],
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert foreign.returncode == 2
-    assert "run provenance mismatch" in foreign.stdout + foreign.stderr
+    assert "integer from 1 through 8" in result.stdout + result.stderr
 
 
 def test_launcher_rejects_unowned_latest_checkpoint(tmp_path: Path) -> None:
     source = tmp_path / "source.pt"
-    source_sha256 = _write_source(source)
-    env = _launcher_env(tmp_path, source, source_sha256)
-    checkpoint_dir = tmp_path / "workspace" / "checkpoints" / env["PYLATRO_RUN_NAME"]
+    source_hash = _write_source(source)
+    env = _launcher_env(tmp_path, source, source_hash)
+    checkpoint_dir = (
+        tmp_path / "workspace" / "checkpoints" / env["PYLATRO_RUN_NAME"]
+    )
     checkpoint_dir.mkdir(parents=True)
     torch.save({"checkpoint_format": "ppo_full"}, checkpoint_dir / "ppo_latest.pt")
-
     result = subprocess.run(
         ["bash", str(LAUNCHER_PATH)],
         env=env,

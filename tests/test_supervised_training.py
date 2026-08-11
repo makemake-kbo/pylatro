@@ -67,10 +67,13 @@ def test_supervised_data_parallel_uses_wrapped_forward(
         build_vocab(game_data),
     )
     wrapped = torch.nn.DataParallel(model)
+    scalars = torch.zeros(2, SCALAR_DIM)
+    scalars[:, 2] = 1.0
+    scalars[:, 22] = 8.0
     batch = {
         "tokens": torch.zeros(2, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long),
         "token_types": torch.zeros(2, MAX_SEQ_LEN, dtype=torch.long),
-        "scalars": torch.zeros(2, SCALAR_DIM),
+        "scalars": scalars,
         "attention_mask": torch.ones(2, MAX_SEQ_LEN, dtype=torch.long),
         "action_mask": torch.ones(2, NUM_ACTIONS),
     }
@@ -313,11 +316,13 @@ class TestCollation:
         assert batch["attention_mask"].shape == (2, MAX_SEQ_LEN)
         assert batch["action_mask"].shape == (2, NUM_ACTIONS)
         assert batch["actions"].shape == (2,)
-        assert batch["won"].shape == (2,)
         assert batch["value_target"].shape == (2,)
+        assert batch["terminal_outcome_target"].shape == (2,)
+        assert batch["terminal_outcome_mask"].shape == (2,)
         assert batch["actions"].tolist() == [0, 1]
-        assert batch["won"].tolist() == [1.0, 0.0]
         assert batch["value_target"].tolist() == [10.0, -2.0]
+        assert batch["terminal_outcome_target"].tolist() == [8, 2]
+        assert batch["terminal_outcome_mask"].tolist() == [1.0, 1.0]
 
     def test_collate_batch_prefers_recorded_return_target(self):
         batch = _collate_batch(
@@ -392,6 +397,11 @@ class TestEndToEndTraining:
         assert model is not None
         ckpts = list((tmp_path / "ckpts").glob("*.pt"))
         assert len(ckpts) == 2, f"Expected 2 checkpoint files, found {len(ckpts)}"
+        payload = torch.load(ckpts[-1], map_location="cpu", weights_only=True)
+        assert payload["tokenizer_version"] == 8
+        assert payload["agent_config"]["d_model"] == 384
+        assert len(payload["reward_fingerprint"]) == 64
+        assert payload["reward_config"]["potential_win_ante"] == 8
 
     def test_train_supervised_empty_data_handled(self, game_data, vocab, tmp_path):
         with patch(

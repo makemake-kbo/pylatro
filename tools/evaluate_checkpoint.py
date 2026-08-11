@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Evaluate a PPO/supervised checkpoint's win rate over N games.
 
-Loads a checkpoint (full PPO resume checkpoint or weights-only), rebuilds the
-model from the embedded agent_config when available (falling back to CLI
-``--d-model``/``--n-layers``/``--n-heads``/``--d-ff`` for legacy files), and
-runs the same greedy ``evaluate_model`` loop used during PPO eval.
+Loads a v8 checkpoint (full PPO resume checkpoint or weights-only), rebuilds
+the model from the embedded agent_config when available, and runs the same
+greedy ``evaluate_model`` loop used during PPO eval. Checkpoints without an
+embedded config may supply the architecture through the CLI flags, but their
+weights must still match the v8 model exactly.
 
 Example:
 
@@ -186,10 +187,13 @@ def main() -> None:
                 k.startswith("module.") for k in model_state
             ):
                 state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-            compatible = {
-                k: v for k, v in state_dict.items() if k in model_state and model_state[k].shape == v.shape
-            }
-            model.load_state_dict(compatible, strict=False)
+            try:
+                model.load_state_dict(state_dict, strict=True)
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    f"Checkpoint {args.checkpoint} does not exactly match the v8 architecture. "
+                    "Fresh v8 supervised training is required."
+                ) from exc
             label = args.checkpoint
             outcomes = evaluate_on_seeds(
                 model,
@@ -239,7 +243,7 @@ def main() -> None:
             )
         return
 
-    # === Legacy unpaired path (unchanged) ===
+    # === Unpaired path ===
 
     from pylatro_agent.agent import AgentConfig, BalatroAgent
     from pylatro_agent.checkpoint import load_checkpoint_payload
@@ -298,13 +302,13 @@ def main() -> None:
     # Strip a possible DataParallel prefix mismatch.
     if any(k.startswith("module.") for k in state_dict) and not any(k.startswith("module.") for k in model_state):
         state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-    compatible = {
-        k: v for k, v in state_dict.items() if k in model_state and model_state[k].shape == v.shape
-    }
-    model.load_state_dict(compatible, strict=False)
-    skipped = sorted(set(state_dict) - set(compatible))
-    if skipped:
-        logger.warning("Skipped %d incompatible tensors during load (e.g. %s).", len(skipped), skipped[:3])
+    try:
+        model.load_state_dict(state_dict, strict=True)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Checkpoint {args.checkpoint} does not exactly match the v8 architecture. "
+            "Fresh v8 supervised training is required."
+        ) from exc
 
     logger.info(
         "Running %d eval games on %s (win_ante=%s, temperature=%.3f, stake=%d)...",

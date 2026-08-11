@@ -408,7 +408,9 @@ def test_head_produces_candidate_logits():
     tokens = torch.zeros(batch, 160, 13, dtype=torch.long)
     token_types = torch.full((batch, 160), 10, dtype=torch.long)
     attn = torch.ones(batch, 160, dtype=torch.long)
-    scalars = torch.zeros(batch, 11)
+    scalars = torch.zeros(batch, SCALAR_DIM)
+    scalars[:, 2] = 1.0
+    scalars[:, 22] = 8.0
 
     output = model.action_grammar_head(
         model.backbone(model.embedding(tokens, token_types, scalars), padding_mask=(attn == 0)),

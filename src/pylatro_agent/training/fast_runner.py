@@ -45,6 +45,7 @@ from ..subset_actions import (
     legal_subset_mask,
     subset_indices,
 )
+from ..survival import validate_critic_win_ante
 
 if TYPE_CHECKING:
     from pylatro.data import GameData
@@ -69,12 +70,20 @@ class FastRunner:
         "_won",
     )
 
-    def __init__(self, seed: int, data: GameData, *, max_steps: int = 2000) -> None:
+    def __init__(
+        self,
+        seed: int,
+        data: GameData,
+        *,
+        max_steps: int = 2000,
+        win_ante: int = 8,
+    ) -> None:
         ctrl = GameController(data=data)
         ctrl.new_run(str(seed))
         assert ctrl.state is not None
         self._ctrl = ctrl
         self._state: RunState = cast("RunState", ctrl.state)
+        self._state.win_ante = validate_critic_win_ante(win_ante)
         self._sub_phase: SubPhase = SubPhase.BLIND_SELECT
         self._round_score: int = 0
         self._max_ante: int = 1

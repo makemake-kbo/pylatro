@@ -26,10 +26,13 @@ from pylatro_agent.training.sil import (
 
 
 def _make_obs(num_envs: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    scalars = rng.random((num_envs, SCALAR_DIM)).astype(np.float32)
+    scalars[:, 2] = 1.0
+    scalars[:, 22] = DEFAULT_MAX_ANTES
     return {
         "tokens": rng.integers(0, 100, size=(num_envs, MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int64),
         "token_types": rng.integers(0, 8, size=(num_envs, MAX_SEQ_LEN), dtype=np.int64),
-        "scalars": rng.random((num_envs, SCALAR_DIM)).astype(np.float32),
+        "scalars": scalars,
         "attention_mask": rng.integers(0, 2, size=(num_envs, MAX_SEQ_LEN), dtype=np.int64),
         "action_mask": rng.integers(0, 2, size=(num_envs, NUM_ACTIONS)).astype(np.float32),
     }
@@ -614,8 +617,8 @@ def test_checkpoint_records_training_seed(
 
 
 # ===========================================================================
-# PPO integration: logical-minibatch budget, gradient accumulation, warmup,
-# KL boundaries, joint optimizer step, gradient diagnostics.
+# PPO integration: logical-minibatch budget, gradient accumulation, KL
+# boundaries, joint optimizer step, gradient diagnostics.
 # ===========================================================================
 
 
@@ -648,10 +651,22 @@ class _SilModel(torch.nn.Module):
         h = torch.ones(batch, 1, device=action_mask.device)
         logits = self.policy_head(h)
         values = self.value_head(h).squeeze(-1)
-        survival = torch.full((batch, DEFAULT_MAX_ANTES), 0.5)
+        survival = torch.full(
+            (batch, DEFAULT_MAX_ANTES), 0.5, device=action_mask.device
+        )
+        from pylatro_agent.survival import hazard_outcome_probabilities
+
+        outcomes = hazard_outcome_probabilities(
+            survival, scalars[:, 2], scalars[:, 22]
+        )
         return _SilDist(logits, action_mask), {
+            "expected_return": values,
             "expected_score": values,
+            "return_residual": values,
+            "terminal_value": torch.zeros_like(values),
             "ante_survival": survival,
+            "outcome_probabilities": outcomes,
+            "win_prob": outcomes[:, -1],
         }
 
 
@@ -715,7 +730,7 @@ def _sil_ppo_config(**overrides):
         clip_epsilon=0.2,
         entropy_coeff=0.0,
         value_loss_coeff=0.0,
-        survival_loss_coeff=0.0,
+        outcome_loss_coeff=0.0,
         target_kl=None,
         rollout_temperature=1.0,
         sil_coeff=0.01,
@@ -739,7 +754,6 @@ def test_exactly_one_sil_logical_group_attempted_per_update() -> None:
         model=model,
         optimizer=optimizer,
         buffer=_ppo_signal_buffer(4),
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(ppo_epochs=2, sil_logical_minibatches_per_update=1),
         accum_steps=1,
@@ -764,7 +778,6 @@ def test_two_sil_logical_groups_when_configured() -> None:
         model=model,
         optimizer=optimizer,
         buffer=_ppo_signal_buffer(4),
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(sil_logical_minibatches_per_update=2),
         accum_steps=1,
@@ -789,7 +802,6 @@ def test_grad_accumulation_does_not_multiply_sil() -> None:
         model=model,
         optimizer=optimizer,
         buffer=_ppo_signal_buffer(4),
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(sil_logical_minibatches_per_update=1),
         accum_steps=2,
@@ -803,31 +815,6 @@ def test_grad_accumulation_does_not_multiply_sil() -> None:
     assert len(stats.sil_losses) == 1
 
 
-def test_no_sil_during_critic_warmup() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
-
-    model = _SilModel()
-    optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
-    sil_buffer = _make_sil_buffer(2)
-    stats = _run_ppo_update(
-        model=model,
-        optimizer=optimizer,
-        buffer=_ppo_signal_buffer(4),
-        return_rms=None,
-        entropy_coeff=0.0,
-        config=_sil_ppo_config(),
-        accum_steps=1,
-        effective_batch_size=1,
-        device=torch.device("cpu"),
-        use_pin_memory=False,
-        policy_loss_scale=0.0,  # critic warmup: policy frozen
-        sil_buffer=sil_buffer,
-        sil_coeff_now=0.01,
-    )
-    assert stats.sil_logical_minibatches_attempted == 0
-    assert stats.sil_losses == []
-
-
 def test_kl_stop_at_logical_boundary() -> None:
     from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
 
@@ -838,7 +825,6 @@ def test_kl_stop_at_logical_boundary() -> None:
         model=model,
         optimizer=optimizer,
         buffer=_ppo_signal_buffer(6),
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(ppo_epochs=4, target_kl=1e-6),
         accum_steps=accum_steps,
@@ -912,7 +898,6 @@ def test_soft_kl_stop_cannot_happen_before_min_fraction(monkeypatch) -> None:
         model=model,
         optimizer=optimizer,
         buffer=buffer,
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(
             ppo_epochs=4,
@@ -953,7 +938,6 @@ def test_hard_kl_breach_restores_model_and_adam_exactly() -> None:
         model=model,
         optimizer=optimizer,
         buffer=buffer,
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(
             ppo_epochs=4,
@@ -987,7 +971,6 @@ def test_no_kl_breach_path_trains_normally() -> None:
         model=model,
         optimizer=optimizer,
         buffer=buffer,
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(
             ppo_epochs=2,
@@ -1026,7 +1009,6 @@ def test_sil_shares_optimizer_step_with_ppo() -> None:
             model=model,
             optimizer=optimizer,
             buffer=_ppo_signal_buffer(4),
-            return_rms=None,
             entropy_coeff=0.0,
             config=_sil_ppo_config(),
             accum_steps=1,
@@ -1054,7 +1036,6 @@ def test_sil_grad_diagnostics_captured() -> None:
         model=model,
         optimizer=optimizer,
         buffer=_ppo_signal_buffer(4),
-        return_rms=None,
         entropy_coeff=0.0,
         config=_sil_ppo_config(),
         accum_steps=1,

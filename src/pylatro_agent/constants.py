@@ -9,17 +9,18 @@ from enum import IntEnum, StrEnum
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-TOKENIZER_VERSION = 7
-# Tokenizer-v7 preserves scalar indices 0..12 and appends five strategic
-# opportunity probabilities plus four absolute suit-target utilities through
-# zero-initialized adapters, so v6 policy weights are a safe pretrained
-# initialization but never a strict resume.
-TOKENIZER_SEMANTICS = "v7_strategy_probabilities"
+TOKENIZER_VERSION = 8
+# Tokenizer-v8 appends the configured victory Ante.  The critic needs both the
+# current and target Ante to mask impossible terminal outcomes and assign the
+# correct terminal utility to each outcome class.
+TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = 12
-SCALAR_DIM = 22  # v6's 13 features plus nine strategic context scalars
+SCALAR_DIM = 23  # v7's 22 features plus the configured win Ante
+CURRENT_ANTE_SCALAR_INDEX = 2
+WIN_ANTE_SCALAR_INDEX = 22
 LEGACY_POLICY_SCALAR_DIM = 11  # v5 action-head input; risk enters through META embedding
 
 # Played-hand history.  The tracker presents rounds oldest-to-newest, with the

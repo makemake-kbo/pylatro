@@ -18,7 +18,7 @@ from ..constants import (
     SCALAR_DIM,
     TOKEN_DIM,
 )
-from ..survival import DEFAULT_MAX_ANTES
+from ..survival import terminal_outcome_class
 
 
 class RolloutBuffer:
@@ -89,15 +89,10 @@ class RolloutBuffer:
         self.advantages = np.zeros(self.total_size, dtype=np.float32)
         self.returns = np.zeros(self.total_size, dtype=np.float32)
 
-        # Per-step ante-survival aux targets, filled retroactively at
-        # episode-end by `set_episode_survival`. Defaults to mask=0 so
-        # unfinished episodes contribute nothing to the survival loss.
-        self.ante_survival_targets = np.zeros((self.total_size, DEFAULT_MAX_ANTES), dtype=np.float32)
-        self.ante_survival_masks = np.zeros((self.total_size, DEFAULT_MAX_ANTES), dtype=np.float32)
-        # Episode-win target for the long-horizon win-probability head.  PPO
-        # previously left this head stale (and random after value-head reinit).
-        self.win_probability_targets = np.zeros(self.total_size, dtype=np.float32)
-        self.win_probability_masks = np.zeros(self.total_size, dtype=np.float32)
+        # One categorical complete-episode label per transition. Unfinished
+        # and stalled episodes remain masked.
+        self.terminal_outcome_targets = np.zeros(self.total_size, dtype=np.int64)
+        self.terminal_outcome_masks = np.zeros(self.total_size, dtype=np.float32)
 
         # Write pointer per env
         self._step_counts = np.zeros(num_envs, dtype=np.int64)
@@ -146,21 +141,6 @@ class RolloutBuffer:
 
         self._step_counts[:] = step + 1
 
-    def set_episode_survival(
-        self,
-        env_idx: int,
-        start_step: int,
-        end_step: int,
-        target: np.ndarray,
-        mask: np.ndarray,
-    ) -> None:
-        """Fill [start_step, end_step] inclusive of env_idx with survival target + mask."""
-        base = env_idx * self.rollout_length
-        lo = base + start_step
-        hi = base + end_step + 1
-        self.ante_survival_targets[lo:hi] = target
-        self.ante_survival_masks[lo:hi] = mask
-
     def set_episode_outcome(
         self,
         env_idx: int,
@@ -168,14 +148,16 @@ class RolloutBuffer:
         end_step: int,
         *,
         won: bool,
+        final_ante: int,
     ) -> None:
-        """Fill the completed episode's win-probability target and mask."""
+        """Fill the completed episode's terminal-outcome class and mask."""
 
         base = env_idx * self.rollout_length
         lo = base + start_step
         hi = base + end_step + 1
-        self.win_probability_targets[lo:hi] = float(won)
-        self.win_probability_masks[lo:hi] = 1.0
+        target = terminal_outcome_class(won=won, final_ante=final_ante)
+        self.terminal_outcome_targets[lo:hi] = target
+        self.terminal_outcome_masks[lo:hi] = 1.0
 
     def compute_returns_and_advantages(self, last_values: np.ndarray | list[float]) -> None:
         """Compute GAE advantages per env, storing into pre-allocated arrays.
@@ -320,10 +302,12 @@ class RolloutBuffer:
                     "old_log_probs": torch.as_tensor(self.log_probs[idx], device=device),
                     "advantages": torch.as_tensor(self.advantages[idx], device=device),
                     "returns": torch.as_tensor(self.returns[idx], device=device),
-                    "ante_survival_target": torch.as_tensor(self.ante_survival_targets[idx], device=device),
-                    "ante_survival_mask": torch.as_tensor(self.ante_survival_masks[idx], device=device),
-                    "win_probability_target": torch.as_tensor(self.win_probability_targets[idx], device=device),
-                    "win_probability_mask": torch.as_tensor(self.win_probability_masks[idx], device=device),
+                    "terminal_outcome_target": torch.as_tensor(
+                        self.terminal_outcome_targets[idx], device=device
+                    ),
+                    "terminal_outcome_mask": torch.as_tensor(
+                        self.terminal_outcome_masks[idx], device=device
+                    ),
                 }
 
                 if pin_memory and device.type == "cpu":

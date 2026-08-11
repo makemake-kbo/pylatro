@@ -49,6 +49,7 @@ from .risk import estimate_clear_risk, weakest_confident_joker
 from .shop_eval import capture_build_features, evaluate_build
 from .strategic_events import derive_strategic_event
 from .subset_actions import consumable_subset_indices, subset_indices
+from .survival import validate_critic_win_ante
 from .tokenizer import RawObservation, Tokenizer
 from .vocab import Vocab, build_vocab
 
@@ -86,7 +87,9 @@ class BalatroEnv(gymnasium.Env):
         # uses the engine default (win_ante=8). Lower values let PPO see
         # frequent wins early so it can bootstrap a value signal, the
         # heuristic teacher only wins ~1% at ante 8 but ~39% at ante 4.
-        self._win_ante_override = win_ante
+        self._win_ante_override = (
+            validate_critic_win_ante(win_ante) if win_ante is not None else None
+        )
         self._reward_config = reward_config or DEFAULT_REWARD_CONFIG
         self._seed = seed
         self._initial_seed_pending = seed is not None

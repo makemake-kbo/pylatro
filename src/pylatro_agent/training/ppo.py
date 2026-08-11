@@ -46,8 +46,8 @@ from ..diagnostics import (
 from ..env import BalatroEnv
 from ..reward import DEFAULT_REWARD_CONFIG, REWARD_INFO_KEYS, RewardConfig
 from ..risk import uncalibrate_analytic_death_probability
-from ..survival import compute_ante_survival_targets, hazard_outcome_probabilities
-from ..value_head import hl_gauss_projection
+from ..survival import validate_critic_win_ante
+from ..value_head import outcome_nll, return_huber_loss
 from ..vocab import Vocab, build_vocab
 from .rollout_buffer import RolloutBuffer
 from .sil import (
@@ -104,36 +104,6 @@ def _binary_roc_auc(predictions: list[float], outcomes: list[float]) -> float | 
     return (positive_rank_sum - positive_count * (positive_count + 1) / 2.0) / (positive_count * negative_count)
 
 
-class RunningMeanStd:
-    """Welford's online algorithm for tracking mean/variance of a stream."""
-
-    def __init__(self, epsilon: float = 1e-8) -> None:
-        self.mean = 0.0
-        self.var = 1.0
-        self.count = epsilon
-
-    def update(self, x: np.ndarray) -> None:
-        batch_mean = float(np.mean(x))
-        batch_var = float(np.var(x))
-        batch_count = x.shape[0]
-        delta = batch_mean - self.mean
-        total_count = self.count + batch_count
-        new_mean = self.mean + delta * batch_count / total_count
-        m_a = self.var * self.count
-        m_b = batch_var * batch_count
-        m2 = m_a + m_b + delta**2 * self.count * batch_count / total_count
-        self.mean = new_mean
-        self.var = m2 / total_count
-        self.count = total_count
-
-    @property
-    def std(self) -> float:
-        return float(np.sqrt(self.var + 1e-8))
-
-    def denormalize(self, x: np.ndarray) -> np.ndarray:
-        return x * self.std + self.mean
-
-
 _ACTION_TYPES = tuple(ActionType)
 _ACTION_TYPE_TO_INDEX = {action_type: idx for idx, action_type in enumerate(_ACTION_TYPES)}
 _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
@@ -143,9 +113,7 @@ _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
 
 
 def _load_state_dict_into_model(model: nn.Module, state_dict: dict, checkpoint_path: str) -> None:
-    """Load a raw ``state_dict`` into ``model``, handling DataParallel prefix
-    mismatch and minor head shape drift. Shared by weights-only init and resume.
-    """
+    """Strictly load v8 weights, allowing only a DataParallel prefix change."""
     has_module_prefix = any(k.startswith("module.") for k in state_dict)
     is_wrapped = isinstance(model, nn.DataParallel)
 
@@ -154,76 +122,42 @@ def _load_state_dict_into_model(model: nn.Module, state_dict: dict, checkpoint_p
     elif not has_module_prefix and is_wrapped:
         state_dict = {f"module.{k}": v for k, v in state_dict.items()}
 
-    model_state = model.state_dict()
-    compatible = {
-        key: value for key, value in state_dict.items() if key in model_state and model_state[key].shape == value.shape
-    }
-    missing = sorted(set(model_state) - set(compatible))
-    skipped = sorted(set(state_dict) - set(compatible))
-    compatible_params = sum(value.numel() for value in compatible.values())
-    model_params = sum(value.numel() for value in model_state.values())
-    compatible_fraction = compatible_params / max(model_params, 1)
-    if compatible_fraction < 0.8:
-        examples = ", ".join(skipped[:5])
+    try:
+        model.load_state_dict(state_dict, strict=True)
+    except RuntimeError as exc:
         raise RuntimeError(
-            f"Checkpoint {checkpoint_path} is architecture-incompatible with the current PPO model: "
-            f"only {compatible_fraction:.1%} of model parameters have matching tensor shapes. "
-            "Pass the matching --d-model/--n-layers/--n-heads/--d-ff values for this checkpoint or retrain with the "
-            f"current architecture. Example skipped tensors: {examples}"
-        )
-    model.load_state_dict(compatible, strict=False)
-    if missing:
-        logger.warning("Checkpoint missing %d params after compatibility filter", len(missing))
-    if skipped:
-        logger.warning("Checkpoint skipped %d incompatible params", len(skipped))
+            f"Checkpoint {checkpoint_path} is architecture-incompatible and does not "
+            "exactly match the v8 model. "
+            "Fresh v8 supervised training is required."
+        ) from exc
 
 
-def _load_checkpoint_compatible(
+def _load_v8_checkpoint_strict(
     model: nn.Module,
     checkpoint_path: str,
     device: torch.device,
     *,
-    reinit_value_head: bool = False,
     active_reward_config: RewardConfig | None = None,
 ) -> None:
-    """Load checkpoint, handling DataParallel prefix mismatch and minor head shape drift.
-
-    When ``reinit_value_head`` is set, the value head keeps its random
-    initialization. This is required when loading weights without matching
-    reward metadata or after an intentional reward configuration change.
-    """
+    """Strictly load a checkpoint produced by the v8 architecture."""
     from ..checkpoint import load_checkpoint_payload
     from ..reward import reward_config_fingerprint
 
-    payload = load_checkpoint_payload(checkpoint_path, device, allow_compatible_tokenizer=True)
+    payload = load_checkpoint_payload(checkpoint_path, device)
     if active_reward_config is not None:
         saved_fingerprint = payload.get("reward_fingerprint")
         active_fingerprint = reward_config_fingerprint(active_reward_config)
-        if saved_fingerprint and saved_fingerprint != active_fingerprint and not reinit_value_head:
+        if saved_fingerprint and saved_fingerprint != active_fingerprint:
             raise RuntimeError(
                 f"Checkpoint {checkpoint_path} was trained with a different reward "
-                "fingerprint. Loading its value head through --pretrained would restore "
-                "a stale critic. Pass --reinit-value-head --critic-warmup-updates 15 "
-                "--critic-warmup-min-ev 0."
+                "fingerprint. Fresh v8 supervised training is required."
             )
-        if not saved_fingerprint and not reinit_value_head:
+        if not saved_fingerprint:
             raise RuntimeError(
                 f"Checkpoint {checkpoint_path} has no reward fingerprint, so loading its "
-                "value head cannot verify that critic targets match the active reward model. "
-                "Pass --reinit-value-head --critic-warmup-updates 15 "
-                "--critic-warmup-min-ev 0."
+                "critic cannot be verified. Fresh v8 supervised training is required."
             )
-
-    state_dict = payload["state_dict"]
-    if reinit_value_head:
-        # Match both bare and DataParallel-prefixed keys, the module. prefix is
-        # only stripped later, inside _load_state_dict_into_model.
-        state_dict = {k: v for k, v in state_dict.items() if not k.startswith(("value_head.", "module.value_head."))}
-        logger.info(
-            "Reinitializing value head (reinit_value_head=True); %d tensors loaded, value_head.* skipped.",
-            len(state_dict),
-        )
-    _load_state_dict_into_model(model, state_dict, checkpoint_path)
+    _load_state_dict_into_model(model, payload["state_dict"], checkpoint_path)
 
 
 def _optimizer_to(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
@@ -247,93 +181,20 @@ def _apply_lr_override(optimizer: torch.optim.Optimizer, new_lr: float, checkpoi
         )
 
 
-def _phase_learning_rate(config: "PPOConfig", *, in_critic_warmup: bool) -> float:
-    """Return the sole operative PPO optimizer LR for the current phase."""
-
-    if in_critic_warmup and config.critic_warmup_lr is not None:
-        return float(config.critic_warmup_lr)
-    return float(config.lr)
-
-
-def _set_optimizer_lr_for_phase(
-    optimizer: torch.optim.Optimizer,
-    config: "PPOConfig",
-    *,
-    in_critic_warmup: bool,
-) -> float:
-    """Set every optimizer param group to the phase LR and return that LR.
-
-    Adam's moments and counters are intentionally preserved. PPO has no LR
-    scheduler; this explicit phase switch is therefore the only code allowed
-    to change the policy optimizer's step size after construction/resume.
-    """
-
-    active_lr = _phase_learning_rate(config, in_critic_warmup=in_critic_warmup)
-    previous_lrs = tuple(float(group["lr"]) for group in optimizer.param_groups)
-    for group in optimizer.param_groups:
-        group["lr"] = active_lr
-    if any(not math.isclose(value, active_lr, rel_tol=1e-12, abs_tol=1e-15) for value in previous_lrs):
-        phase = "critic_warmup" if in_critic_warmup else "actor"
-        logger.info(
-            "Switching PPO optimizer LR for %s: %s -> %.2e; Adam moments are preserved.",
-            phase,
-            ",".join(f"{value:.2e}" for value in previous_lrs),
-            active_lr,
-        )
-    return active_lr
-
-
 def _restore_policy_optimizer_state(
     optimizer: torch.optim.Optimizer,
     resume_state: dict,
     config: "PPOConfig",
-    transition_state: "_PPOTransitionState",
     device: torch.device,
 ) -> float:
-    """Strictly restore Adam state and the LR required by the saved phase."""
+    """Strictly restore Adam state and apply the active run LR."""
 
     optimizer_state = resume_state.get("optimizer_state_dict")
     if not isinstance(optimizer_state, dict):
         raise RuntimeError("Strict resume checkpoint lacks optimizer_state_dict")
 
-    safety_enabled = config.critic_warmup_updates > 0 or config.actor_ramp_updates > 0
-    in_critic_warmup = not transition_state.warmup_complete
-    expected_lr = _phase_learning_rate(config, in_critic_warmup=in_critic_warmup)
-    if safety_enabled:
-        saved_active_lr = resume_state.get("ppo_active_lr")
-        if saved_active_lr is None:
-            raise RuntimeError(
-                "Strict resume checkpoint lacks ppo_active_lr, so the optimizer's transition-phase LR "
-                "cannot be verified safely."
-            )
-        if not math.isclose(float(saved_active_lr), expected_lr, rel_tol=1e-12, abs_tol=1e-15):
-            raise RuntimeError(
-                "Strict resume active PPO LR mismatch: "
-                f"saved={float(saved_active_lr):.12g}, expected={expected_lr:.12g} for the saved transition phase."
-            )
-        saved_groups = optimizer_state.get("param_groups")
-        if not isinstance(saved_groups, list) or not saved_groups:
-            raise RuntimeError("Strict resume optimizer state has no parameter groups")
-        saved_group_lrs = [group.get("lr") for group in saved_groups if isinstance(group, dict)]
-        if len(saved_group_lrs) != len(saved_groups) or any(value is None for value in saved_group_lrs):
-            raise RuntimeError("Strict resume optimizer parameter group lacks an LR")
-        if any(
-            not math.isclose(float(value), expected_lr, rel_tol=1e-12, abs_tol=1e-15)
-            for value in saved_group_lrs
-        ):
-            raise RuntimeError(
-                "Strict resume optimizer-group LR does not match the saved transition phase: "
-                f"saved={saved_group_lrs!r}, expected={expected_lr:.12g}."
-            )
-
     optimizer.load_state_dict(optimizer_state)
     _optimizer_to(optimizer, device)
-    if safety_enabled:
-        return _set_optimizer_lr_for_phase(
-            optimizer,
-            config,
-            in_critic_warmup=in_critic_warmup,
-        )
     _apply_lr_override(optimizer, config.lr, resume_state.get("lr"))
     return float(config.lr)
 
@@ -474,10 +335,6 @@ class PPOConfig:
     # gradients are accumulated exactly across these chunks on both single-
     # and multi-GPU runs.
     micro_batch_size: int = 64
-    normalize_returns: bool = False  # BC pretraining supervises expected_score on raw ±10-ish
-    # returns; turning on running-mean/std normalization here causes a one-rollout GAE
-    # corruption window the first time rms.std deviates from 1, which is enough to wreck a
-    # pretrained policy. Keep the value head in raw reward space.
     async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
     # Sharpens the on-policy distribution for both rollout sampling and PPO loss
     # computation. The BC-pretrained policy at temperature=1 has chosen_action_prob ≈ 0.5
@@ -497,31 +354,17 @@ class PPOConfig:
     # consumable search remain exploratory.
     danger_rollout_temperature: float | None = None
     danger_death_probability_threshold: float = 0.35
-    # Weight on the ante_survival auxiliary BCE loss. Small by default ,
-    # the head is useful for analysis and as an auxiliary learning signal,
-    # but it shouldn't meaningfully pull the policy optimization.
-    survival_loss_coeff: float = 0.10
-    # Long-horizon episode outcome calibration.  This head existed in the
-    # architecture but PPO never trained it, leaving it stale/random after a
-    # reward-driven value-head reset.
-    win_probability_loss_coeff: float = 0.05
+    # Complete terminal outcomes supervise the conditional hazard model with
+    # one categorical likelihood. Stalled/censored episodes remain masked.
+    outcome_loss_coeff: float = 0.10
     # Always-on completed-episode replay for terminal-critic supervision.
     # Episode assembly is independent of SIL and crosses rollout boundaries.
-    # Replay updates touch only the conditional per-Ante survival and win
-    # output layers: the actor objective, shared trunk, and mixed-return value
-    # output are unchanged in this first plumbing ablation.
+    # Replay updates touch only the conditional per-Ante hazard output layer:
+    # the actor, shared trunk/pooling, and return residual are unchanged.
     terminal_replay_batch_size: int = 128
     terminal_replay_min_episodes: int = 8
     terminal_replay_samples_per_episode: int = 8
     terminal_replay_updates_per_ppo_update: int = 1
-    # When True, the critic loss is included in the main backward pass so
-    # value gradients flow through the shared trunk (the PPO default for
-    # shared-backbone models). With the flag off, a 2-layer ValueHead must fit
-    # returns from features it cannot
-    # influence, leaving ppo/value_loss stuck at 20-35 (RMSE ~5 on a ±10
-    # return scale). Value-gradient-through-trunk is controlled by
-    # value_loss_coeff=0.25 initially; halve it if policy KL becomes erratic.
-    critic_updates_trunk: bool = True
     # Optional reward settings threaded through BalatroEnv. None uses the
     # default potential-based reward configuration.
     reward_config: "RewardConfig | None" = None
@@ -542,44 +385,12 @@ class PPOConfig:
     # the candidate head dominant. The AR head is by this point a competent
     # proposal distribution (trained at eps=0.5 during BC), not noise.
     hand_ar_mixture_eps: float = 0.1
-    # Phase 3.2: frozen-policy critic warmup. For the first ``critic_warmup_updates``
-    # PPO updates, collect rollouts with the (sampling) policy but train *only*
-    # the critic (+survival head) on GAE returns; policy/entropy losses
-    # are multiplied by 0. After a reward-function change, advantages are garbage
-    # until the critic tracks the new return distribution; warming it up
-    # on-policy removes the window in which PPO earnestly optimizes noise.
-    # Unfreezing is gated on a complete rolling EV window at or above
-    # critic_warmup_min_ev (0 = no EV gate).  The minimum update count is
-    # always honored before the EV gate can open.
-    critic_warmup_updates: int = 0
-    # Optional value-head-only warmup step size. When unset, warmup retains the
-    # historical shared ``lr``. Production reward-model transitions set this
-    # explicitly so a freshly reinitialized critic can learn faster without
-    # exposing the actor to that larger step size.
-    critic_warmup_lr: float | None = None
-    critic_warmup_min_ev: float = 0.7
-    critic_warmup_ev_window: int = 3
-    # None preserves the historical 4x warmup limit, but reaching it now stops
-    # safely with a checkpoint instead of exposing the actor to an unready
-    # critic. Set an explicit value to choose a different fail-closed limit.
-    critic_warmup_max_updates: int | None = None
-    # Optional protected actor transition. For this many actor updates after
-    # warmup, PPO's clip range grows linearly from
-    # clip_epsilon * actor_ramp_start_clip_fraction to clip_epsilon and critic
-    # gradients remain value-head-only so they cannot drift the shared policy
-    # trunk. Zero preserves the historical immediate transition.
-    actor_ramp_updates: int = 0
-    actor_ramp_start_clip_fraction: float = 0.5
     # Optional cryptographic run identity. Production launchers provide all
     # three fields; every checkpoint then persists them and strict resume
     # requires an exact match before any environment is created.
     ppo_run_uuid: str | None = None
     ppo_source_sha256: str | None = None
     ppo_recipe_id: str | None = None
-    # Phase 3.2: reinitialize the value head when loading a pretrained checkpoint.
-    # Required after any reward-function change so the critic doesn't start from a
-    # stale return mapping. Pair with critic_warmup_updates to warm the fresh head.
-    reinit_value_head: bool = False
     # Discard the resumed checkpoint's best_eval_win_rate so ppo_best_eval.pt
     # selection restarts from scratch. Required when the eval task changes
     # (e.g. a --win-ante bump), otherwise no best-eval checkpoint is ever
@@ -658,18 +469,14 @@ class PPOConfig:
 @dataclass
 class _UpdateStats:
     policy_losses: list[float]
-    value_losses: list[float]
-    # MSE between the scalar value and the return target, in whatever units the
-    # target is in (raw returns, or normalized when normalize_returns is on),
-    # logged in both head modes. Under the HL-Gauss head value_losses holds
-    # cross-entropy (nats), so value_mse is the MSE proxy that stays comparable
-    # to historical MSE runs — and it is genuinely raw-scale there, since
-    # normalize_returns is incompatible with the HL-Gauss head.
-    value_mses: list[float]
-    survival_losses: list[float]
-    win_probability_losses: list[float]
-    survival_valid_counts: list[float]
-    win_probability_valid_counts: list[float]
+    return_hubers: list[float]
+    outcome_nlls: list[float]
+    outcome_briers: list[float]
+    derived_win_briers: list[float]
+    outcome_valid_counts: list[float]
+    terminal_value_means: list[float]
+    return_residual_means: list[float]
+    expected_return_means: list[float]
     entropies: list[float]
     normalized_entropies: list[float]
     action_type_entropies: list[float]
@@ -717,61 +524,6 @@ class _UpdateStats:
     sil_grad_diagnostic_valid: bool = False
 
 
-@dataclass(frozen=True)
-class _CriticWarmupDecision:
-    """Pure, testable result of the critic-to-actor transition gate."""
-
-    active: bool
-    ready: bool
-    exhausted: bool
-    rolling_ev: float
-    finite_fraction: float
-    passing_samples: int
-    max_updates: int
-
-
-_PPO_TRANSITION_STATE_VERSION = 1
-
-
-@dataclass
-class _PPOTransitionState:
-    """Resume-critical state for the critic-to-actor transition."""
-
-    warmup_complete: bool
-    critic_warmup_ev_history: list[float] = field(default_factory=list)
-    critic_warmup_updates_completed: int = 0
-    actor_ramp_successful_updates: int = 0
-    fail_closed: bool = False
-    fail_reason: str | None = None
-
-    def to_payload(self, config: PPOConfig) -> dict[str, object]:
-        history_limit = max(config.critic_warmup_ev_window, 1)
-        return {
-            "version": _PPO_TRANSITION_STATE_VERSION,
-            "warmup_complete": bool(self.warmup_complete),
-            "critic_warmup_ev_history": [float(value) for value in self.critic_warmup_ev_history[-history_limit:]],
-            "critic_warmup_updates_completed": int(self.critic_warmup_updates_completed),
-            "actor_ramp_successful_updates": int(self.actor_ramp_successful_updates),
-            "fail_closed": bool(self.fail_closed),
-            "fail_reason": self.fail_reason,
-        }
-
-
-_TRANSITION_CONFIG_FIELDS = (
-    "mini_batch_size",
-    "micro_batch_size",
-    "lr",
-    "clip_epsilon",
-    "critic_warmup_updates",
-    "critic_warmup_lr",
-    "critic_warmup_min_ev",
-    "critic_warmup_ev_window",
-    "critic_warmup_max_updates",
-    "actor_ramp_updates",
-    "actor_ramp_start_clip_fraction",
-)
-
-
 def _ppo_run_provenance(config: PPOConfig) -> dict[str, str] | None:
     values = (config.ppo_run_uuid, config.ppo_source_sha256, config.ppo_recipe_id)
     if all(value is None for value in values):
@@ -808,261 +560,6 @@ def _validate_resume_provenance(config: PPOConfig, resume_state: dict | None) ->
     }
     if normalized_saved != active:
         raise RuntimeError(f"Strict resume PPO run provenance mismatch: saved={normalized_saved!r}, active={active!r}")
-
-
-def _new_ppo_transition_state(config: PPOConfig) -> _PPOTransitionState:
-    return _PPOTransitionState(warmup_complete=config.critic_warmup_updates <= 0)
-
-
-def _restore_ppo_transition_state(
-    config: PPOConfig,
-    resume_state: dict | None,
-) -> _PPOTransitionState:
-    """Restore the exact warmup/ramp phase, rejecting ambiguous legacy state."""
-
-    if resume_state is None:
-        return _new_ppo_transition_state(config)
-
-    payload = resume_state.get("ppo_transition_state")
-    safety_enabled = config.critic_warmup_updates > 0 or config.actor_ramp_updates > 0
-    if payload is None:
-        if safety_enabled:
-            raise RuntimeError(
-                "Strict resume checkpoint has no ppo_transition_state, so the critic warmup/actor ramp "
-                "phase cannot be recovered safely. Resume with the historical safety controls disabled, "
-                "or start a fresh run with --pretrained and --reinit-value-head."
-            )
-        logger.warning(
-            "Resuming legacy PPO checkpoint without transition state; warmup and actor ramp are disabled, "
-            "so the historical fully-unfrozen phase is preserved."
-        )
-        return _new_ppo_transition_state(config)
-    if not isinstance(payload, dict) or payload.get("version") != _PPO_TRANSITION_STATE_VERSION:
-        raise RuntimeError("Unsupported or malformed ppo_transition_state in strict resume checkpoint")
-
-    saved_fields = resume_state.get("ppo_config_fields") or {}
-    for field_name in _TRANSITION_CONFIG_FIELDS:
-        if field_name not in saved_fields:
-            raise RuntimeError(
-                f"Strict resume checkpoint lacks transition config field {field_name!r}; "
-                "the saved phase cannot be interpreted safely."
-            )
-        saved_value = saved_fields[field_name]
-        active_value = getattr(config, field_name)
-        if isinstance(active_value, float):
-            matches = saved_value is not None and math.isclose(
-                float(saved_value),
-                active_value,
-                rel_tol=1e-12,
-                abs_tol=1e-15,
-            )
-        else:
-            matches = saved_value == active_value
-        if not matches:
-            raise RuntimeError(
-                f"Strict resume transition config mismatch for {field_name}: "
-                f"saved={saved_value!r}, active={active_value!r}."
-            )
-
-    history_raw = payload.get("critic_warmup_ev_history", [])
-    if not isinstance(history_raw, list):
-        raise RuntimeError("Malformed critic_warmup_ev_history in ppo_transition_state")
-    history = [float(value) for value in history_raw]
-    if any(not np.isfinite(value) for value in history):
-        raise RuntimeError("ppo_transition_state critic EV history must contain only finite values")
-    if len(history) > max(config.critic_warmup_ev_window, 1):
-        raise RuntimeError("ppo_transition_state critic EV history exceeds the configured window")
-
-    critic_updates = int(payload.get("critic_warmup_updates_completed", -1))
-    actor_updates = int(payload.get("actor_ramp_successful_updates", -1))
-    if critic_updates < 0 or actor_updates < 0:
-        raise RuntimeError("ppo_transition_state update counters must be non-negative")
-    if actor_updates > config.actor_ramp_updates:
-        raise RuntimeError("ppo_transition_state actor ramp counter exceeds configured ramp length")
-
-    state = _PPOTransitionState(
-        warmup_complete=bool(payload.get("warmup_complete", False)),
-        critic_warmup_ev_history=history,
-        critic_warmup_updates_completed=critic_updates,
-        actor_ramp_successful_updates=actor_updates,
-        fail_closed=bool(payload.get("fail_closed", False)),
-        fail_reason=(str(payload["fail_reason"]) if payload.get("fail_reason") is not None else None),
-    )
-    if state.fail_closed and state.warmup_complete:
-        raise RuntimeError("Malformed ppo_transition_state: fail_closed warmup cannot be complete")
-    if not state.warmup_complete and state.actor_ramp_successful_updates:
-        raise RuntimeError("Malformed ppo_transition_state: actor ramp advanced before warmup completed")
-    max_warmup_updates = config.critic_warmup_max_updates
-    if max_warmup_updates is None:
-        max_warmup_updates = 4 * config.critic_warmup_updates
-    if (
-        config.critic_warmup_updates > 0
-        and state.warmup_complete
-        and state.critic_warmup_updates_completed < config.critic_warmup_updates
-    ):
-        raise RuntimeError("Malformed ppo_transition_state: warmup completed before its minimum update count")
-    if not state.warmup_complete and state.critic_warmup_updates_completed > max_warmup_updates:
-        raise RuntimeError("Malformed ppo_transition_state: critic warmup counter exceeds its fail-closed cap")
-    if state.fail_closed and state.critic_warmup_updates_completed < max_warmup_updates:
-        raise RuntimeError("Malformed ppo_transition_state: fail_closed set before the warmup cap")
-    return state
-
-
-def _advance_ppo_transition_state(
-    state: _PPOTransitionState,
-    config: PPOConfig,
-    *,
-    in_critic_warmup: bool,
-    kl_rollback: bool,
-) -> None:
-    """Advance only counters belonging to an optimizer update that actually committed."""
-
-    if in_critic_warmup and not kl_rollback:
-        state.critic_warmup_updates_completed += 1
-    elif not kl_rollback:
-        state.actor_ramp_successful_updates = min(
-            state.actor_ramp_successful_updates + 1,
-            config.actor_ramp_updates,
-        )
-
-
-def _critic_warmup_decision(
-    config: PPOConfig,
-    *,
-    completed_updates: int,
-    ev_history: list[float],
-) -> _CriticWarmupDecision:
-    """Return a fail-closed warmup decision.
-
-    EV-gated warmup requires both the configured minimum number of completed
-    critic updates and a *complete* window of consecutive finite EV samples
-    whose rolling mean clears the threshold. A lone favorable rollout can
-    therefore never unfreeze the actor. If the gate is still closed at the
-    maximum update count, ``exhausted`` requests a safe checkpoint-and-stop.
-    """
-
-    if config.critic_warmup_updates <= 0:
-        return _CriticWarmupDecision(False, True, False, float("nan"), 0.0, 0, 0)
-
-    max_updates = config.critic_warmup_max_updates
-    if max_updates is None:
-        max_updates = 4 * config.critic_warmup_updates
-
-    if config.critic_warmup_min_ev <= 0.0:
-        ready = completed_updates >= config.critic_warmup_updates
-        exhausted = not ready and completed_updates >= max_updates
-        return _CriticWarmupDecision(not ready and not exhausted, ready, exhausted, float("nan"), 0.0, 0, max_updates)
-
-    window_size = config.critic_warmup_ev_window
-    window = ev_history[-window_size:]
-    finite_values = [float(value) for value in window if np.isfinite(value)]
-    finite_fraction = len(finite_values) / window_size
-    rolling_ev = float(np.mean(finite_values)) if finite_values else float("nan")
-    passing_samples = sum(value >= config.critic_warmup_min_ev for value in finite_values)
-    evidence_ready = (
-        len(window) == window_size
-        and len(finite_values) == window_size
-        and (
-            rolling_ev > config.critic_warmup_min_ev
-            or math.isclose(
-                rolling_ev,
-                config.critic_warmup_min_ev,
-                rel_tol=1e-9,
-                abs_tol=1e-12,
-            )
-        )
-    )
-    ready = completed_updates >= config.critic_warmup_updates and evidence_ready
-    exhausted = not ready and completed_updates >= max_updates
-    return _CriticWarmupDecision(
-        active=not ready and not exhausted,
-        ready=ready,
-        exhausted=exhausted,
-        rolling_ev=rolling_ev,
-        finite_fraction=finite_fraction,
-        passing_samples=passing_samples,
-        max_updates=max_updates,
-    )
-
-
-def _record_critic_ev_and_decide(
-    state: _PPOTransitionState,
-    config: PPOConfig,
-    explained_variance: float,
-) -> _CriticWarmupDecision:
-    """Record one rollout EV and apply the same gate ordering used by training."""
-
-    if state.warmup_complete or config.critic_warmup_updates <= 0:
-        return _CriticWarmupDecision(False, True, False, float("nan"), 0.0, 0, 0)
-    if np.isfinite(explained_variance):
-        state.critic_warmup_ev_history.append(float(explained_variance))
-        state.critic_warmup_ev_history = state.critic_warmup_ev_history[-config.critic_warmup_ev_window :]
-    else:
-        # The gate requires a consecutive finite window. Persisting only the
-        # finite suffix makes restart semantics exact.
-        state.critic_warmup_ev_history.clear()
-    decision = _critic_warmup_decision(
-        config,
-        completed_updates=state.critic_warmup_updates_completed,
-        ev_history=state.critic_warmup_ev_history,
-    )
-    if decision.ready:
-        state.warmup_complete = True
-    return decision
-
-
-def _actor_transition(
-    config: PPOConfig,
-    *,
-    actor_updates_completed: int,
-) -> tuple[float, float, bool]:
-    """Return (clip epsilon, ramp progress, protect trunk) for the next actor update."""
-
-    ramp_updates = config.actor_ramp_updates
-    if ramp_updates <= 0 or actor_updates_completed >= ramp_updates:
-        return float(config.clip_epsilon), 1.0, False
-    progress = 1.0 if ramp_updates == 1 else actor_updates_completed / (ramp_updates - 1)
-    start_clip = config.clip_epsilon * config.actor_ramp_start_clip_fraction
-    clip_epsilon = start_clip + (config.clip_epsilon - start_clip) * progress
-    return float(clip_epsilon), float(progress), True
-
-
-@dataclass(frozen=True)
-class _ActorTransitionRuntime:
-    clip_epsilon: float
-    progress: float
-    protect_actor_from_critic: bool
-    ramp_active: bool
-    logged_clip_epsilon: float
-
-
-def _actor_transition_runtime(
-    config: PPOConfig,
-    state: _PPOTransitionState,
-    *,
-    in_critic_warmup: bool,
-) -> _ActorTransitionRuntime:
-    """Resolve operative actor controls and unambiguous TensorBoard values."""
-
-    clip_epsilon, progress, protect_actor = _actor_transition(
-        config,
-        actor_updates_completed=state.actor_ramp_successful_updates,
-    )
-    if in_critic_warmup:
-        return _ActorTransitionRuntime(
-            clip_epsilon=clip_epsilon,
-            progress=0.0,
-            protect_actor_from_critic=True,
-            ramp_active=False,
-            logged_clip_epsilon=float("nan"),
-        )
-    return _ActorTransitionRuntime(
-        clip_epsilon=clip_epsilon,
-        progress=progress,
-        protect_actor_from_critic=protect_actor,
-        ramp_active=protect_actor,
-        logged_clip_epsilon=clip_epsilon,
-    )
 
 
 @dataclass
@@ -1692,7 +1189,6 @@ def _grammar_distribution(
     model: nn.Module,
     batch: dict[str, torch.Tensor],
     temperature: float | torch.Tensor = 1.0,
-    detach_value_features: bool = False,
 ):
     import inspect
 
@@ -1728,7 +1224,6 @@ def _grammar_distribution(
             batch["attention_mask"],
             batch["action_mask"],
             temperature=temperature,
-            detach_value_features=detach_value_features,
             return_raw_outputs=True,
             **history_kwargs,
         )
@@ -1743,7 +1238,6 @@ def _grammar_distribution(
             ),
             value_dict,
         )
-    extra_kwargs = {"detach_value_features": detach_value_features} if isinstance(base_model, BalatroAgent) else {}
     return base_model.action_distribution(
         batch["tokens"],
         batch["token_types"],
@@ -1752,7 +1246,6 @@ def _grammar_distribution(
         batch["action_mask"],
         temperature=temperature,
         **history_kwargs,
-        **extra_kwargs,
     )
 
 
@@ -1775,10 +1268,10 @@ def _logical_mask_weights(
 ) -> tuple[list[float], list[float]]:
     """Return valid-target fractions within each logical optimizer group.
 
-    Survival and win BCEs are means over valid targets, not rows. Their
-    accumulated gradients must therefore be weighted by each microbatch's
-    share of the logical group's valid targets. All-zero groups receive zero
-    weights, avoiding both divide-by-zero and accidental auxiliary gradients.
+    Outcome NLL is a mean over valid terminal labels, not rows. Its accumulated
+    gradient must therefore be weighted by each microbatch's share of the
+    logical group's valid labels. All-zero groups receive zero weights,
+    avoiding both divide-by-zero and accidental auxiliary gradients.
     """
     valid_counts = [float(batch[mask_key].detach().sum().item()) for batch in batches]
     weights = [0.0] * len(batches)
@@ -1904,6 +1397,7 @@ def _seed_training_rngs(seed: int) -> None:
 
 def _validate_ppo_config(config: PPOConfig) -> None:
     """Raise ValueError for invalid combinations; warn on risky ones."""
+    validate_critic_win_ante(config.win_ante if config.win_ante is not None else 8)
     if not 0 <= config.seed <= 2**32 - 1:
         raise ValueError("seed must be between 0 and 2**32 - 1")
     if config.log_interval <= 0:
@@ -1916,27 +1410,6 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("eval_regression_tolerance must be in (0, 1] when set")
     if config.eval_regression_patience <= 0:
         raise ValueError("eval_regression_patience must be positive")
-    if config.critic_warmup_updates < 0:
-        raise ValueError("critic_warmup_updates must be non-negative")
-    if config.critic_warmup_lr is not None and (
-        not np.isfinite(config.critic_warmup_lr) or config.critic_warmup_lr <= 0.0
-    ):
-        raise ValueError("critic_warmup_lr must be finite and positive when set")
-    if not np.isfinite(config.critic_warmup_min_ev) or config.critic_warmup_min_ev > 1.0:
-        raise ValueError("critic_warmup_min_ev must be finite and <= 1")
-    if config.critic_warmup_ev_window <= 0:
-        raise ValueError("critic_warmup_ev_window must be positive")
-    if config.critic_warmup_updates > 0 and config.critic_warmup_min_ev > 0.0 and config.critic_warmup_ev_window < 2:
-        raise ValueError("critic_warmup_ev_window must be at least 2 for an EV-gated warmup")
-    if config.critic_warmup_max_updates is not None:
-        if config.critic_warmup_max_updates <= 0:
-            raise ValueError("critic_warmup_max_updates must be positive when set")
-        if config.critic_warmup_max_updates < config.critic_warmup_updates:
-            raise ValueError("critic_warmup_max_updates must be >= critic_warmup_updates")
-    if config.actor_ramp_updates < 0:
-        raise ValueError("actor_ramp_updates must be non-negative")
-    if not 0.0 < config.actor_ramp_start_clip_fraction <= 1.0:
-        raise ValueError("actor_ramp_start_clip_fraction must be in (0, 1]")
     provenance = _ppo_run_provenance(config)
     if provenance is not None:
         try:
@@ -1972,10 +1445,8 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("danger_death_probability_threshold must be between 0 and 1")
     if config.entropy_coeff < 0.0:
         raise ValueError("entropy_coeff must be non-negative")
-    if config.survival_loss_coeff < 0.0:
-        raise ValueError("survival_loss_coeff must be non-negative")
-    if config.win_probability_loss_coeff < 0.0:
-        raise ValueError("win_probability_loss_coeff must be non-negative")
+    if config.outcome_loss_coeff < 0.0:
+        raise ValueError("outcome_loss_coeff must be non-negative")
     if config.terminal_replay_batch_size <= 0:
         raise ValueError("terminal_replay_batch_size must be positive")
     if config.terminal_replay_min_episodes <= 0:
@@ -2173,16 +1644,12 @@ def _run_ppo_update(
     model: nn.Module,
     optimizer: Adam,
     buffer: RolloutBuffer,
-    return_rms: "RunningMeanStd | None",
     entropy_coeff: float,
     config: PPOConfig,
     accum_steps: int,
     effective_batch_size: int,
     device: torch.device,
     use_pin_memory: bool,
-    policy_loss_scale: float = 1.0,
-    clip_epsilon: float | None = None,
-    protect_actor_from_critic: bool = False,
     sil_buffer: "EpisodeReplayBuffer | None" = None,
     sil_coeff_now: float = 0.0,
     grad_diagnostics_due: bool = False,
@@ -2204,18 +1671,17 @@ def _run_ppo_update(
     abandoned halfway through.
     """
     model.eval()
-    policy_frozen = policy_loss_scale <= 0.0
-    effective_clip_epsilon = config.clip_epsilon if clip_epsilon is None else float(clip_epsilon)
-    if effective_clip_epsilon <= 0.0:
-        raise ValueError("clip_epsilon override must be positive")
+    effective_clip_epsilon = float(config.clip_epsilon)
     stats = _UpdateStats(
         policy_losses=[],
-        value_losses=[],
-        value_mses=[],
-        survival_losses=[],
-        win_probability_losses=[],
-        survival_valid_counts=[],
-        win_probability_valid_counts=[],
+        return_hubers=[],
+        outcome_nlls=[],
+        outcome_briers=[],
+        derived_win_briers=[],
+        outcome_valid_counts=[],
+        terminal_value_means=[],
+        return_residual_means=[],
+        expected_return_means=[],
         entropies=[],
         normalized_entropies=[],
         action_type_entropies=[],
@@ -2226,14 +1692,12 @@ def _run_ppo_update(
         on_policy_fractions=[],
     )
     stats.actual_lr = float(optimizer.param_groups[0]["lr"])
-    critic_head_only = policy_frozen or protect_actor_from_critic or not config.critic_updates_trunk
-    critic_features_detached = critic_head_only and isinstance(_unwrap_model(model), BalatroAgent)
 
     # A hard KL limit is a rejection criterion, not a warning. Snapshot before
     # the first gradient is computed so a rejected update restores both weights
     # and Adam's moments/step counters.
     rollback_snapshot = (
-        _snapshot_ppo_update(model, optimizer) if config.target_kl_max is not None and not policy_frozen else None
+        _snapshot_ppo_update(model, optimizer) if config.target_kl_max is not None else None
     )
     n_rollout_samples = len(buffer._flat_returns)
     if accum_steps > 1:
@@ -2254,9 +1718,8 @@ def _run_ppo_update(
 
     # SIL logical-group budget. Per update (not per epoch). Attempted groups
     # count even when their gate is empty, so training does not keep resampling
-    # until it finds a favorable replay batch. Critic warmup (policy_frozen)
-    # produces no SIL actor gradient.
-    sil_budget = config.sil_logical_minibatches_per_update if (sil_coeff_now > 0.0 and not policy_frozen) else 0
+    # until it finds a favorable replay batch.
+    sil_budget = config.sil_logical_minibatches_per_update if sil_coeff_now > 0.0 else 0
     sil_attempted_groups = 0
     sil_applied_groups = 0
     # Gradient diagnostics: captured once, on the first group where SIL is
@@ -2273,14 +1736,9 @@ def _run_ppo_update(
             pin_memory=use_pin_memory,
             micro_batch_size=effective_batch_size if accum_steps > 1 else None,
         )
-        survival_loss_weights, survival_valid_counts = _logical_mask_weights(
+        outcome_loss_weights, outcome_valid_counts = _logical_mask_weights(
             batches,
-            "ante_survival_mask",
-            accum_steps,
-        )
-        win_loss_weights, win_valid_counts = _logical_mask_weights(
-            batches,
-            "win_probability_mask",
+            "terminal_outcome_mask",
             accum_steps,
         )
         optimizer.zero_grad()
@@ -2294,8 +1752,7 @@ def _run_ppo_update(
                 is_group_start = i % accum_steps == 0
                 is_step_boundary = ((i + 1) % accum_steps == 0) or ((i + 1) == len(batches))
                 loss_weight = torch.as_tensor(1.0 / accum_steps, device=device)
-            survival_loss_weight = torch.as_tensor(survival_loss_weights[i], device=device)
-            win_loss_weight = torch.as_tensor(win_loss_weights[i], device=device)
+            outcome_loss_weight = torch.as_tensor(outcome_loss_weights[i], device=device)
 
             # --- SIL auxiliary loss (one batch per attempted logical group) ---
             # Sampled and backwarded at the group start so the whole group
@@ -2303,7 +1760,7 @@ def _run_ppo_update(
             # is the runtime decayed value, not the static config field.
             if is_group_start and sil_attempted_groups < sil_budget and sil_buffer is not None:
                 sil_attempted_groups += 1
-                sil_result = _compute_sil_group_loss(model, sil_buffer, config, device, return_rms)
+                sil_result = _compute_sil_group_loss(model, sil_buffer, config, device)
                 stats.sil_logical_minibatches_attempted = sil_attempted_groups
                 if sil_result.loss is not None:
                     capture_grads = grad_diagnostics_due and not grad_diag_attempted and sil_applied_groups == 0
@@ -2342,7 +1799,6 @@ def _run_ppo_update(
                 model,
                 batch,
                 temperature=_policy_temperature_for_scalars(batch["scalars"], config),
-                detach_value_features=critic_features_detached,
             )
 
             new_log_probs = dist.log_prob(batch["actions"])
@@ -2373,112 +1829,53 @@ def _run_ppo_update(
             )
             policy_loss = -torch.min(surr1, surr2).mean()
 
-            # Value loss (normalize targets so critic trains in unit-variance space)
+            # The composed return is terminal utility plus a learned return
+            # correction. Regress only the correction: the detached terminal
+            # value prevents stochastic return targets from distorting outcome
+            # calibration.
             returns_target = batch["returns"]
-            if return_rms is not None:
-                returns_target = (returns_target - return_rms.mean) / return_rms.std
-            value_logits = value_dict.get("expected_score_logits")
-            if value_logits is not None:
-                # HL-Gauss categorical head: cross-entropy against the
-                # Gaussian-smeared projection of the scalar target. Bounded
-                # per-bin gradients where MSE against bimodal near-terminal
-                # returns produces large alternating-sign errors.
-                value_head = _unwrap_model(model).value_head
-                with torch.no_grad():
-                    target_probs = hl_gauss_projection(returns_target, value_head.bin_edges, value_head.hl_gauss_sigma)
-                value_loss = -(target_probs * F.log_softmax(value_logits, dim=-1)).sum(dim=-1).mean()
-            else:
-                value_loss = F.mse_loss(value_dict["expected_score"], returns_target)
-            with torch.no_grad():
-                value_mse = F.mse_loss(value_dict["expected_score"], returns_target)
+            return_loss = return_huber_loss(value_dict, returns_target)
 
-            # Ante-survival aux loss (BCE masked by observed antes).
-            surv_mask = batch["ante_survival_mask"]
-            surv_bce = F.binary_cross_entropy(
-                value_dict["ante_survival"],
-                batch["ante_survival_target"],
-                reduction="none",
+            terminal_nll = outcome_nll(
+                value_dict["outcome_probabilities"],
+                batch["terminal_outcome_target"],
+                batch["terminal_outcome_mask"],
             )
-            survival_loss = (surv_bce * surv_mask).sum() / surv_mask.sum().clamp(min=1.0)
-
-            if "win_prob" in value_dict:
-                win_mask = batch["win_probability_mask"]
-                win_bce = F.binary_cross_entropy(
-                    value_dict["win_prob"],
-                    batch["win_probability_target"],
-                    reduction="none",
-                )
-                win_probability_loss = (win_bce * win_mask).sum() / win_mask.sum().clamp(min=1.0)
-                win_valid_count = win_valid_counts[i]
-            else:
-                # Lightweight test/ablation models may intentionally omit this
-                # auxiliary head; the production agent always exposes it.
-                win_probability_loss = value_loss.new_zeros(())
-                win_loss_weight = win_loss_weight.new_zeros(())
-                win_valid_count = 0.0
+            with torch.no_grad():
+                outcome_mask = batch["terminal_outcome_mask"].float()
+                outcome_denominator = outcome_mask.sum().clamp(min=1.0)
+                one_hot_outcome = F.one_hot(
+                    batch["terminal_outcome_target"].long(),
+                    num_classes=value_dict["outcome_probabilities"].shape[1],
+                ).to(dtype=value_dict["outcome_probabilities"].dtype)
+                outcome_brier_per_row = (
+                    value_dict["outcome_probabilities"] - one_hot_outcome
+                ).square().sum(dim=-1)
+                outcome_brier = (
+                    outcome_brier_per_row * outcome_mask
+                ).sum() / outcome_denominator
+                win_target = (
+                    batch["terminal_outcome_target"]
+                    == value_dict["outcome_probabilities"].shape[1] - 1
+                ).float()
+                derived_win_brier = (
+                    (value_dict["win_prob"] - win_target).square() * outcome_mask
+                ).sum() / outcome_denominator
 
             # Row-normalized value loss and valid-target-normalized auxiliary
             # losses have different logical denominators. Weight each by its
             # own share rather than applying the row fraction to the entire
             # critic objective.
             weighted_critic_loss = (
-                config.value_loss_coeff * value_loss * loss_weight
-                + config.survival_loss_coeff * survival_loss * survival_loss_weight
-                + config.win_probability_loss_coeff * win_probability_loss * win_loss_weight
+                config.value_loss_coeff * return_loss * loss_weight
+                + config.outcome_loss_coeff * terminal_nll * outcome_loss_weight
             )
 
-            if policy_frozen:
-                # Phase 3.2 critic warmup: a TRUE policy freeze. Never backward
-                # the policy objective — a zero-scaled backward still leaves
-                # zero-valued (not None) grads on policy params, and Adam then
-                # moves them with its restored momentum. The critic loss IS
-                # backwarded through the full graph because that is what frees
-                # the trunk's saved activations each micro-batch: computing
-                # value-head grads with autograd.grad leaves the previous
-                # minibatch's attention buffers (tens of GiB at batch 512)
-                # alive into the next forward and OOMs MPS. Every gradient it
-                # writes outside the value head is dropped before the optimizer
-                # step, so policy params keep grad=None and Adam skips them
-                # (critic_updates_trunk is deliberately ignored while frozen:
-                # trunk updates from the value loss drift the policy logits).
-                value_params = _value_head_parameters(model)
-                weighted_critic_loss.backward()
-                value_param_ids = {id(param) for param in value_params}
-                for param in model.parameters():
-                    if id(param) not in value_param_ids:
-                        param.grad = None
-                if not value_params and not getattr(_run_ppo_update, "_frozen_no_value_head_warned", False):
-                    logger.warning(
-                        "Critic warmup with no value_head module: nothing trains while the policy is frozen."
-                    )
-                    _run_ppo_update._frozen_no_value_head_warned = True  # type: ignore[attr-defined]
-            else:
-                policy_objective_loss = policy_loss - entropy_coeff * (
-                    normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy
-                )
-                # SIL is no longer folded into per-microbatch policy_objective_loss:
-                # it is sampled once per attempted logical group (see the group
-                # start block above) and backwarded there with full weight, so
-                # one logical group receives exactly one aggregate SIL
-                # contribution while sharing this microbatch's clip + step.
-                policy_objective_loss = policy_objective_loss * policy_loss_scale
-
-                if critic_features_detached:
-                    # The production critic consumed detached backbone
-                    # features, so one backward produces PPO gradients for the
-                    # policy/trunk and critic gradients for value_head only.
-                    # This avoids retaining the full transformer graph for a
-                    # second autograd traversal during the protected ramp.
-                    total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
-                    total_loss.backward()
-                elif config.critic_updates_trunk and not protect_actor_from_critic:
-                    total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
-                    total_loss.backward()
-                else:
-                    value_params = _value_head_parameters(model)
-                    (policy_objective_loss * loss_weight).backward(retain_graph=bool(value_params))
-                    if value_params:
-                        _accumulate_critic_grads_into_value_head(weighted_critic_loss, value_params)
+            policy_objective_loss = policy_loss - entropy_coeff * (
+                normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy
+            )
+            total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
+            total_loss.backward()
 
             # Step every accum_steps micro-batches (or on last batch). This is
             # a logical optimizer-group boundary: PPO and SIL share this single
@@ -2510,12 +1907,14 @@ def _run_ppo_update(
                 stats.on_policy_positive_advantage_fractions.append((advantages > 0).float().mean().item())
                 stats.on_policy_return_means.append(batch["returns"].mean().item())
             stats.policy_losses.append(policy_loss.item())
-            stats.value_losses.append(value_loss.item())
-            stats.value_mses.append(value_mse.item())
-            stats.survival_losses.append(survival_loss.item())
-            stats.win_probability_losses.append(win_probability_loss.item())
-            stats.survival_valid_counts.append(survival_valid_counts[i])
-            stats.win_probability_valid_counts.append(win_valid_count)
+            stats.return_hubers.append(return_loss.item())
+            stats.outcome_nlls.append(terminal_nll.item())
+            stats.outcome_briers.append(outcome_brier.item())
+            stats.derived_win_briers.append(derived_win_brier.item())
+            stats.outcome_valid_counts.append(outcome_valid_counts[i])
+            stats.terminal_value_means.append(value_dict["terminal_value"].mean().item())
+            stats.return_residual_means.append(value_dict["return_residual"].mean().item())
+            stats.expected_return_means.append(value_dict["expected_return"].mean().item())
             stats.entropies.append(entropy.item())
             stats.normalized_entropies.append(normalized_entropy.item())
             stats.action_type_entropies.append(normalized_action_type_entropy.item())
@@ -2587,15 +1986,6 @@ def _run_ppo_update(
     return stats
 
 
-def _value_in_raw_units(values: torch.Tensor, return_rms: "RunningMeanStd | None") -> torch.Tensor:
-    """Convert a critic prediction back to raw reward units when returns are normalized."""
-    if return_rms is None:
-        return values.detach()
-    mean = torch.as_tensor(return_rms.mean, dtype=values.dtype, device=values.device)
-    std = torch.as_tensor(return_rms.std, dtype=values.dtype, device=values.device)
-    return (values.detach() * std + mean).detach()
-
-
 @dataclass
 class _SILGroupResult:
     """Outcome of one SIL logical-group loss computation."""
@@ -2615,24 +2005,16 @@ class _TerminalReplayResult:
 
 def _terminal_aux_parameters(
     model: nn.Module,
-    *,
-    train_survival: bool,
-    train_win_probability: bool,
 ) -> list[nn.Parameter]:
-    """Return only terminal output-layer parameters, excluding shared pooling."""
+    """Return only hazard output-layer parameters, excluding shared pooling."""
 
     value_head = getattr(_unwrap_model(model), "value_head", None)
     if value_head is None:
         return []
-    prefixes: list[str] = []
-    if train_survival:
-        prefixes.append("ante_survival.")
-    if train_win_probability:
-        prefixes.append("win_prob.")
     return [
         parameter
         for name, parameter in value_head.named_parameters()
-        if parameter.requires_grad and any(name.startswith(prefix) for prefix in prefixes)
+        if parameter.requires_grad and name.startswith("ante_survival.")
     ]
 
 
@@ -2645,17 +2027,10 @@ def _run_terminal_replay_updates(
 ) -> _TerminalReplayResult:
     """Train terminal heads from complete recent episodes without actor credit.
 
-    The survival vector is treated as a sequence of conditional hazards and is
-    converted into a normalized categorical distribution over first death in
-    each remaining Ante plus reaching the target. Complete Monte Carlo outcomes
-    supervise that distribution. The separate win-probability output retains a
-    binary calibration loss for compatibility and cross-checking.
-
-    Only ``value_head.ante_survival`` and ``value_head.win_prob`` receive
-    gradients. In particular, replay cannot update the policy/shared trunk,
-    ``value_head.pool_proj``, or ``value_head.expected_score``. PPO's actor
-    advantage therefore remains the historical mixed-return GAE path in this
-    plumbing-only ablation.
+    Complete Monte Carlo outcomes supervise the normalized distribution over
+    death at each remaining Ante plus reaching the target. Only
+    ``value_head.ante_survival`` receives gradients; replay cannot update the
+    policy/shared trunk, shared pooling, or return residual.
     """
 
     diagnostics: dict[str, float] = {
@@ -2680,14 +2055,8 @@ def _run_terminal_replay_updates(
     if episode_buffer.num_episodes < config.terminal_replay_min_episodes:
         return no_update
 
-    train_survival = config.survival_loss_coeff > 0.0
-    train_win_probability = config.win_probability_loss_coeff > 0.0
-    terminal_params = _terminal_aux_parameters(
-        model,
-        train_survival=train_survival,
-        train_win_probability=train_win_probability,
-    )
-    if not terminal_params or not (train_survival or train_win_probability):
+    terminal_params = _terminal_aux_parameters(model)
+    if not terminal_params or config.outcome_loss_coeff <= 0.0:
         return no_update
 
     metric_sums: defaultdict[str, float] = defaultdict(float)
@@ -2724,17 +2093,11 @@ def _run_terminal_replay_updates(
             model,
             sampled,
             temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
-            detach_value_features=True,
         )
-        hazards = value_dict.get("ante_survival")
-        if hazards is None:
+        outcome_probabilities = value_dict.get("outcome_probabilities")
+        if outcome_probabilities is None:
             optimizer.zero_grad()
             break
-        outcome_probabilities = hazard_outcome_probabilities(
-            hazards,
-            sampled["current_antes"],
-            sampled["win_antes"],
-        )
         outcome_targets = sampled["terminal_outcome_target"]
         selected_outcome_probability = outcome_probabilities.gather(
             1,
@@ -2743,23 +2106,7 @@ def _run_terminal_replay_updates(
         outcome_nll_per_row = -selected_outcome_probability.clamp_min(1e-7).log()
         outcome_loss = outcome_nll_per_row.mean()
 
-        win_targets = sampled["win_probability_target"]
-        win_probability = value_dict.get("win_prob")
-        if win_probability is not None:
-            win_bce_per_row = F.binary_cross_entropy(
-                win_probability,
-                win_targets,
-                reduction="none",
-            )
-            win_loss = win_bce_per_row.mean()
-        else:
-            win_bce_per_row = outcome_nll_per_row.new_zeros(outcome_nll_per_row.shape)
-            win_loss = outcome_loss.new_zeros(())
-
-        loss = (
-            config.survival_loss_coeff * outcome_loss
-            + config.win_probability_loss_coeff * win_loss
-        )
+        loss = config.outcome_loss_coeff * outcome_loss
         _accumulate_critic_grads_into_value_head(loss, terminal_params)
         nn.utils.clip_grad_norm_(terminal_params, config.max_grad_norm)
         optimizer.step()
@@ -2775,24 +2122,12 @@ def _run_terminal_replay_updates(
             outcome_brier = (outcome_probabilities - one_hot_outcome).square().sum(dim=-1)
             climatology = one_hot_outcome.mean(dim=0, keepdim=True)
             climatology_brier = (climatology - one_hot_outcome).square().sum(dim=-1)
-            hazard_success_probability = outcome_probabilities[:, -1]
-            hazard_win_brier = (hazard_success_probability - win_targets).square()
+            win_targets = (outcome_targets == outcome_probabilities.shape[1] - 1).float()
+            derived_win_brier = (value_dict["win_prob"] - win_targets).square()
             record_metric("outcome_nll", outcome_nll_per_row)
             record_metric("outcome_brier", outcome_brier)
             record_metric("outcome_climatology_brier", climatology_brier)
-            record_metric("hazard_win_brier", hazard_win_brier)
-
-            if win_probability is not None:
-                win_brier = (win_probability - win_targets).square()
-                win_climatology = win_targets.mean()
-                win_climatology_brier = (win_climatology - win_targets).square()
-                record_metric("win_log_loss", win_bce_per_row)
-                record_metric("win_brier", win_brier)
-                record_metric("win_climatology_brier", win_climatology_brier)
-                record_metric(
-                    "win_hazard_consistency_mae",
-                    (win_probability - hazard_success_probability).abs(),
-                )
+            record_metric("derived_win_brier", derived_win_brier)
 
             cross_rollout = sampled["cross_rollout_flags"] > 0.5
             current_antes = sampled["current_antes"].long()
@@ -2818,21 +2153,12 @@ def _run_terminal_replay_updates(
                     f"{prefix}/outcome_climatology_brier",
                     bucket_climatology_brier,
                 )
-                record_metric(f"{prefix}/hazard_win_brier", hazard_win_brier, bucket_mask)
-                if win_probability is not None:
-                    bucket_win_targets = win_targets[bucket_mask]
-                    bucket_win_climatology = bucket_win_targets.mean()
-                    record_metric(f"{prefix}/win_brier", win_brier, bucket_mask)
-                    record_metric(f"{prefix}/win_log_loss", win_bce_per_row, bucket_mask)
-                    record_metric(
-                        f"{prefix}/win_climatology_brier",
-                        (bucket_win_climatology - bucket_win_targets).square(),
-                    )
+                record_metric(f"{prefix}/derived_win_brier", derived_win_brier, bucket_mask)
 
     for key, total in metric_sums.items():
         diagnostics[key] = total / metric_counts[key]
     for metric_name, metric_value in list(diagnostics.items()):
-        for brier_name in ("outcome_brier", "win_brier"):
+        for brier_name in ("outcome_brier",):
             if not metric_name.endswith(brier_name):
                 continue
             prefix = metric_name[: -len(brier_name)]
@@ -2854,7 +2180,6 @@ def _compute_sil_group_loss(
     sil_buffer: "EpisodeReplayBuffer | None",
     config: PPOConfig,
     device: torch.device,
-    return_rms: "RunningMeanStd | None",
 ) -> _SILGroupResult:
     """Sample one episode-uniform SIL batch and compute the gated actor loss.
 
@@ -2923,10 +2248,9 @@ def _compute_sil_group_loss(
     log_probs = dist.log_prob(sampled["actions"])
     finite = (log_probs > -1e7).float()
 
-    # Raw advantages in reward units. The stored returns are raw shaped MC
-    # return-to-go; convert the current critic prediction back to raw units
-    # when return normalization is enabled so the subtraction is consistent.
-    v_raw = _value_in_raw_units(value_dict["expected_score"], return_rms)
+    # Both stored returns and the composed critic prediction are in raw reward
+    # units, so the SIL gate has one stable interpretation.
+    v_raw = value_dict["expected_return"].detach()
     raw_advantage = sampled["returns"] - v_raw
 
     if winning_bc:
@@ -3048,10 +2372,8 @@ def _save_checkpoint(
     lr: float,
     log_alpha: torch.Tensor | None = None,
     alpha_optimizer: torch.optim.Optimizer | None = None,
-    return_rms: "RunningMeanStd | None" = None,
     agent_config: "AgentConfig | None" = None,
     config: "PPOConfig | None" = None,
-    transition_state: "_PPOTransitionState | None" = None,
     filename: str | None = None,
     extra: dict | None = None,
 ) -> Path:
@@ -3079,13 +2401,6 @@ def _save_checkpoint(
             "max_no_progress_steps",
             "eval_regression_tolerance",
             "eval_regression_patience",
-            "critic_warmup_updates",
-            "critic_warmup_lr",
-            "critic_warmup_min_ev",
-            "critic_warmup_ev_window",
-            "critic_warmup_max_updates",
-            "actor_ramp_updates",
-            "actor_ramp_start_clip_fraction",
             "ppo_run_uuid",
             "ppo_source_sha256",
             "ppo_recipe_id",
@@ -3098,24 +2413,11 @@ def _save_checkpoint(
             config_fields[key] = getattr(config, key)
     active_reward_config = _effective_reward_config(config) if config is not None else DEFAULT_REWARD_CONFIG
     checkpoint_extra = dict(extra or {})
-    if config is not None and transition_state is not None:
-        checkpoint_extra["ppo_active_lr"] = _set_optimizer_lr_for_phase(
-            optimizer,
-            config,
-            in_critic_warmup=not transition_state.warmup_complete,
-        )
-    else:
-        checkpoint_extra["ppo_active_lr"] = float(optimizer.param_groups[0]["lr"])
+    checkpoint_extra["ppo_active_lr"] = float(optimizer.param_groups[0]["lr"])
     if config is not None:
         provenance = _ppo_run_provenance(config)
         if provenance is not None:
             checkpoint_extra["ppo_run_provenance"] = provenance
-    if transition_state is not None:
-        if config is None:
-            raise ValueError("transition_state checkpointing requires PPOConfig")
-        checkpoint_extra["ppo_transition_state"] = transition_state.to_payload(config)
-    elif config is not None and (config.critic_warmup_updates > 0 or config.actor_ramp_updates > 0):
-        raise ValueError("Safety-enabled PPO checkpoints require transition_state")
     save_ppo_checkpoint(
         _unwrap_model(model),
         checkpoint_path,
@@ -3128,7 +2430,6 @@ def _save_checkpoint(
         lr=lr,
         log_alpha=log_alpha,
         alpha_optimizer=alpha_optimizer,
-        return_rms=return_rms,
         agent_config=agent_config,
         reward_config=active_reward_config,
         ppo_config_fields=config_fields,
@@ -3239,9 +2540,13 @@ def _extract_step_flag(info_dict: dict, key: str, env_idx: int, *, done: bool) -
 
 
 def _effective_reward_config(config: PPOConfig) -> RewardConfig:
-    """Return an isolated reward config whose potential discount matches PPO."""
+    """Return reward targets aligned with PPO discounting and victory Ante."""
     base = config.reward_config if config.reward_config is not None else DEFAULT_REWARD_CONFIG
-    return replace(base, gamma=config.gamma)
+    return replace(
+        base,
+        gamma=config.gamma,
+        potential_win_ante=config.win_ante or 8,
+    )
 
 
 def _ppo_terminal_flags(
@@ -4105,7 +3410,7 @@ def train_ppo(
     * ``pretrained_path``: weights-only init. Optimizer, counters, and entropy
       controller all start fresh at update 0.
     * ``resume_path``: strict resume. Loads optimizer state, update counter,
-      total_steps, entropy controller, RNG, and return normalization. Requires a
+      total_steps, entropy controller, and RNG. Requires a
       full PPO checkpoint (``checkpoint_format == "ppo_full"``); a weights-only
       checkpoint raises a clear error pointing at ``--pretrained``.
     * ``additional_updates``: only meaningful with ``resume_path``. Runs that
@@ -4129,13 +3434,6 @@ def train_ppo(
     device = torch.device(config.device)
     use_pin_memory = device.type == "cuda"
     model = BalatroAgent(agent_config, vocab).to(device)
-
-    if config.normalize_returns and agent_config.value_bins > 0:
-        raise ValueError(
-            "normalize_returns is incompatible with the HL-Gauss value head: "
-            "the bin grid spans raw return units, so unit-variance targets "
-            "would collapse onto a few central bins. Disable one of the two."
-        )
 
     if resume_path and pretrained_path:
         raise ValueError(
@@ -4165,83 +3463,14 @@ def train_ppo(
         )
         restore_rng_states(resume_state.get("rng_states", {}))
     elif pretrained_path:
-        _load_checkpoint_compatible(
+        _load_v8_checkpoint_strict(
             model,
             pretrained_path,
             device,
-            reinit_value_head=config.reinit_value_head,
             active_reward_config=config.reward_config,
         )
-        if config.reinit_value_head:
-            logger.info(
-                "Loaded pretrained model from %s with value head reinitialized "
-                "(reward function changed; critic will warm up from scratch).",
-                pretrained_path,
-            )
-        else:
-            logger.info(f"Loaded pretrained model from {pretrained_path}")
-    if resume_path or pretrained_path:
-        # Crossing scalar/categorical head shapes cannot preserve the critic.
-        # A strict resume is also unsafe because Adam restores its tensor state
-        # by parameter position and those tensors have incompatible shapes.
-        loaded_bins = 0
-        loaded_cfg: dict = {}
-        if resume_state is not None:
-            loaded_cfg = resume_state.get("agent_config") or {}
-        else:
-            from ..checkpoint import load_checkpoint_payload
-
-            loaded_cfg = (
-                load_checkpoint_payload(
-                    pretrained_path,
-                    "cpu",
-                    allow_compatible_tokenizer=True,
-                ).get("agent_config")
-                or {}
-            )
-        loaded_bins = int(loaded_cfg.get("value_bins", 0) or 0)
-        if resume_path and loaded_bins != agent_config.value_bins:
-            raise ValueError(
-                "Cannot --resume across value-head architectures "
-                f"(checkpoint value_bins={loaded_bins}, model value_bins={agent_config.value_bins}): "
-                "the saved Adam state is shape-incompatible. Use --pretrained "
-                "--reinit-value-head with critic warmup instead."
-            )
-        # Same bin count but a shifted atom grid silently rescales the value
-        # head: bin_centers/bin_edges are non-persistent buffers rebuilt from
-        # config on load, while the position-matched Adam state and logits are
-        # restored as-is. Refuse the resume rather than corrupt the value scale.
-        if resume_path and loaded_bins > 0 and loaded_bins == agent_config.value_bins:
-            loaded_v_min = float(loaded_cfg.get("value_v_min", agent_config.value_v_min))
-            loaded_v_max = float(loaded_cfg.get("value_v_max", agent_config.value_v_max))
-            if (loaded_v_min != agent_config.value_v_min) or (loaded_v_max != agent_config.value_v_max):
-                raise ValueError(
-                    "Cannot --resume across value-head atom ranges "
-                    f"(checkpoint [{loaded_v_min}, {loaded_v_max}], "
-                    f"model [{agent_config.value_v_min}, {agent_config.value_v_max}]): "
-                    "the bin grid is rebuilt from config so the restored logits "
-                    "and Adam state would map onto a different value scale. Match "
-                    "value_v_min/value_v_max, or use --pretrained --reinit-value-head."
-                )
-        if loaded_bins != agent_config.value_bins and config.critic_warmup_updates <= 0:
-            raise ValueError(
-                "The value head is freshly initialized (checkpoint has "
-                f"value_bins={loaded_bins}, model has {agent_config.value_bins}) "
-                "but critic warmup is disabled. Pass --critic-warmup-updates 15 "
-                "--critic-warmup-min-ev 0 so the random head converges before "
-                "the policy trains on its advantages."
-            )
+        logger.info("Loaded pretrained model from %s", pretrained_path)
     _validate_resume_provenance(config, resume_state)
-    transition_state = _restore_ppo_transition_state(config, resume_state)
-    if transition_state.fail_closed:
-        logger.error(
-            "Refusing to continue fail-closed PPO checkpoint %s (reason=%s, critic_updates=%d). "
-            "Start a fresh run from the pinned pretrained policy after changing the warmup recipe.",
-            resume_path,
-            transition_state.fail_reason,
-            transition_state.critic_warmup_updates_completed,
-        )
-        return model
     if config.danger_rollout_temperature is None:
         logger.info(
             "Rollout temperature: %.3f (applied to rollout, training, and bootstrap)",
@@ -4288,17 +3517,12 @@ def train_ppo(
             use_multi_gpu,
         )
 
-    initial_optimizer_lr = _phase_learning_rate(
-        config,
-        in_critic_warmup=not transition_state.warmup_complete,
-    )
-    optimizer = _make_policy_optimizer(model.parameters(), initial_optimizer_lr)
+    optimizer = _make_policy_optimizer(model.parameters(), config.lr)
     if resume_state is not None:
         active_lr = _restore_policy_optimizer_state(
             optimizer,
             resume_state,
             config,
-            transition_state,
             device,
         )
         logger.info(
@@ -4365,7 +3589,7 @@ def train_ppo(
         )
     logger.info(
         "Starting PPO training: total_timesteps=%d, steps_per_update=%d, planned_updates=%d, "
-        "ppo_epochs=%d, actor_lr=%.2e, critic_warmup_lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
+        "ppo_epochs=%d, lr=%.2e, entropy_coeff=%.5f, adaptive_entropy=%s, "
         "target_entropy=%.3f, alpha_lr=%.2e, action_type_entropy_scale=%.2f, "
         "target_kl=%s, max_no_progress_steps=%d, log_interval=%d, checkpoint_interval=%d, eval_interval=%d",
         config.total_timesteps,
@@ -4373,7 +3597,6 @@ def train_ppo(
         planned_updates,
         config.ppo_epochs,
         config.lr,
-        _phase_learning_rate(config, in_critic_warmup=True),
         config.entropy_coeff,
         config.adaptive_entropy,
         config.target_entropy,
@@ -4401,7 +3624,6 @@ def train_ppo(
     else:
         log_alpha = None
         alpha_optimizer = None
-    return_rms = RunningMeanStd() if config.normalize_returns else None
     entropy_signal_ema: float | None = None
 
     # === Restore mutable training state from the resume checkpoint ===
@@ -4441,12 +3663,6 @@ def train_ppo(
                     entropy_coeff,
                     "None" if entropy_signal_ema is None else f"{entropy_signal_ema:.4f}",
                 )
-        if config.normalize_returns and "return_rms" in resume_state:
-            rms = resume_state["return_rms"]
-            return_rms = RunningMeanStd()
-            return_rms.mean = float(rms["mean"])
-            return_rms.var = float(rms["var"])
-            return_rms.count = float(rms["count"])
         # Resolve the target update count for this resumed run, in priority order:
         #   1. --additional-updates N  -> relative: saved_count + N
         #   2. --updates N (--total-updates) -> absolute target N
@@ -4491,9 +3707,6 @@ def train_ppo(
     episode_tarot_uses: list[int] = []
     # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
     _low_minibatch_streak = 0
-    # ``transition_state`` was restored before environment creation. Its
-    # warmup/ramp counters and rolling EV evidence span process legs exactly;
-    # later EV noise does not re-freeze a gate that already latched open.
     # Phase 6: rolling win_rate/ep_reward history for the correlation acceptance
     # criterion (corr > 0.5). Currently ~0/negative because dense shaping is
     # farmable independent of winning.
@@ -4503,7 +3716,6 @@ def train_ppo(
     best_eval_update: int | None = None
     eval_regression_streak = 0
     early_stop_requested = False
-    warmup_stop_requested = False
     if resume_state is not None and not config.reset_best_eval:
         best_eval_win_rate = resume_state.get("best_eval_win_rate")
         best_eval_update = resume_state.get("best_eval_update")
@@ -4534,8 +3746,8 @@ def train_ppo(
     env_last_shop_blind_index = np.zeros(config.num_envs, dtype=np.int8)
     # Per-env start step within the current rollout for the current episode.
     # Reset to 0 at each rollout, advanced past every `done` step so the
-    # buffer can retroactively fill ante-survival targets for completed
-    # episodes only.
+    # buffer can retroactively fill categorical outcome labels for completed
+    # non-stalled episodes only.
     env_episode_start_step = np.zeros(config.num_envs, dtype=np.int64)
 
     try:
@@ -4559,7 +3771,7 @@ def train_ppo(
                     )
                     actions = dist.sample()
                     log_probs = dist.log_prob(actions)
-                    values = value_dict["expected_score"]
+                    values = value_dict["expected_return"]
                     chosen_action_probs = dist.selected_prob(actions)
                     # Cheap macro-concentration telemetry. This is explicitly
                     # not the maximum flat-action probability; computing the
@@ -4570,8 +3782,6 @@ def train_ppo(
                 actions_np = actions.cpu().numpy()
                 log_probs_np = log_probs.cpu().numpy()
                 values_np = values.cpu().numpy()
-                if return_rms is not None:
-                    values_np = return_rms.denormalize(values_np)
                 chosen_action_probs_np = chosen_action_probs.cpu().numpy()
                 max_action_type_probs_np = max_action_type_probs.cpu().numpy()
                 pre_scalars = obs_buf._np_scalars
@@ -4649,9 +3859,7 @@ def train_ppo(
                                 final_obs_batch,
                                 temperature=_policy_temperature_for_scalars(final_obs_batch["scalars"], config),
                             )
-                        truncated_vals = truncated_value_dict["expected_score"].cpu().numpy()
-                        if return_rms is not None:
-                            truncated_vals = return_rms.denormalize(truncated_vals)
+                        truncated_vals = truncated_value_dict["expected_return"].cpu().numpy()
                         bootstrap_values_np[np.asarray(truncated_indices, dtype=np.int64)] = truncated_vals
 
                 # Store transition (using pre-step obs from obs_buf)
@@ -4915,23 +4123,15 @@ def train_ppo(
                         terminal_blind=ep_terminal_blind,
                         buffer=episode_buffer,
                     )
-                    # Fill ante-survival targets for every step in this episode.
-                    # Truncated-by-stall episodes have no conclusive outcome on
-                    # their final ante, so leave mask=0 and skip the fill.
+                    # Stalled episodes are censored, so their outcome mask stays
+                    # zero. Complete wins and losses get one categorical label.
                     if not ep_stalled:
-                        surv_target, surv_mask = compute_ante_survival_targets(ep_ante, ep_won)
-                        buffer.set_episode_survival(
-                            env_idx=int(i),
-                            start_step=int(env_episode_start_step[i]),
-                            end_step=step,
-                            target=surv_target,
-                            mask=surv_mask,
-                        )
                         buffer.set_episode_outcome(
                             env_idx=int(i),
                             start_step=int(env_episode_start_step[i]),
                             end_step=step,
                             won=ep_won,
+                            final_ante=ep_ante,
                         )
                     env_episode_start_step[i] = step + 1
                     env_ep_reward[i] = 0.0
@@ -4948,19 +4148,13 @@ def train_ppo(
                     _observation_buffer_batch(obs_buf),
                     temperature=_policy_temperature_for_scalars(obs_buf.scalars, config),
                 )
-                last_values = value_dict["expected_score"].cpu().numpy()
-                if return_rms is not None:
-                    last_values = return_rms.denormalize(last_values)
+                last_values = value_dict["expected_return"].cpu().numpy()
 
             buffer.compute_returns_and_advantages(last_values=last_values)
             buffer.normalize_advantages(clip_sigma=config.advantage_clip_sigma)
-            if return_rms is not None:
-                return_rms.update(buffer._flat_returns)
 
-            # Phase 3.2: explained variance of the critic on this rollout.
-            # 1 - Var(returns - values) / Var(returns). ~0.6 currently (derived
-            # from ppo/value_loss ~25 vs returns_std ~9.5); the critic warmup
-            # gate consumes a complete rolling window of this signal.
+            # Explained variance of the composed critic on this rollout:
+            # 1 - Var(returns - values) / Var(returns).
             flat_returns = buffer._flat_returns
             explained_variance = float("nan")
             if len(flat_returns) > 1:
@@ -5165,206 +4359,9 @@ def train_ppo(
                         rollout_step,
                     )
 
-            # Fail-closed critic warmup. A complete consecutive EV window must
-            # clear the threshold after the minimum critic-update count. A
-            # single spike cannot latch the actor open. At the maximum count we
-            # save the exact critic/policy state and stop normally; we never
-            # force an unready critic onto the pretrained actor.
-            critic_updates_completed = transition_state.critic_warmup_updates_completed
-            warmup_was_complete = transition_state.warmup_complete
-            if config.critic_warmup_updates > 0 and not transition_state.warmup_complete:
-                warmup_decision = _record_critic_ev_and_decide(
-                    transition_state,
-                    config,
-                    explained_variance,
-                )
-                if warmup_decision.ready:
-                    logger.info(
-                        "Critic warmup gate cleared after %d critic updates: "
-                        "rolling_EV=%.3f, %d/%d samples >= %.3f; starting protected actor ramp.",
-                        critic_updates_completed,
-                        warmup_decision.rolling_ev,
-                        warmup_decision.passing_samples,
-                        config.critic_warmup_ev_window,
-                        config.critic_warmup_min_ev,
-                    )
-            else:
-                warmup_decision = _CriticWarmupDecision(
-                    active=False,
-                    ready=True,
-                    exhausted=False,
-                    rolling_ev=float("nan"),
-                    finite_fraction=0.0,
-                    passing_samples=0,
-                    max_updates=0,
-                )
-
-            in_critic_warmup = warmup_decision.active
-            gate_just_opened = not warmup_was_complete and transition_state.warmup_complete
-            active_optimizer_lr = _set_optimizer_lr_for_phase(
-                optimizer,
-                config,
-                in_critic_warmup=not transition_state.warmup_complete,
-            )
-            writer.add_scalar("ppo/critic_warmup_active", float(in_critic_warmup), update_count + 1)
-            writer.add_scalar(
-                "ppo/critic_warmup_ev_rolling",
-                warmup_decision.rolling_ev,
-                update_count + 1,
-            )
-            writer.add_scalar(
-                "ppo/critic_warmup_ev_finite_fraction",
-                warmup_decision.finite_fraction,
-                update_count + 1,
-            )
-            writer.add_scalar(
-                "ppo/critic_warmup_ev_passing_samples",
-                float(warmup_decision.passing_samples),
-                update_count + 1,
-            )
-            writer.add_scalar(
-                "ppo/critic_warmup_gate_ready",
-                float(transition_state.warmup_complete),
-                update_count + 1,
-            )
-            writer.add_scalar(
-                "ppo/critic_warmup_updates_completed",
-                float(critic_updates_completed),
-                update_count + 1,
-            )
-            if in_critic_warmup:
-                logger.info(
-                    "Critic warmup %d/%d: EV=%.3f, rolling_EV=%.3f, evidence=%d/%d; "
-                    "policy frozen, value-head LR=%.2e.",
-                    critic_updates_completed,
-                    warmup_decision.max_updates,
-                    explained_variance,
-                    warmup_decision.rolling_ev,
-                    warmup_decision.passing_samples,
-                    config.critic_warmup_ev_window,
-                    active_optimizer_lr,
-                )
-
-            if warmup_decision.exhausted:
-                warmup_stop_requested = True
-                transition_state.fail_closed = True
-                transition_state.fail_reason = "critic_ev_gate_unready"
-                writer.add_scalar("ppo/critic_warmup_safe_stop", 1.0, update_count + 1)
-                writer.flush()
-                warmup_path = _save_checkpoint(
-                    model=model,
-                    optimizer=optimizer,
-                    save_path=save_path,
-                    update_count=update_count,
-                    total_steps=total_steps,
-                    planned_updates=planned_updates,
-                    entropy_coeff=entropy_coeff,
-                    entropy_signal_ema=entropy_signal_ema,
-                    lr=config.lr,
-                    log_alpha=log_alpha,
-                    alpha_optimizer=alpha_optimizer,
-                    return_rms=return_rms,
-                    agent_config=agent_config,
-                    config=config,
-                    transition_state=transition_state,
-                    filename="ppo_warmup_unready.pt",
-                    extra={
-                        "best_eval_win_rate": best_eval_win_rate,
-                        "best_eval_update": best_eval_update,
-                        "schedule_total_steps": schedule_total_steps,
-                        "warmup_stop_reason": "critic_ev_gate_unready",
-                        "critic_warmup_rolling_ev": warmup_decision.rolling_ev,
-                    },
-                )
-                _mirror_latest_checkpoint(warmup_path, save_path)
-                logger.error(
-                    "Stopping safely: critic warmup EV gate %.3f was not sustained after %d updates "
-                    "(rolling_EV=%.3f, evidence=%d/%d). Policy remains frozen; checkpoint=%s",
-                    config.critic_warmup_min_ev,
-                    critic_updates_completed,
-                    warmup_decision.rolling_ev,
-                    warmup_decision.passing_samples,
-                    config.critic_warmup_ev_window,
-                    warmup_path,
-                )
-                del buffer
-                break
-
-            if gate_just_opened:
-                # Persist the trained critic and latched transition before the
-                # first actor backward. A CUDA failure can then resume at the
-                # protected ramp instead of replaying the entire warmup.
-                writer.flush()
-                ramp_ready_path = _save_checkpoint(
-                    model=model,
-                    optimizer=optimizer,
-                    save_path=save_path,
-                    update_count=update_count,
-                    total_steps=total_steps,
-                    planned_updates=planned_updates,
-                    entropy_coeff=entropy_coeff,
-                    entropy_signal_ema=entropy_signal_ema,
-                    lr=config.lr,
-                    log_alpha=log_alpha,
-                    alpha_optimizer=alpha_optimizer,
-                    return_rms=return_rms,
-                    agent_config=agent_config,
-                    config=config,
-                    transition_state=transition_state,
-                    filename="ppo_actor_ramp_ready.pt",
-                    extra={
-                        "best_eval_win_rate": best_eval_win_rate,
-                        "best_eval_update": best_eval_update,
-                        "schedule_total_steps": schedule_total_steps,
-                        "critic_warmup_rolling_ev": warmup_decision.rolling_ev,
-                    },
-                )
-                _mirror_latest_checkpoint(ramp_ready_path, save_path)
-                logger.info("Saved actor-ramp transition checkpoint: %s", ramp_ready_path)
-
-            actor_transition = _actor_transition_runtime(
-                config,
-                transition_state,
-                in_critic_warmup=in_critic_warmup,
-            )
-            actor_clip_epsilon = actor_transition.clip_epsilon
-            actor_ramp_progress = actor_transition.progress
-            protect_actor_from_critic = actor_transition.protect_actor_from_critic
-            writer.add_scalar("ppo/actor_ramp_active", float(actor_transition.ramp_active), update_count + 1)
-            writer.add_scalar("ppo/actor_training_active", float(not in_critic_warmup), update_count + 1)
-            phase_code = 0.0 if in_critic_warmup else (1.0 if actor_transition.ramp_active else 2.0)
-            writer.add_scalar("ppo/optimization_phase", phase_code, update_count + 1)
-            writer.add_scalar("ppo/actor_ramp_progress", actor_transition.progress, update_count + 1)
-            writer.add_scalar(
-                "ppo/actor_ramp_successful_updates",
-                float(transition_state.actor_ramp_successful_updates),
-                update_count + 1,
-            )
-            writer.add_scalar(
-                "ppo/actor_clip_epsilon",
-                actor_transition.logged_clip_epsilon,
-                update_count + 1,
-            )
-            if actor_transition.ramp_active:
-                logger.info(
-                    "Protected actor ramp %d/%d: progress=%.2f, clip_epsilon=%.4f; "
-                    "critic gradients restricted to value head.",
-                    transition_state.actor_ramp_successful_updates + 1,
-                    config.actor_ramp_updates,
-                    actor_ramp_progress,
-                    actor_clip_epsilon,
-                )
-
             # SIL coefficient uses the same pinned schedule horizon so it decays
             # monotonically to sil_coeff_final without rewinding on resume.
             sil_coeff_now = resolve_sil_coeff(config, total_steps, schedule_total_steps=schedule_total_steps)
-            # Critic warmup must produce no SIL actor gradient; force the
-            # runtime coefficient to zero while the policy is frozen regardless
-            # of the schedule.
-            if in_critic_warmup:
-                sil_coeff_now = 0.0
-            elif protect_actor_from_critic:
-                sil_coeff_now *= actor_ramp_progress
             sil_grad_diagnostics_due = (
                 sil_coeff_now > 0.0
                 and config.sil_grad_diagnostics_interval > 0
@@ -5375,27 +4372,17 @@ def train_ppo(
                 model=model,
                 optimizer=optimizer,
                 buffer=buffer,
-                return_rms=return_rms,
                 entropy_coeff=entropy_coeff,
                 config=config,
                 accum_steps=accum_steps,
                 effective_batch_size=effective_batch_size,
                 device=device,
                 use_pin_memory=use_pin_memory,
-                policy_loss_scale=0.0 if in_critic_warmup else 1.0,
-                clip_epsilon=actor_clip_epsilon,
-                protect_actor_from_critic=protect_actor_from_critic,
                 sil_buffer=sil_buffer,
                 sil_coeff_now=sil_coeff_now,
                 grad_diagnostics_due=sil_grad_diagnostics_due,
             )
 
-            _advance_ppo_transition_state(
-                transition_state,
-                config,
-                in_critic_warmup=in_critic_warmup,
-                kl_rollback=update_stats.kl_rollback,
-            )
             terminal_replay_result = _run_terminal_replay_updates(
                 model,
                 optimizer,
@@ -5405,7 +4392,6 @@ def train_ppo(
             )
 
             update_policy_losses = update_stats.policy_losses
-            update_value_losses = update_stats.value_losses
             update_entropies = update_stats.entropies
             update_normalized_entropies = update_stats.normalized_entropies
             update_action_type_entropies = update_stats.action_type_entropies
@@ -5444,15 +4430,18 @@ def train_ppo(
 
             mean_entropy = weighted_mean(update_entropies)
             mean_policy_loss = weighted_mean(update_policy_losses)
-            mean_value_loss = weighted_mean(update_value_losses)
-            mean_value_mse = weighted_mean(update_stats.value_mses)
-            mean_survival_loss = _sample_weighted_mean(
-                update_stats.survival_losses,
-                update_stats.survival_valid_counts,
+            mean_return_huber = weighted_mean(update_stats.return_hubers)
+            mean_outcome_nll = _sample_weighted_mean(
+                update_stats.outcome_nlls,
+                update_stats.outcome_valid_counts,
             )
-            mean_win_probability_loss = _sample_weighted_mean(
-                update_stats.win_probability_losses,
-                update_stats.win_probability_valid_counts,
+            mean_outcome_brier = _sample_weighted_mean(
+                update_stats.outcome_briers,
+                update_stats.outcome_valid_counts,
+            )
+            mean_derived_win_brier = _sample_weighted_mean(
+                update_stats.derived_win_briers,
+                update_stats.outcome_valid_counts,
             )
             mean_action_type_entropy = weighted_mean(update_action_type_entropies)
             mean_clip_fraction = weighted_mean(update_clip_fracs)
@@ -5460,16 +4449,24 @@ def train_ppo(
             mean_valid_action_count = weighted_mean(update_valid_action_counts)
             mean_valid_action_type_count = weighted_mean(update_valid_action_type_counts)
             writer.add_scalar("ppo/policy_loss", mean_policy_loss, update_count)
-            writer.add_scalar("ppo/value_loss", mean_value_loss, update_count)
             writer.add_scalar("ppo/entropy_raw", mean_entropy, update_count)
-            # Return-unit MSE regardless of head mode (raw under HL-Gauss, where
-            # returns are never normalized); under HL-Gauss value_loss is
-            # cross-entropy so this is the run-over-run comparable series.
-            writer.add_scalar("ppo/value_mse", mean_value_mse, update_count)
-            writer.add_scalar("ppo/survival_loss", mean_survival_loss, update_count)
+            writer.add_scalar("critic/outcome_nll", mean_outcome_nll, update_count)
+            writer.add_scalar("critic/outcome_brier", mean_outcome_brier, update_count)
+            writer.add_scalar("critic/derived_win_brier", mean_derived_win_brier, update_count)
+            writer.add_scalar("critic/return_huber", mean_return_huber, update_count)
             writer.add_scalar(
-                "ppo/win_probability_loss",
-                mean_win_probability_loss,
+                "critic/terminal_value_mean",
+                weighted_mean(update_stats.terminal_value_means),
+                update_count,
+            )
+            writer.add_scalar(
+                "critic/return_residual_mean",
+                weighted_mean(update_stats.return_residual_means),
+                update_count,
+            )
+            writer.add_scalar(
+                "critic/expected_return_mean",
+                weighted_mean(update_stats.expected_return_means),
                 update_count,
             )
             writer.add_scalar("ppo/entropy_normalized", mean_normalized_entropy, update_count)
@@ -5486,13 +4483,8 @@ def train_ppo(
                 update_count,
             )
             writer.add_scalar("ppo/actual_lr", update_stats.actual_lr, update_count)
-            writer.add_scalar("ppo/effective_lr", active_optimizer_lr, update_count)
+            writer.add_scalar("ppo/effective_lr", config.lr, update_count)
             writer.add_scalar("ppo/configured_actor_lr", config.lr, update_count)
-            writer.add_scalar(
-                "ppo/configured_critic_warmup_lr",
-                _phase_learning_rate(config, in_critic_warmup=True),
-                update_count,
-            )
             for metric_name, metric_value in terminal_replay_result.diagnostics.items():
                 if math.isfinite(metric_value):
                     writer.add_scalar(
@@ -5600,10 +4592,8 @@ def train_ppo(
                     lr=config.lr,
                     log_alpha=log_alpha,
                     alpha_optimizer=alpha_optimizer,
-                    return_rms=return_rms,
                     agent_config=agent_config,
                     config=config,
-                    transition_state=transition_state,
                     extra={
                         "best_eval_win_rate": best_eval_win_rate,
                         "best_eval_update": best_eval_update,
@@ -5675,10 +4665,8 @@ def train_ppo(
                         lr=config.lr,
                         log_alpha=log_alpha,
                         alpha_optimizer=alpha_optimizer,
-                        return_rms=return_rms,
                         agent_config=agent_config,
                         config=config,
-                        transition_state=transition_state,
                         filename="ppo_best_eval.pt",
                         extra={
                             "best_eval_win_rate": best_eval_win_rate,
@@ -5722,10 +4710,8 @@ def train_ppo(
                         lr=config.lr,
                         log_alpha=log_alpha,
                         alpha_optimizer=alpha_optimizer,
-                        return_rms=return_rms,
                         agent_config=agent_config,
                         config=config,
-                        transition_state=transition_state,
                         filename="ppo_regression_stop.pt",
                         extra={
                             "best_eval_win_rate": best_eval_win_rate,
@@ -5758,7 +4744,7 @@ def train_ppo(
                 progress = (
                     f"Update {update_count}/{planned_updates}, steps {total_steps}/{config.total_timesteps}: "
                     f"policy_loss={mean_policy_loss:.4f}, "
-                    f"value_loss={mean_value_loss:.4f}, "
+                    f"return_huber={mean_return_huber:.4f}, "
                     f"entropy={mean_entropy:.4f}, "
                     f"entropy_signal={entropy_signal_ema:.4f}, "
                     f"entropy_coeff={entropy_coeff:.5f}, "
@@ -5927,18 +4913,11 @@ def train_ppo(
                 writer.close()
             except Exception:
                 logger.exception("Failed to close TensorBoard writer cleanly")
-    if warmup_stop_requested:
-        logger.error(
-            "PPO stopped safely with actor frozen after %d completed updates and %d env steps.",
-            update_count,
-            total_steps,
-        )
-    else:
-        logger.info(
-            "PPO training complete after %d updates and %d env steps.",
-            update_count,
-            total_steps,
-        )
+    logger.info(
+        "PPO training complete after %d updates and %d env steps.",
+        update_count,
+        total_steps,
+    )
     return model
 
 

@@ -1,90 +1,72 @@
-"""Per-ante survival targets for the ante_survival value-head output.
-
-Given an episode outcome (max_ante, won), produce per-ante binary targets and
-a loss mask so that the ante_survival head can be trained with BCE on just
-the antes we have evidence for (skip antes beyond what the trajectory reached).
-
-Convention (head output is shape (max_antes,)):
-  target[i] = 1 iff the player survived ante (i+1) (beat its boss)
-  target[i] = 0 iff the player reached ante (i+1) but died on it
-  mask[i]   = 1 iff target[i] is observed (otherwise unknown / padded)
-"""
+"""Conditional survival hazards and categorical terminal outcomes."""
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 
 # Match ValueHead default; keep in lockstep if it changes.
 DEFAULT_MAX_ANTES = 8
 
 
-def compute_ante_survival_targets(
-    max_ante: int,
-    won: bool,
-    num_antes: int = DEFAULT_MAX_ANTES,
-) -> tuple[np.ndarray, np.ndarray]:
-    targets = np.zeros(num_antes, dtype=np.float32)
-    mask = np.zeros(num_antes, dtype=np.float32)
-
-    if won:
-        # Winning currently means beating ante 8; survived every ante.
-        capped = min(max_ante, num_antes)
-        targets[:capped] = 1.0
-        mask[:capped] = 1.0
-        return targets, mask
-
-    # Lost at ante `max_ante`, survived 1..max_ante-1, died on max_ante.
-    capped = min(max_ante, num_antes)
-    if capped >= 1:
-        targets[: capped - 1] = 1.0
-        mask[: capped - 1] = 1.0
-        # The ante they died on is an observed failure.
-        targets[capped - 1] = 0.0
-        mask[capped - 1] = 1.0
-    # Antes beyond what was reached stay masked out.
-    return targets, mask
-
-
-def compute_conditional_ante_survival_targets(
-    final_ante: int,
-    won: bool,
-    *,
-    current_ante: int,
+def validate_critic_win_ante(
     win_ante: int,
+    *,
+    name: str = "win_ante",
+    max_antes: int = DEFAULT_MAX_ANTES,
+) -> int:
+    """Return a critic-compatible victory Ante or raise clearly."""
+
+    if isinstance(win_ante, bool):
+        raise ValueError(f"{name} must be an integer between 1 and {max_antes}")
+    try:
+        value = int(win_ante)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            f"{name} must be an integer between 1 and {max_antes}"
+        ) from exc
+    if value != win_ante or not 1 <= value <= max_antes:
+        raise ValueError(f"{name} must be between 1 and {max_antes}, got {win_ante!r}")
+    return value
+
+
+def _validated_ante_tensor(
+    values: torch.Tensor,
+    *,
+    name: str,
+    max_antes: int,
+) -> torch.Tensor:
+    """Validate one-based critic Ante values and return them as longs."""
+
+    flattened = values.reshape(-1)
+    if not bool(torch.all(_valid_ante_values(flattened, max_antes=max_antes))):
+        raise ValueError(f"{name} must contain integers between 1 and {max_antes}")
+    return flattened.to(dtype=torch.long)
+
+
+def _valid_ante_values(values: torch.Tensor, *, max_antes: int) -> torch.Tensor:
+    return (
+        (values == values.round())
+        & (values >= 1)
+        & (values <= max_antes)
+    )
+
+
+def terminal_outcome_class(
+    *,
+    won: bool,
+    final_ante: int,
     num_antes: int = DEFAULT_MAX_ANTES,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return future-only conditional-hazard targets for one transition.
+) -> int:
+    """Map a complete non-stalled episode to its categorical outcome class."""
 
-    ``ante_survival[i]`` is interpreted as the conditional probability of
-    surviving ante ``i + 1`` after reaching it.  A state in ante 3 therefore
-    receives no replay loss for the already-observed ante-1/2 outcomes.  For a
-    loss in ante 5, antes 3/4 are successes and ante 5 is the first failure;
-    later hazards are outside the observed path and remain masked.
-
-    This target convention lets the hazard vector define a coherent outcome
-    distribution over ``death at each remaining ante`` plus ``reach target``.
-    """
-
-    if num_antes <= 0:
-        raise ValueError("num_antes must be positive")
-    goal = min(max(int(win_ante), 1), num_antes)
-    current = min(max(int(current_ante), 1), goal)
-    final = min(max(int(final_ante), current), goal)
-
-    targets = np.zeros(num_antes, dtype=np.float32)
-    mask = np.zeros(num_antes, dtype=np.float32)
-    start = current - 1
+    final = validate_critic_win_ante(
+        final_ante,
+        name="final_ante",
+        max_antes=num_antes,
+    )
     if won:
-        targets[start:goal] = 1.0
-        mask[start:goal] = 1.0
-        return targets, mask
-
-    failure = final - 1
-    if failure > start:
-        targets[start:failure] = 1.0
-    mask[start : failure + 1] = 1.0
-    return targets, mask
+        return num_antes
+    return final - 1
 
 
 def hazard_outcome_probabilities(
@@ -111,13 +93,22 @@ def hazard_outcome_probabilities(
     if hazards.ndim != 2:
         raise ValueError("hazards must have shape (batch, max_antes)")
     batch_size, max_antes = hazards.shape
-    current = current_antes.to(device=hazards.device, dtype=torch.long).reshape(-1)
-    goal = win_antes.to(device=hazards.device, dtype=torch.long).reshape(-1)
-    if current.shape[0] != batch_size or goal.shape[0] != batch_size:
+    current_values = current_antes.to(device=hazards.device).reshape(-1)
+    goal_values = win_antes.to(device=hazards.device).reshape(-1)
+    if current_values.shape[0] != batch_size or goal_values.shape[0] != batch_size:
         raise ValueError("current_antes and win_antes must match the hazard batch")
-    current = current.clamp(1, max_antes)
-    goal = goal.clamp(1, max_antes)
-    current = torch.minimum(current, goal)
+    valid = (
+        _valid_ante_values(current_values, max_antes=max_antes)
+        & _valid_ante_values(goal_values, max_antes=max_antes)
+        & (current_values <= goal_values)
+    )
+    if not bool(torch.all(valid)):
+        raise ValueError(
+            f"current_antes and win_antes must contain integers between 1 and "
+            f"{max_antes}, with current Ante no later than the victory Ante"
+        )
+    current = current_values.to(dtype=torch.long)
+    goal = goal_values.to(dtype=torch.long)
 
     probability = hazards.clamp(1e-7, 1.0 - 1e-7)
     survival_mass = torch.ones(batch_size, dtype=hazards.dtype, device=hazards.device)

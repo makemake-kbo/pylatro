@@ -276,6 +276,7 @@ class Tokenizer:
         )
         for strategy_index in range(9):
             scalars[13 + strategy_index] = strategy_probabilities[strategy_index]
+        scalars[22] = float(state.win_ante)
 
         pos = DECK_START
         hand_cards = state.hand_cards

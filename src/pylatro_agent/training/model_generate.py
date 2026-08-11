@@ -16,7 +16,7 @@ import logging
 import math
 import pickle
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,10 +26,18 @@ from gymnasium.vector.vector_env import AutoresetMode
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
-from ..constants import TOKENIZER_VERSION
+from ..constants import TOKENIZER_SEMANTICS, TOKENIZER_VERSION
 from ..env import BalatroEnv
+from ..reward import (
+    DEFAULT_REWARD_CONFIG,
+    REWARD_MODEL_VERSION,
+    RewardConfig,
+    reward_checkpoint_metadata,
+    reward_config_fingerprint,
+)
+from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..vocab import Vocab, build_vocab
-from .ppo import _extract_step_info_value, _load_checkpoint_compatible, _ObsBuffer
+from .ppo import _extract_step_info_value, _load_v8_checkpoint_strict, _ObsBuffer
 
 if TYPE_CHECKING:
     import numpy as np
@@ -50,6 +58,8 @@ class ModelGenerateConfig:
     async_envs: bool = True
     progress_interval_s: float = 60.0
     log_dir: str | None = None
+    win_ante: int = 8
+    reward_config: RewardConfig | None = None
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -61,9 +71,23 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
     return returns
 
 
-def _make_env_thunk(seed: int, data: GameData, vocab: Vocab, max_no_progress_steps: int):
+def _make_env_thunk(
+    seed: int,
+    data: GameData,
+    vocab: Vocab,
+    max_no_progress_steps: int,
+    win_ante: int,
+    reward_config: RewardConfig | None,
+):
     def _thunk():
-        return BalatroEnv(seed=seed, data=data, vocab=vocab, max_steps=max_no_progress_steps)
+        return BalatroEnv(
+            seed=seed,
+            data=data,
+            vocab=vocab,
+            max_steps=max_no_progress_steps,
+            win_ante=win_ante,
+            reward_config=reward_config,
+        )
 
     return _thunk
 
@@ -74,11 +98,21 @@ def _make_vectorized_envs(
     vocab: Vocab,
     max_no_progress_steps: int,
     use_async: bool,
+    win_ante: int,
+    reward_config: RewardConfig | None,
 ):
     import gymnasium
 
     env_fns = [
-        _make_env_thunk(i, data, vocab, max_no_progress_steps) for i in range(num_envs)
+        _make_env_thunk(
+            i,
+            data,
+            vocab,
+            max_no_progress_steps,
+            win_ante,
+            reward_config,
+        )
+        for i in range(num_envs)
     ]
     if use_async and num_envs > 1:
         return gymnasium.vector.AsyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
@@ -112,9 +146,20 @@ def generate_training_data_from_model(
     if vocab is None:
         vocab = build_vocab(data)
 
+    win_ante = validate_critic_win_ante(config.win_ante)
+    active_reward_config = replace(
+        config.reward_config or DEFAULT_REWARD_CONFIG,
+        gamma=config.gamma,
+        potential_win_ante=win_ante,
+    )
     device = torch.device(config.device)
     model = BalatroAgent(agent_config, vocab).to(device)
-    _load_checkpoint_compatible(model, config.checkpoint_path, device)
+    _load_v8_checkpoint_strict(
+        model,
+        config.checkpoint_path,
+        device,
+        active_reward_config=active_reward_config,
+    )
     model.eval()
     logger.info(
         "Loaded inference checkpoint %s (d_model=%d, n_layers=%d, params=%d)",
@@ -125,7 +170,13 @@ def generate_training_data_from_model(
     )
 
     vec_env = _make_vectorized_envs(
-        config.num_envs, data, vocab, config.max_no_progress_steps, config.async_envs,
+        config.num_envs,
+        data,
+        vocab,
+        config.max_no_progress_steps,
+        config.async_envs,
+        win_ante,
+        active_reward_config,
     )
     obs_dict, _ = vec_env.reset()
 
@@ -227,6 +278,11 @@ def generate_training_data_from_model(
                 if step_done:
                     attempted += 1
                     won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
+                    stalled = bool(
+                        _extract_step_info_value(
+                            infos, "stalled", i, done=True, default=False
+                        )
+                    )
                     max_ante = ep_max_ante[i]
                     ep_len = len(ep_obs[i])
                     ep_return = sum(ep_rewards[i])
@@ -249,6 +305,12 @@ def generate_training_data_from_model(
                                 "won": won,
                                 "max_ante": max_ante,
                                 "return_target": return_rec,
+                                "win_ante": win_ante,
+                                "terminal_outcome_target": terminal_outcome_class(
+                                    won=won,
+                                    final_ante=max_ante,
+                                ),
+                                "terminal_outcome_mask": 0.0 if stalled else 1.0,
                             })
                         kept += 1
                         kept_antes.append(max_ante)
@@ -333,14 +395,24 @@ def generate_training_data_from_model(
     return records
 
 
-def save_records(records: list[dict[str, Any]], path: str | Path) -> None:
+def save_records(
+    records: list[dict[str, Any]],
+    path: str | Path,
+    *,
+    reward_config: RewardConfig,
+) -> None:
     """Persist generated records to disk using pickle (protocol 5)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "wb") as f:
         pickle.dump(
-            {"tokenizer_version": TOKENIZER_VERSION, "records": records},
+            {
+                "tokenizer_version": TOKENIZER_VERSION,
+                "tokenizer_semantics": TOKENIZER_SEMANTICS,
+                **reward_checkpoint_metadata(reward_config),
+                "records": records,
+            },
             f,
             protocol=pickle.HIGHEST_PROTOCOL,
         )
@@ -348,7 +420,11 @@ def save_records(records: list[dict[str, Any]], path: str | Path) -> None:
     logger.info("Saved %d records to %s", len(records), path)
 
 
-def load_records(path: str | Path) -> list[dict[str, Any]]:
+def load_records(
+    path: str | Path,
+    *,
+    reward_config: RewardConfig,
+) -> list[dict[str, Any]]:
     """Load previously generated records from disk."""
     path = Path(path)
     with open(path, "rb") as f:
@@ -363,6 +439,29 @@ def load_records(path: str | Path) -> list[dict[str, Any]]:
         raise ValueError(
             f"Observation dataset uses TOKENIZER_VERSION={saved_version!r}, but the current "
             f"version is {TOKENIZER_VERSION}; regenerate the dataset."
+        )
+    if payload.get("tokenizer_semantics") != TOKENIZER_SEMANTICS:
+        raise ValueError(
+            "Observation dataset does not use the v8 conditional-survival semantics; "
+            "regenerate the dataset."
+        )
+    saved_fingerprint = payload.get("reward_fingerprint")
+    if not saved_fingerprint:
+        raise ValueError(
+            "Observation dataset predates reward metadata, so its return targets "
+            "cannot be verified; regenerate the dataset."
+        )
+    active_fingerprint = reward_config_fingerprint(reward_config)
+    if (
+        payload.get("reward_model_version") != REWARD_MODEL_VERSION
+        or saved_fingerprint != active_fingerprint
+    ):
+        raise ValueError(
+            f"Observation dataset reward fingerprint mismatch "
+            f"(saved={str(saved_fingerprint)[:12]}, active={active_fingerprint[:12]}, "
+            f"saved_version={payload.get('reward_model_version')!r}, "
+            f"active_version={REWARD_MODEL_VERSION}); regenerate it with the active "
+            "gamma, victory Ante, and shaping configuration."
         )
     records = payload.get("records")
     if not isinstance(records, list):

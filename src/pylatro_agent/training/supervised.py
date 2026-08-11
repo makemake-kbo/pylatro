@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
@@ -24,8 +23,14 @@ from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
 from ..constants import NUM_ACTIONS
 from ..history import HistoryArrays
-from ..reward import outcome_value
-from ..survival import compute_ante_survival_targets
+from ..reward import (
+    DEFAULT_REWARD_CONFIG,
+    RewardConfig,
+    outcome_value,
+    reward_checkpoint_metadata,
+)
+from ..survival import terminal_outcome_class, validate_critic_win_ante
+from ..value_head import outcome_nll, return_huber_loss
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
 
@@ -43,6 +48,7 @@ class SupervisedConfig:
     warmup_steps: int = 1000
     max_epochs: int = 10
     value_loss_coeff: float = 0.5
+    outcome_loss_coeff: float = 0.10
     action_entropy_coeff: float = 0.001
     num_workers: int = 0  # 0 = auto-detect (all available cores)
     min_ante: int = 1  # Phase 5: was 5; hard outcome filtering creates survivorship bias
@@ -72,6 +78,8 @@ class SupervisedConfig:
     # the ~6% of teacher plays the candidate head can never match (those rows
     # now train the AR head exclusively). At PPO time this drops to 0.1.
     hand_ar_mixture_eps: float = 0.5
+    win_ante: int = 8
+    reward_config: RewardConfig | None = None
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -150,6 +158,7 @@ def train_supervised(
     trainee is fit directly on the supplied transitions. This is used by
     pretraining workflows that build records from a separate model checkpoint.
     """
+    validate_critic_win_ante(config.win_ante)
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
@@ -168,6 +177,11 @@ def train_supervised(
     optimizer = AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
     base_model = model.module if isinstance(model, nn.DataParallel) else model
+    active_reward_config = replace(
+        config.reward_config or DEFAULT_REWARD_CONFIG,
+        gamma=config.gamma,
+        potential_win_ante=config.win_ante,
+    )
     logger.info(f"Model parameters: {base_model.count_parameters():,}")
     if records is None:
         logger.info("Generating training data from heuristic agent...")
@@ -181,6 +195,8 @@ def train_supervised(
             num_workers=config.num_workers,
             keep_below_threshold_ratio=config.keep_below_threshold_ratio,
             chunk_size=config.chunk_size,
+            win_ante=config.win_ante,
+            reward_config=active_reward_config,
         )
         t_gen_elapsed = time.monotonic() - t_gen_start
         logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)
@@ -261,7 +277,7 @@ def train_supervised(
             # before PPO ever gets a chance to explore them.
             # Phase 5: outcome-weighted BC NLL. The weight tilts imitation toward
             # successful trajectories while preserving full state coverage. Applied
-            # to the action loss ONLY, value/win/survival losses use unweighted
+            # to the action loss ONLY; critic losses use unweighted
             # targets so the critic stays unbiased.
             bc_weights = batch["bc_weight"]
             logp = dist.log_prob(batch["actions"])
@@ -286,23 +302,45 @@ def train_supervised(
                 )
             action_loss = -(logp * bc_weights).sum() / bc_weights.sum().clamp(min=1e-6)
 
-            # Value loss: BCE on win prediction + MSE on expected_score
-            win_loss = F.binary_cross_entropy(value_dict["win_prob"], batch["won"].float())
-            # Train expected_score to predict approximate game return
-            # This is CRITICAL, PPO uses expected_score as its value function
-            score_loss = F.mse_loss(value_dict["expected_score"], batch["value_target"])
-            # Per-ante survival: BCE masked by observed antes.
-            survival_mask = batch["ante_survival_mask"]
-            survival_per_elem = F.binary_cross_entropy(
-                value_dict["ante_survival"],
-                batch["ante_survival_target"],
-                reduction="none",
+            terminal_nll = outcome_nll(
+                value_dict["outcome_probabilities"],
+                batch["terminal_outcome_target"],
+                batch["terminal_outcome_mask"],
             )
-            survival_loss = (survival_per_elem * survival_mask).sum() / survival_mask.sum().clamp(min=1.0)
-            value_loss = win_loss + score_loss + survival_loss
+            return_loss = return_huber_loss(value_dict, batch["value_target"])
+            critic_loss = (
+                config.value_loss_coeff * return_loss
+                + config.outcome_loss_coeff * terminal_nll
+            )
+            with torch.no_grad():
+                terminal_mask = batch["terminal_outcome_mask"].float()
+                terminal_denominator = terminal_mask.sum().clamp(min=1.0)
+                one_hot_outcome = torch.nn.functional.one_hot(
+                    batch["terminal_outcome_target"],
+                    num_classes=value_dict["outcome_probabilities"].shape[1],
+                ).to(dtype=value_dict["outcome_probabilities"].dtype)
+                outcome_brier = (
+                    (value_dict["outcome_probabilities"] - one_hot_outcome)
+                    .square()
+                    .sum(dim=-1)
+                    .mul(terminal_mask)
+                    .sum()
+                    / terminal_denominator
+                )
+                win_target = (
+                    batch["terminal_outcome_target"]
+                    == value_dict["outcome_probabilities"].shape[1] - 1
+                ).float()
+                derived_win_brier = (
+                    (value_dict["win_prob"] - win_target)
+                    .square()
+                    .mul(terminal_mask)
+                    .sum()
+                    / terminal_denominator
+                )
 
             entropy_bonus = dist.entropy().mean()
-            loss = action_loss + config.value_loss_coeff * value_loss - config.action_entropy_coeff * entropy_bonus
+            loss = action_loss + critic_loss - config.action_entropy_coeff * entropy_bonus
 
             optimizer.zero_grad()
             loss.backward()
@@ -324,7 +362,7 @@ def train_supervised(
                 correct = (predicted == batch["actions"]).sum()
                 epoch_loss += loss.detach() * len(batch_records)
                 epoch_action_loss += action_loss.detach() * len(batch_records)
-                epoch_value_loss += value_loss.detach() * len(batch_records)
+                epoch_value_loss += critic_loss.detach() * len(batch_records)
                 epoch_action_correct += correct.detach()
             epoch_count += len(batch_records)
 
@@ -334,7 +372,7 @@ def train_supervised(
                 # them sparse so MPS can run without constant host syncs.
                 writer.add_scalar("train/loss", loss, global_step)
                 writer.add_scalar("train/action_loss", action_loss, global_step)
-                writer.add_scalar("train/value_loss", value_loss, global_step)
+                writer.add_scalar("train/value_loss", critic_loss, global_step)
                 writer.add_scalar("train/accuracy", batch_acc, global_step)
                 writer.add_scalar("train/grad_norm", grad_norm, global_step)
                 writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
@@ -344,9 +382,13 @@ def train_supervised(
                     config.action_entropy_coeff * entropy_bonus,
                     global_step,
                 )
-                writer.add_scalar("train/win_prob_mean", value_dict["win_prob"].mean(), global_step)
-                writer.add_scalar("train/expected_score_mean", value_dict["expected_score"].mean(), global_step)
-                writer.add_scalar("train/survival_loss", survival_loss, global_step)
+                writer.add_scalar("critic/outcome_nll", terminal_nll, global_step)
+                writer.add_scalar("critic/outcome_brier", outcome_brier, global_step)
+                writer.add_scalar("critic/derived_win_brier", derived_win_brier, global_step)
+                writer.add_scalar("critic/return_huber", return_loss, global_step)
+                writer.add_scalar("critic/terminal_value_mean", value_dict["terminal_value"].mean(), global_step)
+                writer.add_scalar("critic/return_residual_mean", value_dict["return_residual"].mean(), global_step)
+                writer.add_scalar("critic/expected_return_mean", value_dict["expected_return"].mean(), global_step)
                 writer.add_scalar("train/unreachable_label_fraction", unreachable_label_fraction, global_step)
 
             global_step += 1
@@ -370,7 +412,14 @@ def train_supervised(
         save_model = model.module if isinstance(model, nn.DataParallel) else model
         ckpt_path = save_path / f"supervised_epoch{epoch + 1}.pt"
         tmp_path = ckpt_path.with_suffix(".tmp")
-        save_checkpoint(save_model, tmp_path)
+        save_checkpoint(
+            save_model,
+            tmp_path,
+            extra={
+                "agent_config": asdict(save_model.config),
+                **reward_checkpoint_metadata(active_reward_config),
+            },
+        )
         tmp_path.rename(ckpt_path)
 
     writer.close()
@@ -426,23 +475,29 @@ def _collate_batch(records: list[dict], device: torch.device, config: Supervised
             dtype=torch.long,
             device=device,
         ),
-        "won": torch.tensor(
-            [float(r["won"]) for r in records],
-            dtype=torch.float32,
-            device=device,
-        ),
         "value_target": torch.tensor(
             [r["return_target"] for r in records],
             dtype=torch.float32,
             device=device,
         ),
-        "ante_survival_target": torch.tensor(
-            np.array([_survival_target(r)[0] for r in records]),
-            dtype=torch.float32,
+        "terminal_outcome_target": torch.tensor(
+            [
+                int(
+                    r.get(
+                        "terminal_outcome_target",
+                        terminal_outcome_class(
+                            won=bool(r.get("won", False)),
+                            final_ante=int(r.get("max_ante", 1)),
+                        ),
+                    )
+                )
+                for r in records
+            ],
+            dtype=torch.long,
             device=device,
         ),
-        "ante_survival_mask": torch.tensor(
-            np.array([_survival_target(r)[1] for r in records]),
+        "terminal_outcome_mask": torch.tensor(
+            [float(r.get("terminal_outcome_mask", 1.0)) for r in records],
             dtype=torch.float32,
             device=device,
         ),
@@ -454,7 +509,7 @@ def _outcome_weight(record: dict, config: SupervisedConfig) -> float:
     """AWR-style outcome weight: w = exp(beta * normalized_outcome), clamped.
 
     normalized_outcome maps outcome_value to [0, 1]. Applied to the
-    BC NLL only, never to value/win/survival targets, so the critic stays
+    BC NLL only, never to return or terminal-outcome targets, so the critic stays
     unbiased while imitation tilts toward successful trajectories.
     """
     import math
@@ -468,12 +523,3 @@ def _outcome_weight(record: dict, config: SupervisedConfig) -> float:
     normalized = (outcome - min_outcome) / span
     weight = math.exp(config.outcome_weight_beta * normalized)
     return max(config.bc_weight_min, min(config.bc_weight_max, weight))
-
-
-def _survival_target(record: dict) -> tuple[np.ndarray, np.ndarray]:
-    if "ante_survival_target" in record and "ante_survival_mask" in record:
-        return record["ante_survival_target"], record["ante_survival_mask"]
-    return compute_ante_survival_targets(
-        int(record.get("max_ante", 1)),
-        bool(record.get("won", False)),
-    )

@@ -14,6 +14,7 @@ from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
 from .constants import (
+    CURRENT_ANTE_SCALAR_INDEX,
     HISTORY_EVENT_DIM,
     HISTORY_FEATURE_DIM,
     HISTORY_MAX_CARDS,
@@ -22,9 +23,11 @@ from .constants import (
     HISTORY_OMITTED_DIM,
     HISTORY_ROUNDS,
     MAX_SEQ_LEN,
+    META_START,
     NUM_ACTIONS,
     SCALAR_DIM,
     TOKEN_DIM,
+    WIN_ANTE_SCALAR_INDEX,
     SubPhase,
 )
 from .diagnostics import (
@@ -629,7 +632,7 @@ class BalatroEnv(gymnasium.Env):
         state = self._controller.state
         mask = self.action_masks()
         risk_info = state_info if state_info is not None else self._capture_state_info()
-        return self._tokenizer.tokenize(
+        obs = self._tokenizer.tokenize(
             state,
             self._sub_phase,
             action_mask=mask,
@@ -638,6 +641,18 @@ class BalatroEnv(gymnasium.Env):
             clear_probability=float(risk_info.get("clear_probability", 0.0) or 0.0),
             immediate_death_probability=float(risk_info.get("immediate_death_probability", 1.0) or 0.0),
         )
+        # cash_out marks a curriculum win and then advances the engine to the
+        # next Ante (for example, a target-Ante-4 win leaves state.ante == 5).
+        # That post-win bookkeeping state is still returned as Gymnasium's
+        # terminal observation.  The conditional-survival critic, however,
+        # describes outcomes only through the configured target Ante, so encode
+        # the last playable Ante rather than an impossible current > target
+        # pair.  Keep the engine state untouched: terminal info should continue
+        # reporting the actual post-cash-out Ante.
+        if state.won and obs.scalars[CURRENT_ANTE_SCALAR_INDEX] > obs.scalars[WIN_ANTE_SCALAR_INDEX]:
+            obs.scalars[CURRENT_ANTE_SCALAR_INDEX] = obs.scalars[WIN_ANTE_SCALAR_INDEX]
+            obs.tokens[META_START + CURRENT_ANTE_SCALAR_INDEX, 0] = int(state.win_ante)
+        return obs
 
     def _obs_to_dict(self, obs: RawObservation) -> dict:
         result = {

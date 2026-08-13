@@ -8,7 +8,14 @@ from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import add_consumable, add_joker, load_game_data, populate_shop
 from pylatro.models import PackState, ShopCard
-from pylatro_agent.constants import NUM_ACTIONS, TOKEN_DIM, ActionRange, SubPhase
+from pylatro_agent.constants import (
+    CURRENT_ANTE_SCALAR_INDEX,
+    NUM_ACTIONS,
+    TOKEN_DIM,
+    WIN_ANTE_SCALAR_INDEX,
+    ActionRange,
+    SubPhase,
+)
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.training.ppo import _make_vectorized_envs
 from pylatro_agent.vocab import build_vocab
@@ -238,6 +245,42 @@ def test_env_win_ante_override_is_applied_on_every_reset(game_data, vocab):
 
     env.reset()
     assert env.state.win_ante == 3
+
+
+def test_winning_terminal_observation_stays_within_critic_horizon(game_data, vocab):
+    env = BalatroEnv(
+        seed=7,
+        data=game_data,
+        vocab=vocab,
+        max_steps=100,
+        win_ante=1,
+        enable_teacher=False,
+    )
+    env.reset()
+    assert env.state is not None
+
+    # Jump to the target Ante's boss and make the next legal play clear it.
+    env.state.blind_on_deck = "Boss"
+    env.state.round_resets.blind_states = {
+        "Small": "Defeated",
+        "Big": "Defeated",
+        "Boss": "Select",
+    }
+    hand_obs, _, _, _, _ = env.step(int(ActionRange.BLIND_PLAY))
+    env._controller.round_score = env._controller.blind_target()
+    play_action = _first_valid(
+        hand_obs["action_mask"],
+        ActionRange.PLAY_SUBSET_START,
+        ActionRange.PLAY_SUBSET_END,
+    )
+
+    terminal_obs, _, terminated, truncated, info = env.step(play_action)
+
+    assert terminated and not truncated
+    assert info["won"] is True
+    assert info["ante"] == 2  # The engine still advances after cashing out.
+    assert terminal_obs["scalars"][CURRENT_ANTE_SCALAR_INDEX] == 1.0
+    assert terminal_obs["scalars"][WIN_ANTE_SCALAR_INDEX] == 1.0
 
 
 def test_env_shop_buy_opens_booster_pack_without_index_error(game_data, vocab):

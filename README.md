@@ -217,6 +217,18 @@ applies the best exact-scored arrangement before each play
 action space and there is no reorder loop to penalize. Action-family fractions
 plus no-progress streaks make a shop loop directly visible.
 
+Ordering optimizes for score by default and for money when - and only when -
+the play still clears the blind. That is a computation, not a forecast: every
+candidate order is simulated, so the exact chip total is known before
+committing and `chips_forgone` can never turn a clearing play into a death.
+The rule deliberately does not consult the learned critic; an ordering that
+traded chips for cash on a critic's say-so would hand a control input to the
+least reliable component in the system and make the transition function depend
+on weights that change every update. Two scalars report what the ordering did
+on the last play (objective taken, dollars banked) so harness-generated cash is
+attributable to the policy rather than unexplained variance in its own dollars;
+`joker_order/*` exposes the same on TensorBoard.
+
 Every shop-leave risk forecast is resolved against its realized next-blind
 outcome and appended to `<log-dir>/risk_forecasts.jsonl`. Earlier runs scored
 only the *last* shop leave of each episode — about 8% of them, and the one

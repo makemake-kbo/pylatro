@@ -11,7 +11,11 @@ from enum import IntEnum, StrEnum
 # Stamped into every checkpoint; `load_checkpoint` asserts it on read.
 # v9: MOVE_JOKER removed from the action space; the harness now orders
 # jokers deterministically before each play (see joker_layout.py).
-TOKENIZER_VERSION = 9
+# v10: two scalars expose what that ordering did on the last play (which
+# objective it took and how much cash it banked), so harness-generated
+# money is attributable rather than unexplained variance in the policy's
+# own dollars.
+TOKENIZER_VERSION = 10
 # Tokenizer-v8 appends the configured victory Ante.  The critic needs both the
 # current and target Ante to mask impossible terminal outcomes and assign the
 # correct terminal utility to each outcome class.
@@ -20,9 +24,12 @@ TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = 12
-SCALAR_DIM = 23  # v7's 22 features plus the configured win Ante
+SCALAR_DIM = 25  # v7's 22, the configured win Ante, plus 2 harness-ordering features
 CURRENT_ANTE_SCALAR_INDEX = 2
 WIN_ANTE_SCALAR_INDEX = 22
+# What the harness's joker ordering did on the most recent played hand.
+ORDER_OBJECTIVE_SCALAR_INDEX = 23  # 1.0 when it optimized for money, else 0.0
+ORDER_DOLLARS_SCALAR_INDEX = 24  # sign_log dollars banked versus the score order
 LEGACY_POLICY_SCALAR_DIM = 11  # v5 action-head input; risk enters through META embedding
 
 # Played-hand history.  The tracker presents rounds oldest-to-newest, with the

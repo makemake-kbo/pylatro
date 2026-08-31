@@ -753,6 +753,10 @@ class _RolloutMetrics:
     counterfactual_focal_counts: Counter = field(default_factory=Counter)
     play_subset_count: int = 0
     discard_subset_count: int = 0
+    joker_order_money_flags: list[float] = field(default_factory=list)
+    joker_order_dollars_gained: list[float] = field(default_factory=list)
+    joker_order_chips_forgone: list[float] = field(default_factory=list)
+    joker_order_clear_flags: list[float] = field(default_factory=list)
 
 
 def _write_rollout_episode_metrics(writer, rm: _RolloutMetrics, step: int) -> None:
@@ -940,6 +944,30 @@ def _write_action_behavior_metrics(writer, rm: _RolloutMetrics, step: int) -> No
                 rm.action_type_counts.get(action_type.value, 0) / action_total,
                 step,
             )
+    if rm.joker_order_money_flags:
+        # Money mode is only ever taken on a play the harness proved would
+        # clear the blind anyway, so chips_forgone is the price of that cash
+        # and should stay small relative to the target it still met.
+        writer.add_scalar(
+            "joker_order/money_objective_fraction",
+            float(np.mean(rm.joker_order_money_flags)),
+            step,
+        )
+        writer.add_scalar(
+            "joker_order/clearing_play_fraction",
+            float(np.mean(rm.joker_order_clear_flags)),
+            step,
+        )
+        writer.add_scalar(
+            "joker_order/dollars_gained_per_play",
+            float(np.mean(rm.joker_order_dollars_gained)),
+            step,
+        )
+        writer.add_scalar(
+            "joker_order/chips_forgone_per_play",
+            float(np.mean(rm.joker_order_chips_forgone)),
+            step,
+        )
     if rm.steps_since_progress:
         writer.add_scalar(
             "rollout/no_progress_streak_p95",
@@ -3947,6 +3975,37 @@ def train_ppo(
                             _extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0)
                         )
                     )
+                    if action_type_name == ActionType.PLAY_SUBSET.value:
+                        objective = _extract_step_info_value(
+                            infos, "joker_order_objective", env_idx, done=step_done, default=""
+                        )
+                        if objective:
+                            rm.joker_order_money_flags.append(float(str(objective) == "money"))
+                            rm.joker_order_clear_flags.append(
+                                float(
+                                    bool(
+                                        _extract_step_info_value(
+                                            infos, "joker_order_clears", env_idx, done=step_done, default=False
+                                        )
+                                    )
+                                )
+                            )
+                            rm.joker_order_dollars_gained.append(
+                                float(
+                                    _extract_step_info_value(
+                                        infos, "joker_order_dollars_gained", env_idx, done=step_done, default=0.0
+                                    )
+                                    or 0.0
+                                )
+                            )
+                            rm.joker_order_chips_forgone.append(
+                                float(
+                                    _extract_step_info_value(
+                                        infos, "joker_order_chips_forgone", env_idx, done=step_done, default=0.0
+                                    )
+                                    or 0.0
+                                )
+                            )
                     for component_name in REWARD_INFO_KEYS:
                         component_value = _extract_step_info_value(
                             infos,

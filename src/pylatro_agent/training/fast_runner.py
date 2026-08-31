@@ -36,7 +36,7 @@ from ..constants import (
     SubPhase,
 )
 from ..history import PlayHistoryTracker, blind_history_key
-from ..joker_layout import apply_best_joker_order
+from ..joker_layout import NO_ORDER_DECISION, apply_best_joker_order
 from ..masks import _mask_debuffed_plays
 from ..subset_actions import (
     consumable_subset_indices,
@@ -56,6 +56,7 @@ class FastRunner:
         "_ctrl",
         "_done",
         "_history",
+        "_last_order_decision",
         "_mask",
         "_max_ante",
         "_max_steps",
@@ -84,6 +85,7 @@ class FastRunner:
         self._state.win_ante = validate_critic_win_ante(win_ante)
         self._sub_phase: SubPhase = SubPhase.BLIND_SELECT
         self._round_score: int = 0
+        self._last_order_decision = NO_ORDER_DECISION
         self._max_ante: int = 1
         self._done: bool = False
         self._history = PlayHistoryTracker()
@@ -119,6 +121,11 @@ class FastRunner:
     @property
     def round_score(self) -> int:
         return self._round_score
+
+    @property
+    def last_order_decision(self):
+        """Harness joker-ordering outcome for the most recent play."""
+        return self._last_order_decision
 
     @property
     def history(self) -> PlayHistoryTracker:
@@ -232,7 +239,11 @@ class FastRunner:
             indices = subset_indices(idx)
             if any(slot >= len(state.hand_cards) for slot in indices):
                 return
-            apply_best_joker_order(state, tuple(sorted(indices)))
+            self._last_order_decision = apply_best_joker_order(
+                state,
+                tuple(sorted(indices)),
+                remaining_target=max(float(ctrl.blind_target()) - float(self._round_score), 0.0),
+            )
             selected_cards = [state.hand_cards[slot] for slot in sorted(indices)]
             pending_history = self._history.capture(
                 state,

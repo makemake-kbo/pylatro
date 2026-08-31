@@ -41,7 +41,7 @@ from .diagnostics import (
 )
 from .heuristic import HeuristicAgent
 from .history import PlayHistoryTracker, blind_history_key
-from .joker_layout import apply_best_joker_order
+from .joker_layout import NO_ORDER_DECISION, OrderDecision, OrderObjective, apply_best_joker_order
 from .masks import compute_action_mask
 from .reward import (
     DEFAULT_REWARD_CONFIG,
@@ -105,6 +105,10 @@ class BalatroEnv(gymnasium.Env):
         self._sub_phase = SubPhase.BLIND_SELECT
         self._steps_since_progress = 0
         self._history = PlayHistoryTracker()
+        # What the harness's joker ordering did on the most recent play. The
+        # policy observes this so cash the harness banked is attributable
+        # rather than appearing as unexplained variance in its own dollars.
+        self._last_order_decision: OrderDecision = NO_ORDER_DECISION
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -192,6 +196,7 @@ class BalatroEnv(gymnasium.Env):
         self._play_diagnostic_count = 0
         self._joker_replacement_clear_baseline = None
         self._rewarded_gold_card_ids.clear()
+        self._last_order_decision = NO_ORDER_DECISION
         self._history.reset()
         self._prev_info = self._capture_state_info()
 
@@ -280,6 +285,17 @@ class BalatroEnv(gymnasium.Env):
         curr_info["action_detail"] = decoded.detail
         curr_info["teacher_action"] = teacher_action
         curr_info["teacher_action_match"] = teacher_action >= 0 and int(action) == teacher_action
+        if decoded.action_type == ActionType.PLAY_SUBSET:
+            decision = self._last_order_decision
+            action_diagnostics.update(
+                {
+                    "joker_order_objective": str(decision.objective),
+                    "joker_order_changed": bool(decision.changed),
+                    "joker_order_clears": bool(decision.clears),
+                    "joker_order_dollars_gained": float(decision.dollars_gained),
+                    "joker_order_chips_forgone": float(decision.chips_forgone),
+                }
+            )
 
         event_diagnostics = step_event_diagnostics(
             self._prev_info,
@@ -510,7 +526,13 @@ class BalatroEnv(gymnasium.Env):
                 raise IndexError(f"Play subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
             # Harness-owned joker ordering: put the roster in the best
             # exact-scored arrangement for this concrete play before scoring.
-            apply_best_joker_order(state, tuple(sorted(indices)))
+            # The remaining target lets the harness bank cash on plays that
+            # clear the blind either way; without it the objective is SCORE.
+            self._last_order_decision = apply_best_joker_order(
+                state,
+                tuple(sorted(indices)),
+                remaining_target=max(float(ctrl.blind_target()) - float(ctrl.round_score), 0.0),
+            )
             selected_cards = [state.hand_cards[index] for index in sorted(indices)]
             pending_history = self._history.capture(
                 state,
@@ -614,6 +636,8 @@ class BalatroEnv(gymnasium.Env):
             history=self._history,
             clear_probability=float(risk_info.get("clear_probability", 0.0) or 0.0),
             immediate_death_probability=float(risk_info.get("immediate_death_probability", 1.0) or 0.0),
+            order_objective_money=self._last_order_decision.objective is OrderObjective.MONEY,
+            order_dollars_gained=float(self._last_order_decision.dollars_gained),
         )
         # cash_out marks a curriculum win and then advances the engine to the
         # next Ante (for example, a target-Ante-4 win leaves state.ante == 5).

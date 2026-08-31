@@ -545,10 +545,10 @@ def test_auto_order_places_xmult_last_for_selected_hand() -> None:
     add_joker(state, "j_joker")
     state.hand_cards = [PlayingCard(front_key="S_A", suit="Spades", rank="A")]
 
-    assert joker_layout.apply_best_joker_order(state, (0,)) is True
+    assert joker_layout.apply_best_joker_order(state, (0,)).changed is True
     assert state.joker_keys == ["j_joker", "j_cavendish"]
     # A second application is a no-op: the roster is already optimal.
-    assert joker_layout.apply_best_joker_order(state, (0,)) is False
+    assert joker_layout.apply_best_joker_order(state, (0,)).changed is False
 
 
 def test_auto_order_candidate_search_has_hard_budget() -> None:
@@ -580,7 +580,7 @@ def test_auto_order_places_copy_before_target_without_xmult() -> None:
     add_joker(state, "j_blueprint")
     state.hand_cards = [PlayingCard(front_key="S_A", suit="Spades", rank="A")]
 
-    assert joker_layout.apply_best_joker_order(state, (0,)) is True
+    assert joker_layout.apply_best_joker_order(state, (0,)).changed is True
     assert state.joker_keys == ["j_blueprint", "j_joker"]
 
 

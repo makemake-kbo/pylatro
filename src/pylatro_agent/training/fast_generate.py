@@ -26,6 +26,7 @@ from pylatro_cli.controller import GamePhase
 
 from ..action import decode_action
 from ..heuristic import HeuristicAgent
+from ..joker_layout import OrderObjective
 from ..reward import RewardConfig, default_reward
 from ..shop_eval import capture_build_features
 from ..strategic_events import derive_strategic_event
@@ -127,6 +128,8 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
         action_mask=mask.copy(),
         round_score=runner.round_score,
         history=runner.history,
+        order_objective_money=runner.last_order_decision.objective is OrderObjective.MONEY,
+        order_dollars_gained=float(runner.last_order_decision.dollars_gained),
     )
     return {
         "tokens": raw.tokens,

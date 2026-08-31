@@ -35,6 +35,8 @@ from .constants import (
     MAX_SEQ_LEN,
     META_COUNT,
     META_START,
+    ORDER_DOLLARS_SCALAR_INDEX,
+    ORDER_OBJECTIVE_SCALAR_INDEX,
     POKER_HAND_NAMES,
     SHOP_MAX,
     SHOP_START,
@@ -215,6 +217,8 @@ class Tokenizer:
         history: PlayHistoryTracker | None = None,
         clear_probability: float | None = None,
         immediate_death_probability: float | None = None,
+        order_objective_money: bool = False,
+        order_dollars_gained: float = 0.0,
     ) -> RawObservation:
         from .constants import NUM_ACTIONS, SCALAR_DIM
 
@@ -277,6 +281,12 @@ class Tokenizer:
         for strategy_index in range(9):
             scalars[13 + strategy_index] = strategy_probabilities[strategy_index]
         scalars[22] = float(state.win_ante)
+        # What the harness's joker ordering did on the most recent played hand.
+        # Retrospective by construction: the ordering is chosen from the exact
+        # simulated result of a concrete play, so there is nothing to report
+        # until a play has happened.
+        scalars[ORDER_OBJECTIVE_SCALAR_INDEX] = 1.0 if order_objective_money else 0.0
+        scalars[ORDER_DOLLARS_SCALAR_INDEX] = sign_log(float(order_dollars_gained))
 
         pos = DECK_START
         hand_cards = state.hand_cards

@@ -68,10 +68,14 @@ class MetaEmbedding(nn.Module):
         self.boss_emb = nn.Embedding(35, d_model)  # 35 = fixed cap on boss vocab
         self.target_proj = nn.Linear(4, d_model)
         self.risk_proj = nn.Linear(2, d_model)
+        # What the harness's joker ordering did last play (objective, cash
+        # banked). Zero-initialized so the feature starts as an exact no-op.
+        self.harness_order_proj = nn.Linear(2, d_model, bias=False)
         # Keep the risk adapter initially neutral so the policy can learn how
         # much to trust the analytic estimate during training.
         nn.init.zeros_(self.risk_proj.weight)
         nn.init.zeros_(self.risk_proj.bias)
+        nn.init.zeros_(self.harness_order_proj.weight)
         # The nine strategy features enter through one bias-free zero adapter
         # shared by the transformer/value path and every policy head.
         self.strategy_proj = nn.Linear(9, d_model, bias=False)
@@ -116,10 +120,16 @@ class MetaEmbedding(nn.Module):
             if scalars.shape[1] >= 22
             else scalars.new_zeros((batch, 9))
         )
+        harness_order_context = (
+            scalars[:, 23:25]
+            if scalars.shape[1] >= 25
+            else scalars.new_zeros((batch, 2))
+        )
         out[:, 4] = (
             self.target_proj(target_context)
             + self.risk_proj(risk_context)
             + self.strategy_proj(strategy_context)
+            + self.harness_order_proj(harness_order_context)
         )
         out[:, 5] = self.hands_proj(scalars[:, 4:5])
         out[:, 6] = self.discards_proj(scalars[:, 5:6])

@@ -365,12 +365,33 @@ class PPOConfig:
     outcome_loss_coeff: float = 0.10
     # Always-on completed-episode replay for terminal-critic supervision.
     # Episode assembly is independent of SIL and crosses rollout boundaries.
-    # Replay updates touch only the conditional per-Ante hazard output layer:
-    # the actor, shared trunk/pooling, and return residual are unchanged.
-    terminal_replay_batch_size: int = 128
+    # Replay updates touch only the outcome tower (hazard projection plus its
+    # output layer): the actor, shared trunk, pooling, and return residual are
+    # unchanged.
+    #
+    # Volume matters here. At 32 envs x 256 steps a rollout is ~8k rows, so the
+    # old 1x128 replay contributed under 2% of the outcome gradient while the
+    # buffer turned over every ~15 updates, evicting ~98% of stored transitions
+    # unsampled. 4x256 raises replay to ~1k rows per update against the same
+    # rollout, at the cost of four extra forward passes.
+    terminal_replay_batch_size: int = 256
     terminal_replay_min_episodes: int = 8
     terminal_replay_samples_per_episode: int = 8
-    terminal_replay_updates_per_ppo_update: int = 1
+    terminal_replay_updates_per_ppo_update: int = 4
+    # Draw replay rows uniformly over transitions rather than over episodes.
+    # Episode-uniform draws weight a 20-step Ante-1 death like a 300-step
+    # Ante-5 win, starving the deep states the critic is worst at.
+    terminal_replay_row_uniform: bool = True
+    # Fraction of completed episodes withheld from every training sampler and
+    # scored no-grad instead. This is the only critic number in the run that
+    # measures generalization rather than fit. 0 disables the split.
+    #
+    # The split is enforced buffer-wide, so SIL gives up this fraction of its
+    # episodes too. That is deliberate: SIL updates the actor and shared trunk,
+    # so an episode SIL trained on is no longer held out from the critic that
+    # reads that trunk.
+    terminal_replay_holdout_fraction: float = 0.1
+    terminal_replay_holdout_batch_size: int = 512
     # Optional reward settings threaded through BalatroEnv. None uses the
     # default potential-based reward configuration.
     reward_config: "RewardConfig | None" = None
@@ -1482,6 +1503,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("terminal_replay_samples_per_episode must be positive")
     if config.terminal_replay_updates_per_ppo_update < 0:
         raise ValueError("terminal_replay_updates_per_ppo_update must be non-negative")
+    if config.terminal_replay_holdout_batch_size <= 0:
+        raise ValueError("terminal_replay_holdout_batch_size must be positive")
+    if not 0.0 <= config.terminal_replay_holdout_fraction < 1.0:
+        raise ValueError("terminal_replay_holdout_fraction must be in [0, 1)")
     if config.target_kl is not None and config.target_kl <= 0.0:
         raise ValueError("target_kl must be positive when set")
     if config.target_kl_p95 is not None and config.target_kl_p95 <= 0.0:
@@ -2033,7 +2058,12 @@ class _TerminalReplayResult:
 def _terminal_aux_parameters(
     model: nn.Module,
 ) -> list[nn.Parameter]:
-    """Return only hazard output-layer parameters, excluding shared pooling."""
+    """Return the outcome tower's parameters, excluding the return path.
+
+    ``outcome_proj`` and ``ante_survival`` feed only the hazards, so replay can
+    train both without disturbing ``pool_proj``/``return_residual`` or the
+    shared trunk.
+    """
 
     value_head = getattr(_unwrap_model(model), "value_head", None)
     if value_head is None:
@@ -2041,8 +2071,86 @@ def _terminal_aux_parameters(
     return [
         parameter
         for name, parameter in value_head.named_parameters()
-        if parameter.requires_grad and name.startswith("ante_survival.")
+        if parameter.requires_grad
+        and name.startswith(("outcome_proj.", "ante_survival."))
     ]
+
+
+def _outcome_metric_rows(
+    value_dict: dict[str, torch.Tensor],
+    sampled: dict[str, torch.Tensor],
+) -> dict[str, tuple[torch.Tensor, torch.Tensor | None]]:
+    """Build per-row outcome scores plus the buckets they are reported over.
+
+    Returns ``{metric_key: (values, mask)}`` so training and holdout passes
+    share one definition. The climatology reference is the bucket's own
+    empirical outcome rate corrected by ``n / (n - 1)``: scoring an empirical
+    rate on the same rows it was fitted on understates its Brier by exactly a
+    factor ``(1 - 1/n)``, which on a 32-row bucket is a 3-point handicap
+    charged to climatology and credited to the model.
+    """
+
+    outcome_probabilities = value_dict["outcome_probabilities"]
+    outcome_targets = sampled["terminal_outcome_target"]
+    num_classes = outcome_probabilities.shape[1]
+    selected = outcome_probabilities.gather(1, outcome_targets.unsqueeze(1)).squeeze(1)
+    outcome_nll_per_row = -selected.clamp_min(1e-7).log()
+    one_hot_outcome = F.one_hot(outcome_targets, num_classes=num_classes).to(
+        dtype=outcome_probabilities.dtype
+    )
+    outcome_brier = (outcome_probabilities - one_hot_outcome).square().sum(dim=-1)
+    win_targets = (outcome_targets == num_classes - 1).float()
+    derived_win_brier = (value_dict["win_prob"] - win_targets).square()
+
+    cross_rollout = sampled["cross_rollout_flags"] > 0.5
+    current_antes = sampled["current_antes"].long()
+    buckets: list[tuple[str, torch.Tensor | None]] = [
+        ("", None),
+        ("cross_rollout/", cross_rollout),
+        ("same_rollout/", ~cross_rollout),
+        *[
+            (f"ante_{ante}/", current_antes == int(ante))
+            for ante in current_antes.unique().tolist()
+        ],
+    ]
+
+    rows: dict[str, tuple[torch.Tensor, torch.Tensor | None]] = {}
+    for prefix, bucket_mask in buckets:
+        if bucket_mask is not None and not bool(bucket_mask.any()):
+            continue
+        bucket_outcomes = (
+            one_hot_outcome if bucket_mask is None else one_hot_outcome[bucket_mask]
+        )
+        rows[prefix + "outcome_nll"] = (outcome_nll_per_row, bucket_mask)
+        rows[prefix + "outcome_brier"] = (outcome_brier, bucket_mask)
+        rows[prefix + "derived_win_brier"] = (derived_win_brier, bucket_mask)
+        bucket_size = int(bucket_outcomes.shape[0])
+        if bucket_size < 2:
+            # A one-row empirical climatology fits itself perfectly and the
+            # n / (n - 1) correction is undefined. Report the model's scores for
+            # the row but publish no reference, so no skill is derived from it.
+            continue
+        bucket_climatology = bucket_outcomes.mean(dim=0, keepdim=True)
+        unbiased_scale = bucket_size / (bucket_size - 1)
+        rows[prefix + "outcome_climatology_brier"] = (
+            (bucket_climatology - bucket_outcomes).square().sum(dim=-1) * unbiased_scale,
+            None,
+        )
+    return rows
+
+
+def _add_brier_skills(diagnostics: dict[str, float]) -> None:
+    """Derive ``*_brier_skill`` for every Brier/climatology pair in place."""
+
+    for metric_name, metric_value in list(diagnostics.items()):
+        if not metric_name.endswith("outcome_brier"):
+            continue
+        prefix = metric_name[: -len("outcome_brier")]
+        climatology_value = diagnostics.get(prefix + "outcome_climatology_brier")
+        if climatology_value is not None and climatology_value > 0.0:
+            diagnostics[prefix + "outcome_brier_skill"] = (
+                1.0 - metric_value / climatology_value
+            )
 
 
 def _run_terminal_replay_updates(
@@ -2055,15 +2163,21 @@ def _run_terminal_replay_updates(
     """Train terminal heads from complete recent episodes without actor credit.
 
     Complete Monte Carlo outcomes supervise the normalized distribution over
-    death at each remaining Ante plus reaching the target. Only
-    ``value_head.ante_survival`` receives gradients; replay cannot update the
+    death at each remaining Ante plus reaching the target. Only the value
+    head's outcome tower receives gradients; replay cannot update the
     policy/shared trunk, shared pooling, or return residual.
+
+    Training draws exclude the withheld episodes entirely. After the training
+    iterations a no-grad pass scores a batch drawn only from those withheld
+    episodes, so ``holdout/*`` reports fit on episodes no optimizer step has
+    ever seen while the unprefixed metrics report fit on the training half.
     """
 
     diagnostics: dict[str, float] = {
         "buffer_episodes": float(episode_buffer.num_episodes),
         "buffer_transitions": float(episode_buffer.num_transitions),
         "buffer_win_fraction": float(episode_buffer.win_fraction),
+        "buffer_holdout_episodes": float(episode_buffer.num_holdout_episodes),
         "label_coverage": float(episode_buffer.labeled_transition_fraction),
         "cross_rollout_transition_fraction": float(
             episode_buffer.cross_rollout_transition_fraction
@@ -2102,6 +2216,14 @@ def _run_terminal_replay_updates(
         metric_sums[key] += float(detached.float().sum().item())
         metric_counts[key] += int(detached.numel())
 
+    def forward_outcomes(sampled: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        _, value_dict = _grammar_distribution(
+            model,
+            sampled,
+            temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
+        )
+        return value_dict
+
     updates_applied = 0
     samples_seen = 0
     model.eval()
@@ -2111,27 +2233,22 @@ def _run_terminal_replay_updates(
             device,
             samples_per_episode=config.terminal_replay_samples_per_episode,
             include_teacher_forced=True,
+            row_uniform=config.terminal_replay_row_uniform,
         )
         if sampled is None:
             break
 
         optimizer.zero_grad()
-        _, value_dict = _grammar_distribution(
-            model,
-            sampled,
-            temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
-        )
-        outcome_probabilities = value_dict.get("outcome_probabilities")
-        if outcome_probabilities is None:
+        value_dict = forward_outcomes(sampled)
+        if value_dict.get("outcome_probabilities") is None:
             optimizer.zero_grad()
             break
         outcome_targets = sampled["terminal_outcome_target"]
-        selected_outcome_probability = outcome_probabilities.gather(
+        selected_outcome_probability = value_dict["outcome_probabilities"].gather(
             1,
             outcome_targets.unsqueeze(1),
         ).squeeze(1)
-        outcome_nll_per_row = -selected_outcome_probability.clamp_min(1e-7).log()
-        outcome_loss = outcome_nll_per_row.mean()
+        outcome_loss = -selected_outcome_probability.clamp_min(1e-7).log().mean()
 
         loss = config.outcome_loss_coeff * outcome_loss
         _accumulate_critic_grads_into_value_head(loss, terminal_params)
@@ -2142,65 +2259,36 @@ def _run_terminal_replay_updates(
         samples_seen += int(outcome_targets.numel())
 
         with torch.no_grad():
-            one_hot_outcome = F.one_hot(
-                outcome_targets,
-                num_classes=outcome_probabilities.shape[1],
-            ).to(dtype=outcome_probabilities.dtype)
-            outcome_brier = (outcome_probabilities - one_hot_outcome).square().sum(dim=-1)
-            climatology = one_hot_outcome.mean(dim=0, keepdim=True)
-            climatology_brier = (climatology - one_hot_outcome).square().sum(dim=-1)
-            win_targets = (outcome_targets == outcome_probabilities.shape[1] - 1).float()
-            derived_win_brier = (value_dict["win_prob"] - win_targets).square()
-            record_metric("outcome_nll", outcome_nll_per_row)
-            record_metric("outcome_brier", outcome_brier)
-            record_metric("outcome_climatology_brier", climatology_brier)
-            record_metric("derived_win_brier", derived_win_brier)
+            for key, (values, mask) in _outcome_metric_rows(value_dict, sampled).items():
+                record_metric(key, values, mask)
 
-            cross_rollout = sampled["cross_rollout_flags"] > 0.5
-            current_antes = sampled["current_antes"].long()
-            calibration_buckets = [
-                ("cross_rollout", cross_rollout),
-                ("same_rollout", ~cross_rollout),
-                *[
-                    (f"ante_{ante}", current_antes == int(ante))
-                    for ante in current_antes.unique().tolist()
-                ],
-            ]
-            for prefix, bucket_mask in calibration_buckets:
-                if not bucket_mask.any():
-                    continue
-                bucket_outcomes = one_hot_outcome[bucket_mask]
-                bucket_climatology = bucket_outcomes.mean(dim=0, keepdim=True)
-                bucket_climatology_brier = (
-                    bucket_climatology - bucket_outcomes
-                ).square().sum(dim=-1)
-                record_metric(f"{prefix}/outcome_nll", outcome_nll_per_row, bucket_mask)
-                record_metric(f"{prefix}/outcome_brier", outcome_brier, bucket_mask)
-                record_metric(
-                    f"{prefix}/outcome_climatology_brier",
-                    bucket_climatology_brier,
-                )
-                record_metric(f"{prefix}/derived_win_brier", derived_win_brier, bucket_mask)
+    if updates_applied and episode_buffer.num_holdout_episodes > 0:
+        holdout = episode_buffer.sample(
+            config.terminal_replay_holdout_batch_size,
+            device,
+            samples_per_episode=config.terminal_replay_samples_per_episode,
+            include_teacher_forced=True,
+            holdout=True,
+            row_uniform=config.terminal_replay_row_uniform,
+        )
+        if holdout is not None:
+            with torch.no_grad():
+                holdout_values = forward_outcomes(holdout)
+                if holdout_values.get("outcome_probabilities") is not None:
+                    diagnostics["holdout/samples"] = float(
+                        holdout["terminal_outcome_target"].numel()
+                    )
+                    for key, (values, mask) in _outcome_metric_rows(
+                        holdout_values, holdout
+                    ).items():
+                        record_metric("holdout/" + key, values, mask)
 
     for key, total in metric_sums.items():
         diagnostics[key] = total / metric_counts[key]
-    for metric_name, metric_value in list(diagnostics.items()):
-        for brier_name in ("outcome_brier",):
-            if not metric_name.endswith(brier_name):
-                continue
-            prefix = metric_name[: -len(brier_name)]
-            climatology_name = prefix + brier_name.replace(
-                "_brier",
-                "_climatology_brier",
-            )
-            climatology_value = diagnostics.get(climatology_name)
-            if climatology_value is not None and climatology_value > 0.0:
-                skill_name = prefix + brier_name.replace("_brier", "_brier_skill")
-                diagnostics[skill_name] = 1.0 - metric_value / climatology_value
+    _add_brier_skills(diagnostics)
     diagnostics["updates_applied"] = float(updates_applied)
     diagnostics["samples"] = float(samples_seen)
     return _TerminalReplayResult(updates_applied, samples_seen, diagnostics)
-
 
 def _compute_sil_group_loss(
     model: nn.Module,
@@ -3757,7 +3845,11 @@ def train_ppo(
     # reused so terminal critic replay and optional SIL share one compact copy
     # of recent observations. SIL still sees no buffer when its coefficient is
     # disabled, preserving its exact actor-loss switch.
-    episode_buffer = EpisodeReplayBuffer(config.sil_buffer_episodes, seed=config.seed)
+    episode_buffer = EpisodeReplayBuffer(
+        config.sil_buffer_episodes,
+        seed=config.seed,
+        holdout_fraction=config.terminal_replay_holdout_fraction,
+    )
     episode_tracker = EpisodeTracker(config.num_envs, gamma=config.gamma)
     sil_buffer = episode_buffer if config.sil_coeff > 0.0 else None
     # Per-env accumulators (vectorized envs auto-reset, so we track manually)
@@ -4235,6 +4327,14 @@ def train_ppo(
                 if var_returns > 1e-9:
                     explained_variance = 1.0 - float(np.var(flat_returns - buffer._flat_values)) / var_returns
             writer.add_scalar("ppo/explained_variance", explained_variance, update_count + 1)
+            # Which rollout rows the main-loop outcome NLL can actually train
+            # on, and how much shallower they are than the rows it drops.
+            for label_key, label_value in buffer.outcome_label_diagnostics().items():
+                writer.add_scalar(
+                    f"critic/rollout_labels/{label_key}",
+                    label_value,
+                    update_count + 1,
+                )
             rollout_step = update_count + 1
             writer.add_scalar("rollout/step_reward_mean", float(np.mean(rm.step_rewards)), rollout_step)
             writer.add_scalar("rollout/reward_mean", float(np.mean(rm.step_rewards)), rollout_step)

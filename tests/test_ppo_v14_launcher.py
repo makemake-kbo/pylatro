@@ -100,7 +100,7 @@ def test_source_validator_accepts_v8_and_rejects_v7(tmp_path: Path) -> None:
 
     old = tmp_path / "v7.pt"
     old_hash = _write_source(old, version=7)
-    with pytest.raises(RuntimeError, match="fresh v8 supervised training"):
+    with pytest.raises(RuntimeError, match="fresh supervised training"):
         validator.validate_source(old, old_hash)
 
 

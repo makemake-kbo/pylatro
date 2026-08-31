@@ -15,7 +15,7 @@ from enum import IntEnum, StrEnum
 # objective it took and how much cash it banked), so harness-generated
 # money is attributable rather than unexplained variance in the policy's
 # own dollars.
-TOKENIZER_VERSION = 10
+TOKENIZER_VERSION = 11
 # Tokenizer-v8 appends the configured victory Ante.  The critic needs both the
 # current and target Ante to mask impossible terminal outcomes and assign the
 # correct terminal utility to each outcome class.

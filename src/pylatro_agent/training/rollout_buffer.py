@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from ..constants import (
+    CURRENT_ANTE_SCALAR_INDEX,
     HISTORY_EVENT_DIM,
     HISTORY_FEATURE_DIM,
     HISTORY_MAX_CARDS,
@@ -323,32 +324,70 @@ class RolloutBuffer:
                 batches.append(batch)
         return batches
 
-    @property
-    def _flat_returns(self) -> np.ndarray:
-        """Compatibility property for logging."""
+    def _valid_rows(self, array: np.ndarray) -> np.ndarray:
+        """Concatenate each env's written prefix of a per-step array."""
         valid = []
         for env_idx in range(self.num_envs):
             start = env_idx * self.rollout_length
             n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.returns[start : start + n])
-        return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
+            valid.append(array[start : start + n])
+        return np.concatenate(valid) if valid else np.zeros(0, dtype=array.dtype)
+
+    @property
+    def _flat_returns(self) -> np.ndarray:
+        """Compatibility property for logging."""
+        return self._valid_rows(self.returns)
 
     @property
     def _flat_advantages(self) -> np.ndarray:
         """Compatibility property for logging."""
-        valid = []
-        for env_idx in range(self.num_envs):
-            start = env_idx * self.rollout_length
-            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.advantages[start : start + n])
-        return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
+        return self._valid_rows(self.advantages)
 
     @property
     def _flat_values(self) -> np.ndarray:
         """Valid-step value predictions, aligned index-for-index with _flat_returns."""
-        valid = []
-        for env_idx in range(self.num_envs):
-            start = env_idx * self.rollout_length
-            n = int(self._step_counts[env_idx]) if self._step_counts[env_idx] > 0 else self.rollout_length
-            valid.append(self.values[start : start + n])
-        return np.concatenate(valid) if valid else np.array([], dtype=np.float32)
+        return self._valid_rows(self.values)
+
+    def outcome_label_diagnostics(self) -> dict[str, float]:
+        """Coverage and Ante skew of this rollout's terminal-outcome labels.
+
+        ``terminal_outcome_mask`` is set only for episodes that finish inside
+        this rollout, and a fresh buffer is allocated each update, so the rows
+        an episode contributed before a rollout boundary are never labeled in
+        any update. The rows lost that way are an episode's *earliest* ones, and
+        longer episodes cross boundaries more often, so two things follow:
+        labeled rows sit at later Antes on average than the rows that are
+        dropped, and at any given early Ante the labeled sample over-represents
+        episodes that ended soon after -- which teaches the main-loop outcome
+        NLL that early states are more fatal than they are.
+
+        ``ante_mean_gap`` is negative when labeled rows are the deeper ones, so
+        it measures the first effect directly and the second by proxy: the more
+        negative it runs, the more early-game rows the loss never sees.
+        """
+
+        # ``_valid_rows`` treats a zero step count as a full window, which is
+        # right for a completed rollout but would report an untouched buffer as
+        # entirely unlabeled. Report nothing until a step has been stored.
+        if not self._step_counts.any():
+            return {}
+        mask = self._valid_rows(self.terminal_outcome_masks)
+        if mask.size == 0:
+            return {}
+        antes = self._valid_rows(self.scalars[:, CURRENT_ANTE_SCALAR_INDEX])
+        labeled = mask > 0.5
+        unlabeled = ~labeled
+        stats = {
+            "label_coverage": float(labeled.mean()),
+            "labeled_rows": float(labeled.sum()),
+            "unlabeled_rows": float(unlabeled.sum()),
+        }
+        if labeled.any():
+            stats["labeled_ante_mean"] = float(antes[labeled].mean())
+        if unlabeled.any():
+            stats["unlabeled_ante_mean"] = float(antes[unlabeled].mean())
+        if labeled.any() and unlabeled.any():
+            stats["ante_mean_gap"] = (
+                stats["unlabeled_ante_mean"] - stats["labeled_ante_mean"]
+            )
+        return stats

@@ -148,13 +148,27 @@ class EpisodeReplayBuffer:
         "history_omitted",
     )
 
-    def __init__(self, capacity_episodes: int, seed: int | None = None) -> None:
+    def __init__(
+        self,
+        capacity_episodes: int,
+        seed: int | None = None,
+        *,
+        holdout_fraction: float = 0.0,
+    ) -> None:
         if capacity_episodes <= 0:
             raise ValueError("capacity_episodes must be positive")
+        if not 0.0 <= holdout_fraction < 1.0:
+            raise ValueError("holdout_fraction must be in [0, 1)")
         self.capacity_episodes = capacity_episodes
+        self.holdout_fraction = float(holdout_fraction)
         self._episodes: list[dict] = []
         self._num_transitions = 0
         self._rng = np.random.default_rng(seed)
+        # Holdout assignment draws from a dedicated stream so enabling the
+        # split cannot shift the sampling RNG and change training batches.
+        self._holdout_rng = np.random.default_rng(
+            None if seed is None else seed + 0x5F10D
+        )
         # Monotonic episode id assigned in insertion order.
         self._next_episode_id = 0
         self.episodes_added_total = 0
@@ -164,6 +178,12 @@ class EpisodeReplayBuffer:
     @property
     def num_episodes(self) -> int:
         return len(self._episodes)
+
+    @property
+    def num_holdout_episodes(self) -> int:
+        """Stored episodes withheld from every training sampler."""
+
+        return int(sum(1 for ep in self._episodes if ep.get("holdout", False)))
 
     @property
     def num_transitions(self) -> int:
@@ -219,6 +239,12 @@ class EpisodeReplayBuffer:
         episode = dict(episode)
         episode.setdefault("teacher_forced", np.zeros(steps, dtype=np.int8))
         episode["episode_id"] = self._next_episode_id
+        # Assigned once at insertion so an episode never migrates between the
+        # training and evaluation halves during its stay in the buffer.
+        episode["holdout"] = bool(
+            self.holdout_fraction > 0.0
+            and self._holdout_rng.random() < self.holdout_fraction
+        )
         self._next_episode_id += 1
         self._episodes.append(episode)
         self._num_transitions += steps
@@ -242,19 +268,35 @@ class EpisodeReplayBuffer:
         samples_per_episode: int = 8,
         only_wins: bool = False,
         include_teacher_forced: bool = False,
+        holdout: bool = False,
+        row_uniform: bool = False,
     ) -> dict[str, torch.Tensor] | None:
-        """Sample an episode-uniform batch with a per-episode transition cap.
+        """Sample a training batch, episode-uniform or row-uniform.
 
-        Selects eligible episodes uniformly at random, gives selected episodes
-        near-equal transition quotas, and samples transitions uniformly without
-        replacement inside each episode. Never exceeds ``samples_per_episode``
-        rows from one episode. Returns fewer than ``batch_size`` rows rather
-        than violating the cap, and returns ``None`` when no eligible episode
-        has any eligible row.
+        By default this selects eligible episodes uniformly at random, gives
+        selected episodes near-equal transition quotas, and samples transitions
+        uniformly without replacement inside each episode. Never exceeds
+        ``samples_per_episode`` rows from one episode. Returns fewer than
+        ``batch_size`` rows rather than violating the cap, and returns ``None``
+        when no eligible episode has any eligible row. ``row_uniform`` replaces
+        that policy entirely; see below.
 
         For advantage SIL all non-stalled completed episodes are eligible; for
         winning behavior cloning only winning episodes are eligible
-        (``only_wins=True``).
+        (``only_wins=True``). ``holdout`` selects the complementary half of the
+        buffer: the default ``False`` draws only trainable episodes, and
+        ``True`` draws only withheld ones for evaluation.
+
+        ``row_uniform`` replaces the episode quota with a draw that is uniform
+        over transitions at any batch size: episodes are chosen with replacement
+        in proportion to their eligible row count and one row is taken from
+        each. The quota path weights a 20-step Ante-1 death like a 300-step
+        Ante-5 win, which starves exactly the deep states the critic is worst
+        at; it also makes the row distribution depend on how hard the batch size
+        truncates the episode list, so train and evaluation batches of different
+        sizes are not comparable. ``row_uniform`` has neither problem and drops
+        the per-episode cap, so it is for terminal-outcome supervision rather
+        than for SIL.
 
         The returned dict carries the model batch keys plus metadata arrays:
         ``episode_ids``, ``episode_outcomes`` (1.0 win / 0.0 loss),
@@ -267,11 +309,27 @@ class EpisodeReplayBuffer:
         for ep in self._episodes:
             if only_wins and not ep["won"]:
                 continue
+            if bool(ep.get("holdout", False)) != holdout:
+                continue
             rows = self._eligible_row_indices(ep, include_teacher_forced=include_teacher_forced)
             if rows.size > 0:
                 eligible.append((ep, rows))
         if not eligible:
             return None
+
+        if row_uniform:
+            weights = np.asarray(
+                [rows.size for _ep, rows in eligible], dtype=np.float64
+            )
+            weights /= weights.sum()
+            drawn = self._rng.choice(
+                len(eligible), size=batch_size, replace=True, p=weights
+            )
+            picks = []
+            for index in drawn:
+                episode, rows = eligible[index]
+                picks.append((episode, int(rows[self._rng.integers(rows.size)])))
+            return self._materialize_batch(picks, device)
 
         order = self._rng.permutation(len(eligible))
         selected = [eligible[i] for i in order]

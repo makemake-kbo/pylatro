@@ -65,9 +65,9 @@ def test_every_pre_v8_checkpoint_requires_fresh_training(tmp_path, old_version: 
         path,
     )
 
-    with pytest.raises(RuntimeError, match="fresh v8 supervised training"):
+    with pytest.raises(RuntimeError, match="fresh supervised training"):
         ckpt.load_checkpoint_payload(path, "cpu")
-    with pytest.raises(RuntimeError, match="fresh v8 supervised training"):
+    with pytest.raises(RuntimeError, match="fresh supervised training"):
         _load_v8_checkpoint_strict(_tiny_model(), str(path), torch.device("cpu"))
 
 
@@ -93,7 +93,7 @@ def test_v8_checkpoint_without_semantics_requires_fresh_training(tmp_path) -> No
         path,
     )
 
-    with pytest.raises(RuntimeError, match="fresh v8 supervised training"):
+    with pytest.raises(RuntimeError, match="fresh supervised training"):
         ckpt.load_checkpoint_payload(path, "cpu")
 
 

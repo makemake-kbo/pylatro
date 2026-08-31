@@ -81,9 +81,9 @@ def load_checkpoint_payload(
         raise RuntimeError(
             f"Checkpoint {path} was saved with tokenizer_version="
             f"{saved_version!r}, but current TOKENIZER_VERSION="
-            f"{TOKENIZER_VERSION}. The v8 conditional-survival critic is "
-            "architecture-incompatible with every v7 and older checkpoint; "
-            "fresh v8 supervised training is required."
+            f"{TOKENIZER_VERSION}. Observation layout and critic architecture "
+            "are versioned together, so a checkpoint from any other version is "
+            "not loadable; fresh supervised training is required."
         )
     _validate_tokenizer_semantics(blob, path)
     return blob
@@ -98,8 +98,8 @@ def _validate_tokenizer_semantics(
     if saved_semantics != TOKENIZER_SEMANTICS:
         raise RuntimeError(
             f"Checkpoint {path} uses tokenizer_semantics={saved_semantics!r}, but the active "
-            f"semantics are {TOKENIZER_SEMANTICS!r}. Only checkpoints produced by fresh "
-            "v8 supervised training are supported."
+            f"semantics are {TOKENIZER_SEMANTICS!r}. Only checkpoints produced by "
+            "fresh supervised training are supported."
         )
 
 
@@ -243,9 +243,9 @@ def load_ppo_resume_payload(
         raise RuntimeError(
             f"Checkpoint {path} was saved with tokenizer_version="
             f"{saved_version!r}, but current TOKENIZER_VERSION="
-            f"{TOKENIZER_VERSION}. The v8 conditional-survival critic is "
-            "architecture-incompatible with every v7 and older checkpoint; "
-            "fresh v8 supervised training is required."
+            f"{TOKENIZER_VERSION}. Observation layout and critic architecture "
+            "are versioned together, so a checkpoint from any other version is "
+            "not loadable; fresh supervised training is required."
         )
     _validate_tokenizer_semantics(blob, path)
 

@@ -143,3 +143,49 @@ def test_microbatches_preserve_exact_logical_batch_and_partial_weight() -> None:
     assert [bool(batch["_logical_group_end"]) for batch in batches] == [False, False, False, False, False, True]
     assert sum(float(batch["_loss_weight"]) for batch in batches) == pytest.approx(1.0)
     assert float(batches[-1]["_loss_weight"]) == pytest.approx(32 / 352)
+
+
+def test_outcome_label_diagnostics_expose_the_boundary_truncation_skew() -> None:
+    """Rows an episode contributed before a rollout boundary stay unlabeled.
+
+    One env plays a short Ante-1 episode that finishes inside the window and
+    then starts a deep episode that is still running at the boundary. Only the
+    first is labeled, so the labeled rows are systematically shallower than the
+    rows the main-loop outcome NLL never sees.
+    """
+
+    from pylatro_agent.constants import CURRENT_ANTE_SCALAR_INDEX
+
+    rollout_length = 10
+    buffer = RolloutBuffer(num_envs=1, rollout_length=rollout_length)
+    finished_steps = 4
+    for step in range(rollout_length):
+        obs = _dummy_obs(1)
+        obs["scalars"][:, CURRENT_ANTE_SCALAR_INDEX] = (
+            1.0 if step < finished_steps else 5.0
+        )
+        buffer.add_batch(
+            step=step,
+            obs=obs,
+            actions=np.zeros(1, dtype=np.int64),
+            rewards=np.zeros(1, dtype=np.float32),
+            values=np.zeros(1, dtype=np.float32),
+            log_probs=np.zeros(1, dtype=np.float32),
+            terminated=np.zeros(1, dtype=bool),
+            truncated=np.zeros(1, dtype=bool),
+        )
+    buffer.set_episode_outcome(
+        env_idx=0, start_step=0, end_step=finished_steps - 1, won=False, final_ante=1
+    )
+
+    stats = buffer.outcome_label_diagnostics()
+    assert stats["labeled_rows"] == float(finished_steps)
+    assert stats["unlabeled_rows"] == float(rollout_length - finished_steps)
+    assert stats["label_coverage"] == pytest.approx(finished_steps / rollout_length)
+    assert stats["labeled_ante_mean"] == pytest.approx(1.0)
+    assert stats["unlabeled_ante_mean"] == pytest.approx(5.0)
+    assert stats["ante_mean_gap"] == pytest.approx(4.0)
+
+
+def test_outcome_label_diagnostics_are_empty_before_any_step() -> None:
+    assert RolloutBuffer(num_envs=2, rollout_length=4).outcome_label_diagnostics() == {}

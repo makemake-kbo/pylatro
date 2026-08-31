@@ -91,15 +91,24 @@ def _terminal_utility_table(max_antes: int) -> torch.Tensor:
 class ValueHead(nn.Module):
     """Predict terminal hazards and the non-terminal correction to return.
 
-    ``ante_survival`` parameterizes the terminal outcome distribution. The
-    scalar ``return_residual`` represents discounting, dense shaping, and any
-    other difference between terminal utility and the PPO return target.
+    ``outcome_proj`` and ``ante_survival`` parameterize the terminal outcome
+    distribution. The scalar ``return_residual`` represents discounting, dense
+    shaping, and any other difference between terminal utility and the PPO
+    return target.
+
+    The outcome tower deliberately does not share ``pool_proj`` with the return
+    residual. Complete-episode replay is the only unbiased outcome supervision
+    in the run, and it must be able to reshape the representation the hazards
+    read rather than retune a single linear layer over features it cannot
+    touch. A private projection lets replay do that without perturbing the
+    return path that GAE consumes.
     """
 
     def __init__(self, d_model: int = 256, max_ante: int = DEFAULT_MAX_ANTES):
         super().__init__()
         self.max_ante = int(max_ante)
         self.pool_proj = nn.Sequential(nn.Linear(d_model, d_model), nn.GELU())
+        self.outcome_proj = nn.Sequential(nn.Linear(d_model, d_model), nn.GELU())
         self.ante_survival = nn.Linear(d_model, self.max_ante)
         self.return_residual = nn.Linear(d_model, 1)
         self.register_buffer(
@@ -120,7 +129,7 @@ class ValueHead(nn.Module):
         mask = padding_mask.unsqueeze(-1).to(dtype=backbone_out.dtype)
         pooled = (backbone_out * mask).sum(1) / mask.sum(1).clamp(min=1)
         hidden = self.pool_proj(pooled)
-        hazards = torch.sigmoid(self.ante_survival(hidden))
+        hazards = torch.sigmoid(self.ante_survival(self.outcome_proj(pooled)))
 
         batch_size = backbone_out.shape[0]
         if current_antes is None:

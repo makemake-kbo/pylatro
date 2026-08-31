@@ -14,7 +14,7 @@ import torch
 # Deliberately duplicated rather than imported: this validator runs before the
 # training venv is exercised, so it must not depend on the agent package. Keep
 # in lockstep with pylatro_agent.constants.TOKENIZER_VERSION.
-TOKENIZER_VERSION = 10
+TOKENIZER_VERSION = 11
 TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
 V8_PPO_CONFIG = {
     "mini_batch_size": 320,
@@ -49,12 +49,12 @@ def validate_source(path: Path, expected_sha256: str) -> None:
     payload = _load_checkpoint(path)
     if payload.get("tokenizer_version") != TOKENIZER_VERSION:
         raise RuntimeError(
-            f"source tokenizer_version must be {TOKENIZER_VERSION}; fresh v8 supervised training is required"
+            f"source tokenizer_version must be {TOKENIZER_VERSION}; fresh supervised training is required"
         )
     if payload.get("tokenizer_semantics") != TOKENIZER_SEMANTICS:
         raise RuntimeError(
             f"source tokenizer_semantics must be {TOKENIZER_SEMANTICS!r}; "
-            "fresh v8 supervised training is required"
+            "fresh supervised training is required"
         )
 
 

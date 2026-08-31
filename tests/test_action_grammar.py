@@ -47,10 +47,6 @@ def _blank_output(batch_size: int) -> ActionGrammarOutput:
         shop_sell_joker_logits=torch.zeros(batch_size, MAX_JOKER_SLOTS),
         shop_sell_consumable_logits=torch.zeros(batch_size, MAX_CONSUMABLE_SLOTS),
         pack_claim_logits=torch.zeros(batch_size, MAX_PACK_CARDS),
-        joker_move_logits=torch.zeros(
-            batch_size,
-            MAX_JOKER_SLOTS * (MAX_JOKER_SLOTS - 1),
-        ),
     )
 
 
@@ -126,17 +122,6 @@ def test_action_grammar_samples_only_valid_flat_actions() -> None:
     assert action_mask.gather(1, greedy.unsqueeze(-1)).squeeze(-1).bool().all()
     assert torch.isfinite(dist.log_prob(targets)).all()
     assert dist.entropy().shape == (3,)
-
-
-def test_move_joker_action_has_finite_grammar_support() -> None:
-    action = encode_action(ActionType.MOVE_JOKER, 0, 1)
-    action_mask = torch.zeros(1, NUM_ACTIONS)
-    action_mask[0, action] = 1
-
-    dist = ActionGrammarDistribution(_blank_output(batch_size=1), action_mask)
-
-    assert dist.mode().item() == action
-    assert dist.log_prob(torch.tensor([action])).item() > -1e7
 
 
 def test_action_grammar_log_prob_has_gradients_for_components() -> None:

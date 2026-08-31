@@ -1,6 +1,7 @@
 """PPO training loop with vectorized environments."""
 
 import copy
+import json
 import logging
 import math
 import random
@@ -320,6 +321,11 @@ class PPOConfig:
     # can trip the OS memory-pressure killer. The model is moved to the eval
     # device for the duration of evaluate_model and moved back afterward.
     eval_device: str | None = None
+    # Games advanced in lockstep per eval forward pass. Eval used to run one
+    # game at a time with batch-size-1 forwards and cost more wall clock than
+    # the training between evals; batching amortizes the policy forward over
+    # many games without changing any per-seed result.
+    eval_batch_size: int = 32
     # Curriculum: cap the run's victory threshold below the engine default
     # (8). Heuristic-teacher win rates by ante are ~39% at 4, ~12% at 5,
     # ~2% at 6. Set to None for the standard ante-8 victory condition.
@@ -373,6 +379,11 @@ class PPOConfig:
     # joker removed every Nth actual play. Disabled by default because the state
     # copy is deliberately bounded but still material in many-env training.
     counterfactual_diagnostic_interval: int = 0
+    # Append every resolved shop-leave risk forecast (predictions + realized
+    # next-blind outcome) to <log_dir>/risk_forecasts.jsonl. These pairs are
+    # the input to tools/fit_risk_calibration.py, which refits the analytic
+    # death-probability Platt constants in pylatro_agent.risk.
+    risk_forecast_log: bool = True
     # Fixed, versioned seed list for the in-training eval pass. Passing a
     # stable list (pylatro_agent.eval.EVAL_SEEDS_V1) makes every checkpoint's
     # eval reproducible and pairable across runs via the McNemar / paired
@@ -740,7 +751,6 @@ class _RolloutMetrics:
     counterfactual_representative_realized_abs_gaps: list[float] = field(default_factory=list)
     counterfactual_representative_realized_signed_gaps: list[float] = field(default_factory=list)
     counterfactual_focal_counts: Counter = field(default_factory=Counter)
-    joker_move_rewards: list[float] = field(default_factory=list)
     play_subset_count: int = 0
     discard_subset_count: int = 0
 
@@ -930,17 +940,6 @@ def _write_action_behavior_metrics(writer, rm: _RolloutMetrics, step: int) -> No
                 rm.action_type_counts.get(action_type.value, 0) / action_total,
                 step,
             )
-    if rm.joker_move_rewards:
-        writer.add_scalar(
-            "actions/move_joker_non_improving_fraction",
-            float(np.mean(np.asarray(rm.joker_move_rewards) <= 1e-6)),
-            step,
-        )
-        writer.add_scalar(
-            "actions/move_joker_reward_mean",
-            float(np.mean(rm.joker_move_rewards)),
-            step,
-        )
     if rm.steps_since_progress:
         writer.add_scalar(
             "rollout/no_progress_streak_p95",
@@ -3739,11 +3738,20 @@ def train_ppo(
     # Calibrate the survival prediction shown at the most recent shop leave.
     # These persist across rollout boundaries because an episode often spans
     # several PPO updates.
-    env_last_shop_survival_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
-    env_last_shop_analytic_clear_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
-    env_last_shop_raw_analytic_clear_pred = np.full(config.num_envs, np.nan, dtype=np.float64)
-    env_last_shop_ante = np.zeros(config.num_envs, dtype=np.int64)
-    env_last_shop_blind_index = np.zeros(config.num_envs, dtype=np.int8)
+    # Every shop-leave forecast is queued and resolved at episode end against
+    # the realized outcome. The retired single-slot version kept only the LAST
+    # shop leave per episode, a sample selected by imminent death: a perfectly
+    # calibrated model looks "optimistic" on it. Resolving the full queue makes
+    # critic/shop_survival_* and strategy/risk/* unbiased over all shop leaves
+    # and feeds tools/fit_risk_calibration.py with usable pairs.
+    env_pending_shop_forecasts: list[list[dict]] = [[] for _ in range(config.num_envs)]
+    _MAX_PENDING_SHOP_FORECASTS = 128
+    risk_forecast_path = Path(config.log_dir) / "risk_forecasts.jsonl"
+    risk_forecast_file = None
+    if config.risk_forecast_log:
+        risk_forecast_path.parent.mkdir(parents=True, exist_ok=True)
+        # Long-lived append handle; closed in this function's finally block.
+        risk_forecast_file = open(risk_forecast_path, "a", buffering=1)  # noqa: SIM115
     # Per-env start step within the current rollout for the current episode.
     # Reset to 0 at each rollout, advanced past every `done` step so the
     # buffer can retroactively fill categorical outcome labels for completed
@@ -3794,13 +3802,19 @@ def train_ppo(
                         continue
                     shop_ante = max(round(float(pre_scalars[env_idx, 2])), 1)
                     survival_index = min(shop_ante - 1, survival_np.shape[1] - 1)
-                    env_last_shop_survival_pred[env_idx] = float(survival_np[env_idx, survival_index])
-                    env_last_shop_analytic_clear_pred[env_idx] = float(pre_scalars[env_idx, 11])
                     calibrated_death = 1.0 - float(pre_scalars[env_idx, 11])
                     raw_death = uncalibrate_analytic_death_probability(calibrated_death)
-                    env_last_shop_raw_analytic_clear_pred[env_idx] = 1.0 - raw_death
-                    env_last_shop_ante[env_idx] = shop_ante
-                    env_last_shop_blind_index[env_idx] = int(pre_tokens[env_idx, META_START + 3, 0]) // 100
+                    pending = env_pending_shop_forecasts[env_idx]
+                    if len(pending) < _MAX_PENDING_SHOP_FORECASTS:
+                        pending.append(
+                            {
+                                "shop_ante": int(shop_ante),
+                                "shop_blind_index": int(pre_tokens[env_idx, META_START + 3, 0]) // 100,
+                                "survival_pred": float(survival_np[env_idx, survival_index]),
+                                "analytic_clear_pred": float(pre_scalars[env_idx, 11]),
+                                "raw_analytic_clear_pred": 1.0 - raw_death,
+                            }
+                        )
 
                 # Step all envs at once
                 next_obs_dict, rewards, terminated, truncated, infos = vec_env.step(actions_np)
@@ -3933,18 +3947,6 @@ def train_ppo(
                             _extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0)
                         )
                     )
-                    if action_type_name == ActionType.MOVE_JOKER.value:
-                        rm.joker_move_rewards.append(
-                            float(
-                                _extract_step_info_value(
-                                    infos,
-                                    "joker_move_reward",
-                                    env_idx,
-                                    done=step_done,
-                                    default=0.0,
-                                )
-                            )
-                        )
                     for component_name in REWARD_INFO_KEYS:
                         component_value = _extract_step_info_value(
                             infos,
@@ -4067,49 +4069,61 @@ def train_ppo(
                         )
                         if last_play_value_ratio is not None:
                             rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
-                    if np.isfinite(env_last_shop_survival_pred[i]) or np.isfinite(env_last_shop_analytic_clear_pred[i]):
+                    if env_pending_shop_forecasts[i]:
                         if not ep_stalled:
-                            shop_ante = int(env_last_shop_ante[i])
-                            ante_outcome = float(ep_won or ep_ante > shop_ante)
-                            if np.isfinite(env_last_shop_survival_pred[i]):
-                                prediction = float(env_last_shop_survival_pred[i])
+                            terminal_blind = str(
+                                _extract_step_info_value(
+                                    infos,
+                                    "blind_on_deck",
+                                    i,
+                                    done=True,
+                                    default="",
+                                )
+                                or ""
+                            )
+                            for forecast in env_pending_shop_forecasts[i]:
+                                shop_ante = int(forecast["shop_ante"])
+                                ante_outcome = float(ep_won or ep_ante > shop_ante)
+                                prediction = float(forecast["survival_pred"])
                                 rm.shop_survival_predictions.append(prediction)
                                 rm.shop_survival_outcomes.append(ante_outcome)
                                 rm.shop_survival_briers.append((prediction - ante_outcome) ** 2)
-                            if np.isfinite(env_last_shop_analytic_clear_pred[i]):
-                                terminal_blind = str(
-                                    _extract_step_info_value(
-                                        infos,
-                                        "blind_on_deck",
-                                        i,
-                                        done=True,
-                                        default="",
-                                    )
-                                    or ""
-                                )
                                 blind_outcome = _next_blind_clear_outcome(
                                     shop_ante=shop_ante,
-                                    shop_blind_index=int(env_last_shop_blind_index[i]),
+                                    shop_blind_index=int(forecast["shop_blind_index"]),
                                     final_ante=ep_ante,
                                     won=ep_won,
                                     terminal_blind=terminal_blind,
                                 )
-                                predicted_death = 1.0 - float(env_last_shop_analytic_clear_pred[i])
+                                predicted_death = 1.0 - float(forecast["analytic_clear_pred"])
                                 death_outcome = 1.0 - blind_outcome
                                 rm.risk_shop_death_predictions.append(predicted_death)
                                 rm.risk_shop_death_outcomes.append(death_outcome)
                                 rm.risk_shop_death_briers.append((predicted_death - death_outcome) ** 2)
-                                if np.isfinite(env_last_shop_raw_analytic_clear_pred[i]):
-                                    raw_predicted_death = 1.0 - float(env_last_shop_raw_analytic_clear_pred[i])
-                                    rm.risk_shop_raw_death_predictions.append(raw_predicted_death)
-                                    rm.risk_shop_raw_death_briers.append((raw_predicted_death - death_outcome) ** 2)
+                                raw_predicted_death = 1.0 - float(forecast["raw_analytic_clear_pred"])
+                                rm.risk_shop_raw_death_predictions.append(raw_predicted_death)
+                                rm.risk_shop_raw_death_briers.append((raw_predicted_death - death_outcome) ** 2)
                                 if shop_ante == 1 and death_outcome > 0.5:
                                     rm.risk_ante1_false_safe_deaths.append(float(predicted_death <= 0.35))
-                        env_last_shop_survival_pred[i] = np.nan
-                        env_last_shop_analytic_clear_pred[i] = np.nan
-                        env_last_shop_raw_analytic_clear_pred[i] = np.nan
-                        env_last_shop_ante[i] = 0
-                        env_last_shop_blind_index[i] = 0
+                                if risk_forecast_file is not None:
+                                    risk_forecast_file.write(
+                                        json.dumps(
+                                            {
+                                                "update": int(update_count),
+                                                "shop_ante": shop_ante,
+                                                "shop_blind_index": int(forecast["shop_blind_index"]),
+                                                "survival_pred": prediction,
+                                                "calibrated_death_pred": predicted_death,
+                                                "raw_death_pred": raw_predicted_death,
+                                                "next_blind_death": death_outcome,
+                                                "ante_survived": ante_outcome,
+                                                "won": bool(ep_won),
+                                                "final_ante": int(ep_ante),
+                                            }
+                                        )
+                                        + "\n"
+                                    )
+                        env_pending_shop_forecasts[i].clear()
                     # Insert wins and ordinary completed losses for terminal
                     # critic replay. Infrastructure/no-progress stalls are
                     # deliberately excluded because their final-Ante outcome
@@ -4631,6 +4645,7 @@ def train_ppo(
                         win_ante=config.win_ante,
                         temperature=config.rollout_temperature,
                         seeds=config.eval_seeds,
+                        eval_batch_size=config.eval_batch_size,
                     )
                 finally:
                     if config.eval_device and eval_device != device:
@@ -4913,6 +4928,11 @@ def train_ppo(
                 writer.close()
             except Exception:
                 logger.exception("Failed to close TensorBoard writer cleanly")
+        if risk_forecast_file is not None:
+            try:
+                risk_forecast_file.close()
+            except Exception:
+                logger.exception("Failed to close risk forecast log cleanly")
     logger.info(
         "PPO training complete after %d updates and %d env steps.",
         update_count,
@@ -5062,6 +5082,7 @@ def evaluate_model(
     temperature: float = 1.0,
     stake: int = 1,
     seeds: list[int] | None = None,
+    eval_batch_size: int = 32,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games.
 
@@ -5070,59 +5091,126 @@ def evaluate_model(
     generated. Passing the versioned :data:`pylatro_agent.eval.EVAL_SEEDS_V1`
     list makes every checkpoint's eval reproducible and pairable across runs.
 
-    Memory safety:
+    Games are played in lockstep batches of ``eval_batch_size`` so one forward
+    pass serves many games (see :func:`run_seed_evaluation`). Per-seed results
+    are unchanged: the engine is deterministic given its seed and greedy action
+    selection does not depend on what the other games in the batch are doing.
+    """
+    seed_list = list(seeds[:num_games]) if seeds is not None else [10000 + i for i in range(num_games)]
+    outcomes = run_seed_evaluation(
+        model,
+        data,
+        vocab,
+        seed_list,
+        device,
+        max_no_progress_steps=max_no_progress_steps,
+        win_ante=win_ante,
+        temperature=temperature,
+        stake=stake,
+        greedy=True,
+        batch_size=eval_batch_size,
+    )
+    wins = sum(1 for outcome in outcomes if outcome["won"])
+    return wins / max(len(outcomes), 1)
 
-    * Runs under ``torch.inference_mode`` so eval never builds an autograd
-      graph. Categorical sampling on MPS otherwise leaks intermediate
-      tensors that accumulate across ``num_games``.
-    * Drains the MPS cache every 50 games so peak unified-memory usage
-      stays bounded; without this an eval-heavy run can jetsam the idle
-      AsyncVectorEnv workers (manifesting as EOFError/BrokenPipe on the
-      next rollout step).
+
+def run_seed_evaluation(
+    model: BalatroAgent,
+    data: GameData,
+    vocab: Vocab,
+    seeds: list[int],
+    device: torch.device,
+    *,
+    max_no_progress_steps: int = 256,
+    win_ante: int | None = None,
+    temperature: float = 1.0,
+    stake: int = 1,
+    greedy: bool = True,
+    batch_size: int = 32,
+) -> list[dict]:
+    """Play every seed and return its outcome, batching the policy forward pass.
+
+    The retired implementation played games strictly serially with batch-size-1
+    forwards. Eval then cost more wall clock than the training it was measuring
+    (measured on the Ante-5 runs: 60-95 minutes per 400-game eval against ~54
+    minutes of training per 25-update interval). Here up to ``batch_size`` games
+    advance in lockstep and share one forward pass, so the same GPU/CPU work
+    serves many games at once. Env stepping stays in-process and serial, so the
+    speedup tracks the forward-pass share of per-step cost.
+
+    Determinism: each seed constructs its own env and greedy selection is a
+    per-row argmax, so per-seed outcomes do not depend on batch composition or
+    on which slot a seed lands in. Sampled evaluation (``greedy=False``) draws
+    from the global torch RNG and is reproducible only under a fixed seed and a
+    fixed ``batch_size``.
+
+    Memory safety: runs under ``torch.inference_mode`` (no autograd graph) and
+    drains the MPS cache periodically so an eval-heavy run cannot jetsam idle
+    AsyncVectorEnv workers.
     """
     model.eval()
-    wins = 0
-    seed_list = seeds[:num_games] if seeds is not None else None
+    if not seeds:
+        return []
+    slot_count = max(1, min(int(batch_size), len(seeds)))
+
+    results_by_seed: dict[int, dict] = {}
+    pending = list(seeds)
+    # Each live slot is (seed, env, obs). Slots advance in lockstep; a finished
+    # slot immediately picks up the next pending seed so the batch stays full.
+    slots: list[tuple[int, BalatroEnv, dict]] = []
+
+    def _start(seed: int) -> tuple[int, BalatroEnv, dict]:
+        env = BalatroEnv(
+            seed=seed,
+            data=data,
+            vocab=vocab,
+            stake=stake,
+            max_steps=max_no_progress_steps,
+            win_ante=win_ante,
+            # Eval never reads teacher labels; the heuristic teacher would
+            # otherwise run twice per step of every eval game.
+            enable_teacher=False,
+        )
+        obs, _ = env.reset(seed=seed)
+        return seed, env, obs
 
     with torch.inference_mode():
-        for game_idx in range(num_games):
-            # Eval runs serially in-process; each game caches MPS forward-pass
-            # allocations that are only released when the whole eval finishes. Over
-            # a large `num_games` that ramp builds enough unified-memory pressure to
-            # let the OS jetsam an idle AsyncVectorEnv worker (-> EOFError/BrokenPipe
-            # on the next rollout step). Drain the cache periodically to cap the peak.
-            if device.type == "mps" and game_idx > 0 and game_idx % 50 == 0:
+        while pending and len(slots) < slot_count:
+            slots.append(_start(pending.pop(0)))
+
+        steps_since_drain = 0
+        while slots:
+            batch = _obs_dicts_to_batch([obs for _seed, _env, obs in slots], device)
+            dist, _value = _grammar_distribution(model, batch, temperature=temperature)
+            actions = (dist.mode() if greedy else dist.sample()).cpu().numpy()
+            # Drop per-step inference tensors immediately; otherwise they sit on
+            # the MPS allocator until the whole eval finishes.
+            del batch, dist
+
+            next_slots: list[tuple[int, BalatroEnv, dict]] = []
+            for slot_index, (seed, env, _obs) in enumerate(slots):
+                obs, _reward, terminated, truncated, info = env.step(int(actions[slot_index]))
+                if terminated or truncated:
+                    results_by_seed[seed] = {
+                        "seed": seed,
+                        "won": bool(info.get("won", False)),
+                        "max_ante": int(info.get("ante", 1) or 1),
+                        "round_score": int(info.get("round_score", 0) or 0),
+                        "stalled": bool(info.get("stalled", False)),
+                    }
+                    if pending:
+                        next_slots.append(_start(pending.pop(0)))
+                else:
+                    next_slots.append((seed, env, obs))
+            slots = next_slots
+
+            steps_since_drain += 1
+            if device.type == "mps" and steps_since_drain >= 200:
                 torch.mps.empty_cache()
+                steps_since_drain = 0
 
-            env_seed = seed_list[game_idx] if seed_list is not None else 10000 + game_idx
-            env = BalatroEnv(
-                seed=env_seed,
-                data=data,
-                vocab=vocab,
-                stake=stake,
-                max_steps=max_no_progress_steps,
-                win_ante=win_ante,
-                # Greedy eval never reads teacher labels; the heuristic teacher
-                # would otherwise run twice per step of every eval game.
-                enable_teacher=False,
-            )
-            obs, _ = env.reset()
-            done = False
-
-            while not done:
-                batch = _single_obs_to_batch(obs, device)
-                dist, _ = _grammar_distribution(model, batch, temperature=temperature)
-                action = dist.mode().item()
-                # Drop the per-step inference tensors immediately; otherwise
-                # they sit on the MPS allocator until the end of the game.
-                del batch, dist
-                obs, _reward, terminated, truncated, info = env.step(action)
-                done = terminated or truncated
-
-            if info.get("won", False):
-                wins += 1
-
-    return wins / max(num_games, 1)
+    # Preserve caller seed order regardless of completion order.
+    return [results_by_seed[seed] for seed in seeds if seed in results_by_seed]
 
 
 def _single_obs_to_batch(obs: dict, device: torch.device) -> dict[str, torch.Tensor]:

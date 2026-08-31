@@ -14,7 +14,6 @@ import cython
 import numpy as np
 
 from pylatro import can_use_consumable
-from pylatro.instances import move_joker
 from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.shop import can_claim_pack_card
 from pylatro_cli.controller import GameController, GamePhase
@@ -37,8 +36,8 @@ from ..constants import (
     SubPhase,
 )
 from ..history import PlayHistoryTracker, blind_history_key
+from ..joker_layout import apply_best_joker_order
 from ..masks import _mask_debuffed_plays
-from ..masks import _mask_joker_moves as _mask_bounded_joker_moves
 from ..subset_actions import (
     consumable_subset_indices,
     legal_consumable_subset_mask,
@@ -56,7 +55,6 @@ class FastRunner:
     __slots__ = (
         "_ctrl",
         "_done",
-        "_forbidden_joker_move",
         "_history",
         "_mask",
         "_max_ante",
@@ -88,7 +86,6 @@ class FastRunner:
         self._round_score: int = 0
         self._max_ante: int = 1
         self._done: bool = False
-        self._forbidden_joker_move: tuple[int, int] | None = None
         self._history = PlayHistoryTracker()
         self._won: bool = False
         self._step_count: int = 0
@@ -147,7 +144,7 @@ class FastRunner:
         if sp == SubPhase.BLIND_SELECT:
             _mask_blind(m, state, AR)
         elif sp == SubPhase.CHOOSE_ACTION:
-            _mask_action(m, state, AR, self._forbidden_joker_move)
+            _mask_action(m, state, AR)
         elif sp == SubPhase.SHOP:
             _mask_shop(m, state, AR)
         elif sp == SubPhase.BOOSTER_PACK:
@@ -208,9 +205,6 @@ class FastRunner:
         ctrl = self._ctrl
         state = self._state
         AR = ActionRange
-        is_joker_move = AR.MOVE_JOKER_START <= aid <= AR.MOVE_JOKER_END
-        if not is_joker_move:
-            self._forbidden_joker_move = None
 
         if aid == AR.BLIND_PLAY:
             blind_type = state.blind_on_deck or "Small"
@@ -238,6 +232,7 @@ class FastRunner:
             indices = subset_indices(idx)
             if any(slot >= len(state.hand_cards) for slot in indices):
                 return
+            apply_best_joker_order(state, tuple(sorted(indices)))
             selected_cards = [state.hand_cards[slot] for slot in sorted(indices)]
             pending_history = self._history.capture(
                 state,
@@ -333,12 +328,6 @@ class FastRunner:
         elif aid == AR.PACK_SKIP:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
-        elif AR.MOVE_JOKER_START <= aid <= AR.MOVE_JOKER_END:
-            rel = aid - int(AR.MOVE_JOKER_START)
-            source, compressed = divmod(rel, MAX_JOKER_SLOTS - 1)
-            destination = compressed + (compressed >= source)
-            move_joker(state, source, destination)
-            self._forbidden_joker_move = (destination, source)
 
     def _progress_signature(self):
         state = self._state
@@ -373,7 +362,7 @@ def _mask_blind(m, state, AR):
 
 @cython.cfunc
 @cython.locals(m=cython.char[:], i=cython.int, _play_start=cython.int, _disc_start=cython.int)
-def _mask_action(m, state, AR, forbidden_joker_move=None):
+def _mask_action(m, state, AR):
     _play_start = AR.PLAY_SUBSET_START
     _disc_start = AR.DISCARD_SUBSET_START
     hand_size = len(state.hand_cards)
@@ -394,7 +383,6 @@ def _mask_action(m, state, AR, forbidden_joker_move=None):
         else:
             m[_disc_start : _disc_start + n_subsets] = legal_subsets
     _mask_consumable_flat(m, state, AR)
-    _mask_joker_moves(m, state, forbidden_joker_move)
 
 
 @cython.cfunc
@@ -438,10 +426,6 @@ def _mask_shop(m, state, AR):
         m[_sell_cons + i] = 1
 
     m[_leave] = 1
-
-
-def _mask_joker_moves(m, state, forbidden_joker_move=None):
-    _mask_bounded_joker_moves(m, state, forbidden_joker_move=forbidden_joker_move)
 
 
 @cython.cfunc

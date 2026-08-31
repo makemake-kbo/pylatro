@@ -69,7 +69,7 @@ def test_run_game_single_pass_leaves_safety_stalls_unlabeled(monkeypatch) -> Non
     assert {record["terminal_outcome_mask"] for record in records} == {0.0}
 
 
-def test_fast_runner_joker_masks_match_main_masks() -> None:
+def test_fast_runner_masks_match_main_masks_on_joker_boards() -> None:
     data = load_game_data()
     runner = FastRunner(42, data)
     runner.step(int(ActionRange.BLIND_PLAY))
@@ -78,32 +78,28 @@ def test_fast_runner_joker_masks_match_main_masks() -> None:
 
     main_play = compute_action_mask(runner.state, SubPhase.CHOOSE_ACTION)
     fast_play = runner.compute_mask().copy()
-    move_slice = slice(int(ActionRange.MOVE_JOKER_START), int(ActionRange.MOVE_JOKER_END) + 1)
-    np.testing.assert_array_equal(fast_play[move_slice], main_play[move_slice])
+    np.testing.assert_array_equal(fast_play, main_play)
 
     runner._sub_phase = SubPhase.SHOP
     main_shop = compute_action_mask(runner.state, SubPhase.SHOP)
     fast_shop = runner.compute_mask().copy()
-    np.testing.assert_array_equal(fast_shop[move_slice], main_shop[move_slice])
-    assert not fast_shop[move_slice].any()
+    np.testing.assert_array_equal(fast_shop, main_shop)
 
 
-def test_fast_runner_blocks_immediate_joker_move_inverse() -> None:
+def test_fast_runner_auto_orders_jokers_before_scoring_plays() -> None:
+    from pylatro_agent.subset_actions import subset_index
+
     data = load_game_data()
     runner = FastRunner(42, data)
     runner.step(int(ActionRange.BLIND_PLAY))
-    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
-        add_joker(runner.state, joker_key)
+    # Flat mult before Xmult is canonical; start deliberately misordered.
+    add_joker(runner.state, "j_cavendish")
+    add_joker(runner.state, "j_joker")
 
-    first_step = encode_action(ActionType.MOVE_JOKER, 1, 0)
-    assert runner.compute_mask()[first_step] == 1
-    runner.step(first_step)
-
-    reverse = encode_action(ActionType.MOVE_JOKER, 0, 1)
-    next_step = encode_action(ActionType.MOVE_JOKER, 2, 1)
-    mask = runner.compute_mask()
-    assert mask[reverse] == 0
-    assert mask[next_step] == 1
+    play = int(ActionRange.PLAY_SUBSET_START) + subset_index((0,))
+    if runner.compute_mask()[play]:
+        runner.step(play)
+        assert runner.state.joker_keys == ["j_joker", "j_cavendish"]
 
 
 def test_fast_runner_mr_bones_score_reset_claws_back_ante1_potential() -> None:

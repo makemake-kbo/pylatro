@@ -11,7 +11,10 @@ from pathlib import Path
 
 import torch
 
-TOKENIZER_VERSION = 8
+# Deliberately duplicated rather than imported: this validator runs before the
+# training venv is exercised, so it must not depend on the agent package. Keep
+# in lockstep with pylatro_agent.constants.TOKENIZER_VERSION.
+TOKENIZER_VERSION = 9
 TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
 V8_PPO_CONFIG = {
     "mini_batch_size": 320,

@@ -398,7 +398,7 @@ class TestEndToEndTraining:
         ckpts = list((tmp_path / "ckpts").glob("*.pt"))
         assert len(ckpts) == 2, f"Expected 2 checkpoint files, found {len(ckpts)}"
         payload = torch.load(ckpts[-1], map_location="cpu", weights_only=True)
-        assert payload["tokenizer_version"] == 8
+        assert payload["tokenizer_version"] == 9
         assert payload["agent_config"]["d_model"] == 384
         assert len(payload["reward_fingerprint"]) == 64
         assert payload["reward_config"]["potential_win_ante"] == 8

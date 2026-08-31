@@ -94,57 +94,43 @@ def evaluate_on_seeds(
     win_ante: int | None = None,
     temperature: float = 1.0,
     stake: int = 1,
+    greedy: bool = True,
+    batch_size: int = 32,
 ) -> list[SeedOutcome]:
-    """Greedy-evaluate ``model`` on a fixed list of seeds, returning per-seed outcomes.
+    """Evaluate ``model`` on a fixed list of seeds, returning per-seed outcomes.
 
-    Each seed is played with ``dist.mode()`` (greedy) action selection. The
-    engine is deterministic given the seed, so re-running the same model on the
-    same seeds yields identical outcomes.
+    Each seed is played with ``dist.mode()`` (greedy) action selection by
+    default; ``greedy=False`` samples instead, which is the mode PPO actually
+    trains. The engine is deterministic given the seed, so re-running the same
+    model on the same seeds under greedy selection yields identical outcomes.
 
-    Memory safety mirrors :func:`pylatro_agent.training.ppo.evaluate_model`:
-    runs under ``torch.inference_mode`` and drains the MPS cache periodically.
+    Games are advanced in lockstep batches of ``batch_size`` sharing one policy
+    forward pass; see :func:`pylatro_agent.training.ppo.run_seed_evaluation`.
     """
-    import torch
+    from .training.ppo import run_seed_evaluation
 
-    from .env import BalatroEnv
-    from .training.ppo import _grammar_distribution, _single_obs_to_batch
-
-    model.eval()
-    outcomes: list[SeedOutcome] = []
-
-    with torch.inference_mode():
-        for i, seed in enumerate(seeds):
-            if device.type == "mps" and i > 0 and i % 50 == 0:
-                torch.mps.empty_cache()
-
-            env = BalatroEnv(
-                seed=seed,
-                data=data,
-                vocab=vocab,
-                stake=stake,
-                max_steps=max_no_progress_steps,
-                win_ante=win_ante,
-                # Greedy eval never reads teacher labels; the heuristic teacher
-                # would otherwise run twice per step of every eval game.
-                enable_teacher=False,
-            )
-            obs, _ = env.reset()
-            done = False
-            info: dict = {}
-            while not done:
-                batch = _single_obs_to_batch(obs, device)
-                dist, _ = _grammar_distribution(model, batch, temperature=temperature)
-                action = dist.mode().item()
-                del batch, dist
-                obs, _reward, terminated, truncated, info = env.step(action)
-                done = terminated or truncated
-
-            won = bool(info.get("won", False))
-            max_ante = int(info.get("ante", 1))
-            round_score = int(info.get("round_score", 0))
-            outcomes.append(SeedOutcome(seed=seed, won=won, max_ante=max_ante, round_score=round_score))
-
-    return outcomes
+    results = run_seed_evaluation(
+        model,
+        data,
+        vocab,
+        list(seeds),
+        device,
+        max_no_progress_steps=max_no_progress_steps,
+        win_ante=win_ante,
+        temperature=temperature,
+        stake=stake,
+        greedy=greedy,
+        batch_size=batch_size,
+    )
+    return [
+        SeedOutcome(
+            seed=int(result["seed"]),
+            won=bool(result["won"]),
+            max_ante=int(result["max_ante"]),
+            round_score=int(result["round_score"]),
+        )
+        for result in results
+    ]
 
 
 def evaluate_heuristic_on_seeds(

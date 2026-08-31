@@ -34,7 +34,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _write_source(path: Path, *, version: int = 8) -> str:
+def _write_source(path: Path, *, version: int = validator.TOKENIZER_VERSION) -> str:
     torch.save(
         {
             "tokenizer_version": version,
@@ -65,7 +65,7 @@ def _valid_resume(
     torch.save(
         {
             "checkpoint_format": "ppo_full",
-            "tokenizer_version": 8,
+            "tokenizer_version": 9,
             "tokenizer_semantics": validator.TOKENIZER_SEMANTICS,
             "ppo_config_fields": dict(validator.V8_PPO_CONFIG),
             "ppo_run_provenance": {
@@ -154,7 +154,7 @@ def test_launcher_creates_v8_owner_marker_after_source_validation(tmp_path: Path
         / ".pylatro-v8-run"
     )
     payload = json.loads(marker.read_text())
-    assert payload["tokenizer_version"] == 8
+    assert payload["tokenizer_version"] == 9
     assert payload["source_sha256"] == source_hash
     assert str(uuid.UUID(payload["run_uuid"])) == payload["run_uuid"]
 

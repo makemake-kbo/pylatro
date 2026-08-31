@@ -41,8 +41,6 @@ from .subset_actions import (
 def compute_action_mask(
     state: RunState,
     sub_phase: SubPhase,
-    *,
-    forbidden_joker_move: tuple[int, int] | None = None,
 ) -> np.ndarray:
     """Return a binary mask of shape (NUM_ACTIONS,) where 1 = valid."""
     mask = np.zeros(NUM_ACTIONS, dtype=np.int8)
@@ -51,7 +49,7 @@ def compute_action_mask(
         _mask_blind_select(mask, state)
 
     elif sub_phase == SubPhase.CHOOSE_ACTION:
-        _mask_choose_action(mask, state, forbidden_joker_move=forbidden_joker_move)
+        _mask_choose_action(mask, state)
 
     elif sub_phase == SubPhase.SHOP:
         _mask_shop(mask, state)
@@ -80,8 +78,6 @@ def _mask_blind_select(mask: np.ndarray, state: RunState) -> None:
 def _mask_choose_action(
     mask: np.ndarray,
     state: RunState,
-    *,
-    forbidden_joker_move: tuple[int, int] | None = None,
 ) -> None:
     AR = ActionRange
     hand_size = len(state.hand_cards)
@@ -96,7 +92,6 @@ def _mask_choose_action(
         mask[AR.DISCARD_SUBSET_START : AR.DISCARD_SUBSET_END + 1] = legal_subsets.astype(np.int8)
 
     _mask_consumable_flat(mask, state)
-    _mask_joker_moves(mask, state, forbidden_joker_move=forbidden_joker_move)
 
 
 def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray) -> np.ndarray:
@@ -240,44 +235,8 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
 
     # Leave always valid
     mask[AR.SHOP_LEAVE] = 1
-    # Joker order only affects hand scoring. Defer any useful reorder until a
-    # concrete hand is visible instead of exposing shop-time permutation loops.
-
-
-def _mask_joker_moves(
-    mask: np.ndarray,
-    state: RunState,
-    *,
-    forbidden_joker_move: tuple[int, int] | None = None,
-) -> None:
-    count = min(len(state.jokers), MAX_JOKER_SLOTS)
-    if count < 2:
-        return
-
-    # Keep the action family bounded to the first canonical step toward each
-    # score-relevant target order.  Do not require that step to improve an
-    # approximate one-step score: copy-joker layouts can need a neutral move
-    # before the profitable final move.  Strategic desirability belongs in the
-    # policy/reward; the mask only preserves legal reachability while avoiding
-    # the full permutation action family that previously formed reorder loops.
-    from .heuristic import HeuristicAgent
-
-    candidate_moves: set[tuple[int, int]] = set()
-    for target in HeuristicAgent()._joker_order_candidates(state, count):
-        if target == tuple(range(count)):
-            continue
-        destination = next(index for index, wanted in enumerate(target) if index != wanted)
-        source = target[destination]
-        candidate_moves.add((source, destination))
-    for source, destination in candidate_moves:
-        if forbidden_joker_move == (source, destination):
-            continue
-        mask[_joker_move_action(source, destination)] = 1
-
-
-def _joker_move_action(source: int, destination: int) -> int:
-    compressed = destination - (destination > source)
-    return int(ActionRange.MOVE_JOKER_START) + source * (MAX_JOKER_SLOTS - 1) + compressed
+    # Joker order is not a policy decision: the harness applies the best
+    # exact-scored order before each play (see joker_layout.py).
 
 
 def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:

@@ -42,6 +42,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a checkpoint's win rate over N games.")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to the checkpoint to evaluate.")
     parser.add_argument("--games", type=int, default=500, help="Number of eval games (default: 500).")
+    parser.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=32,
+        help="Games advanced in lockstep per policy forward pass (default: 32).",
+    )
     parser.add_argument("--device", type=str, default=None, help="Model load device (default: auto-detect).")
     parser.add_argument(
         "--eval-device",
@@ -205,6 +211,7 @@ def main() -> None:
                 win_ante=args.win_ante,
                 temperature=args.rollout_temperature,
                 stake=args.stake,
+                batch_size=args.eval_batch_size,
             )
 
         elapsed = time.time() - start
@@ -329,6 +336,7 @@ def main() -> None:
         win_ante=args.win_ante,
         temperature=args.rollout_temperature,
         stake=args.stake,
+        eval_batch_size=args.eval_batch_size,
     )
     elapsed = time.time() - start
 

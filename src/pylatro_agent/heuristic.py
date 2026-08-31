@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 from copy import deepcopy
-from itertools import combinations, product
+from itertools import combinations
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from pylatro import can_use_consumable, get_blind_amount, get_poker_hand_info
 from pylatro.flow import play_cards
-from pylatro.instances import move_joker
 from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.scoring import RANK_TO_ID, RANK_TO_NOMINAL
 
@@ -184,7 +183,6 @@ _ANTE1_SKIP_TAGS = frozenset(
 _RETRIGGER_JOKER_KEYS = frozenset({"j_hanging_chad", "j_sock_and_buskin", "j_selzer", "j_mime", "j_dusk", "j_hack"})
 
 _COPY_JOKER_KEYS = frozenset({"j_blueprint", "j_brainstorm"})
-_MAX_JOKER_ORDER_CANDIDATES = 16
 
 _SUIT_TAROT_TARGETS = {
     "The Star": "Diamonds",
@@ -309,10 +307,6 @@ class HeuristicAgent:
         self._quality_cache: dict[tuple, str] = {}
         self._score_cache: dict[tuple, int] = {}
         self._score_cache_joker_key: tuple = ()
-        self._joker_order_plan_key: tuple = ()
-        self._joker_order_plan: tuple[int, ...] = ()
-        self._joker_order_expected: tuple[int, ...] = ()
-        self._joker_order_play_action = -1
 
     def _run_key(self, state: RunState) -> str:
         return str(getattr(state, "seed", id(state)))
@@ -835,9 +829,6 @@ class HeuristicAgent:
         hand = state.hand_cards
         if not hand:
             return self._random_valid(mask)
-        pending_joker_order = self._resume_joker_order_plan(state, mask)
-        if pending_joker_order is not None:
-            return pending_joker_order
 
         _MONEY_TAROTS = frozenset({"The Hermit", "Temperance"})
         for slot, cons in enumerate(state.consumables[:MAX_CONSUMABLE_SLOTS]):
@@ -1004,7 +995,7 @@ class HeuristicAgent:
             if mouth_candidates:
                 est_score, best_play = max(mouth_candidates)
                 play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
-                return self._play_or_reorder_jokers(state, mask, play_action)
+                return play_action
             elif discards_left > 0:
                 mouth_discard = self._should_discard_for_draw(state, hand, mask)
                 if mouth_discard is None:
@@ -1254,12 +1245,12 @@ class HeuristicAgent:
         if best_play and est_score >= target_remaining:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
-                return self._play_or_reorder_jokers(state, mask, play_action)
+                return play_action
 
         if best_play and est_score * hands_left >= projected_target:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
-                return self._play_or_reorder_jokers(state, mask, play_action)
+                return play_action
 
         # In the opening antes, a made hand is also a redraw: playing it scores
         # now and replaces every played card.  The old policy repeatedly held
@@ -1292,7 +1283,7 @@ class HeuristicAgent:
         if early_made_hand:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
-                return self._play_or_reorder_jokers(state, mask, play_action)
+                return play_action
 
         # A lone Three-of-a-Kind payoff (for example Wily Joker) is useful
         # when it naturally lands, but it must not consume the whole early
@@ -1308,7 +1299,7 @@ class HeuristicAgent:
         ):
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
-                return self._play_or_reorder_jokers(state, mask, play_action)
+                return play_action
 
         draw_discard = self._should_discard_for_draw(state, hand, mask)
         if draw_discard is not None:
@@ -1345,7 +1336,7 @@ class HeuristicAgent:
         if best_play:
             play_action = ActionRange.PLAY_SUBSET_START + subset_index(best_play)
             if mask[play_action]:
-                return self._play_or_reorder_jokers(state, mask, play_action)
+                return play_action
 
         if can_discard:
             return ActionRange.DISCARD_SUBSET_START + subset_index(best_discard)
@@ -1353,7 +1344,7 @@ class HeuristicAgent:
         valid_play = np.where(mask[ActionRange.PLAY_SUBSET_START : ActionRange.PLAY_SUBSET_END + 1] == 1)[0]
         if len(valid_play) > 0:
             play_action = ActionRange.PLAY_SUBSET_START + int(valid_play[0])
-            return self._play_or_reorder_jokers(state, mask, play_action)
+            return play_action
         valid_discard = np.where(mask[ActionRange.DISCARD_SUBSET_START : ActionRange.DISCARD_SUBSET_END + 1] == 1)[0]
         if len(valid_discard) > 0:
             return ActionRange.DISCARD_SUBSET_START + int(valid_discard[0])
@@ -2667,246 +2658,6 @@ class HeuristicAgent:
         if state.round_resets.ante >= _MID_GAME_ANTE and score > 0:
             score += 18.0
         return score
-
-    def _play_or_reorder_jokers(self, state: RunState, mask: np.ndarray, play_action: int) -> int:
-        relative_action = play_action - int(ActionRange.PLAY_SUBSET_START)
-        indices = tuple(index for index in subset_indices(relative_action) if index < len(state.hand_cards))
-        reorder = self._best_joker_move(state, mask, indices)
-        if reorder is None:
-            self._joker_order_play_action = -1
-            return play_action
-        self._joker_order_play_action = play_action
-        return reorder
-
-    def _resume_joker_order_plan(
-        self,
-        state: RunState,
-        mask: np.ndarray,
-    ) -> int | None:
-        play_action = self._joker_order_play_action
-        if not (
-            int(ActionRange.PLAY_SUBSET_START) <= play_action <= int(ActionRange.PLAY_SUBSET_END) and mask[play_action]
-        ):
-            self._joker_order_play_action = -1
-            return None
-        relative_action = play_action - int(ActionRange.PLAY_SUBSET_START)
-        indices = tuple(index for index in subset_indices(relative_action) if index < len(state.hand_cards))
-        count = min(len(state.jokers), MAX_JOKER_SLOTS)
-        current_ids = tuple(id(joker) for joker in state.jokers[:count])
-        if (
-            self._joker_order_cache_key(state, indices) != self._joker_order_plan_key
-            or current_ids != self._joker_order_expected
-        ):
-            self._joker_order_play_action = -1
-            return None
-        return self._play_or_reorder_jokers(state, mask, play_action)
-
-    def _score_joker_move_for_hand(
-        self,
-        state: RunState,
-        hand_indices: tuple[int, ...],
-        source: int | None = None,
-        destination: int | None = None,
-        order: tuple[int, ...] | None = None,
-    ) -> int:
-        trial = deepcopy(state, {id(state.data): state.data})
-        if order is not None:
-            trial.jokers[: len(order)] = [trial.jokers[index] for index in order]
-            trial.joker_keys[: len(order)] = [trial.joker_keys[index] for index in order]
-        elif source is not None and destination is not None:
-            move_joker(trial, source, destination)
-        return play_cards(trial, list(hand_indices)).score.total
-
-    def _joker_order_cache_key(
-        self,
-        state: RunState,
-        hand_indices: tuple[int, ...],
-    ) -> tuple:
-        selected_cards = tuple(id(state.hand_cards[index]) for index in hand_indices)
-        return (
-            id(state),
-            hand_indices,
-            selected_cards,
-            state.round,
-            state.current_round.hands_left,
-            state.current_round.hands_played,
-            state.blind_on_deck,
-            state.blind_disabled,
-        )
-
-    def _joker_order_candidates(
-        self,
-        state: RunState,
-        count: int,
-    ) -> list[tuple[int, ...]]:
-        """Build score-relevant orders without permuting every joker."""
-        current = tuple(range(count))
-        active_copies = [
-            index
-            for index, joker in enumerate(state.jokers[:count])
-            if not joker.debuff and joker.center_key in _COPY_JOKER_KEYS
-        ]
-        noncopies = [index for index in current if index not in active_copies]
-        canonical_noncopies = sorted(
-            noncopies,
-            key=lambda index: self._is_xmult_joker(state, state.jokers[index]),
-        )
-
-        candidates = [current]
-        seen = {current}
-
-        def add(order: tuple[int, ...]) -> bool:
-            if order in seen:
-                return True
-            if len(candidates) >= _MAX_JOKER_ORDER_CANDIDATES:
-                return False
-            seen.add(order)
-            candidates.append(order)
-            return True
-
-        if not active_copies:
-            add(tuple(canonical_noncopies))
-            return candidates
-
-        blueprints = [index for index in active_copies if state.jokers[index].center_key == "j_blueprint"]
-        brainstorms = [index for index in active_copies if state.jokers[index].center_key == "j_brainstorm"]
-        compatible_targets = [
-            index
-            for index in canonical_noncopies
-            if state.data.centers.get(state.jokers[index].center_key, {}).get("blueprint_compat")
-            and not state.jokers[index].debuff
-        ]
-        compatible_targets.sort(
-            key=lambda index: (
-                state.jokers[index].center_key not in _RETRIGGER_JOKER_KEYS,
-                not self._is_xmult_joker(state, state.jokers[index]),
-            ),
-        )
-
-        if not compatible_targets:
-            add(tuple(canonical_noncopies + active_copies))
-            return candidates
-
-        blueprint_assignments = product(compatible_targets, repeat=len(blueprints)) if blueprints else [()]
-        brainstorm_targets: list[int | None] = compatible_targets if brainstorms else [None]
-
-        for blueprint_targets in blueprint_assignments:
-            grouped_blueprints: dict[int, list[int]] = {target: [] for target in compatible_targets}
-            for blueprint, target in zip(blueprints, blueprint_targets, strict=True):
-                grouped_blueprints[target].append(blueprint)
-
-            for brainstorm_target in brainstorm_targets:
-                ordered_targets = list(canonical_noncopies)
-                if brainstorm_target is not None:
-                    ordered_targets.remove(brainstorm_target)
-                    ordered_targets.insert(0, brainstorm_target)
-
-                blocks = [[*grouped_blueprints.get(target, []), target] for target in ordered_targets]
-                if brainstorms:
-                    if self._is_xmult_joker(state, state.jokers[brainstorm_target]):
-                        blocks.append(list(brainstorms))
-                    else:
-                        insert_at = next(
-                            (
-                                index
-                                for index, block in enumerate(blocks)
-                                if self._is_xmult_joker(
-                                    state,
-                                    state.jokers[block[len(block) - 1]],
-                                )
-                            ),
-                            len(blocks),
-                        )
-                        blocks.insert(insert_at, list(brainstorms))
-
-                order = tuple(index for block in blocks for index in block)
-                if not add(order):
-                    return candidates
-
-        return candidates
-
-    def _move_toward_joker_order(
-        self,
-        current: tuple[int, ...],
-        target: tuple[int, ...],
-        mask: np.ndarray,
-    ) -> tuple[int | None, tuple[int, ...]]:
-        if current == target:
-            return None, current
-        destination = next(
-            index for index, (actual, wanted) in enumerate(zip(current, target, strict=True)) if actual != wanted
-        )
-        source = current.index(target[destination])
-        action = encode_action(ActionType.MOVE_JOKER, source, destination)
-        if not mask[action]:
-            return None, current
-        moved = list(current)
-        joker_id = moved.pop(source)
-        moved.insert(destination, joker_id)
-        return action, tuple(moved)
-
-    def _best_joker_move(
-        self,
-        state: RunState,
-        mask: np.ndarray,
-        hand_indices: tuple[int, ...],
-    ) -> int | None:
-        """Return the next move toward a cached, exact-scored target order."""
-        count = min(len(state.jokers), MAX_JOKER_SLOTS)
-        if count < 2 or not hand_indices:
-            return None
-        has_copy_joker = any(
-            not joker.debuff and joker.center_key in _COPY_JOKER_KEYS for joker in state.jokers[:count]
-        )
-        has_movable_xmult = any(self._is_xmult_joker(state, joker) for joker in state.jokers[:count])
-        if not has_copy_joker and not has_movable_xmult:
-            return None
-
-        current_ids = tuple(id(joker) for joker in state.jokers[:count])
-        plan_key = self._joker_order_cache_key(state, hand_indices)
-        if (
-            plan_key == self._joker_order_plan_key
-            and current_ids == self._joker_order_expected
-            and set(current_ids) == set(self._joker_order_plan)
-        ):
-            action, expected = self._move_toward_joker_order(
-                current_ids,
-                self._joker_order_plan,
-                mask,
-            )
-            self._joker_order_expected = expected
-            if action is None:
-                self._joker_order_plan_key = ()
-            return action
-
-        candidates = self._joker_order_candidates(state, count)
-        best_order = candidates[0]
-        best_score = self._score_joker_move_for_hand(
-            state,
-            hand_indices,
-            order=best_order,
-        )
-        for order in candidates[1:]:
-            score = self._score_joker_move_for_hand(
-                state,
-                hand_indices,
-                order=order,
-            )
-            if score > best_score:
-                best_score = score
-                best_order = order
-
-        target_ids = tuple(current_ids[index] for index in best_order)
-        action, expected = self._move_toward_joker_order(current_ids, target_ids, mask)
-        if action is None:
-            self._joker_order_plan_key = ()
-            self._joker_order_plan = ()
-            self._joker_order_expected = ()
-            return None
-        self._joker_order_plan_key = plan_key
-        self._joker_order_plan = target_ids
-        self._joker_order_expected = expected
-        return action
 
     def _shop(self, state: RunState, mask: np.ndarray) -> int:
         # Numbered PRIORITY blocks below are evaluated top-to-bottom; the first

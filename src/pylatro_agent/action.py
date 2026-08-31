@@ -32,7 +32,6 @@ class ActionType(StrEnum):
     SHOP_LEAVE = "shop_leave"
     PACK_CLAIM = "pack_claim"
     PACK_SKIP = "pack_skip"
-    MOVE_JOKER = "move_joker"
 
 
 @dataclass(slots=True)
@@ -98,11 +97,6 @@ def decode_action(action_id: int) -> DecodedAction:
         return DecodedAction(ActionType.PACK_CLAIM, action_id - AR.PACK_CLAIM_START)
     if action_id == AR.PACK_SKIP:
         return DecodedAction(ActionType.PACK_SKIP)
-    if AR.MOVE_JOKER_START <= action_id <= AR.MOVE_JOKER_END:
-        rel = action_id - int(AR.MOVE_JOKER_START)
-        source, compressed_destination = divmod(rel, MAX_JOKER_SLOTS - 1)
-        destination = compressed_destination + (compressed_destination >= source)
-        return DecodedAction(ActionType.MOVE_JOKER, source, destination)
 
     raise ValueError(f"Invalid action ID: {action_id}")
 
@@ -150,11 +144,4 @@ def encode_action(action_type: ActionType, index: int = 0, detail: int = 0) -> i
             return AR.PACK_CLAIM_START + index
         case ActionType.PACK_SKIP:
             return AR.PACK_SKIP
-        case ActionType.MOVE_JOKER:
-            if not (0 <= index < MAX_JOKER_SLOTS and 0 <= detail < MAX_JOKER_SLOTS):
-                raise ValueError(f"Joker move slots out of range: {index} -> {detail}")
-            if index == detail:
-                raise ValueError(f"Joker move must change position: {index} -> {detail}")
-            compressed_destination = detail - (detail > index)
-            return AR.MOVE_JOKER_START + index * (MAX_JOKER_SLOTS - 1) + compressed_destination
     raise ValueError(f"Unknown action type: {action_type}")

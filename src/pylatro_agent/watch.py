@@ -281,11 +281,6 @@ def _describe_action(env: BalatroEnv, action_id: int) -> str:
         return f"Claim {card} from pack"
     if at == ActionType.PACK_SKIP:
         return "Skip pack"
-    if at == ActionType.MOVE_JOKER:
-        source = (
-            _center_name(data, state.jokers[decoded.index].center_key) if decoded.index < len(state.jokers) else "?"
-        )
-        return f"Move joker {source} from {decoded.index + 1} to {decoded.detail + 1}"
     return str(at)
 
 

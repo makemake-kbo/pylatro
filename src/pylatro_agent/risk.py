@@ -58,13 +58,22 @@ _BOSS_SAFETY_FACTORS = {
 
 
 # Empirical calibration for the deliberately pessimistic analytic estimate.
-# On v8 updates 18-120, shop-leave forecasts averaged roughly 0.81 death
-# probability against a 0.32 observed next-blind death rate.  The raw score
-# also had weak separation across rollout aggregates, so temperature scaling
-# (slope < 1) is preferable to a bias-only correction that would leave the
-# overconfident range intact.  Keep this mapping small, monotonic, and explicit:
-# downstream policy, reward, and shop controls all consume the calibrated
-# ClearRiskEstimate rather than maintaining divergent thresholds.
+# Fitted on v8 updates 18-120 (shop-leave forecasts averaged ~0.81 raw death
+# probability against ~0.32 observed).  The raw score had weak separation, so
+# temperature scaling (slope < 1) is preferable to a bias-only correction.
+#
+# These constants are POLICY-REGIME DEPENDENT and drift stale as the policy
+# improves.  Refit them from real forecast/outcome pairs:
+#   1. PPO training appends every resolved shop-leave forecast to
+#      <log_dir>/risk_forecasts.jsonl (PPOConfig.risk_forecast_log).
+#   2. `uv run python tools/fit_risk_calibration.py <jsonl...>` refits the
+#      Platt (scale, bias) on the raw logits and prints the constants block.
+#   3. Paste the constants here and bump reward.REWARD_MODEL_VERSION - the
+#      calibrated probability feeds observations, danger gating, and shop
+#      reward components, so changing it changes reward semantics.
+# Keep this mapping small, monotonic, and explicit: downstream policy, reward,
+# and shop controls all consume the calibrated ClearRiskEstimate rather than
+# maintaining divergent thresholds.
 ANALYTIC_DEATH_LOGIT_SCALE = 0.50
 ANALYTIC_DEATH_LOGIT_BIAS = -1.47
 _CALIBRATION_EPSILON = 1e-4

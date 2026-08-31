@@ -633,7 +633,7 @@ def test_rollout_episode_metrics_skip_empty_rollouts() -> None:
     _write_rollout_episode_metrics(_Writer(), _RolloutMetrics(), step=1)
 
 
-def test_action_behavior_metrics_expose_macro_collapse_and_joker_move_loop() -> None:
+def test_action_behavior_metrics_expose_macro_collapse() -> None:
     class _Writer:
         def __init__(self) -> None:
             self.scalars: dict[str, tuple[float, int]] = {}
@@ -642,19 +642,16 @@ def test_action_behavior_metrics_expose_macro_collapse_and_joker_move_loop() -> 
             self.scalars[tag] = (value, step)
 
     rm = _RolloutMetrics(
-        action_type_counts={"move_joker": 80, "shop_leave": 20},
-        joker_move_rewards=[0.0, -0.1, 0.02],
+        action_type_counts={"shop_reroll": 80, "shop_leave": 20},
         steps_since_progress=[0.0, 1.0, 2.0, 32.0],
     )
     writer = _Writer()
 
     _write_action_behavior_metrics(writer, rm, step=11)
 
-    assert writer.scalars["actions/type/move_joker_fraction"] == (0.8, 11)
+    assert writer.scalars["actions/type/shop_reroll_fraction"] == (0.8, 11)
     assert writer.scalars["actions/type/shop_leave_fraction"] == (0.2, 11)
     assert writer.scalars["actions/type/play_subset_fraction"] == (0.0, 11)
-    assert writer.scalars["actions/move_joker_non_improving_fraction"] == pytest.approx((2 / 3, 11))
-    assert writer.scalars["actions/move_joker_reward_mean"] == pytest.approx((-0.08 / 3, 11))
     assert writer.scalars["rollout/no_progress_streak_p95"] == pytest.approx(
         (np.percentile(rm.steps_since_progress, 95), 11)
     )

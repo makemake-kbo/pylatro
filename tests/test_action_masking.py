@@ -16,7 +16,6 @@ from pylatro import (
     select_blind,
     start_blind,
 )
-from pylatro.instances import move_joker
 from pylatro.models import PackState, ShopCard
 from pylatro.runtime import consumable_limit
 from pylatro.shop import claim_pack_card, pack_consumable_use_targets
@@ -58,74 +57,19 @@ def test_choose_action_mask(hand_play_state):
     assert mask.sum() >= 2
 
 
-def test_non_improving_joker_reorders_are_masked(hand_play_state):
-    add_joker(hand_play_state, "j_joker")
-    add_joker(hand_play_state, "j_sly")
-
-    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
-    moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
-
-    assert moves.sum() == 0
-
-
-def test_only_canonical_joker_reorders_are_unmasked(hand_play_state):
-    # Flat mult should resolve before Cavendish's Xmult. The mask exposes one
-    # canonical atomic move rather than duplicate actions for the same order.
+def test_action_space_has_no_reorder_actions(hand_play_state):
+    # Joker ordering is harness-owned (joker_layout.py); the policy's action
+    # space ends at PACK_SKIP and a joker-heavy board adds no reorder actions.
     add_joker(hand_play_state, "j_cavendish")
     add_joker(hand_play_state, "j_joker")
 
-    mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
-    improving = encode_action(ActionType.MOVE_JOKER, 0, 1)
-    equivalent = encode_action(ActionType.MOVE_JOKER, 1, 0)
-
-    moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
-    assert moves.sum() == 1
-    assert mask[improving] or mask[equivalent]
-
-
-def test_neutral_first_step_toward_copy_joker_order_is_reachable(hand_play_state):
-    # Blueprint/Dusk/Hack/Idol has exact-scored layouts where moving Dusk in
-    # front of Blueprint is neutral (480 -> 480) but enables the following
-    # move toward a 3328-point target.  The mask must not judge that first step
-    # by a one-step representative-score approximation.
-    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
-        add_joker(hand_play_state, joker_key)
+    from pylatro_agent.constants import NUM_ACTIONS
 
     mask = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
-    neutral_first_step = encode_action(ActionType.MOVE_JOKER, 1, 0)
 
-    assert mask[neutral_first_step] == 1
+    assert mask.shape == (NUM_ACTIONS,)
+    assert int(ActionRange.PACK_SKIP) + 1 == NUM_ACTIONS
 
-
-def test_immediate_reverse_is_masked_without_blocking_next_plan_step(hand_play_state):
-    for joker_key in ("j_blueprint", "j_dusk", "j_hack", "j_idol"):
-        add_joker(hand_play_state, joker_key)
-
-    first_step = encode_action(ActionType.MOVE_JOKER, 1, 0)
-    initial = compute_action_mask(hand_play_state, SubPhase.CHOOSE_ACTION)
-    assert initial[first_step] == 1
-    move_joker(hand_play_state, 1, 0)
-
-    reverse = encode_action(ActionType.MOVE_JOKER, 0, 1)
-    next_step = encode_action(ActionType.MOVE_JOKER, 2, 1)
-    bounded = compute_action_mask(
-        hand_play_state,
-        SubPhase.CHOOSE_ACTION,
-        forbidden_joker_move=(0, 1),
-    )
-
-    assert bounded[reverse] == 0
-    assert bounded[next_step] == 1
-
-
-def test_joker_reorders_are_hidden_in_shop(hand_play_state):
-    add_joker(hand_play_state, "j_cavendish")
-    add_joker(hand_play_state, "j_joker")
-
-    mask = compute_action_mask(hand_play_state, SubPhase.SHOP)
-    moves = mask[ActionRange.MOVE_JOKER_START : ActionRange.MOVE_JOKER_END + 1]
-
-    assert moves.sum() == 0
 
 
 def test_choose_action_subset_ranges_are_bounded(hand_play_state):

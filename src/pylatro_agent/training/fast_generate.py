@@ -19,14 +19,12 @@ import random
 import tempfile
 import threading
 import time
-from typing import Any
-
-import numpy as np
+from typing import TYPE_CHECKING, Any
 
 from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GamePhase
 
-from ..action import ActionType, decode_action
+from ..action import decode_action
 from ..heuristic import HeuristicAgent
 from ..reward import RewardConfig, default_reward
 from ..shop_eval import capture_build_features
@@ -35,6 +33,9 @@ from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..tokenizer import Tokenizer
 from ..vocab import Vocab, build_vocab
 from .fast_runner import FastRunner, _blind_target
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -223,22 +224,6 @@ def _run_game_single_pass(
         curr_info["action_type"] = decoded.action_type
         curr_info["action_index"] = decoded.index
         curr_info["action_detail"] = decoded.detail
-        if decoded.action_type == ActionType.MOVE_JOKER:
-            from ..shop_eval import evaluate_build
-
-            pre_score = evaluate_build(current_prev_info).estimated_score
-            post_score = evaluate_build(curr_info).estimated_score
-            ratio = max(post_score, 1.0) / max(pre_score, 1.0)
-            curr_info.update(
-                {
-                    "joker_move_source": decoded.index,
-                    "joker_move_destination": decoded.detail,
-                    "joker_move_pre_score": pre_score,
-                    "joker_move_post_score": post_score,
-                    "joker_move_score_ratio": ratio,
-                    "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
-                }
-            )
 
         action_diagnostics = _fast_action_diagnostics(state, decoded)
         action_diagnostics.update(

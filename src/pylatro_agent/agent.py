@@ -131,7 +131,6 @@ class BalatroAgent(nn.Module):
                 "shop_sell_joker_logits": grammar_output.shop_sell_joker_logits,
                 "shop_sell_consumable_logits": grammar_output.shop_sell_consumable_logits,
                 "pack_claim_logits": grammar_output.pack_claim_logits,
-                "joker_move_logits": grammar_output.joker_move_logits,
             }, value_dict
         return (
             ActionGrammarDistribution(

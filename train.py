@@ -247,6 +247,29 @@ def main():
         help="Games per PPO eval pass (default: 50). Wins are rare; small samples are noisy.",
     )
     parser.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=32,
+        help=(
+            "Eval games advanced in lockstep per policy forward pass (default: 32). "
+            "Eval used to play one game at a time with batch-size-1 forwards and cost "
+            "more wall clock than the training between evals. Per-seed greedy results "
+            "are unchanged by batching."
+        ),
+    )
+    parser.add_argument(
+        "--no-risk-forecast-log",
+        dest="risk_forecast_log",
+        action="store_false",
+        help=(
+            "Disable appending resolved shop-leave risk forecasts to "
+            "<log-dir>/risk_forecasts.jsonl. Those pairs are the input to "
+            "tools/fit_risk_calibration.py, which refits the analytic "
+            "death-probability calibration in pylatro_agent/risk.py."
+        ),
+    )
+    parser.set_defaults(risk_forecast_log=True)
+    parser.add_argument(
         "--eval-regression-tolerance",
         type=float,
         default=None,
@@ -796,6 +819,8 @@ def main():
                 danger_death_probability_threshold=args.danger_death_probability_threshold,
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
+                eval_batch_size=args.eval_batch_size,
+                risk_forecast_log=args.risk_forecast_log,
                 eval_regression_tolerance=args.eval_regression_tolerance,
                 eval_regression_patience=args.eval_regression_patience,
                 eval_device=args.eval_device,

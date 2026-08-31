@@ -9,7 +9,6 @@ import numpy as np
 from gymnasium import spaces
 
 from pylatro import GameData, load_game_data
-from pylatro.instances import move_joker
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
@@ -42,6 +41,7 @@ from .diagnostics import (
 )
 from .heuristic import HeuristicAgent
 from .history import PlayHistoryTracker, blind_history_key
+from .joker_layout import apply_best_joker_order
 from .masks import compute_action_mask
 from .reward import (
     DEFAULT_REWARD_CONFIG,
@@ -49,7 +49,7 @@ from .reward import (
     default_reward_components,
 )
 from .risk import estimate_clear_risk, weakest_confident_joker
-from .shop_eval import capture_build_features, evaluate_build
+from .shop_eval import capture_build_features
 from .strategic_events import derive_strategic_event
 from .subset_actions import consumable_subset_indices, subset_indices
 from .survival import validate_critic_win_ante
@@ -105,10 +105,6 @@ class BalatroEnv(gymnasium.Env):
         self._sub_phase = SubPhase.BLIND_SELECT
         self._steps_since_progress = 0
         self._history = PlayHistoryTracker()
-        # After a joker move, suppress only its exact inverse until a
-        # non-reorder action occurs. This preserves neutral multi-step plans
-        # while structurally preventing immediate A->B->A cycles.
-        self._forbidden_joker_move: tuple[int, int] | None = None
 
         # Previous state info for reward computation
         self._prev_info: dict[str, Any] = {}
@@ -196,7 +192,6 @@ class BalatroEnv(gymnasium.Env):
         self._play_diagnostic_count = 0
         self._joker_replacement_clear_baseline = None
         self._rewarded_gold_card_ids.clear()
-        self._forbidden_joker_move = None
         self._history.reset()
         self._prev_info = self._capture_state_info()
 
@@ -285,20 +280,6 @@ class BalatroEnv(gymnasium.Env):
         curr_info["action_detail"] = decoded.detail
         curr_info["teacher_action"] = teacher_action
         curr_info["teacher_action_match"] = teacher_action >= 0 and int(action) == teacher_action
-        if decoded.action_type == ActionType.MOVE_JOKER:
-            pre_score = evaluate_build(self._prev_info).estimated_score
-            post_score = evaluate_build(curr_info).estimated_score
-            ratio = max(post_score, 1.0) / max(pre_score, 1.0)
-            action_diagnostics.update(
-                {
-                    "joker_move_source": decoded.index,
-                    "joker_move_destination": decoded.detail,
-                    "joker_move_pre_score": pre_score,
-                    "joker_move_post_score": post_score,
-                    "joker_move_score_ratio": ratio,
-                    "joker_move_reward": 0.1 * float(np.clip(np.log(ratio), -1.0, 1.0)),
-                }
-            )
 
         event_diagnostics = step_event_diagnostics(
             self._prev_info,
@@ -494,19 +475,13 @@ class BalatroEnv(gymnasium.Env):
         """Return current valid action mask."""
         if self._controller is None or self._controller.state is None:
             return np.zeros(NUM_ACTIONS, dtype=np.int8)
-        return compute_action_mask(
-            self._controller.state,
-            self._sub_phase,
-            forbidden_joker_move=self._forbidden_joker_move,
-        )
+        return compute_action_mask(self._controller.state, self._sub_phase)
 
     def _execute_action(self, decoded) -> Any:
         """Execute a decoded action, updating sub-phase and game state."""
         ctrl = self._controller
         state = ctrl.state
         at = decoded.action_type
-        if at != ActionType.MOVE_JOKER:
-            self._forbidden_joker_move = None
 
         if at == ActionType.BLIND_PLAY:
             blind_type = state.blind_on_deck or "Small"
@@ -533,6 +508,9 @@ class BalatroEnv(gymnasium.Env):
             indices = subset_indices(decoded.index)
             if any(idx >= len(state.hand_cards) for idx in indices):
                 raise IndexError(f"Play subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
+            # Harness-owned joker ordering: put the roster in the best
+            # exact-scored arrangement for this concrete play before scoring.
+            apply_best_joker_order(state, tuple(sorted(indices)))
             selected_cards = [state.hand_cards[index] for index in sorted(indices)]
             pending_history = self._history.capture(
                 state,
@@ -623,10 +601,6 @@ class BalatroEnv(gymnasium.Env):
         elif at == ActionType.PACK_SKIP:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
-
-        elif at == ActionType.MOVE_JOKER:
-            move_joker(state, decoded.index, decoded.detail)
-            self._forbidden_joker_move = (decoded.detail, decoded.index)
 
     def _build_obs(self, state_info: dict | None = None) -> RawObservation:
         state = self._controller.state

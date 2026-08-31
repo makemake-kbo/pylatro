@@ -67,7 +67,9 @@ class RewardConfig:
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
-REWARD_MODEL_VERSION = 14
+# v15: joker_move component removed - the harness orders jokers
+# deterministically (joker_layout.py) and MOVE_JOKER left the action space.
+REWARD_MODEL_VERSION = 15
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -120,9 +122,6 @@ EARLY_DEATH_PENALTIES = {1: 2.0, 2: 1.0}
 IDLE_PENALTY_BASE = 0.001
 IDLE_PENALTY_RAMP = 0.0005
 IDLE_PENALTY_CAP = 0.02
-JOKER_MOVE_NON_IMPROVING_PENALTY = 0.10
-JOKER_MOVE_REPEAT_PENALTY = 0.02
-JOKER_MOVE_PENALTY_CAP = 0.50
 
 # Ante 1 has little build scaling, so actual blind-score progress carries a
 # small, bounded potential. Its signed difference is segmentation invariant.
@@ -160,7 +159,6 @@ REWARD_COMPONENT_NAMES = (
     "joker_upgrade_bonus",
     "danger_reroll_bonus",
     "survival_shaping",
-    "joker_move",
     "ante1_chip_tempo",
 )
 REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONENT_NAMES))
@@ -183,7 +181,6 @@ _COMPONENT_GROUP = {
     "joker_upgrade_bonus": "shop",
     "danger_reroll_bonus": "shop",
     "survival_shaping": "potential",
-    "joker_move": "joker_move",
     "ante1_chip_tempo": "hand_quality",
 }
 
@@ -732,27 +729,6 @@ def default_reward_components(
             config,
         )
         components["ante1_chip_tempo"] *= config.dense_reward_scale
-        components["total"] = sum(components.values())
-        return components
-
-    # Reordering is scored by an exact build-layout diagnostic and must not
-    # also collect generic potential shaping.  A neutral or harmful move is
-    # still an idle action, however: exempting every reorder from the idle
-    # penalty lets PPO cycle through the many legal permutations until the
-    # distant no-progress truncation, whose credit is effectively lost over a
-    # long GAE horizon.
-    if str(curr_info.get("action_type", "")) == "move_joker":
-        move_reward = float(curr_info.get("joker_move_reward", 0.0) or 0.0)
-        components["joker_move"] = move_reward
-        if move_reward <= 1e-6:
-            idle_streak = max(int(curr_info.get("steps_since_progress", 1)), 1)
-            move_penalty = min(
-                JOKER_MOVE_NON_IMPROVING_PENALTY + max(idle_streak - 1, 0) * JOKER_MOVE_REPEAT_PENALTY,
-                JOKER_MOVE_PENALTY_CAP,
-            )
-            components["joker_move"] -= move_penalty
-            idle_penalty = IDLE_PENALTY_BASE + max(idle_streak - 8, 0) * IDLE_PENALTY_RAMP
-            components["idle_penalty"] = -min(idle_penalty, IDLE_PENALTY_CAP) * config.dense_reward_scale
         components["total"] = sum(components.values())
         return components
 

@@ -211,9 +211,23 @@ updates only the hazard output layer. `win_prob` and `expected_score` remain
 derived compatibility aliases for final-outcome mass and composed expected
 return. The compact TensorBoard
 shop/terminal metrics expose dying with money, weak full Joker slots, and
-last-shop survival calibration. Non-improving Joker reorderings receive an
-immediate penalty, and action-family fractions plus no-progress streaks make a
-shop loop directly visible. A short idle horizon, action-family entropy bonus,
+shop survival calibration. Joker ordering is not a policy decision: the harness
+applies the best exact-scored arrangement before each play
+(`pylatro_agent/joker_layout.py`), so `MOVE_JOKER` no longer exists in the
+action space and there is no reorder loop to penalize. Action-family fractions
+plus no-progress streaks make a shop loop directly visible.
+
+Every shop-leave risk forecast is resolved against its realized next-blind
+outcome and appended to `<log-dir>/risk_forecasts.jsonl`. Earlier runs scored
+only the *last* shop leave of each episode — about 8% of them, and the one
+selected by imminent death — which made the calibration metrics read far more
+optimistic than the model actually is. `tools/fit_risk_calibration.py` refits
+the Platt constants in `pylatro_agent/risk.py` from those pairs; changing them
+changes observation and reward semantics, so bump `REWARD_MODEL_VERSION` with
+them.
+
+Evaluation advances `--eval-batch-size` games in lockstep per policy forward
+pass. Per-seed greedy results are unchanged by batching. A short idle horizon, action-family entropy bonus,
 hard KL guard, and two-eval regression stop protect the pretrained policy. The
 regression stop writes and mirrors an exact full resume checkpoint before
 exiting, so a managed restart does not fall back to an older periodic save.

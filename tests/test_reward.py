@@ -7,7 +7,6 @@ import pytest
 from pylatro_agent import reward as reward_module
 from pylatro_agent.build_value import BuildValueEstimate, JokerMarginal, ScoreChannels
 from pylatro_agent.reward import (
-    ANTE1_CHIP_TEMPO_BONUS,
     ANTE_PROGRESS_VALUE,
     DEFAULT_REWARD_CONFIG,
     EARLY_DEATH_PENALTIES,
@@ -98,12 +97,17 @@ def test_default_config_is_the_single_potential_reward() -> None:
     assert config == DEFAULT_REWARD_CONFIG
     assert config.gamma == pytest.approx(0.997)
     assert config.enable_planet_match_rewards is False
-    assert config.enable_score_build_potential is False
+    # Build/readiness/survival shaping is on by default: with it off the whole
+    # family pays zero and the policy gets no signal about the build that kills it.
+    assert config.enable_score_build_potential is True
+    # Kept clearly below the terminal win/loss signal, which totals ~1.02 per
+    # episode; at 0.40 this term alone totalled ~1.25.
+    assert config.ante1_chip_tempo_bonus == pytest.approx(0.20)
     assert not hasattr(config, "reward_version")
     assert config.strategic_event_reward_scale == 1.0
     assert config.potential_w_tarot_option == 0.0
     assert config.potential_w_planet_option == 0.0
-    assert REWARD_MODEL_VERSION == 15
+    assert REWARD_MODEL_VERSION == 16
 
 
 def test_attributable_strategic_event_rewards_are_bounded_and_dense_scale_independent() -> None:
@@ -450,7 +454,9 @@ def test_build_potential_is_optional_and_bounded() -> None:
         joker_details=({"key": "j_runner", "is_scaling": True},),
         hands_available=4,
     )
-    disabled = state_potential_breakdown(info, RewardConfig())
+    disabled = state_potential_breakdown(
+        info, RewardConfig(enable_score_build_potential=False)
+    )
     enabled_config = RewardConfig(
         enable_score_build_potential=True,
         potential_build_cap=0.3,
@@ -533,7 +539,7 @@ def test_ante1_chip_tempo_rewards_actual_blind_progress_and_scales() -> None:
     )
 
     assert components["ante1_chip_tempo"] == pytest.approx(
-        ANTE1_CHIP_TEMPO_BONUS * (90.0 / 400.0) * config.dense_reward_scale
+        config.ante1_chip_tempo_bonus * (90.0 / 400.0) * config.dense_reward_scale
     )
 
 
@@ -605,7 +611,9 @@ def test_ante1_chip_tempo_pays_same_progress_on_terminal_and_nonterminal(
         config,
     )
 
-    assert components["ante1_chip_tempo"] == pytest.approx(ANTE1_CHIP_TEMPO_BONUS * 0.5 * config.dense_reward_scale)
+    assert components["ante1_chip_tempo"] == pytest.approx(
+        config.ante1_chip_tempo_bonus * 0.5 * config.dense_reward_scale
+    )
 
 
 def test_ante1_chip_tempo_telescopes_through_score_reset() -> None:
@@ -644,4 +652,4 @@ def test_ante1_chip_tempo_caps_progress_and_negative_scores() -> None:
         config,
     )
 
-    assert components["ante1_chip_tempo"] == pytest.approx(ANTE1_CHIP_TEMPO_BONUS * config.dense_reward_scale)
+    assert components["ante1_chip_tempo"] == pytest.approx(config.ante1_chip_tempo_bonus * config.dense_reward_scale)

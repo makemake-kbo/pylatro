@@ -11,7 +11,7 @@ from pylatro_agent.action import ActionType, encode_action
 from pylatro_agent.constants import ActionRange, SubPhase
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.masks import compute_action_mask
-from pylatro_agent.reward import ANTE1_CHIP_TEMPO_BONUS, default_reward_components
+from pylatro_agent.reward import DEFAULT_REWARD_CONFIG, default_reward_components
 from pylatro_agent.subset_actions import consumable_subset_index, subset_index
 from pylatro_agent.tokenizer import Tokenizer
 from pylatro_agent.training import fast_generate
@@ -134,7 +134,10 @@ def test_fast_runner_mr_bones_score_reset_claws_back_ante1_potential() -> None:
         terminated=False,
         won=False,
     )
-    assert components["ante1_chip_tempo"] == pytest.approx(-ANTE1_CHIP_TEMPO_BONUS * prior_score / blind_target)
+    expected_tempo = (
+        -DEFAULT_REWARD_CONFIG.ante1_chip_tempo_bonus * prior_score / blind_target
+    )
+    assert components["ante1_chip_tempo"] == pytest.approx(expected_tempo)
 
 
 def test_fast_action_diagnostics_match_env_diagnostics() -> None:

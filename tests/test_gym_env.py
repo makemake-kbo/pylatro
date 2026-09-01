@@ -350,8 +350,10 @@ def test_env_play_subset_reports_progress(game_data, vocab):
     assert "counterfactual_call" not in info
 
 
-def test_default_play_skips_detailed_build_diagnostics_hot_path(game_data, vocab, monkeypatch):
+def _count_build_diagnostics_on_a_play(game_data, vocab, monkeypatch, *, potential):
+    """Play one hand and report how often the build evaluator ran."""
     import pylatro_agent.env as env_module
+    from pylatro_agent.reward import RewardConfig
 
     calls = 0
     original = env_module.build_step_diagnostics
@@ -362,7 +364,13 @@ def test_default_play_skips_detailed_build_diagnostics_hot_path(game_data, vocab
         return original(*args, **kwargs)
 
     monkeypatch.setattr(env_module, "build_step_diagnostics", counted)
-    env = BalatroEnv(seed=42, data=game_data, vocab=vocab, enable_teacher=False)
+    env = BalatroEnv(
+        seed=42,
+        data=game_data,
+        vocab=vocab,
+        enable_teacher=False,
+        reward_config=RewardConfig(enable_score_build_potential=potential),
+    )
     env.reset()
     env.step(ActionRange.BLIND_PLAY)
     play_action = _first_valid(
@@ -371,9 +379,32 @@ def test_default_play_skips_detailed_build_diagnostics_hot_path(game_data, vocab
         ActionRange.PLAY_SUBSET_END,
     )
     _, _, _, _, info = env.step(play_action)
+    return calls, info
+
+
+def test_play_skips_detailed_build_diagnostics_without_the_build_potential(
+    game_data, vocab, monkeypatch
+):
+    calls, info = _count_build_diagnostics_on_a_play(
+        game_data, vocab, monkeypatch, potential=False
+    )
 
     assert calls == 0
     assert "build_diagnostics_observed" not in info
+
+
+def test_build_potential_evaluates_the_build_on_every_play(game_data, vocab, monkeypatch):
+    """Potential shaping is a per-transition difference, so it cannot skip plays.
+
+    This is the throughput cost of the build family: roughly 3x slower env
+    stepping (about 90 -> 30 steps/s), paid on every step rather than only on
+    shop and pack events.
+    """
+    calls, _info = _count_build_diagnostics_on_a_play(
+        game_data, vocab, monkeypatch, potential=True
+    )
+
+    assert calls > 0
 
 
 def test_env_atomic_consumable_use_commits_in_one_step(game_data, vocab):

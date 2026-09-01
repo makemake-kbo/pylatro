@@ -281,7 +281,12 @@ class TestDataGeneration:
             num_workers=1,
         )
         elapsed = time.monotonic() - t0
-        assert elapsed < 30, f"Generation took {elapsed:.1f}s, expected < 30s"
+        # The build/readiness/survival potential is on by default and is a
+        # per-transition difference, so generation evaluates the build on every
+        # step rather than only on shop and pack events. That costs roughly
+        # 2.2x here (about 30s -> 66s); the bound guards against regressions
+        # beyond that, not against the potential itself.
+        assert elapsed < 120, f"Generation took {elapsed:.1f}s, expected < 120s"
         assert len(records) > 0
 
 

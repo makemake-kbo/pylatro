@@ -30,6 +30,11 @@ class RewardConfig:
 
     gamma: float = 0.997
     dense_reward_scale: float = 1.0
+    # Bounded Ante-1 score-pace shaping. At 0.40 with dense_reward_scale 1.0
+    # this term totalled ~1.25 per episode against a terminal win/loss signal
+    # of ~1.02, so more than half of an Ante-5 run's return was paid for how
+    # fast it cleared Ante 1. Keep it clearly subordinate to the outcome.
+    ante1_chip_tempo_bonus: float = 0.20
     consumable_reward_scale: float = 1.0
     strategic_event_reward_scale: float = 1.0
 
@@ -37,7 +42,12 @@ class RewardConfig:
     planet_unmatched_use_penalty_coeff: float = 0.0
     planet_unmatched_claim_penalty_coeff: float = 0.0
 
-    enable_score_build_potential: bool = False
+    # On by default. Off, the entire build family -- build quality, blind
+    # readiness, economy, survival safety, the Joker upgrade bonus and the
+    # danger reroll bonus -- pays exactly zero, leaving the policy no signal
+    # about the thing that actually kills it. An ad-hoc launch that forgets the
+    # flag should not silently lose that.
+    enable_score_build_potential: bool = True
     potential_w_blind: float = 0.5
     potential_w_ante: float = 2.0
     potential_win_ante: int = 8
@@ -69,7 +79,7 @@ class RewardConfig:
 # change. It participates in the checkpoint fingerprint.
 # v15: joker_move component removed - the harness orders jokers
 # deterministically (joker_layout.py) and MOVE_JOKER left the action space.
-REWARD_MODEL_VERSION = 15
+REWARD_MODEL_VERSION = 16
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -125,7 +135,6 @@ IDLE_PENALTY_CAP = 0.02
 
 # Ante 1 has little build scaling, so actual blind-score progress carries a
 # small, bounded potential. Its signed difference is segmentation invariant.
-ANTE1_CHIP_TEMPO_BONUS = 0.40
 
 PLANET_MATCH_BONUS = 0.5
 PLANET_PLAYED_HAND_BONUS = 0.25
@@ -670,10 +679,12 @@ def _apply_ante1_chip_tempo_reward(
     prev_info: dict,
     curr_info: dict,
     components: dict[str, float],
+    config: RewardConfig,
 ) -> None:
     """Apply a signed difference of the bounded ante-one score potential.
 
-    ``Phi(score) = bonus * clamp(score / blind_target, 0, 1)``. Both scores
+    ``Phi(score) = ante1_chip_tempo_bonus * clamp(score / blind_target, 0, 1)``.
+    Both scores
     use the *previous* blind target, so a play that completes the blind or the
     run is valued against the blind it actually faced. The signed difference
     telescopes within a blind: splitting a score across plays cannot create
@@ -693,7 +704,9 @@ def _apply_ante1_chip_tempo_reward(
     curr_score = float(curr_info.get("round_score", 0.0) or 0.0)
     prev_progress = min(max(prev_score / blind_target, 0.0), 1.0)
     curr_progress = min(max(curr_score / blind_target, 0.0), 1.0)
-    components["ante1_chip_tempo"] = ANTE1_CHIP_TEMPO_BONUS * (curr_progress - prev_progress)
+    components["ante1_chip_tempo"] = config.ante1_chip_tempo_bonus * (
+        curr_progress - prev_progress
+    )
 
 
 def default_reward_components(
@@ -722,7 +735,7 @@ def default_reward_components(
             win_ante=win_ante,
             stalled=bool(curr_info.get("stalled", False)),
         )
-        _apply_ante1_chip_tempo_reward(prev_info, curr_info, components)
+        _apply_ante1_chip_tempo_reward(prev_info, curr_info, components, active_config)
         _apply_strategic_event_rewards(
             curr_info,
             components,
@@ -734,7 +747,7 @@ def default_reward_components(
 
     components["potential_shaping"] = potential_shaping_reward(prev_info, curr_info, active_config)
     components["survival_shaping"] = survival_shaping_reward(prev_info, curr_info, active_config)
-    _apply_ante1_chip_tempo_reward(prev_info, curr_info, components)
+    _apply_ante1_chip_tempo_reward(prev_info, curr_info, components, active_config)
     _apply_strategic_event_rewards(
         curr_info,
         components,

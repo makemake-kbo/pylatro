@@ -22,6 +22,10 @@ check_cython_freshness()
 
 
 def main():
+    # Imported here rather than at module scope so `--help` stays cheap while
+    # still letting flag defaults track the reward model's own defaults.
+    from pylatro_agent.reward import RewardConfig
+
     parser = argparse.ArgumentParser(description="Train the Balatro agent")
     parser.add_argument(
         "phase",
@@ -464,12 +468,26 @@ def main():
     parser.add_argument(
         "--score-build-potential",
         dest="score_build_potential",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Enable contextual score/build potential shaping. "
+            "Contextual score/build potential shaping. "
             "It values draw-reliable hand plans, blind readiness, Tarot/economy "
             "conversion, Blue/Purple seals, score-improving shop options, Standard-pack "
-            "seal searches, and capped recognized-scaler value. Default: disabled."
+            "seal searches, and capped recognized-scaler value. Enabled by default; "
+            "--no-score-build-potential zeroes the whole build family, including the "
+            "survival-safety potential and the danger-reroll bonus."
+        ),
+    )
+    parser.add_argument(
+        "--ante1-chip-tempo-bonus",
+        type=float,
+        default=RewardConfig.ante1_chip_tempo_bonus,
+        help=(
+            "Weight of the bounded Ante-1 score-pace shaping term. Keep it well "
+            "below the terminal win/loss signal: at 0.40 with --dense-reward-scale 1.0 "
+            "it was the single largest term in an Ante-5 run's return "
+            f"(default: {RewardConfig.ante1_chip_tempo_bonus})."
         ),
     )
     parser.add_argument(
@@ -753,6 +771,7 @@ def main():
                     planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
                     planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
                     enable_score_build_potential=args.score_build_potential,
+                    ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
                     dense_reward_scale=args.dense_reward_scale,
                     consumable_reward_scale=args.consumable_reward_scale,
                     strategic_event_reward_scale=args.strategic_event_reward_scale,
@@ -855,6 +874,7 @@ def main():
                     planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
                     planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
                     enable_score_build_potential=args.score_build_potential,
+                    ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
                     dense_reward_scale=args.dense_reward_scale,
                     consumable_reward_scale=args.consumable_reward_scale,
                     strategic_event_reward_scale=args.strategic_event_reward_scale,
@@ -904,6 +924,7 @@ def main():
             planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
             planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
             enable_score_build_potential=args.score_build_potential,
+            ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
             dense_reward_scale=args.dense_reward_scale,
             consumable_reward_scale=args.consumable_reward_scale,
             strategic_event_reward_scale=args.strategic_event_reward_scale,

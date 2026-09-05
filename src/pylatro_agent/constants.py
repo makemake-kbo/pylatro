@@ -6,22 +6,8 @@ import math
 from enum import IntEnum, StrEnum
 
 from .joker_features import JOKER_FEATURE_NAMES, JOKER_FEATURE_START
-
-# Version of the tokenizer observation format. Bump whenever tokens,
-# token_types, scalars, hand_candidates, or action-mask layout changes in
-# a way that would break checkpoints trained against the previous shape.
-# Stamped into every checkpoint; `load_checkpoint` asserts it on read.
-# v9: MOVE_JOKER removed from the action space; the harness now orders
-# jokers deterministically before each play (see joker_layout.py).
-# v10: two scalars expose what that ordering did on the last play (which
-# objective it took and how much cash it banked), so harness-generated
-# money is attributable rather than unexplained variance in the policy's
-# own dollars.
-TOKENIZER_VERSION = 12
-# Tokenizer-v8 appends the configured victory Ante.  The critic needs both the
-# current and target Ante to mask impossible terminal outcomes and assign the
-# correct terminal utility to each outcome class.
-TOKENIZER_SEMANTICS = "v12_joker_state_archive"
+from .schema import TOKENIZER_SEMANTICS as TOKENIZER_SEMANTICS
+from .schema import TOKENIZER_VERSION as TOKENIZER_VERSION
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160

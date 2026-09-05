@@ -148,7 +148,7 @@ For a run that explicitly learns to seek and use Tarots and Planets, enable
 build-aware shaping, Planet alignment, and conservative exploration:
 
 ```bash
-# First create the matching v8 supervised source. Reward options are embedded
+# First create the matching current-schema supervised source. Reward options are embedded
 # in the checkpoint and must match PPO exactly.
 uv run python train.py supervised \
   --games 5000 --epochs 10 --device cuda --win-ante 4 --gamma 0.997 \
@@ -189,7 +189,7 @@ only with a dedicated synergy Joker; Full House is not a strategic target. The
 same bounded potential strongly values Blue/Purple seals, Tarot
 deck fixing and money generation, score-improving Joker replacements, and
 midgame Standard-pack searches when scoring is already safe. Planet shaping
-rewards only these viable plans. Tokenizer v8 also exposes a conservative,
+rewards only these viable plans. The tokenizer also exposes a conservative,
 boss-aware chance of clearing the immediate blind, five strategic opportunity
 probabilities, four suit-target utilities shared with contextual Tarot rewards,
 and the configured victory Ante. The critic embeds current and target
@@ -212,7 +212,7 @@ One categorical terminal-outcome NLL trains the hazard model; stalls are
 excluded as censored outcomes. Return Huber loss trains the residual against
 `return_target - terminal_value.detach()`, so return noise cannot distort
 outcome calibration. Complete-episode replay crosses rollout boundaries and
-updates only the hazard output layer. `win_prob` and `expected_score` remain
+updates only the private outcome projection and hazard output layer. `win_prob` and `expected_score` remain
 derived compatibility aliases for final-outcome mass and composed expected
 return. The compact TensorBoard
 shop/terminal metrics expose dying with money, weak full Joker slots, and
@@ -248,10 +248,12 @@ pass. Per-seed greedy results are unchanged by batching. A short idle horizon, a
 hard KL guard, and two-eval regression stop protect the pretrained policy. The
 regression stop writes and mirrors an exact full resume checkpoint before
 exiting, so a managed restart does not fall back to an older periodic save.
-All v7 and older checkpoints are intentionally unsupported, including
-policy-only initialization: begin with fresh v8 supervised training. Full v8
-PPO checkpoints still support exact strict resume of model, optimizer,
-counters, entropy controller, RNG, and schedule state.
+Strict loading and `--resume` require the current tokenizer schema (v12).
+`--actor-transfer` accepts compatible v11/current actors for a new Ante-8 run,
+with a fresh critic and optimizer; it is not a resume. Earlier schemas require
+a separate migration or fresh supervised training. Full current-schema PPO
+checkpoints restore model, optimizer, counters, entropy controller, RNG, and
+schedule state. In-flight environments restart; configured archives persist.
 
 Ante-1 TensorBoard reporting uses rollout-local counts. In particular,
 `terminal/loss_ante/1_fraction` remains conditional on non-stall losses for
@@ -267,14 +269,17 @@ generator's Joker-blind chip proxy, not exact counterfactual scoring. Existing
 chosen/best hand tags now rank only play actions admitted by the operative
 action mask.
 
-The production CUDA recipe is available as
+The shaped-reward CUDA baseline recipe is available as
 `scripts/run_ppo_v14_safe_tarot_seal_strategy.sh` (the filename is retained for
-deployment compatibility). It now requires a pinned v8 supervised checkpoint,
-uses the hazard/residual critic, and may resume only a strict v8
+deployment compatibility). It requires a pinned current-schema supervised checkpoint,
+uses the hazard/residual critic, and may resume only a current-schema
 `ppo_latest.pt`. Set `PYLATRO_SOURCE_SHA256` to the supervised checkpoint hash.
 The launcher keeps a logical batch of `320` while accumulating two physical
 microbatches of at most `160`, and binds checkpoints to the run UUID, source
-hash, and `pylatro-v8-conditional-survival-v1` recipe identity.
+hash, and the historical `pylatro-v8-conditional-survival-v1` recipe identity.
+That recipe name and its ownership-marker filename are stable deployment
+identifiers, not tokenizer versions. Use the [archive experiment guide](docs/archive_training.md)
+for the fixed-Ante-8 archive/milestone recipe.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 

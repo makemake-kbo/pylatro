@@ -14,7 +14,7 @@ run_name="${PYLATRO_RUN_NAME:-ppo_v8_conditional_survival}"
 checkpoint_dir="${workspace_root}/checkpoints/${run_name}"
 log_dir="${workspace_root}/runs/${run_name}"
 source_checkpoint="${PYLATRO_SOURCE_CHECKPOINT:-${workspace_root}/checkpoints/supervised/supervised_epoch10.pt}"
-source_sha256="${PYLATRO_SOURCE_SHA256:?set PYLATRO_SOURCE_SHA256 to the v8 supervised checkpoint SHA256}"
+source_sha256="${PYLATRO_SOURCE_SHA256:?set PYLATRO_SOURCE_SHA256 to the current-schema supervised checkpoint SHA256}"
 source_sha256="${source_sha256,,}"
 win_ante="${PYLATRO_WIN_ANTE:-4}"
 recipe_id="pylatro-v8-conditional-survival-v1"
@@ -29,7 +29,7 @@ exec > >(tee -a "${workspace_root}/training-v8-conditional-survival.log") 2>&1
 
 run_marker="${checkpoint_dir}/.pylatro-v8-run"
 if [[ ! -f "${run_marker}" ]] && compgen -G "${checkpoint_dir}/*.pt" >/dev/null; then
-  echo "Refusing to use an unmarked non-empty checkpoint directory; v8 requires a fresh or owned run." >&2
+  echo "Refusing to use an unmarked non-empty checkpoint directory; training requires a fresh or owned run." >&2
   exit 2
 fi
 
@@ -62,7 +62,7 @@ if [[ -f "${latest_checkpoint}" ]]; then
 fi
 
 if [[ "${PYLATRO_VALIDATE_ONLY:-0}" == "1" ]]; then
-  echo "v8 checkpoint provenance and ownership validation passed."
+  echo "Checkpoint provenance, current schema, and ownership validation passed."
   exit 0
 fi
 

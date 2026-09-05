@@ -20,7 +20,7 @@ from pylatro_agent.training.ppo import (
     _effective_reward_config,
     _entropy_alpha_loss,
     _extract_step_info_value,
-    _load_v8_checkpoint_strict,
+    _load_checkpoint_strict,
     _make_alpha_optimizer,
     _make_policy_optimizer,
     _mean_valid_action_type_count,
@@ -375,7 +375,7 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
     assert min(stats.approx_kls) >= 0.0
 
 
-def test_strict_v8_checkpoint_load_rejects_architecture_mismatch(tmp_path) -> None:
+def test_strict_checkpoint_load_rejects_architecture_mismatch(tmp_path) -> None:
     model = torch.nn.Linear(2, 2)
     ckpt = tmp_path / "bad.pt"
     torch.save(
@@ -391,7 +391,7 @@ def test_strict_v8_checkpoint_load_rejects_architecture_mismatch(tmp_path) -> No
     )
 
     with pytest.raises(RuntimeError, match="architecture-incompatible"):
-        _load_v8_checkpoint_strict(model, str(ckpt), torch.device("cpu"))
+        _load_checkpoint_strict(model, str(ckpt), torch.device("cpu"))
 
 
 def test_ppo_config_rejects_nonpositive_rollout_temperature() -> None:

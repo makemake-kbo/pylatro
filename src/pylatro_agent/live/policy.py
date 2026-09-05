@@ -110,8 +110,8 @@ class CheckpointPolicy:
             self.model.load_state_dict(state_dict, strict=True)
         except RuntimeError as exc:
             raise RuntimeError(
-                f"Checkpoint {checkpoint} does not exactly match the v8 architecture. "
-                "Fresh v8 supervised training is required."
+                f"Checkpoint {checkpoint} does not exactly match the configured architecture. "
+                "Use the source model dimensions or a matching checkpoint."
             ) from exc
         self.model.eval()
         logger.info(

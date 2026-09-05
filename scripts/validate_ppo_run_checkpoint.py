@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""Validate pinned v8 source provenance and strict v8 resume checkpoints."""
+"""Validate pinned source provenance and current-schema resume checkpoints."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import runpy
 import uuid
 from pathlib import Path
 
 import torch
 
-# Deliberately duplicated rather than imported: this validator runs before the
-# training venv is exercised, so it must not depend on the agent package. Keep
-# in lockstep with pylatro_agent.constants.TOKENIZER_VERSION.
-TOKENIZER_VERSION = 11
-TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
-V8_PPO_CONFIG = {
+# Read the same dependency-free metadata as training without importing the
+# agent package or requiring its engine/Cython dependencies during preflight.
+_schema = runpy.run_path(Path(__file__).resolve().parents[1] / "src" / "pylatro_agent" / "schema.py")
+TOKENIZER_VERSION = _schema["TOKENIZER_VERSION"]
+TOKENIZER_SEMANTICS = _schema["TOKENIZER_SEMANTICS"]
+RECIPE_PPO_CONFIG = {
     "mini_batch_size": 320,
     "micro_batch_size": 160,
     "lr": 3e-6,
@@ -122,13 +123,13 @@ def validate_resume(
     saved_config = payload.get("ppo_config_fields") or {}
     mismatches = [
         f"{key}: expected={expected!r}, actual={saved_config.get(key)!r}"
-        for key, expected in V8_PPO_CONFIG.items()
+        for key, expected in RECIPE_PPO_CONFIG.items()
         if saved_config.get(key) != expected
     ]
     if mismatches:
         raise RuntimeError("resume recipe mismatch: " + "; ".join(mismatches))
     if payload.get("ppo_transition_state") is not None:
-        raise RuntimeError("v8 resume checkpoint unexpectedly contains legacy transition state")
+        raise RuntimeError("resume checkpoint unexpectedly contains legacy transition state")
     expected_provenance = {
         "run_uuid": run_uuid,
         "source_sha256": source_sha256.lower(),

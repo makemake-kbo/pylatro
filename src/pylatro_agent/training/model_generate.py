@@ -37,7 +37,7 @@ from ..reward import (
 )
 from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..vocab import Vocab, build_vocab
-from .ppo import _extract_step_info_value, _load_v8_checkpoint_strict, _ObsBuffer
+from .ppo import _extract_step_info_value, _load_checkpoint_strict, _ObsBuffer
 
 if TYPE_CHECKING:
     import numpy as np
@@ -154,7 +154,7 @@ def generate_training_data_from_model(
     )
     device = torch.device(config.device)
     model = BalatroAgent(agent_config, vocab).to(device)
-    _load_v8_checkpoint_strict(
+    _load_checkpoint_strict(
         model,
         config.checkpoint_path,
         device,
@@ -442,7 +442,7 @@ def load_records(
         )
     if payload.get("tokenizer_semantics") != TOKENIZER_SEMANTICS:
         raise ValueError(
-            "Observation dataset does not use the v8 conditional-survival semantics; "
+            f"Observation dataset does not use the current semantics {TOKENIZER_SEMANTICS!r}; "
             "regenerate the dataset."
         )
     saved_fingerprint = payload.get("reward_fingerprint")

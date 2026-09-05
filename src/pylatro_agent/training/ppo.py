@@ -115,7 +115,7 @@ _ACTION_ID_TO_TYPE_INDEX = torch.tensor(
 
 
 def _load_state_dict_into_model(model: nn.Module, state_dict: dict, checkpoint_path: str) -> None:
-    """Strictly load v8 weights, allowing only a DataParallel prefix change."""
+    """Strictly load weights, allowing only a DataParallel prefix change."""
     has_module_prefix = any(k.startswith("module.") for k in state_dict)
     is_wrapped = isinstance(model, nn.DataParallel)
 
@@ -129,19 +129,19 @@ def _load_state_dict_into_model(model: nn.Module, state_dict: dict, checkpoint_p
     except RuntimeError as exc:
         raise RuntimeError(
             f"Checkpoint {checkpoint_path} is architecture-incompatible and does not "
-            "exactly match the v8 model. "
-            "Fresh v8 supervised training is required."
+            "exactly match the configured model. Use the source model dimensions "
+            "or a matching checkpoint."
         ) from exc
 
 
-def _load_v8_checkpoint_strict(
+def _load_checkpoint_strict(
     model: nn.Module,
     checkpoint_path: str,
     device: torch.device,
     *,
     active_reward_config: RewardConfig | None = None,
 ) -> None:
-    """Strictly load a checkpoint produced by the v8 architecture."""
+    """Load current-schema weights, optionally requiring matching rewards."""
     from ..checkpoint import load_checkpoint_payload
     from ..reward import reward_config_fingerprint
 
@@ -152,12 +152,14 @@ def _load_v8_checkpoint_strict(
         if saved_fingerprint and saved_fingerprint != active_fingerprint:
             raise RuntimeError(
                 f"Checkpoint {checkpoint_path} was trained with a different reward "
-                "fingerprint. Fresh v8 supervised training is required."
+                "fingerprint. Use matching reward settings, or --actor-transfer "
+                "to start a new Ante-8 PPO run with a fresh critic and optimizer."
             )
         if not saved_fingerprint:
             raise RuntimeError(
                 f"Checkpoint {checkpoint_path} has no reward fingerprint, so loading its "
-                "critic cannot be verified. Fresh v8 supervised training is required."
+                "critic cannot be verified. Use a matching checkpoint or "
+                "--actor-transfer to start a new Ante-8 PPO run with a fresh critic."
             )
     _load_state_dict_into_model(model, payload["state_dict"], checkpoint_path)
 
@@ -171,12 +173,11 @@ def load_actor_transfer(model: nn.Module, path: str, device: torch.device) -> No
     """
     import hashlib
 
-    from ..constants import TOKENIZER_SEMANTICS, TOKENIZER_VERSION
+    from ..schema import ACTOR_TRANSFER_SCHEMAS
 
     payload = torch.load(path, map_location=device, weights_only=False)
     version = payload.get("tokenizer_version")
-    expected_semantics = "v8_conditional_survival_critic" if version == 11 else TOKENIZER_SEMANTICS
-    if version not in (11, TOKENIZER_VERSION) or payload.get("tokenizer_semantics") != expected_semantics:
+    if version not in ACTOR_TRANSFER_SCHEMAS or payload.get("tokenizer_semantics") != ACTOR_TRANSFER_SCHEMAS[version]:
         raise ValueError("Actor transfer supports tokenizer v11 or the current schema; older schemas need migration")
     saved = {key.removeprefix("module."): value for key, value in payload["state_dict"].items()}
     base_model = _unwrap_model(model)
@@ -3648,11 +3649,6 @@ def train_ppo(
     if actor_transfer_path and (config.win_ante or 8) != 8:
         raise ValueError("Actor transfer initializes the fixed Ante-8 task")
 
-    if resume_path and pretrained_path:
-        raise ValueError(
-            "Pass either --pretrained or --resume, not both. --pretrained is "
-            "weights-only init; --resume restores optimizer/counters/RNG."
-        )
     if additional_updates is not None and not resume_path:
         raise ValueError("--additional-updates requires --resume PATH")
 
@@ -3685,7 +3681,7 @@ def train_ppo(
         )
         restore_rng_states(resume_state.get("rng_states", {}))
     elif pretrained_path:
-        _load_v8_checkpoint_strict(
+        _load_checkpoint_strict(
             model,
             pretrained_path,
             device,

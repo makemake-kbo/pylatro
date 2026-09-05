@@ -7,6 +7,9 @@ Full PPO checkpoints additionally carry optimizer state, update counters,
 entropy-controller state, RNG states, and config snapshots so that a run can
 be *resumed* (not just re-initialized). They are marked with
 ``checkpoint_format == "ppo_full"``.
+
+Load only trusted training artifacts: full checkpoints contain pickled Python
+and NumPy state. Version and provenance checks do not make unpickling safe.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import torch
 from torch import nn
 
 from .constants import TOKENIZER_SEMANTICS, TOKENIZER_VERSION
+from .schema import ACTOR_TRANSFER_SCHEMAS
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +60,10 @@ def load_checkpoint_payload(
 ) -> dict[str, Any]:
     """Load a checkpoint and verify its tokenizer version.
 
-    Loads with ``weights_only=True`` first (the safe default for arbitrary
-    checkpoints). Full PPO resume checkpoints carry optimizer/NumPy RNG state
+    Loads with ``weights_only=True`` first. Full PPO resume checkpoints carry optimizer/NumPy RNG state
     that is not weights-only-loadable, so on a weights-only failure we retry
-    with ``weights_only=False``. This is safe because such files are only ever
-    written by our own training code via :func:`save_ppo_checkpoint`.
+    with ``weights_only=False``. Because of that fallback, callers must trust
+    the file even when expecting a weights-only checkpoint.
     """
     try:
         blob = torch.load(path, map_location=device, weights_only=True)
@@ -76,30 +79,36 @@ def load_checkpoint_payload(
             f"Checkpoint {path} has no versioned payload. Raw state dicts are unsupported; "
             "retrain with the current tokenizer."
         )
-    saved_version = blob.get("tokenizer_version")
-    if saved_version != TOKENIZER_VERSION:
-        raise RuntimeError(
-            f"Checkpoint {path} was saved with tokenizer_version="
-            f"{saved_version!r}, but current TOKENIZER_VERSION="
-            f"{TOKENIZER_VERSION}. Observation layout and critic architecture "
-            "are versioned together, so a checkpoint from any other version is "
-            "not loadable; fresh supervised training is required."
-        )
-    _validate_tokenizer_semantics(blob, path)
+    _validate_checkpoint_schema(blob, path)
     return blob
 
 
-def _validate_tokenizer_semantics(
+def _validate_checkpoint_schema(
     blob: dict[str, Any],
     path: str | Path,
 ) -> None:
-    """Reject a shape-compatible checkpoint with different v8 semantics."""
+    """Share strict schema checks between weights-only loading and PPO resume."""
+    saved_version = blob.get("tokenizer_version")
+    if saved_version != TOKENIZER_VERSION:
+        if (saved_version in ACTOR_TRANSFER_SCHEMAS
+                and blob.get("tokenizer_semantics") == ACTOR_TRANSFER_SCHEMAS[saved_version]):
+            advice = (
+                "Use --actor-transfer to initialize a new Ante-8 PPO run from compatible "
+                "actor weights; this resets the critic, optimizer, and counters."
+            )
+        else:
+            advice = "Use a matching checkpoint or fresh supervised training."
+        raise RuntimeError(
+            f"Checkpoint {path} was saved with tokenizer_version={saved_version!r}, "
+            f"but current TOKENIZER_VERSION={TOKENIZER_VERSION}. "
+            f"Strict loading requires the current observation/action schema. {advice}"
+        )
     saved_semantics = blob.get("tokenizer_semantics")
     if saved_semantics != TOKENIZER_SEMANTICS:
         raise RuntimeError(
             f"Checkpoint {path} uses tokenizer_semantics={saved_semantics!r}, but the active "
-            f"semantics are {TOKENIZER_SEMANTICS!r}. Only checkpoints produced by "
-            "fresh supervised training are supported."
+            f"semantics are {TOKENIZER_SEMANTICS!r}. Use a matching checkpoint "
+            "or fresh supervised training."
         )
 
 
@@ -209,8 +218,8 @@ def is_ppo_full_checkpoint(path: str | Path, device: torch.device | str) -> bool
     """Return True if ``path`` points at a full PPO resume checkpoint.
 
     Full PPO checkpoints store optimizer state, RNG state, and config snapshots,
-    so they are loaded with ``weights_only=False``. They are only ever written by
-    :func:`save_ppo_checkpoint` (our own training code), so this is safe.
+    so they are loaded with ``weights_only=False``. Only inspect trusted files;
+    checking the format marker does not sandbox pickle execution.
     """
     blob = torch.load(path, map_location=device, weights_only=False)
     return isinstance(blob, dict) and blob.get("checkpoint_format") == PPO_CHECKPOINT_FORMAT
@@ -230,24 +239,15 @@ def load_ppo_resume_payload(
     the active RewardConfig and reward-model version.
 
     Loaded with ``weights_only=False`` because full PPO checkpoints carry
-    optimizer state, NumPy/Python RNG state, and config snapshots. These files
-    are only written by :func:`save_ppo_checkpoint` (our own training code).
+    optimizer state, NumPy/Python RNG state, and config snapshots. Only load
+    trusted training artifacts.
     """
     blob = torch.load(path, map_location=device, weights_only=False)
     if not (isinstance(blob, dict) and blob.get("checkpoint_format") == PPO_CHECKPOINT_FORMAT):
         raise RuntimeError(
             f"Checkpoint {path} is a weights-only checkpoint; use --pretrained or resume from a full PPO checkpoint."
         )
-    saved_version = blob.get("tokenizer_version")
-    if saved_version != TOKENIZER_VERSION:
-        raise RuntimeError(
-            f"Checkpoint {path} was saved with tokenizer_version="
-            f"{saved_version!r}, but current TOKENIZER_VERSION="
-            f"{TOKENIZER_VERSION}. Observation layout and critic architecture "
-            "are versioned together, so a checkpoint from any other version is "
-            "not loadable; fresh supervised training is required."
-        )
-    _validate_tokenizer_semantics(blob, path)
+    _validate_checkpoint_schema(blob, path)
 
     from .reward import REWARD_MODEL_VERSION, reward_config_fingerprint
 
@@ -255,8 +255,8 @@ def load_ppo_resume_payload(
     if not saved_fingerprint:
         raise RuntimeError(
             f"Checkpoint {path} has no reward fingerprint, so strict --resume cannot "
-            "verify that its critic targets match the active reward model. Fresh "
-            "v8 supervised training is required."
+            "verify that its critic targets match the active reward model. Use a "
+            "checkpoint with reward metadata or --actor-transfer for a new Ante-8 run."
         )
     active_fingerprint = reward_config_fingerprint(active_reward_config)
     if saved_fingerprint != active_fingerprint:
@@ -265,8 +265,8 @@ def load_ppo_resume_payload(
             f"(saved={str(saved_fingerprint)[:12]}, active={active_fingerprint[:12]}, "
             f"saved_version={blob.get('reward_model_version')!r}, "
             f"active_version={REWARD_MODEL_VERSION}). Strict --resume would restore "
-            "a critic and Adam state trained on different return targets. Fresh "
-            "v8 supervised training is required."
+            "a critic and Adam state trained on different return targets. Use the "
+            "original reward settings to resume, or --actor-transfer for a new Ante-8 run."
         )
 
     saved_fields = blob.get("ppo_config_fields") or {}
@@ -278,6 +278,7 @@ def load_ppo_resume_payload(
                 f"Checkpoint {path} win_ante mismatch "
                 f"(saved={saved_win_ante}, active={effective_active_win_ante}). "
                 "Strict --resume would restore critic and optimizer state from a "
-                "different terminal task. Fresh v8 supervised training is required."
+                "different terminal task. Use the original victory target to resume, "
+                "or --actor-transfer for a new Ante-8 run."
             )
     return blob

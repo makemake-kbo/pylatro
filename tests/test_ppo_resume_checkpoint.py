@@ -1,4 +1,4 @@
-"""Strict v8 checkpoint and resume coverage."""
+"""Current-schema checkpoint loading, transfer guidance, and resume coverage."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo import (
     PPOConfig,
     _apply_lr_override,
-    _load_v8_checkpoint_strict,
+    _load_checkpoint_strict,
     _make_policy_optimizer,
     _optimizer_to,
     _restore_policy_optimizer_state,
@@ -58,7 +58,7 @@ def test_raw_state_dict_checkpoint_is_rejected(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("old_version", [1, 5, 7])
-def test_every_pre_v8_checkpoint_requires_fresh_training(tmp_path, old_version: int) -> None:
+def test_unsupported_checkpoint_requires_fresh_training(tmp_path, old_version: int) -> None:
     path = tmp_path / f"v{old_version}.pt"
     torch.save(
         {"tokenizer_version": old_version, "state_dict": _tiny_model().state_dict()},
@@ -68,10 +68,10 @@ def test_every_pre_v8_checkpoint_requires_fresh_training(tmp_path, old_version: 
     with pytest.raises(RuntimeError, match="fresh supervised training"):
         ckpt.load_checkpoint_payload(path, "cpu")
     with pytest.raises(RuntimeError, match="fresh supervised training"):
-        _load_v8_checkpoint_strict(_tiny_model(), str(path), torch.device("cpu"))
+        _load_checkpoint_strict(_tiny_model(), str(path), torch.device("cpu"))
 
 
-def test_v8_weights_checkpoint_round_trips_strictly(tmp_path) -> None:
+def test_current_weights_checkpoint_round_trips_strictly(tmp_path) -> None:
     source = _tiny_model()
     path = tmp_path / "weights.pt"
     ckpt.save_checkpoint(source, path)
@@ -80,13 +80,13 @@ def test_v8_weights_checkpoint_round_trips_strictly(tmp_path) -> None:
         target.weight.zero_()
         target.bias.zero_()
 
-    _load_v8_checkpoint_strict(target, str(path), torch.device("cpu"))
+    _load_checkpoint_strict(target, str(path), torch.device("cpu"))
 
     for actual, expected in zip(target.parameters(), source.parameters(), strict=True):
         torch.testing.assert_close(actual, expected)
 
 
-def test_v8_checkpoint_without_semantics_requires_fresh_training(tmp_path) -> None:
+def test_checkpoint_without_semantics_requires_fresh_training(tmp_path) -> None:
     path = tmp_path / "missing-semantics.pt"
     torch.save(
         {"tokenizer_version": TOKENIZER_VERSION, "state_dict": _tiny_model().state_dict()},
@@ -97,14 +97,14 @@ def test_v8_checkpoint_without_semantics_requires_fresh_training(tmp_path) -> No
         ckpt.load_checkpoint_payload(path, "cpu")
 
 
-def test_v8_architecture_mismatch_is_not_partially_loaded(tmp_path) -> None:
+def test_architecture_mismatch_is_not_partially_loaded(tmp_path) -> None:
     path = tmp_path / "bad-shape.pt"
     ckpt.save_checkpoint(torch.nn.Linear(4, 3), path)
     with pytest.raises(RuntimeError, match="architecture-incompatible"):
-        _load_v8_checkpoint_strict(_tiny_model(), str(path), torch.device("cpu"))
+        _load_checkpoint_strict(_tiny_model(), str(path), torch.device("cpu"))
 
 
-def test_full_v8_checkpoint_round_trips_resume_state(tmp_path) -> None:
+def test_full_checkpoint_round_trips_resume_state(tmp_path) -> None:
     path = tmp_path / "full.pt"
     model, optimizer = _save_full(path)
 
@@ -138,6 +138,20 @@ def test_full_v8_checkpoint_round_trips_resume_state(tmp_path) -> None:
     assert restored_optimizer.state_dict()["state"].keys() == optimizer.state_dict()["state"].keys()
     for actual, expected in zip(restored_model.parameters(), model.parameters(), strict=True):
         torch.testing.assert_close(actual, expected)
+
+
+def test_compatible_old_schema_requires_explicit_actor_transfer(tmp_path) -> None:
+    path = tmp_path / "v11.pt"
+    _save_full(path)
+    payload = torch.load(path, weights_only=False)
+    payload["tokenizer_version"] = 11
+    payload["tokenizer_semantics"] = "v8_conditional_survival_critic"
+    torch.save(payload, path)
+
+    with pytest.raises(RuntimeError, match="--actor-transfer"):
+        ckpt.load_checkpoint_payload(path, "cpu")
+    with pytest.raises(RuntimeError, match="--actor-transfer"):
+        ckpt.load_ppo_resume_payload(path, "cpu", active_reward_config=RewardConfig())
 
 
 def test_full_resume_rejects_reward_and_target_mismatch(tmp_path) -> None:

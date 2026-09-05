@@ -104,16 +104,19 @@ class ValueHead(nn.Module):
     return path that GAE consumes.
     """
 
-    def __init__(self, d_model: int = 256, max_ante: int = DEFAULT_MAX_ANTES):
+    def __init__(self, d_model: int = 256, max_ante: int = DEFAULT_MAX_ANTES, *, win_only: bool = False):
         super().__init__()
         self.max_ante = int(max_ante)
         self.pool_proj = nn.Sequential(nn.Linear(d_model, d_model), nn.GELU())
         self.outcome_proj = nn.Sequential(nn.Linear(d_model, d_model), nn.GELU())
         self.ante_survival = nn.Linear(d_model, self.max_ante)
         self.return_residual = nn.Linear(d_model, 1)
+        utilities = _terminal_utility_table(self.max_ante)
+        if win_only:
+            utilities[:, :-1] = 0.0
         self.register_buffer(
             "_terminal_utilities",
-            _terminal_utility_table(self.max_ante),
+            utilities,
             persistent=False,
         )
 

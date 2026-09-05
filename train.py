@@ -72,6 +72,22 @@ def main():
     )
     parser.add_argument("--steps", type=int, default=1_000_000, help="PPO total timesteps (default: 1000000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
+    parser.add_argument("--archive-return", action="store_true",
+                        help="Train from a mix of fresh runs and archived states")
+    parser.add_argument("--archive-return-probability", type=float, default=0.5)
+    parser.add_argument("--archive-min-ante", type=int, default=4)
+    parser.add_argument("--archive-max-ante", type=int, default=8)
+    parser.add_argument("--archive-capacity-per-bucket", type=int, default=8,
+                        help="Snapshot capacity per Ante/phase per environment")
+    parser.add_argument("--actor-transfer", type=str, default=None,
+                        help="Transfer a compatible v11/current actor; reset critic, optimizer, and counters")
+    parser.add_argument("--reward-objective", choices=["shaped", "milestone"], default=None,
+                        help="Default: milestone with --archive-return, otherwise shaped")
+    parser.add_argument("--milestone-reward-budget", type=float, default=1.0,
+                        help="Total first-clear reward budget across intermediate bosses")
+    parser.add_argument("--milestone-final-scale", type=float, default=0.0)
+    parser.add_argument("--milestone-decay-fraction", type=float, default=0.8,
+                        help="Fraction of the saved training horizon used to anneal milestone rewards")
     parser.add_argument(
         "--rollout-length",
         type=int,
@@ -708,6 +724,13 @@ def main():
         help="Per-env stall limit during data generation (default: 2000)",
     )
     args = parser.parse_args()
+    reward_objective = args.reward_objective or ("milestone" if args.archive_return else "shaped")
+    if (args.archive_return or reward_objective == "milestone") and args.phase != "ppo":
+        parser.error("Archive/milestone training is currently a PPO experiment; initialize with --actor-transfer")
+    if (args.archive_return or reward_objective == "milestone") and args.win_ante not in (None, 8):
+        parser.error("Archive/milestone training requires --win-ante 8")
+    if args.actor_transfer and args.phase != "ppo":
+        parser.error("--actor-transfer is a PPO initialization option")
     from pylatro_agent.survival import validate_critic_win_ante
 
     if args.win_ante is not None:
@@ -781,11 +804,12 @@ def main():
         )
 
     elif args.phase == "ppo":
+        from pylatro_agent.archive import ArchiveConfig
         from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.ppo import PPOConfig, train_ppo
 
-        if args.resume and args.pretrained:
-            parser.error("Pass either --pretrained or --resume, not both.")
+        if sum(bool(path) for path in (args.resume, args.pretrained, args.actor_transfer)) > 1:
+            parser.error("Choose one of --pretrained, --resume, or --actor-transfer.")
         if args.additional_updates is not None and not args.resume:
             parser.error("--additional-updates requires --resume PATH.")
         if args.reset_schedules and not args.resume:
@@ -800,6 +824,14 @@ def main():
         ppo_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.1
         train_ppo(
             PPOConfig(
+                archive_config=ArchiveConfig(
+                    return_probability=args.archive_return_probability,
+                    min_ante=args.archive_min_ante,
+                    max_ante=args.archive_max_ante,
+                    capacity_per_bucket=args.archive_capacity_per_bucket,
+                ) if args.archive_return else None,
+                milestone_final_scale=args.milestone_final_scale,
+                milestone_decay_fraction=args.milestone_decay_fraction,
                 seed=args.seed,
                 num_envs=args.envs,
                 rollout_length=args.rollout_length,
@@ -868,6 +900,8 @@ def main():
                 advantage_clip_sigma=args.advantage_clip_sigma,
                 counterfactual_diagnostic_interval=args.counterfactual_diagnostic_interval,
                 reward_config=RewardConfig(
+                    objective=reward_objective,
+                    milestone_reward_budget=args.milestone_reward_budget,
                     gamma=args.gamma,
                     potential_win_ante=args.win_ante or 8,
                     enable_planet_match_rewards=args.planet_match_shaping,
@@ -883,6 +917,7 @@ def main():
             agent_config=agent_config,
             pretrained_path=args.pretrained,
             resume_path=args.resume,
+            actor_transfer_path=args.actor_transfer,
             additional_updates=args.additional_updates,
         )
 

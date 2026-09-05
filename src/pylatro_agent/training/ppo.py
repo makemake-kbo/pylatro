@@ -8,7 +8,7 @@ import random
 import shutil
 import uuid
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from functools import partial
 from pathlib import Path
 
@@ -24,6 +24,7 @@ from pylatro import GameData, load_game_data
 from ..action import ActionType, decode_action
 from ..action_grammar import ActionGrammarDistribution, ActionGrammarOutput
 from ..agent import AgentConfig, BalatroAgent
+from ..archive import ArchiveConfig
 from ..constants import (
     HISTORY_EVENT_DIM,
     HISTORY_FEATURE_DIM,
@@ -161,6 +162,61 @@ def _load_v8_checkpoint_strict(
     _load_state_dict_into_model(model, payload["state_dict"], checkpoint_path)
 
 
+def load_actor_transfer(model: nn.Module, path: str, device: torch.device) -> None:
+    """Explicit weights-only migration; never restore old reward/optimizer state.
+
+    v12 appends Joker features, retaining the first 12 token fields. Its new
+    zero adapter makes compatible v11 actor transfer behavior-preserving.
+    Older observation/action schemas require a separate migration.
+    """
+    import hashlib
+
+    from ..constants import TOKENIZER_SEMANTICS, TOKENIZER_VERSION
+
+    payload = torch.load(path, map_location=device, weights_only=False)
+    version = payload.get("tokenizer_version")
+    expected_semantics = "v8_conditional_survival_critic" if version == 11 else TOKENIZER_SEMANTICS
+    if version not in (11, TOKENIZER_VERSION) or payload.get("tokenizer_semantics") != expected_semantics:
+        raise ValueError("Actor transfer supports tokenizer v11 or the current schema; older schemas need migration")
+    saved = {key.removeprefix("module."): value for key, value in payload["state_dict"].items()}
+    base_model = _unwrap_model(model)
+    current = base_model.state_dict()
+    # Discover the module's registered path rather than assuming a naming alias.
+    adapters = {key for key in current if key.endswith("state_proj.weight") and "joker" in key}
+    for key, value in current.items():
+        if key.startswith("value_head."):
+            continue
+        if key not in saved:
+            if version == 11 and key in adapters:
+                current[key] = torch.zeros_like(value)
+                continue
+            raise ValueError(f"Actor transfer missing {key}; architecture must match the source")
+        if value.shape != saved[key].shape:
+            raise ValueError(f"Actor transfer shape mismatch for {key}; use source model dimensions")
+        current[key] = saved[key]
+    extra_keys = set(saved) - set(current)
+    if any(not key.startswith("value_head.") for key in extra_keys):
+        raise ValueError(f"Actor transfer contains incompatible actor parameters: {sorted(extra_keys)}")
+    saved_goal = int((payload.get("ppo_config_fields") or {}).get("win_ante")
+                     or (payload.get("reward_config") or {}).get("potential_win_ante") or 8)
+    if not 1 <= saved_goal <= 8:
+        raise ValueError("Actor transfer requires a source target Ante between 1 and 8")
+    if saved_goal != 8:
+        for key, value in current.items():
+            if key.endswith("win_ante_emb.weight"):
+                value = value.clone()
+                value[8] = value[saved_goal]
+                current[key] = value
+    base_model.load_state_dict(current, strict=True)
+    with open(path, "rb") as source:
+        digest = hashlib.file_digest(source, "sha256").hexdigest()
+    base_model._actor_transfer_metadata = {
+        "path": str(path), "sha256": digest, "tokenizer_version": version,
+        "source_win_ante": saved_goal, "critic_reset": True,
+    }
+    logger.info("Transferred actor from %s (tokenizer %s); critic and optimizer start fresh", path, version)
+
+
 def _optimizer_to(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
     """Move optimizer state tensors to ``device`` after ``load_state_dict``."""
     for state in optimizer.state.values():
@@ -209,6 +265,8 @@ def _make_env(
     win_ante: int | None,
     reward_config: RewardConfig | None = None,
     counterfactual_diagnostic_interval: int = 0,
+    archive_config: ArchiveConfig | None = None,
+    archive_index: int = 0,
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
 
@@ -223,6 +281,8 @@ def _make_env(
             reward_config=reward_config,
             enable_teacher=False,
             counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
+            archive_config=archive_config,
+            archive_index=archive_index,
         )
 
     return _thunk
@@ -239,6 +299,7 @@ def _make_vectorized_envs(
     reward_config: RewardConfig | None = None,
     env_seed_base: int = 0,
     counterfactual_diagnostic_interval: int = 0,
+    archive_config: ArchiveConfig | None = None,
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
@@ -253,6 +314,8 @@ def _make_vectorized_envs(
             win_ante,
             reward_config,
             counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
+            archive_config=archive_config,
+            archive_index=i,
         )
         for i in range(num_envs)
     ]
@@ -265,6 +328,9 @@ def _make_vectorized_envs(
 
 @dataclass
 class PPOConfig:
+    archive_config: ArchiveConfig | None = None
+    milestone_final_scale: float = 0.0
+    milestone_decay_fraction: float = 0.8
     num_envs: int = 32
     seed: int = 0
     rollout_length: int = 256
@@ -1446,6 +1512,13 @@ def _seed_training_rngs(seed: int) -> None:
 def _validate_ppo_config(config: PPOConfig) -> None:
     """Raise ValueError for invalid combinations; warn on risky ones."""
     validate_critic_win_ante(config.win_ante if config.win_ante is not None else 8)
+    if config.archive_config is not None and (config.win_ante or 8) != 8:
+        raise ValueError("Archive training requires win_ante=8")
+    if (config.reward_config is not None and config.reward_config.objective == "milestone"
+            and (config.win_ante or 8) != 8):
+        raise ValueError("Milestone rewards require win_ante=8")
+    if not 0 <= config.milestone_final_scale <= 1 or not 0 < config.milestone_decay_fraction <= 1:
+        raise ValueError("Invalid milestone annealing schedule")
     if not 0 <= config.seed <= 2**32 - 1:
         raise ValueError("seed must be between 0 and 2**32 - 1")
     if config.log_interval <= 0:
@@ -2491,6 +2564,7 @@ def _save_checkpoint(
     config: "PPOConfig | None" = None,
     filename: str | None = None,
     extra: dict | None = None,
+    vector_env=None,
 ) -> Path:
     """Persist a full PPO resume checkpoint and return its path."""
     from ..checkpoint import save_ppo_checkpoint
@@ -2524,10 +2598,20 @@ def _save_checkpoint(
             "target_entropy",
             "entropy_ema_beta",
             "adaptive_entropy",
+            "milestone_final_scale",
+            "milestone_decay_fraction",
         ):
             config_fields[key] = getattr(config, key)
+        config_fields["archive_config"] = asdict(config.archive_config) if config.archive_config else None
     active_reward_config = _effective_reward_config(config) if config is not None else DEFAULT_REWARD_CONFIG
     checkpoint_extra = dict(extra or {})
+    transfer_metadata = getattr(_unwrap_model(model), "_actor_transfer_metadata", None)
+    if transfer_metadata is not None:
+        checkpoint_extra["actor_transfer"] = transfer_metadata
+    if config is not None and config.archive_config is not None:
+        if vector_env is None:
+            raise ValueError("Archive checkpoints require the training environments")
+        checkpoint_extra["archive_states"] = list(vector_env.call("archive_state_dict"))
     checkpoint_extra["ppo_active_lr"] = float(optimizer.param_groups[0]["lr"])
     if config is not None:
         provenance = _ppo_run_provenance(config)
@@ -2652,6 +2736,13 @@ def _extract_step_count(info_dict: dict, key: str, env_idx: int, *, done: bool) 
 
 def _extract_step_flag(info_dict: dict, key: str, env_idx: int, *, done: bool) -> bool:
     return bool(_extract_step_info_value(info_dict, key, env_idx, done=done, default=False))
+
+
+def resolve_milestone_scale(config: PPOConfig, total_steps: int, schedule_total_steps: int) -> float:
+    """Anneal a bounded auxiliary objective on the checkpointed step horizon."""
+    duration = max(1.0, schedule_total_steps * config.milestone_decay_fraction)
+    fraction = min(max(total_steps / duration, 0.0), 1.0)
+    return 1.0 + fraction * (config.milestone_final_scale - 1.0)
 
 
 def _effective_reward_config(config: PPOConfig) -> RewardConfig:
@@ -3517,6 +3608,7 @@ def train_ppo(
     resume_path: str | None = None,
     additional_updates: int | None = None,
     data: GameData | None = None,
+    actor_transfer_path: str | None = None,
 ) -> BalatroAgent:
     """Run PPO training with vectorized environments.
 
@@ -3545,10 +3637,16 @@ def train_ppo(
     # exploration alongside the candidate head (Phase 1.2). The model reads
     # this from its config at every action_distribution() call.
     agent_config.hand_ar_mixture_eps = config.hand_ar_mixture_eps
+    agent_config.win_only_value = config.reward_config.objective == "milestone"
 
     device = torch.device(config.device)
     use_pin_memory = device.type == "cuda"
     model = BalatroAgent(agent_config, vocab).to(device)
+
+    if sum(bool(path) for path in (resume_path, pretrained_path, actor_transfer_path)) > 1:
+        raise ValueError("Choose one of resume, pretrained, or actor transfer")
+    if actor_transfer_path and (config.win_ante or 8) != 8:
+        raise ValueError("Actor transfer initializes the fixed Ante-8 task")
 
     if resume_path and pretrained_path:
         raise ValueError(
@@ -3570,6 +3668,15 @@ def train_ppo(
             active_win_ante=config.win_ante,
         )
         _load_state_dict_into_model(model, resume_state["state_dict"], resume_path)
+        if resume_state.get("actor_transfer"):
+            model._actor_transfer_metadata = resume_state["actor_transfer"]
+        saved_config = resume_state.get("ppo_config_fields") or {}
+        archive_config = asdict(config.archive_config) if config.archive_config else None
+        if saved_config.get("archive_config") != archive_config:
+            raise ValueError("Archive configuration changed on resume; use the saved archive settings")
+        for key in ("milestone_final_scale", "milestone_decay_fraction"):
+            if key in saved_config and saved_config[key] != getattr(config, key):
+                raise ValueError(f"{key} changed on resume; keep the saved reward schedule")
         logger.info(
             "Resumed model weights from %s (update_count=%d, total_steps=%d)",
             resume_path,
@@ -3585,6 +3692,8 @@ def train_ppo(
             active_reward_config=config.reward_config,
         )
         logger.info("Loaded pretrained model from %s", pretrained_path)
+    elif actor_transfer_path:
+        load_actor_transfer(model, actor_transfer_path, device)
     _validate_resume_provenance(config, resume_state)
     if config.danger_rollout_temperature is None:
         logger.info(
@@ -3668,7 +3777,14 @@ def train_ppo(
         reward_config=config.reward_config,
         env_seed_base=env_seed_base,
         counterfactual_diagnostic_interval=config.counterfactual_diagnostic_interval,
+        archive_config=config.archive_config,
     )
+    if resume_state is not None and config.archive_config is not None:
+        archive_states = resume_state.get("archive_states")
+        if not isinstance(archive_states, list) or len(archive_states) != config.num_envs:
+            vec_env.close()
+            raise ValueError("Archive resume requires saved archives and the original number of environments")
+        vec_env.call("load_archive_states", archive_states)
     obs_dict, _reset_info = vec_env.reset()
     # Pre-allocate obs tensors for batched inference
     obs_buf = _ObsBuffer(config.num_envs, device)
@@ -3817,6 +3933,8 @@ def train_ppo(
     episode_rewards: list[float] = []
     episode_lengths: list[int] = []
     episode_wins: list[bool] = []
+    origin_wins: dict[str, list[float]] = {"fresh": [], "archive": []}
+    continuation_survival: dict[int, list[float]] = {ante: [] for ante in range(1, 9)}
     episode_stalls: list[bool] = []
     episode_antes: list[int] = []
     episode_tarot_uses: list[int] = []
@@ -3880,6 +3998,10 @@ def train_ppo(
 
     try:
         while update_count < planned_updates:
+            if config.reward_config.objective == "milestone":
+                milestone_scale = resolve_milestone_scale(config, total_steps, schedule_total_steps)
+                vec_env.call("set_milestone_scale", milestone_scale)
+                writer.add_scalar("curriculum/milestone_scale", milestone_scale, update_count + 1)
             buffer = RolloutBuffer(
                 num_envs=config.num_envs,
                 rollout_length=config.rollout_length,
@@ -4116,8 +4238,14 @@ def train_ppo(
                     ep_reward = float(env_ep_reward[i])
                     ep_length = int(env_ep_length[i])
                     ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
+                    from_archive = bool(_extract_step_info_value(infos, "archive_start", i, done=True, default=False))
+                    start_ante = int(_extract_step_info_value(infos, "start_ante", i, done=True, default=1))
+                    origin_wins["archive" if from_archive else "fresh"].append(float(ep_won))
                     ep_stalled = bool(stalled_flags[i])
                     ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+                    if not ep_stalled:
+                        for ante in range(start_ante, min(ep_ante, 8) + 1):
+                            continuation_survival[ante].append(float(ep_won or ep_ante > ante))
                     ep_terminal_blind = str(
                         _extract_step_info_value(
                             infos,
@@ -4748,12 +4876,24 @@ def train_ppo(
                 recent_stall_rate = float("nan")
 
             should_checkpoint = update_count % config.checkpoint_interval == 0 or update_count == planned_updates
+            for origin, wins in origin_wins.items():
+                if wins:
+                    writer.add_scalar(f"curriculum/{origin}_win_rate", float(np.mean(wins[-100:])), update_count)
+                    writer.add_scalar(f"curriculum/{origin}_episodes", len(wins), update_count)
+            for ante, outcomes in continuation_survival.items():
+                if outcomes:
+                    writer.add_scalar(f"curriculum/survive_ante{ante}", float(np.mean(outcomes[-100:])), update_count)
+            if config.archive_config is not None:
+                metrics = vec_env.call("archive_metrics")
+                for key in metrics[0]:
+                    writer.add_scalar(f"archive/{key}", sum(row[key] for row in metrics), update_count)
             if should_checkpoint:
                 # Make sure all preceding scalars
                 # land on disk before the checkpoint save, which is itself
                 # a long sync that could crash if memory is tight.
                 writer.flush()
                 checkpoint_path = _save_checkpoint(
+                    vector_env=vec_env,
                     model=model,
                     optimizer=optimizer,
                     save_path=save_path,
@@ -4828,6 +4968,7 @@ def train_ppo(
                     best_eval_win_rate = win_rate
                     best_eval_update = update_count
                     best_path = _save_checkpoint(
+                        vector_env=vec_env,
                         model=model,
                         optimizer=optimizer,
                         save_path=save_path,
@@ -4873,6 +5014,7 @@ def train_ppo(
                     early_stop_requested = True
                     writer.flush()
                     regression_stop_path = _save_checkpoint(
+                        vector_env=vec_env,
                         model=model,
                         optimizer=optimizer,
                         save_path=save_path,

@@ -390,9 +390,9 @@ def test_head_produces_candidate_logits():
     model = BalatroAgent(AgentConfig(d_model=64, n_layers=2), v)
 
     batch = 2
-    tokens = torch.zeros(batch, 160, 13, dtype=torch.long)
-    token_types = torch.full((batch, 160), 10, dtype=torch.long)
-    attn = torch.ones(batch, 160, dtype=torch.long)
+    tokens = torch.zeros(batch, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long)
+    token_types = torch.full((batch, MAX_SEQ_LEN), 10, dtype=torch.long)
+    attn = torch.ones(batch, MAX_SEQ_LEN, dtype=torch.long)
     scalars = torch.zeros(batch, SCALAR_DIM)
     scalars[:, 2] = 1.0
     scalars[:, 22] = 8.0

@@ -107,7 +107,8 @@ def test_default_config_is_the_single_potential_reward() -> None:
     assert config.strategic_event_reward_scale == 1.0
     assert config.potential_w_tarot_option == 0.0
     assert config.potential_w_planet_option == 0.0
-    assert REWARD_MODEL_VERSION == 16
+    assert REWARD_MODEL_VERSION == 17
+    assert config.objective == "shaped"
 
 
 def test_attributable_strategic_event_rewards_are_bounded_and_dense_scale_independent() -> None:

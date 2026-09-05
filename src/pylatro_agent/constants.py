@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from enum import IntEnum, StrEnum
 
+from .joker_features import JOKER_FEATURE_NAMES, JOKER_FEATURE_START
+
 # Version of the tokenizer observation format. Bump whenever tokens,
 # token_types, scalars, hand_candidates, or action-mask layout changes in
 # a way that would break checkpoints trained against the previous shape.
@@ -15,15 +17,15 @@ from enum import IntEnum, StrEnum
 # objective it took and how much cash it banked), so harness-generated
 # money is attributable rather than unexplained variance in the policy's
 # own dollars.
-TOKENIZER_VERSION = 11
+TOKENIZER_VERSION = 12
 # Tokenizer-v8 appends the configured victory Ante.  The critic needs both the
 # current and target Ante to mask impossible terminal outcomes and assign the
 # correct terminal utility to each outcome class.
-TOKENIZER_SEMANTICS = "v8_conditional_survival_critic"
+TOKENIZER_SEMANTICS = "v12_joker_state_archive"
 
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
-TOKEN_DIM = 12
+TOKEN_DIM = JOKER_FEATURE_START + len(JOKER_FEATURE_NAMES)
 SCALAR_DIM = 25  # v7's 22, the configured win Ante, plus 2 harness-ordering features
 CURRENT_ANTE_SCALAR_INDEX = 2
 WIN_ANTE_SCALAR_INDEX = 22

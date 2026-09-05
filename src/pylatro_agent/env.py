@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, ClassVar
 
 import gymnasium
@@ -12,6 +13,7 @@ from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
+from .archive import ARCHIVE_VERSION, ArchiveConfig, StateArchive, pack_snapshot, unpack_snapshot
 from .constants import (
     CURRENT_ANTE_SCALAR_INDEX,
     HISTORY_EVENT_DIM,
@@ -26,6 +28,7 @@ from .constants import (
     NUM_ACTIONS,
     SCALAR_DIM,
     TOKEN_DIM,
+    TOKENIZER_VERSION,
     WIN_ANTE_SCALAR_INDEX,
     SubPhase,
 )
@@ -78,6 +81,8 @@ class BalatroEnv(gymnasium.Env):
         win_ante: int | None = None,
         enable_teacher: bool = True,
         counterfactual_diagnostic_interval: int = 0,
+        archive_config: ArchiveConfig | None = None,
+        archive_index: int = 0,
     ):
         super().__init__()
         self._data = data or load_game_data()
@@ -96,6 +101,14 @@ class BalatroEnv(gymnasium.Env):
         self._reward_config = reward_config or DEFAULT_REWARD_CONFIG
         self._seed = seed
         self._initial_seed_pending = seed is not None
+        if archive_config is not None and (win_ante or 8) != 8:
+            raise ValueError("Archive training always targets Ante 8")
+        self._archive = StateArchive(archive_config, seed=seed) if archive_config is not None else None
+        self._archive_index = archive_index
+        self._archive_start = False
+        self._start_ante = 1
+        self._cleared_boss_antes: set[int] = set()
+        self._milestone_scale = 1.0
         if counterfactual_diagnostic_interval < 0:
             raise ValueError("counterfactual_diagnostic_interval must be non-negative")
         self._counterfactual_diagnostic_interval = int(counterfactual_diagnostic_interval)
@@ -130,7 +143,7 @@ class BalatroEnv(gymnasium.Env):
         # Gymnasium spaces
         self.observation_space = spaces.Dict(
             {
-                "tokens": spaces.Box(0, 32767, (MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
+                "tokens": spaces.Box(-32768, 32767, (MAX_SEQ_LEN, TOKEN_DIM), dtype=np.int16),
                 "token_types": spaces.Box(0, 11, (MAX_SEQ_LEN,), dtype=np.int8),
                 "scalars": spaces.Box(-np.inf, np.inf, (SCALAR_DIM,), dtype=np.float32),
                 "attention_mask": spaces.Box(0, 1, (MAX_SEQ_LEN,), dtype=np.int8),
@@ -171,6 +184,17 @@ class BalatroEnv(gymnasium.Env):
         return self._controller.state if self._controller else None
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[dict, dict]:
+        # Explicit seeds mean reproducible fresh evaluation. Gym autoresets
+        # have no seed; only those may draw a training continuation.
+        snapshot = self._archive.choose(
+            force_fresh=seed is not None or bool((options or {}).get("fresh_start")),
+        ) if self._archive is not None else None
+        if snapshot is not None:
+            self.restore_snapshot(unpack_snapshot(snapshot, self._data))
+            self._archive_start = True
+            self._start_ante = int(self.state.round_resets.ante)
+            obs = self._build_obs(self._prev_info)
+            return self._obs_to_dict(obs), self._reset_info()
         if seed is not None:
             super().reset(seed=seed)
             self._seed = seed
@@ -196,15 +220,116 @@ class BalatroEnv(gymnasium.Env):
         self._play_diagnostic_count = 0
         self._joker_replacement_clear_baseline = None
         self._rewarded_gold_card_ids.clear()
+        self._cleared_boss_antes.clear()
+        self._archive_start = False
+        self._start_ante = 1
         self._last_order_decision = NO_ORDER_DECISION
         self._history.reset()
         self._prev_info = self._capture_state_info()
 
         obs = self._build_obs(self._prev_info)
-        return self._obs_to_dict(obs), {
+        return self._obs_to_dict(obs), self._reset_info()
+
+    def _reset_info(self) -> dict:
+        return {
             "sub_phase": self._sub_phase,
             "teacher_action": self._current_teacher_action(),
+            "archive_start": self._archive_start,
+            "start_ante": self._start_ante,
         }
+
+    def snapshot(self) -> dict[str, Any]:
+        """Capture all continuation state, preserving card aliases and engine RNG.
+
+        Archive RNG and the training reward schedule belong to the sampler,
+        not the saved game; returning must not rewind either of them.
+        """
+        if self._controller is None or self._controller.phase not in (GamePhase.SHOP, GamePhase.BLIND_SELECT):
+            raise ValueError("Snapshots require a nonterminal shop or blind-selection boundary")
+        return deepcopy({
+            "version": ARCHIVE_VERSION,
+            "tokenizer_version": TOKENIZER_VERSION,
+            "stake": self._stake,
+            "deck_key": self._deck_key,
+            "controller": self._controller,
+            "sub_phase": self._sub_phase,
+            "history": self._history,
+            "last_order_decision": self._last_order_decision,
+            "steps_since_progress": self._steps_since_progress,
+            "play_diagnostic_count": self._play_diagnostic_count,
+            "joker_replacement_clear_baseline": self._joker_replacement_clear_baseline,
+            "rewarded_gold_card_ids": self._rewarded_gold_card_ids,
+            "cleared_boss_antes": self._cleared_boss_antes,
+        }, {id(self._data): self._data})
+
+    def restore_snapshot(self, snapshot: dict[str, Any]) -> None:
+        if (snapshot.get("version") != ARCHIVE_VERSION
+                or snapshot.get("tokenizer_version") != TOKENIZER_VERSION
+                or snapshot.get("stake") != self._stake
+                or snapshot.get("deck_key") != self._deck_key):
+            raise ValueError("Snapshot schema, stake, or deck mismatch")
+        saved_controller = snapshot["controller"]
+        if (saved_controller.phase not in (GamePhase.SHOP, GamePhase.BLIND_SELECT)
+                or saved_controller.state is None
+                or saved_controller.state.won
+                or saved_controller.state.win_ante != (self._win_ante_override or 8)):
+            raise ValueError("Snapshot must be a live boundary with the same victory target")
+        saved = deepcopy(snapshot, {id(saved_controller.data): self._data})
+        self._controller = saved["controller"]
+        self._sub_phase = saved["sub_phase"]
+        self._history = saved["history"]
+        self._last_order_decision = saved["last_order_decision"]
+        self._steps_since_progress = saved["steps_since_progress"]
+        self._play_diagnostic_count = saved["play_diagnostic_count"]
+        self._joker_replacement_clear_baseline = saved["joker_replacement_clear_baseline"]
+        self._rewarded_gold_card_ids = saved["rewarded_gold_card_ids"]
+        # Reward IDs are process-local. Checkpoint archives may come from a
+        # previous process whose counter overlaps newly created cards here.
+        from pylatro.models import _next_playing_card_uid
+
+        paid_ids = self._rewarded_gold_card_ids
+        self._rewarded_gold_card_ids = set()
+        cards = {id(card): card for pile in (
+            self.state.deck_cards, self.state.hand_cards,
+            self.state.draw_pile, self.state.discard_pile,
+        ) for card in pile}
+        for card in cards.values():
+            paid = card.reward_uid in paid_ids
+            card.reward_uid = _next_playing_card_uid()
+            if paid:
+                self._rewarded_gold_card_ids.add(card.reward_uid)
+        self._cleared_boss_antes = saved["cleared_boss_antes"]
+        self._prev_info = self._capture_state_info()
+
+    def _archive_boundary(self, prev_info: dict) -> None:
+        if self._archive is None or self._sub_phase not in (SubPhase.SHOP, SubPhase.BLIND_SELECT):
+            return
+        ante = int(self.state.round_resets.ante)
+        if not self._archive.config.min_ante <= ante <= self._archive.config.max_ante:
+            return
+        before = (prev_info.get("ante"), str(prev_info.get("sub_phase")), prev_info.get("blind_on_deck"))
+        after = (ante, str(self._sub_phase), self.state.blind_on_deck)
+        if before == after:
+            return
+        identity = f"{self.state.seed}:{ante}:{self._sub_phase}:{self.state.blind_on_deck}"
+        self._archive.add(ante=ante, phase=str(self._sub_phase), identity=identity,
+                          payload=pack_snapshot(self.snapshot(), self._data))
+
+    def archive_state_dict(self) -> dict | None:
+        return self._archive.state_dict() if self._archive is not None else None
+
+    def load_archive_states(self, states: list[dict]) -> None:
+        if self._archive is None or self._archive_index >= len(states):
+            raise ValueError("Cannot restore archive for this worker")
+        self._archive.load_state_dict(states[self._archive_index])
+
+    def archive_metrics(self) -> dict[str, float]:
+        return self._archive.metrics() if self._archive is not None else {}
+
+    def set_milestone_scale(self, scale: float) -> None:
+        if not 0 <= scale <= 1:
+            raise ValueError("Milestone scale must be between 0 and 1")
+        self._milestone_scale = float(scale)
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
         assert self._controller is not None and self._controller.state is not None
@@ -377,7 +502,9 @@ class BalatroEnv(gymnasium.Env):
         # Detailed leave-one-out build diagnostics are expensive. When score-build
         # potential is active they also provide the cache consumed by the reward;
         # otherwise compute them only for actual build/shop events.
-        score_build_potential_enabled = self._reward_config.enable_score_build_potential
+        score_build_potential_enabled = (
+            self._reward_config.objective == "shaped" and self._reward_config.enable_score_build_potential
+        )
         build_event_actions = {
             ActionType.SHOP_BUY,
             ActionType.SHOP_REROLL,
@@ -426,6 +553,16 @@ class BalatroEnv(gymnasium.Env):
 
         # Surface action diagnostics used by optional reward components.
         curr_info.update(action_diagnostics)
+        cleared_ante = int(self._prev_info.get("ante", 1))
+        boss_clear = (
+            decoded.action_type == ActionType.PLAY_SUBSET
+            and str(self._prev_info.get("blind_on_deck", "")).lower() == "boss"
+            and int(curr_info["ante"]) > cleared_ante
+        )
+        if boss_clear and cleared_ante not in self._cleared_boss_antes:
+            self._cleared_boss_antes.add(cleared_ante)
+            curr_info["boss_cleared_ante"] = cleared_ante
+        curr_info["milestone_scale"] = self._milestone_scale
 
         reward_components = default_reward_components(
             state, self._prev_info, curr_info, terminated, won, self._reward_config
@@ -456,6 +593,9 @@ class BalatroEnv(gymnasium.Env):
             "stalled": curr_info["stalled"],
             "tarot_usage_total": curr_info.get("tarot_usage_total", 0),
             "planet_usage_total": curr_info.get("planet_usage_total", 0),
+            "archive_start": self._archive_start,
+            "start_ante": self._start_ante,
+            "boss_cleared_ante": curr_info.get("boss_cleared_ante", 0),
         }
         for component_name, component_value in reward_components.items():
             info[f"reward_{component_name}"] = component_value
@@ -463,6 +603,8 @@ class BalatroEnv(gymnasium.Env):
         info["teacher_action"] = teacher_action
         info["teacher_action_match"] = curr_info["teacher_action_match"]
         info["next_teacher_action"] = -1 if terminated or truncated else self._current_teacher_action()
+        if not terminated and not truncated:
+            self._archive_boundary(self._prev_info)
         return self._obs_to_dict(obs), reward, terminated, truncated, info
 
     def _current_teacher_action(self) -> int:

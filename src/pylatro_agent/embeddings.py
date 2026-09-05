@@ -39,6 +39,7 @@ from .constants import (
     VOUCHER_START,
     WIN_ANTE_SCALAR_INDEX,
 )
+from .joker_features import JOKER_FEATURE_NAMES, JOKER_FEATURE_SCALE, JOKER_FEATURE_START
 
 if TYPE_CHECKING:
     from .vocab import Vocab
@@ -188,6 +189,10 @@ class JokerEmbedding(nn.Module):
         self.rental_emb = nn.Embedding(2, d_model)
         self.debuff_emb = nn.Embedding(2, d_model)
         self.perish_tally_proj = nn.Linear(1, d_model)
+        self.state_proj = nn.Linear(len(JOKER_FEATURE_NAMES), d_model, bias=False)
+        # Explicit actor transfer starts behavior-preserving. The first PPO
+        # gradient can then learn each newly observable scoring channel.
+        nn.init.zeros_(self.state_proj.weight)
         nn.init.zeros_(self.rental_emb.weight)
         nn.init.zeros_(self.debuff_emb.weight)
         nn.init.zeros_(self.perish_tally_proj.weight)
@@ -218,6 +223,7 @@ class JokerEmbedding(nn.Module):
             + self.rental_emb(rental)
             + self.debuff_emb(debuff)
             + self.perish_tally_proj(perish_tally)
+            + self.state_proj(tokens[:, :, JOKER_FEATURE_START:].float() / JOKER_FEATURE_SCALE)
         )
 
 

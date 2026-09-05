@@ -47,6 +47,7 @@ from .constants import (
     TokenType,
 )
 from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
+from .joker_features import JOKER_FEATURE_START, encode_joker_features
 from .strategy_context import compute_suit_target_utilities
 from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
@@ -472,6 +473,8 @@ class Tokenizer:
         tokens[pos, 8] = int(joker.rental)
         tokens[pos, 9] = int(joker.debuff)
         tokens[pos, 10] = min(joker.perish_tally or 0, 31)
+        for feature_index, value in enumerate(encode_joker_features(joker)):
+            tokens[pos, JOKER_FEATURE_START + feature_index] = value
 
     @cython.locals(
         tokens=cython.short[:, :],

@@ -109,6 +109,11 @@ uv run python scripts/compile_cython.py
 
 ### Training
 
+The fixed-Ante-8 archive-and-return experiment is documented in
+[docs/archive_training.md](docs/archive_training.md). It adds intermediate-state
+practice, explicit mutable Joker features, bounded boss-clear rewards, and an
+actor-transfer path for compatible checkpoints.
+
 #### Phase 1: Supervised Pretraining
 
 Generates games from a rule-based heuristic agent and trains the model to imitate it.

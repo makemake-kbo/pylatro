@@ -42,6 +42,7 @@ class AgentConfig:
     # never changes the legal-action mask. Zero disables the fixed prior while
     # retaining the learned direct danger-conditioning path.
     danger_shop_leave_logit_penalty: float = 0.0
+    win_only_value: bool = False
 
 
 class BalatroAgent(nn.Module):
@@ -65,7 +66,7 @@ class BalatroAgent(nn.Module):
         )
 
         # Value head
-        self.value_head = ValueHead(d)
+        self.value_head = ValueHead(d, win_only=config.win_only_value)
 
     def forward(
         self,

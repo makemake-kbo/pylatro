@@ -29,6 +29,10 @@ class RewardConfig:
     """
 
     gamma: float = 0.997
+    # The archive experiment uses only true run wins and first boss clears.
+    # Legacy shaping remains available for matched ablations.
+    objective: str = "shaped"
+    milestone_reward_budget: float = 1.0
     dense_reward_scale: float = 1.0
     # Bounded Ante-1 score-pace shaping. At 0.40 with dense_reward_scale 1.0
     # this term totalled ~1.25 per episode against a terminal win/loss signal
@@ -74,12 +78,18 @@ class RewardConfig:
     potential_build_cap: float = 2.0
     potential_readiness_saturation: float = 1.5
 
+    def __post_init__(self) -> None:
+        if self.objective not in {"shaped", "milestone"}:
+            raise ValueError("reward objective must be shaped or milestone")
+        if not math.isfinite(self.milestone_reward_budget) or self.milestone_reward_budget < 0:
+            raise ValueError("milestone_reward_budget must be finite and nonnegative")
+
 
 # Increment whenever reward semantics change without a RewardConfig field
 # change. It participates in the checkpoint fingerprint.
 # v15: joker_move component removed - the harness orders jokers
 # deterministically (joker_layout.py) and MOVE_JOKER left the action space.
-REWARD_MODEL_VERSION = 16
+REWARD_MODEL_VERSION = 17
 
 
 def reward_config_snapshot(config: RewardConfig | Mapping[str, Any]) -> dict[str, Any]:
@@ -152,6 +162,7 @@ _FOOL_PROTECT_TARGETS = {"c_death", "c_hermit", "c_temperance"}
 
 REWARD_COMPONENT_NAMES = (
     "terminal",
+    "boss_milestone",
     "potential_shaping",
     "idle_penalty",
     "planet_match_bonus",
@@ -174,6 +185,7 @@ REWARD_INFO_KEYS = tuple(f"reward_{name}" for name in ("total", *REWARD_COMPONEN
 
 # Used only to aggregate TensorBoard reward diagnostics.
 _COMPONENT_GROUP = {
+    "boss_milestone": "progress",
     "potential_shaping": "potential",
     "idle_penalty": "idle",
     "planet_match_bonus": "consumable",
@@ -722,6 +734,20 @@ def default_reward_components(
     components = {name: 0.0 for name in REWARD_COMPONENT_NAMES}
     win_ante = int(getattr(state, "win_ante", config.potential_win_ante) or config.potential_win_ante)
     active_config = replace(config, potential_win_ante=win_ante)
+
+    if config.objective == "milestone":
+        if win_ante != 8:
+            raise ValueError("Milestone rewards require an Ante-8 victory target")
+        # The environment emits this event once per original game, with the
+        # paid-Ante set included in snapshots. Returning grants no past credit.
+        boss_ante = int(curr_info.get("boss_cleared_ante", 0) or 0)
+        if 1 <= boss_ante < win_ante:
+            scale = _clip(float(curr_info.get("milestone_scale", 1.0)), 0.0, 1.0)
+            components["boss_milestone"] = config.milestone_reward_budget * scale / (win_ante - 1)
+        if terminated and won:
+            components["terminal"] = WIN_VALUE
+        components["total"] = sum(components.values())
+        return components
 
     if terminated or curr_info.get("stalled", False):
         terminal_info = dict(curr_info)

@@ -304,6 +304,32 @@ def apply_using_consumable(
     sync_all_jokers(state)
 
 
+def disable_blind(state: RunState) -> None:
+    """Undo active boss effects once, including resources removed on entry."""
+    if state.blind_disabled:
+        return
+    state.blind_disabled = True
+    name = (state.round_resets.blind or {}).get("name")
+    if name == "The Water":
+        state.current_round.discards_left += state.current_round.blind_removed_discards
+    elif name == "The Needle":
+        state.current_round.hands_left += state.current_round.blind_removed_hands
+    elif name == "The Manacle":
+        state.current_round.hand_size += 1
+    for card in state.deck_cards:
+        card.debuff = False
+        card.forced_selection = False
+        card.face_down = False
+    for joker in state.jokers:
+        joker.debuff = False
+    # Chicot runs before the opening draw; Luchador may restore a slot in
+    # an already dealt hand. Do not draw before start_blind shuffles the deck.
+    if name == "The Manacle" and state.current_round.first_hand_drawn:
+        from .flow import draw_to_hand
+
+        draw_to_hand(state, 1)
+
+
 def apply_setting_blind(state: RunState) -> dict[str, list[str]]:
     created_jokers: list[str] = []
     created_consumables: list[str] = []
@@ -315,7 +341,7 @@ def apply_setting_blind(state: RunState) -> dict[str, list[str]]:
         center = state.data.centers[joker.center_key]
         name = center["name"]
         if name == "Chicot" and is_boss:
-            state.blind_disabled = True
+            disable_blind(state)
         elif name == "Madness" and not is_boss and isinstance(joker.extra, (int, float)):
             joker.x_mult += float(joker.extra)
             destructible = [
@@ -483,6 +509,13 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     money_per_hand = int(state.modifiers.get("money_per_hand", 1))
     results["dollars"] = int(results["dollars"]) + hands_left * money_per_hand
 
+    if is_boss:
+        investments = state.tags.count("tag_investment")
+        if investments:
+            reward = int(state.data.tags["tag_investment"]["config"]["dollars"])
+            results["dollars"] = int(results["dollars"]) + investments * reward
+            state.tags[:] = [tag for tag in state.tags if tag != "tag_investment"]
+
     if not state.modifiers.get("no_interest"):
         interest = compute_interest(state.dollars, state.interest_cap, state.interest_amount)
         results["dollars"] = int(results["dollars"]) + max(0, interest)
@@ -522,13 +555,11 @@ def sell_joker(state: RunState, index: int) -> JokerInstance:
     # round start, so lift them here (blind_disabled forces them all False).
     blind = state.round_resets.blind or {}
     if str(blind.get("name", "")) == "Verdant Leaf" and not state.blind_disabled:
-        state.blind_disabled = True
-        for card in state.deck_cards:
-            card.debuff = False
+        disable_blind(state)
 
     invis_duplicate = None
     if name == "Luchador" and bool((state.round_resets.blind or {}).get("boss")):
-        state.blind_disabled = True
+        disable_blind(state)
     elif name == "Diet Cola":
         state.tags.append("tag_double")
     elif name == "Invisible Joker" and isinstance(joker.extra, int) and joker.invis_rounds >= joker.extra:

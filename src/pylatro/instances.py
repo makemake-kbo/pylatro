@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from ._helpers import _as_dict, _calculate_cost
+from ._helpers import _as_dict, _calculate_cost, _mark_center_used, _release_center
 from .models import ConsumableInstance, JokerInstance, RunState
 
 
@@ -37,6 +37,7 @@ def add_consumable(
 ) -> ConsumableInstance:
     consumable = create_consumable_instance(state, center_key, edition=edition)
     state.consumables.append(consumable)
+    _mark_center_used(state, center_key)
     _sync_consumable_keys(state)
     return consumable
 
@@ -49,7 +50,10 @@ def remove_consumable(
         if owned is consumable:
             state.consumables.pop(index)
             _sync_consumable_keys(state)
+            _release_center(state, consumable.center_key)
             return
+    # Pack consumables can be used directly without entering inventory.
+    _release_center(state, consumable.center_key)
 
 
 def create_joker_instance(
@@ -128,6 +132,7 @@ def add_joker(
     )
     state.jokers.append(joker)
     state.joker_keys.append(center_key)
+    _mark_center_used(state, center_key)
 
     name = state.data.centers[center_key]["name"]
     if joker.d_size > 0:
@@ -179,6 +184,7 @@ def remove_joker(state: RunState, joker: JokerInstance) -> None:
     else:
         return
 
+    _release_center(state, joker.center_key)
     name = state.data.centers[joker.center_key]["name"]
     if joker.d_size > 0:
         state.round_resets.discards -= joker.d_size

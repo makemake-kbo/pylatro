@@ -34,6 +34,15 @@ def _forward(
     return head(backbone_out, attention_mask, current_antes, win_antes)
 
 
+def test_winning_boss_can_advance_terminal_counter_past_last_ante() -> None:
+    assert terminal_outcome_class(won=True, final_ante=9) == 8
+    assert terminal_outcome_class(won=True, final_ante=8) == 8
+    with pytest.raises(ValueError, match="final_ante"):
+        terminal_outcome_class(won=False, final_ante=9)
+    with pytest.raises(ValueError, match="final_ante"):
+        terminal_outcome_class(won=True, final_ante=10)
+
+
 def test_hazard_outcomes_are_normalized_and_mask_impossible_antes() -> None:
     hazards = torch.full((4, DEFAULT_MAX_ANTES), 0.5)
     current = torch.tensor([1, 2, 4, 7])

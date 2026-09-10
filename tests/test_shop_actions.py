@@ -26,3 +26,30 @@ def test_showman_and_live_shop_voucher_change_pool_availability() -> None:
         voucher_state.data.centers[voucher_state.current_voucher]
     )
     assert voucher_pool[voucher_index] == "UNAVAILABLE"
+
+
+def test_shop_voucher_redemption_charges_its_displayed_discounted_price():
+    from pylatro import redeem_voucher
+    from pylatro.pool import create_card_spec
+
+    state = create_run_state("voucher_payment")
+    state.dollars = 20
+    offer = create_card_spec(state, "Voucher", forced_key="v_grabber")
+    offer.cost = 7
+    state.shop.vouchers = [offer]
+    hands = state.round_resets.hands
+    redeem_voucher(state, offer.center_key)
+    assert state.dollars == 13
+    assert state.round_resets.hands == hands + 1
+    assert state.used_vouchers["v_grabber"]
+    assert not state.shop.vouchers
+
+
+def test_direct_voucher_grant_without_shop_offer_remains_free():
+    from pylatro import redeem_voucher
+
+    state = create_run_state("voucher_grant")
+    dollars = state.dollars
+    redeem_voucher(state, "v_grabber")
+    assert state.dollars == dollars
+    assert state.used_vouchers["v_grabber"]

@@ -311,11 +311,13 @@ def _shop_card_summary(state: RunState, item, index: int) -> dict[str, Any]:
 
 
 def _upcoming_blind_target(state: RunState) -> int:
+    from pylatro.blind import blind_multiplier
+
     blind_type = state.blind_on_deck or "Small"
     blind_key = state.round_resets.blind_choices.get(blind_type, "")
     blind = state.data.blinds.get(blind_key, {}) if blind_key else (state.round_resets.blind or {})
     base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
-    return int(float(base) * float(blind.get("mult", 1) or 1))
+    return int(float(base) * blind_multiplier(state, blind))
 
 
 def capture_build_features(state: RunState) -> dict[str, Any]:

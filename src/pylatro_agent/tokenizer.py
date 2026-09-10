@@ -431,11 +431,12 @@ class Tokenizer:
         if blind is None:
             return 0
         from pylatro import get_blind_amount
+        from pylatro.blind import blind_multiplier
 
         ante = state.round_resets.ante
         scaling = min(state.stake, 3)
         base = get_blind_amount(ante, scaling)
-        mult = blind.get("mult", 1)
+        mult = blind_multiplier(state, blind)
         return math.floor(base * mult)
 
     @cython.locals(sp_id=cython.int)

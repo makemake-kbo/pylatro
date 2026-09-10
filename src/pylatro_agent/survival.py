@@ -57,12 +57,17 @@ def terminal_outcome_class(
     final_ante: int,
     num_antes: int = DEFAULT_MAX_ANTES,
 ) -> int:
-    """Map a complete non-stalled episode to its categorical outcome class."""
+    """Map a complete non-stalled episode to its categorical outcome class.
+
+    The engine increments the Ante counter when clearing the winning boss,
+    so a terminal win can report ``num_antes + 1``. This is still the win
+    class, not another critic Ante. Deaths must remain within supported Antes.
+    """
 
     final = validate_critic_win_ante(
         final_ante,
         name="final_ante",
-        max_antes=num_antes,
+        max_antes=num_antes + int(won),
     )
     if won:
         return num_antes

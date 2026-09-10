@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from itertools import combinations
 
-from ._helpers import _apply_voucher_to_run, _as_dict, _calculate_cost
+from ._helpers import _apply_voucher_to_run, _as_dict, _calculate_cost, _clear_shop_cards, _release_center
 from .instances import add_consumable, add_joker
 from .models import POKER_HANDS, PackState, PlayingCard, RunState, ShopCard, ShopState
 from .pool import create_card_spec, get_pack, poll_edition
@@ -92,6 +92,10 @@ def populate_shop(state: RunState) -> ShopState:
 
 
 def refresh_shop(state: RunState) -> list[ShopCard]:
+    removed = state.shop.cards
+    state.shop.cards = []
+    for card in removed:
+        _release_center(state, card.center_key)
     state.shop.cards = [create_shop_card(state) for _ in range(state.shop.joker_max)]
     return state.shop.cards
 
@@ -429,7 +433,7 @@ def claim_pack_card(state: RunState, index: int) -> ShopCard:
 
     state.pack.choices_remaining = max(0, state.pack.choices_remaining - 1)
     if state.pack.choices_remaining == 0:
-        state.pack = None
+        close_pack(state)
     return card
 
 
@@ -560,11 +564,16 @@ def close_pack(state: RunState, *, skipped: bool = False) -> None:
         return
     if skipped and state.pack.cards:
         apply_skip_booster(state)
+    removed = state.pack.cards
     state.pack = None
+    for card in removed:
+        _release_center(state, card.center_key)
 
 
 def finish_shop(state: RunState) -> list[str]:
-    return apply_end_shop(state)
+    result = apply_end_shop(state)
+    _clear_shop_cards(state)
+    return result
 
 
 def sell_owned_joker(state: RunState, index: int):
@@ -576,6 +585,11 @@ def sell_owned_consumable(state: RunState, index: int):
 
 
 def redeem_voucher(state: RunState, voucher_key: str) -> None:
+    # Shop redemption pays the displayed price, including discounts. Direct
+    # grants without a shop offer retain their existing cost-free behavior.
+    offer = next((voucher for voucher in state.shop.vouchers if voucher.center_key == voucher_key), None)
+    if offer is not None:
+        state.dollars -= offer.cost
     state.used_vouchers[voucher_key] = True
     if state.current_voucher == voucher_key:
         state.current_voucher = None

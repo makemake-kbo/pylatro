@@ -90,6 +90,14 @@ def use_consumable(
 
     if not copier:
         _register_consumable_use(state, item.center_key)
+        # The used card leaves the consumable area before generation effects
+        # resolve. Keep its pool marker until the normal final release so an
+        # Emperor cannot immediately generate itself.
+        for index, owned in enumerate(state.consumables):
+            if owned is item:
+                state.consumables.pop(index)
+                state.consumable_keys = [card.center_key for card in state.consumables]
+                break
 
     result = UseConsumableResult(consumable_key=item.center_key)
 

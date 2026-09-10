@@ -172,18 +172,19 @@ def play_cards(state: RunState, cards: Iterable[PlayingCard | int]) -> PlayResul
     if _blind_name(state) in {"The Fish", "Crimson Heart"} and not state.blind_disabled:
         state.blind_prepped = True
 
-    _press_play(state, selected)
-
     for card in selected:
         removed = _remove_exact(state.hand_cards, card)
         if not removed:
-            # Card was already removed by _press_play (e.g. The Hook discarded it)
             continue
         card.times_played += 1
         card.played_this_ante = True
         card.discarded = False
         card.forced_selection = False
         state.play_cards.append(card)
+
+    # Upstream moves selected cards to G.play before press_play. The Hook
+    # discards from the remaining held cards, never from the selected play.
+    _press_play(state, selected)
 
     # Check debuff_hand before scoring
     play_list = list(state.play_cards)
@@ -234,9 +235,13 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
 
     blind_name = _blind_name(state)
     blind = state.round_resets.blind or {}
+    state.current_round.blind_removed_hands = 0
+    state.current_round.blind_removed_discards = 0
     if blind_name == "The Water":
+        state.current_round.blind_removed_discards = state.current_round.discards_left
         state.current_round.discards_left = 0
     elif blind_name == "The Needle":
+        state.current_round.blind_removed_hands = state.current_round.hands_left - 1
         state.current_round.hands_left = 1
     elif blind_name == "The Manacle":
         state.current_round.hand_size = max(0, state.current_round.hand_size - 1)
@@ -596,6 +601,7 @@ def _press_play(state: RunState, play_cards_list: list[PlayingCard]) -> None:
     blind_name = _blind_name(state)
     if blind_name == "The Hook" and state.hand_cards:
         available = list(state.hand_cards)
+        discarded = []
         for _ in range(min(2, len(available))):
             if not available:
                 break
@@ -603,10 +609,9 @@ def _press_play(state: RunState, play_cards_list: list[PlayingCard]) -> None:
                 available,
                 state.pseudorandom.pseudoseed("hook"),
             )
-            _remove_exact(state.hand_cards, chosen)
-            chosen.discarded = True
-            state.discard_pile.append(chosen)
+            discarded.append(chosen)
             available = [c for c in available if c is not chosen]
+        discard_cards(state, discarded, hook=True)
         state.blind_triggered = True
     if blind_name == "The Tooth":
         for _ in play_cards_list:
@@ -639,4 +644,4 @@ def _card_nominal(state: RunState, card: PlayingCard) -> float:
     face_nominal = 0.1 if card.rank == "J" else 0.2 if card.rank == "Q" else 0.3 if card.rank == "K" else 0.4 if card.rank == "A" else 0
     suit_nominal = SUIT_TO_NOMINAL[card.suit]
     suit_mult = -1000 if state.data.centers[card.center_key].get("effect") == "Stone Card" else 1
-    return base + suit_nominal * suit_mult + suit_nominal * 0.0001 * suit_mult + face_nominal + (id(card) % 1_000_000) * 1e-12
+    return base + suit_nominal * suit_mult + suit_nominal * 0.0001 * suit_mult + face_nominal + 0.000001 * (1 - card.reward_uid / 1_603_301)

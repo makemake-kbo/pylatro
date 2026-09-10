@@ -52,8 +52,8 @@ def test_run_game_single_pass_leaves_safety_stalls_unlabeled(monkeypatch) -> Non
     vocab = build_vocab(data)
     real_runner = fast_generate.FastRunner
 
-    def one_step_runner(seed, game_data, *, win_ante):
-        return real_runner(seed, game_data, max_steps=1, win_ante=win_ante)
+    def one_step_runner(seed, game_data, *, win_ante, **kwargs):
+        return real_runner(seed, game_data, max_steps=1, win_ante=win_ante, **kwargs)
 
     monkeypatch.setattr(fast_generate, "FastRunner", one_step_runner)
     records, _, won = fast_generate._run_game_single_pass(

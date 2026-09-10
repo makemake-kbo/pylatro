@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import count
-from typing import Any
+from typing import Any, ClassVar
 
 from .data import GameData  # noqa: TC001
 from .rng import PseudorandomState
@@ -71,8 +71,28 @@ def _next_playing_card_uid() -> int:
     return next(_PLAYING_CARD_UIDS)
 
 
+class _FastStateCopy:
+    """Preserve deepcopy semantics without recursively copying scalar fields."""
+
+    __slots__ = ()
+    __dataclass_fields__: ClassVar[dict[str, Any]]
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Any:
+        clone = object.__new__(type(self))
+        memo[id(self)] = clone
+        for name in self.__dataclass_fields__:
+            value = getattr(self, name)
+            if value is not None and type(value) not in (str, int, float, bool):
+                value = deepcopy(value, memo)
+            setattr(clone, name, value)
+        attributes = getattr(self, "__dict__", None)
+        if attributes is not None:
+            clone.__dict__.update(deepcopy(attributes, memo))
+        return clone
+
+
 @dataclass(slots=True)
-class StartingParams:
+class StartingParams(_FastStateCopy):
     dollars: int = 4
     hand_size: int = 8
     discards: int = 3
@@ -86,12 +106,14 @@ class StartingParams:
 
 
 @dataclass(slots=True)
-class CurrentRound:
+class CurrentRound(_FastStateCopy):
     hands_left: int = 0
     hands_played: int = 0
     discards_left: int = 0
     discards_used: int = 0
     hand_size: int = 0
+    blind_removed_hands: int = 0
+    blind_removed_discards: int = 0
     first_hand_drawn: bool = False
     reroll_cost: int = 5
     reroll_cost_increase: int = 0
@@ -113,7 +135,7 @@ class CurrentRound:
 
 
 @dataclass(slots=True)
-class RoundResets:
+class RoundResets(_FastStateCopy):
     hands: int = 1
     discards: int = 1
     reroll_cost: int = 1
@@ -131,7 +153,7 @@ class RoundResets:
 
 
 @dataclass(slots=True)
-class PlayingCard:
+class PlayingCard(_FastStateCopy):
     front_key: str
     suit: str
     rank: str
@@ -158,7 +180,7 @@ class PlayingCard:
 
 
 @dataclass(slots=True)
-class ShopCard:
+class ShopCard(_FastStateCopy):
     center_key: str
     card_type: str
     cost: int
@@ -181,7 +203,7 @@ class ShopCard:
 
 
 @dataclass(slots=True)
-class ShopState:
+class ShopState(_FastStateCopy):
     joker_max: int = 2
     cards: list[ShopCard] = field(default_factory=list)
     vouchers: list[ShopCard] = field(default_factory=list)
@@ -189,7 +211,7 @@ class ShopState:
 
 
 @dataclass(slots=True)
-class PackState:
+class PackState(_FastStateCopy):
     booster_key: str
     state_name: str
     choices_remaining: int
@@ -198,7 +220,7 @@ class PackState:
 
 
 @dataclass(slots=True)
-class ConsumableInstance:
+class ConsumableInstance(_FastStateCopy):
     center_key: str
     edition: dict[str, bool] | None = None
     extra_value: int = 0
@@ -206,7 +228,7 @@ class ConsumableInstance:
 
 
 @dataclass(slots=True)
-class JokerInstance:
+class JokerInstance(_FastStateCopy):
     center_key: str
     edition: dict[str, bool] | None = None
     eternal: bool = False
@@ -244,7 +266,7 @@ class JokerInstance:
 
 
 @dataclass(slots=True)
-class RunState:
+class RunState(_FastStateCopy):
     data: GameData
     seed: str
     stake: int = 1

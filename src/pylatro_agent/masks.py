@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pylatro import can_use_consumable
+from pylatro.blind import can_reroll_boss
 from pylatro.flow import _debuff_hand
 from pylatro.scoring import get_poker_hand_info
 
@@ -70,8 +71,7 @@ def _mask_blind_select(mask: np.ndarray, state: RunState) -> None:
     if blind_on_deck in ("Small", "Big"):
         mask[AR.BLIND_SKIP] = 1
 
-    # Reroll boss if $>=10 and not already rerolled
-    if blind_on_deck == "Boss" and state.dollars >= 10 and not state.round_resets.boss_rerolled:
+    if blind_on_deck == "Boss" and can_reroll_boss(state):
         mask[AR.BLIND_REROLL] = 1
 
 
@@ -80,6 +80,9 @@ def _mask_choose_action(
     state: RunState,
 ) -> None:
     AR = ActionRange
+    for index, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
+        if not joker.eternal:
+            mask[AR.SHOP_SELL_JOKER_START + index] = 1
     hand_size = len(state.hand_cards)
     forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
     legal_subsets = legal_subset_mask(hand_size, forced_slots)
@@ -153,7 +156,17 @@ def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray) -> np.ndarra
     return filtered
 
 
-def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
+def _shop_consumable_allowed(center: dict) -> bool:
+    # Card:can_use_consumeable permits these outside a dealt hand. Leftover
+    # cards from the last blind are not valid shop targets.
+    return center.get("set") == "Planet" or center.get("name") in {
+        "The Hermit", "Temperance", "Black Hole", "The Wheel of Fortune",
+        "Ankh", "Ectoplasm", "Hex", "The Emperor", "The High Priestess",
+        "The Fool", "Judgement", "The Soul", "Wraith",
+    }
+
+
+def _mask_consumable_flat(mask: np.ndarray, state: RunState, in_shop: bool = False) -> None:
     """Enable atomic consumable actions for every usable slot.
 
     For each slot the policy picks slot+target in one step; the layout is
@@ -166,6 +179,8 @@ def _mask_consumable_flat(mask: np.ndarray, state: RunState) -> None:
     for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
         cons = state.consumables[slot]
         center = state.data.centers[cons.center_key]
+        if in_shop and not _shop_consumable_allowed(center):
+            continue
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
@@ -235,6 +250,7 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
 
     # Leave always valid
     mask[AR.SHOP_LEAVE] = 1
+    _mask_consumable_flat(mask, state, in_shop=True)
     # Joker order is not a policy decision: the harness applies the best
     # exact-scored order before each play (see joker_layout.py).
 
@@ -242,6 +258,9 @@ def _mask_shop(mask: np.ndarray, state: RunState) -> None:
 def _mask_booster_pack(mask: np.ndarray, state: RunState) -> None:
     AR = ActionRange
     pack = state.pack
+    for index, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
+        if not joker.eternal:
+            mask[AR.SHOP_SELL_JOKER_START + index] = 1
 
     if pack and pack.choices_remaining > 0:
         from pylatro.runtime import joker_limit

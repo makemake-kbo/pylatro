@@ -31,6 +31,29 @@ def _mark_center_used(state: RunState, center_key: str) -> None:
     state.used_jokers[center_key] = True
 
 
+def _release_center(state: RunState, center_key: str) -> None:
+    """Return a removed card to the pool unless another live copy remains.
+
+    Balatro's Card:remove clears used_jokers; this is an occupancy map,
+    not a history of every card generated during the run.
+    """
+    areas = [state.jokers, state.consumables, state.shop.cards,
+             state.shop.vouchers, state.shop.boosters]
+    if state.pack is not None:
+        areas.append(state.pack.cards)
+    if not any(card.center_key == center_key for area in areas for card in area):
+        state.used_jokers.pop(center_key, None)
+
+
+def _clear_shop_cards(state: RunState) -> None:
+    removed = state.shop.cards + state.shop.vouchers + state.shop.boosters
+    state.shop.cards = []
+    state.shop.vouchers = []
+    state.shop.boosters = []
+    for card in removed:
+        _release_center(state, card.center_key)
+
+
 def _calculate_cost(
     state: RunState,
     center: dict[str, Any],

@@ -8,6 +8,7 @@ from math import floor
 from typing import TYPE_CHECKING
 
 import pylatro
+from pylatro.blind import blind_multiplier
 
 if TYPE_CHECKING:
     from pylatro import (
@@ -113,7 +114,7 @@ class GameController:
         ante = self.state.round_resets.ante
         scaling = self.state.stake if self.state.stake <= 3 else 3
         base = pylatro.get_blind_amount(ante, scaling)
-        mult = blind.get("mult", 1)
+        mult = blind_multiplier(self.state, blind)
         return floor(base * mult)
 
     def blind_beaten(self) -> bool:
@@ -159,6 +160,10 @@ class GameController:
     def sell_joker(self, index: int) -> None:
         assert self.state is not None
         pylatro.sell_owned_joker(self.state, index)
+        if self.phase == GamePhase.HAND_PLAY and self.blind_beaten():
+            self.cash_out()
+            if self.phase != GamePhase.GAME_WON:
+                self.enter_shop()
 
     def sell_consumable(self, index: int) -> None:
         assert self.state is not None

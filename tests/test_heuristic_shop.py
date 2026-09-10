@@ -32,11 +32,14 @@ def test_ante_one_plays_small_blind_for_juggle_tag() -> None:
     assert HeuristicAgent().select_action(state, SubPhase.BLIND_SELECT, mask) == ActionRange.BLIND_PLAY
 
 
-def test_ante_one_skips_for_economy_tag() -> None:
+def test_ante_one_skips_for_economy_tag_with_cash_and_a_scoring_engine() -> None:
     data = load_game_data()
     state = create_run_state("economy_skip", data=data)
     state.blind_on_deck = "Small"
     state.round_resets.blind_tags["Small"] = "tag_economy"
+    state.dollars = 25
+    add_joker(state, "j_half")
+    add_joker(state, "j_blue_joker")
 
     mask = compute_action_mask(state, SubPhase.BLIND_SELECT)
 
@@ -364,6 +367,9 @@ def test_ante_one_banks_pair_when_it_is_close_to_required_pace() -> None:
 def test_mystic_summit_exhausts_discards_before_banking_made_hand() -> None:
     data = load_game_data()
     state = create_run_state("activate_mystic_summit", data=data)
+    # The made Full House already beats the Ante 1 Small Blind. Exercise
+    # activation when the blind still needs the Summit's additional mult.
+    state.round_resets.ante = 2
     select_blind(state, "Small")
     start_blind(state, "Small")
     add_joker(state, "j_mystic_summit")
@@ -461,6 +467,7 @@ def test_blue_seal_is_held_while_playing_most_played_hand() -> None:
 def test_rerolls_violet_vessel_when_cash_is_available() -> None:
     data = load_game_data()
     state = create_run_state("vessel_reroll", data=data)
+    state.used_vouchers["v_directors_cut"] = True
     state.blind_on_deck = "Boss"
     state.dollars = 10
     state.round_resets.blind_choices["Boss"] = "bl_final_vessel"
@@ -485,6 +492,7 @@ def test_shop_target_ignores_defeated_boss_multiplier() -> None:
 def test_rerolls_flint_with_midgame_cash() -> None:
     data = load_game_data()
     state = create_run_state("flint_reroll", data=data)
+    state.used_vouchers["v_directors_cut"] = True
     state.blind_on_deck = "Boss"
     state.dollars = 15
     state.round_resets.blind_choices["Boss"] = "bl_flint"
@@ -497,6 +505,7 @@ def test_rerolls_flint_with_midgame_cash() -> None:
 def test_preflint_shop_preserves_boss_reroll_cash() -> None:
     data = load_game_data()
     state = create_run_state("flint_shop_reserve", data=data)
+    state.used_vouchers["v_directors_cut"] = True
     state.round_resets.ante = 3
     state.blind_on_deck = "Boss"
     state.dollars = 12

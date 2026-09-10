@@ -3,6 +3,27 @@ from pylatro.models import PackState, PlayingCard, ShopCard
 from pylatro.shop import claim_pack_card
 
 
+def test_fool_uses_its_own_slot_when_consumable_inventory_is_full():
+    state = create_run_state("fool_full")
+    add_consumable(state, "c_death")
+    add_consumable(state, "c_fool")
+    state.last_tarot_planet = "c_hermit"
+    result = use_consumable(state, 1)
+    assert result.created_consumables == ["c_hermit"]
+    assert [card.center_key for card in state.consumables] == ["c_death", "c_hermit"]
+    assert state.consumable_keys == ["c_death", "c_hermit"]
+    assert state.last_tarot_planet == "c_hermit"
+
+
+def test_high_priestess_frees_its_slot_before_creating_two_planets():
+    state = create_run_state("priestess_room")
+    add_consumable(state, "c_high_priestess")
+    result = use_consumable(state, 0)
+    assert len(result.created_consumables) == 2
+    assert len(state.consumables) == 2
+    assert all(state.data.centers[card.center_key]["set"] == "Planet" for card in state.consumables)
+
+
 def test_hanged_man_and_planet_use_update_joker_and_usage_state() -> None:
     state = create_run_state("AAAAAAAA")
     add_joker(state, "j_glass")

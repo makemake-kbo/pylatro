@@ -147,23 +147,23 @@ def _card_effect(state: RunState, card: PlayingCard) -> str:
 
 def _card_id(state: RunState, card: PlayingCard) -> int:
     # Stone Cards have no rank, so give each a unique negative id (from object
-    # identity), that way they never group into pairs/straights with each other.
+    # stable identity), that way they never group into pairs/straights with each other.
     if _card_effect(state, card) == "Stone Card":
-        return -id(card)
+        return -card.reward_uid
     return RANK_TO_ID[card.rank]
 
 
 @cython.locals(base=cython.double, face_nominal=cython.double, suit_nominal=cython.double, suit_mult=cython.int)
 def _card_nominal(state: RunState, card: PlayingCard) -> float:
     # A sortable scalar that ranks cards rank-first, then suit, used to pick which
-    # cards "score" within a hand. The tiny suit (1e-4) and per-object (1e-12)
-    # terms only break ties deterministically; Stone Cards get suit_mult=-1000 so
+    # cards "score" within a hand. The tiny suit (1e-4) and creation-order (1e-6)
+    # terms preserve ordering across copied states; Stone Cards get suit_mult=-1000 so
     # they always sort last (they shouldn't contribute to rank/suit hands).
     base = RANK_TO_NOMINAL[card.rank]
     face_nominal = 0.1 if card.rank == "J" else 0.2 if card.rank == "Q" else 0.3 if card.rank == "K" else 0.4 if card.rank == "A" else 0
     suit_nominal = SUIT_TO_NOMINAL[card.suit]
     suit_mult = -1000 if _card_effect(state, card) == "Stone Card" else 1
-    return base + suit_nominal * suit_mult + suit_nominal * 0.0001 * suit_mult + face_nominal + (id(card) % 1_000_000) * 1e-12
+    return base + suit_nominal * suit_mult + suit_nominal * 0.0001 * suit_mult + face_nominal + 0.000001 * (1 - card.reward_uid / 1_603_301)
 
 
 def _is_face(state: RunState, card: PlayingCard, *, from_boss: bool = False) -> bool:
@@ -612,11 +612,11 @@ def _evaluate_joker(
                 return {"dollars": 2.0}
         if name == "Fibonacci" and _card_id(state, other_card) in {2, 3, 5, 8, 14}:
             return {"mult": float(joker.extra if isinstance(joker.extra, int) else 0)}
-        if name == "Even Steven" and _card_id(state, other_card) <= 10 and _card_id(state, other_card) % 2 == 0:
+        if name == "Even Steven" and 0 <= _card_id(state, other_card) <= 10 and _card_id(state, other_card) % 2 == 0:
             return {"mult": float(joker.extra if isinstance(joker.extra, int) else 0)}
         if name == "Odd Todd":
             card_id = _card_id(state, other_card)
-            if (card_id <= 10 and card_id % 2 == 1) or card_id == 14:
+            if (0 <= card_id <= 10 and card_id % 2 == 1) or card_id == 14:
                 return {"chips": float(joker.extra if isinstance(joker.extra, int) else 0)}
         if center.get("effect") == "Suit Mult" and isinstance(joker.extra, dict):
             if _is_suit(state, other_card, str(joker.extra.get("suit", ""))):
@@ -654,7 +654,9 @@ def _evaluate_joker(
             valid_cards = [card for card in held_hand if _card_effect(state, card) != "Stone Card"]
             if not valid_cards:
                 return None
-            raised_card = min(valid_cards, key=lambda card: (_card_id(state, card), id(card)))
+            # Balatro scans left to right with >=, selecting the last tied
+            # lowest rank. Object addresses cannot reproduce that decision.
+            raised_card = min(reversed(valid_cards), key=lambda card: _card_id(state, card))
             if raised_card is other_card and not other_card.debuff:
                 return {"h_mult": float(2 * RANK_TO_NOMINAL[other_card.rank])}
         return None

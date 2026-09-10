@@ -31,7 +31,6 @@ arrangements.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import product
@@ -43,6 +42,7 @@ if TYPE_CHECKING:
     from pylatro.models import RunState
 
 from .constants import MAX_JOKER_SLOTS
+from .heuristic_simulation import copy_for_scoring
 
 _MAX_ORDER_CANDIDATES = 16
 
@@ -207,11 +207,10 @@ def order_candidates(state: RunState, count: int) -> list[tuple[int, ...]]:
 def _score_order(state: RunState, hand_indices: tuple[int, ...], order: tuple[int, ...]) -> tuple[int, int]:
     """Exactly score the selected cards with the roster in ``order``.
 
-    Returns ``(chips, dollars)``. The probe runs on a deepcopy that excludes
-    only the shared immutable game data, so the live engine RNG, hand, and
-    round state are untouched.
+    Returns ``(chips, dollars)``. The probe isolates the live engine RNG,
+    mutable cards and round state.
     """
-    trial = deepcopy(state, {id(state.data): state.data})
+    trial = copy_for_scoring(state)
     trial.jokers[: len(order)] = [trial.jokers[index] for index in order]
     trial.joker_keys[: len(order)] = [trial.joker_keys[index] for index in order]
     score = play_cards(trial, list(hand_indices)).score

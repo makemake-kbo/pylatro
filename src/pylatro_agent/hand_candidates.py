@@ -473,9 +473,10 @@ def _blind_target(state: RunState) -> int:
     if blind is None:
         return 0
     from pylatro import get_blind_amount
+    from pylatro.blind import blind_multiplier
 
     base = get_blind_amount(state.round_resets.ante, min(state.stake, 3))
-    return math.floor(base * float(blind.get("mult", 1) or 1))
+    return math.floor(base * blind_multiplier(state, blind))
 
 
 def _card_nominal(card: PlayingCard) -> float:

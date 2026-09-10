@@ -25,6 +25,7 @@ from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GamePhase
 
 from ..action import decode_action
+from ..constants import SubPhase
 from ..heuristic import HeuristicAgent
 from ..joker_layout import OrderObjective
 from ..reward import RewardConfig, default_reward
@@ -163,6 +164,18 @@ def _fast_action_diagnostics(state, decoded) -> dict[str, Any]:
     return action_diagnostics(state, decoded)
 
 
+def _make_blind_search(mode, confirm_early=False):
+    if mode is None:
+        if confirm_early:
+            raise ValueError("blind_confirm_early requires blind_rollout")
+        return None
+    if mode not in {"opening", "adaptive", "all"}:
+        raise ValueError("blind_rollout must be None, 'opening', 'adaptive' or 'all'")
+    from ..heuristic_blind_rollout import BlindRollout
+
+    return BlindRollout(repeat=mode != "opening", all_blinds=mode == "all", confirm_early=confirm_early)
+
+
 def _run_game_single_pass(
     seed: int,
     data: GameData,
@@ -171,8 +184,16 @@ def _run_game_single_pass(
     gamma: float,
     win_ante: int = 8,
     reward_config: RewardConfig | None = None,
+    *,
+    deck_key: str = "b_red",
+    stake: int = 1,
+    blind_rollout: str | None = None,
+    blind_confirm_early: bool = False,
 ) -> tuple[list[dict[str, Any]], int, bool]:
-    runner = FastRunner(seed, data, win_ante=win_ante)
+    from ..schema import TOKENIZER_VERSION
+
+    runner = FastRunner(seed, data, win_ante=win_ante, deck_key=deck_key, stake=stake)
+    blind_search = _make_blind_search(blind_rollout, blind_confirm_early)
     records: list[dict[str, Any]] = []
     rewards: list[float] = []
     steps_since_progress = 0
@@ -192,6 +213,8 @@ def _run_game_single_pass(
             mask,
             round_score=runner.round_score,
         )
+        if blind_search is not None and runner.sub_phase == SubPhase.CHOOSE_ACTION:
+            action = blind_search.select(agent, runner.state, mask, action, runner.round_score)
 
         current_obs = obs
         current_prev_info = prev_info
@@ -255,7 +278,8 @@ def _run_game_single_pass(
             )
         rewards.append(float(reward))
 
-        records.append({"obs": current_obs, "action": action, "reward": float(reward)})
+        records.append({"obs": current_obs, "action": action, "reward": float(reward),
+                        "seed": seed, "tokenizer_version": TOKENIZER_VERSION})
 
         if terminated:
             break
@@ -271,6 +295,12 @@ def _run_game_single_pass(
         rec["max_ante"] = runner.max_ante
         rec["return_target"] = rt
         rec["win_ante"] = int(win_ante)
+        rec["deck_key"] = deck_key
+        rec["stake"] = stake
+        rec["heuristic_shop_policy"] = getattr(agent, "_shop_policy", "legacy")
+        rec["heuristic_grow_scalers"] = getattr(agent, "_grow_scalers", False)
+        rec["heuristic_blind_rollout"] = blind_rollout
+        rec["heuristic_blind_confirm_early"] = blind_confirm_early
         rec["terminal_outcome_target"] = outcome_target
         rec["terminal_outcome_mask"] = 0.0 if episode_stalled else 1.0
 
@@ -282,8 +312,14 @@ def _run_game_fast_no_obs(
     data: GameData,
     agent: HeuristicAgent,
     win_ante: int = 8,
+    *,
+    deck_key: str = "b_red",
+    stake: int = 1,
+    blind_rollout: str | None = None,
+    blind_confirm_early: bool = False,
 ) -> tuple[int, bool]:
-    runner = FastRunner(seed, data, max_steps=2000, win_ante=win_ante)
+    runner = FastRunner(seed, data, max_steps=2000, win_ante=win_ante, deck_key=deck_key, stake=stake)
+    blind_search = _make_blind_search(blind_rollout, blind_confirm_early)
     while not runner.done:
         mask = runner.compute_mask()
         action = agent.select_action(
@@ -292,16 +328,23 @@ def _run_game_fast_no_obs(
             mask,
             round_score=runner.round_score,
         )
+        if blind_search is not None and runner.sub_phase == SubPhase.CHOOSE_ACTION:
+            action = blind_search.select(agent, runner.state, mask, action, runner.round_score)
         runner.step(action)
     return runner.max_ante, runner.won
 
 
 def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
-    seed_start, min_ante, gamma, keep_below_ratio, win_ante, reward_config = args
+    seed_start, min_ante, gamma, keep_below_ratio, win_ante, reward_config, *reservation = args
+    excluded_seeds = frozenset(reservation[0] if reservation else ())
     data = load_game_data()
     vocab = build_vocab(data)
     tokenizer = Tokenizer(vocab=vocab)
-    agent = HeuristicAgent()
+    options = dict(reservation[1]) if len(reservation) > 1 else {}
+    agent = HeuristicAgent(
+        shop_policy=options.pop("shop_policy", "legacy"),
+        grow_scalers=options.pop("grow_scalers", False),
+    )
     records: list[dict[str, Any]] = []
     seed = seed_start
     games_since_gc = 0
@@ -311,8 +354,12 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
             if _shared_counter.value >= _shared_target:
                 break
 
+        if seed in excluded_seeds:
+            seed += 1
+            continue
+
         if min_ante > 2:
-            max_ante, won = _run_game_fast_no_obs(seed, data, agent, win_ante)
+            max_ante, won = _run_game_fast_no_obs(seed, data, agent, win_ante, **options)
             with _shared_total_attempted.get_lock():
                 _shared_total_attempted.value += 1
             seed += 1
@@ -345,6 +392,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 gamma,
                 win_ante,
                 reward_config,
+                **options,
             )
             with _shared_busy.get_lock():
                 _shared_busy.value -= 1
@@ -368,6 +416,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 gamma,
                 win_ante,
                 reward_config,
+                **options,
             )
             with _shared_busy.get_lock():
                 _shared_busy.value -= 1
@@ -470,6 +519,8 @@ def _generate_batch(
     keep_below_threshold_ratio: float,
     win_ante: int,
     reward_config: RewardConfig | None,
+    excluded_seeds: tuple[int, ...] = (),
+    game_options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     worker_args = [
         (
@@ -479,6 +530,8 @@ def _generate_batch(
             keep_below_threshold_ratio,
             win_ante,
             reward_config,
+            excluded_seeds,
+            game_options or {},
         )
         for i in range(num_workers)
     ]
@@ -541,8 +594,17 @@ def generate_training_data(
     chunk_size: int = 10_000,
     win_ante: int = 8,
     reward_config: RewardConfig | None = None,
+    excluded_seeds: tuple[int, ...] = (),
+    *,
+    deck_key: str = "b_red",
+    stake: int = 1,
+    shop_policy: str = "legacy",
+    grow_scalers: bool = False,
+    blind_rollout: str | None = None,
+    blind_confirm_early: bool = False,
 ) -> list[dict[str, Any]]:
     validate_critic_win_ante(win_ante)
+    _make_blind_search(blind_rollout, blind_confirm_early)
     num_workers = _get_num_workers(num_workers)
     logger.info(
         "Fast-generating %d games across %d workers (min_ante=%d, gamma=%.3f, chunk_size=%d)",
@@ -562,6 +624,9 @@ def generate_training_data(
             keep_below_threshold_ratio,
             win_ante,
             reward_config,
+            excluded_seeds,
+            dict(deck_key=deck_key, stake=stake, shop_policy=shop_policy,
+                 grow_scalers=grow_scalers, blind_rollout=blind_rollout, blind_confirm_early=blind_confirm_early),
         )
         logger.info(
             "Fast-generated %d training records from %d requested games",
@@ -573,6 +638,7 @@ def generate_training_data(
     num_chunks = math.ceil(num_games / chunk_size)
     chunk_files: list[str] = []
     total_records = 0
+    used_seeds = set(excluded_seeds)
 
     for chunk_idx in range(num_chunks):
         this_chunk = min(chunk_size, num_games - chunk_idx * chunk_size)
@@ -592,7 +658,14 @@ def generate_training_data(
             keep_below_threshold_ratio,
             win_ante,
             reward_config,
+            tuple(sorted(used_seeds)),
+            dict(deck_key=deck_key, stake=stake, shop_policy=shop_policy,
+                 grow_scalers=grow_scalers, blind_rollout=blind_rollout, blind_confirm_early=blind_confirm_early),
         )
+        # Each batch starts its workers at the same seed offsets. Exclude
+        # previously retained episodes so chunking cannot duplicate training
+        # games while reporting them as additional examples.
+        used_seeds.update(int(record["seed"]) for record in records)
         total_records += len(records)
 
         chunk_fd, chunk_path = tempfile.mkstemp(

@@ -1,0 +1,343 @@
+{
+  "games": 300,
+  "wins": 230,
+  "losses": 70,
+  "records": 68915,
+  "bytes": 3643055077,
+  "unique_winning_final_joker_sets": 229,
+  "winning_joker_presence": {
+    "j_ramen": 98,
+    "j_supernova": 89,
+    "j_card_sharp": 86,
+    "j_blackboard": 83,
+    "j_baseball": 62,
+    "j_blue_joker": 61,
+    "j_banner": 59,
+    "j_green_joker": 53,
+    "j_abstract": 46,
+    "j_half": 37,
+    "j_square": 37,
+    "j_burglar": 34,
+    "j_cavendish": 31,
+    "j_hologram": 29,
+    "j_mystic_summit": 27,
+    "j_constellation": 24,
+    "j_misprint": 19,
+    "j_red_card": 19,
+    "j_trousers": 16,
+    "j_fortune_teller": 15,
+    "j_raised_fist": 13,
+    "j_ice_cream": 10,
+    "j_sly": 9,
+    "j_bull": 8,
+    "j_gros_michel": 8,
+    "j_scary_face": 8,
+    "j_popcorn": 7,
+    "j_joker": 7,
+    "j_smiley": 7,
+    "j_turtle_bean": 6,
+    "j_steel_joker": 6,
+    "j_stencil": 6,
+    "j_splash": 5,
+    "j_cloud_9": 5,
+    "j_fibonacci": 5,
+    "j_selzer": 5,
+    "j_to_the_moon": 4,
+    "j_castle": 4,
+    "j_four_fingers": 4,
+    "j_rocket": 4,
+    "j_juggler": 4,
+    "j_odd_todd": 3,
+    "j_ride_the_bus": 3,
+    "j_jolly": 3,
+    "j_mime": 3,
+    "j_hack": 3,
+    "j_runner": 3,
+    "j_photograph": 2,
+    "j_madness": 2,
+    "j_flash": 2,
+    "j_loyalty_card": 2,
+    "j_mail": 2,
+    "j_ancient": 2,
+    "j_shortcut": 2,
+    "j_8_ball": 1,
+    "j_superposition": 1,
+    "j_walkie_talkie": 1,
+    "j_even_steven": 1,
+    "j_devious": 1,
+    "j_zany": 1,
+    "j_droll": 1,
+    "j_obelisk": 1,
+    "j_drunkard": 1,
+    "j_faceless": 1,
+    "j_delayed_grat": 1,
+    "j_diet_cola": 1,
+    "j_lusty_joker": 1,
+    "j_wily": 1,
+    "j_crafty": 1,
+    "j_riff_raff": 1,
+    "j_campfire": 1,
+    "j_greedy_joker": 1,
+    "j_stone": 1,
+    "j_midas_mask": 1,
+    "j_space": 1,
+    "j_lucky_cat": 1,
+    "j_seance": 1,
+    "j_pareidolia": 1
+  },
+  "winning_bosses": {
+    "bl_final_acorn": 56,
+    "bl_final_heart": 46,
+    "bl_final_bell": 56,
+    "bl_final_vessel": 33,
+    "bl_final_leaf": 39
+  },
+  "winning_played_hands": {
+    "Pair": 6275,
+    "Two Pair": 1697,
+    "High Card": 1408,
+    "Straight": 689,
+    "Flush": 480,
+    "Full House": 316,
+    "Three of a Kind": 261,
+    "Four of a Kind": 44,
+    "Straight Flush": 26,
+    "Five of a Kind": 5,
+    "Flush House": 2
+  },
+  "winning_late_played_hands": {
+    "Pair": 3396,
+    "High Card": 532,
+    "Two Pair": 380,
+    "Straight": 115,
+    "Flush": 91,
+    "Three of a Kind": 33,
+    "Full House": 29,
+    "Four of a Kind": 10,
+    "Straight Flush": 5,
+    "Five of a Kind": 3,
+    "Flush House": 1
+  },
+  "winning_dominant_late_hand": {
+    "Pair": 195,
+    "High Card": 7,
+    "Two Pair": 25,
+    "Flush": 1,
+    "Straight": 2
+  },
+  "actions": {
+    "PLAY_SUBSET": 14412,
+    "SHOP_BUY": 12709,
+    "PACK_SKIP": 8065,
+    "BLIND_PLAY": 6833,
+    "SHOP_LEAVE": 6533,
+    "PACK_CLAIM": 6311,
+    "SHOP_REROLL": 5417,
+    "DISCARD_SUBSET": 3446,
+    "SHOP_SELL_JOKER": 1939,
+    "USE_CONSUMABLE_NO_TARGET": 1702,
+    "USE_CONSUMABLE_HAND_SUBSET": 1479,
+    "USE_CONSUMABLE_JOKER": 42,
+    "BLIND_REROLL": 25,
+    "SHOP_SELL_CONSUMABLE": 2
+  },
+  "validation": "all actions legal, finite observations/returns, terminal replay parity, every shard reloaded and collated",
+  "shards": [
+    {
+      "file": "shard_000.pkl",
+      "records": 2244,
+      "bytes": 118622440,
+      "sha256": "95e4b89fc1078d5b1d151937560dd27c9bd0c73f772aac2806b0a42988012314"
+    },
+    {
+      "file": "shard_001.pkl",
+      "records": 2067,
+      "bytes": 109265914,
+      "sha256": "8800b640a0d40f24dac727be4a409f0a3331c211f525edaefa46f4d480249a2f"
+    },
+    {
+      "file": "shard_002.pkl",
+      "records": 2382,
+      "bytes": 125917241,
+      "sha256": "b35e61f569c7fcf58f8ddf7e850cb5ff6fd575085182218120623252ce35869a"
+    },
+    {
+      "file": "shard_003.pkl",
+      "records": 2352,
+      "bytes": 124331308,
+      "sha256": "c9313161af2b1d03803736d42824e94177e0ae93823b460b084c2f3bf3535df4"
+    },
+    {
+      "file": "shard_004.pkl",
+      "records": 2422,
+      "bytes": 128031623,
+      "sha256": "5575724003cf9bce00d04479520d31f26cf396cda29faed6ddf3d9a6cc4e75cf"
+    },
+    {
+      "file": "shard_005.pkl",
+      "records": 2330,
+      "bytes": 123168469,
+      "sha256": "131d0ff3138d230f134cf85bab0de2fa27d002314e2f759173dc72c92562849e"
+    },
+    {
+      "file": "shard_006.pkl",
+      "records": 2465,
+      "bytes": 130304737,
+      "sha256": "a52c532bb5a5dcc1255b95e953a6d60fa4c6b68e1ae1d6e44770ac6c8cb8de23"
+    },
+    {
+      "file": "shard_007.pkl",
+      "records": 2163,
+      "bytes": 114340644,
+      "sha256": "0b078c4207b2f389860e8f3266d6aac8711cf3fc6d3dece999ec6aa57378a2a8"
+    },
+    {
+      "file": "shard_008.pkl",
+      "records": 2457,
+      "bytes": 129882015,
+      "sha256": "8fc1bc3f5a1ca894fd300b7b4093bc4d804d2de25a8b5437bce9dae905934196"
+    },
+    {
+      "file": "shard_009.pkl",
+      "records": 2548,
+      "bytes": 134692150,
+      "sha256": "3fc59db69a4a1ae26991a4369786e585e533144334d100f34e0e13eed8d2cc59"
+    },
+    {
+      "file": "shard_010.pkl",
+      "records": 2467,
+      "bytes": 130410508,
+      "sha256": "6fe0d99e194e8fd549ce011a7dd330d1a6de6551a6d4a80b262536302ea97a0b"
+    },
+    {
+      "file": "shard_011.pkl",
+      "records": 1989,
+      "bytes": 105142792,
+      "sha256": "e4928a1e115f8b151a2ad08762e4151ae35913e0103ef8d16c0ab3764b157b06"
+    },
+    {
+      "file": "shard_012.pkl",
+      "records": 2233,
+      "bytes": 118040847,
+      "sha256": "0c38ed742c5350033c5549fa19cab9c02372d8fbc2aa56255baa9792f99719b5"
+    },
+    {
+      "file": "shard_013.pkl",
+      "records": 2395,
+      "bytes": 126604359,
+      "sha256": "7c72c1e08f59a011eea72c4274d592ea7f92c708446056853cb8392dd6720754"
+    },
+    {
+      "file": "shard_014.pkl",
+      "records": 2302,
+      "bytes": 121688255,
+      "sha256": "41b70dee1a9d0efcb2fa41c106b70143c838f5313215e0e692717760de2ce3b4"
+    },
+    {
+      "file": "shard_015.pkl",
+      "records": 2469,
+      "bytes": 130516111,
+      "sha256": "94ab15be600530671ebbb56a1fcbf886be0d637258d74850ef041c1b32275498"
+    },
+    {
+      "file": "shard_016.pkl",
+      "records": 1868,
+      "bytes": 98746452,
+      "sha256": "efc22973ac4c0bea3f64c124eee81f9583a84485c420cd67a573749806d7bfeb"
+    },
+    {
+      "file": "shard_017.pkl",
+      "records": 2208,
+      "bytes": 116719430,
+      "sha256": "ddb89e2b109b8c85aef1933f95b9027ab965f7054950e52a25f5e897f116667f"
+    },
+    {
+      "file": "shard_018.pkl",
+      "records": 2047,
+      "bytes": 108208746,
+      "sha256": "7db38ca04d4946542d89d7ac0a38677140a115e7d92517b61ea043e0581af498"
+    },
+    {
+      "file": "shard_019.pkl",
+      "records": 2206,
+      "bytes": 116613614,
+      "sha256": "79d5a497a7f3e7de9930727e030261d7732117b2efb32e6c00380b3c9f2afc90"
+    },
+    {
+      "file": "shard_020.pkl",
+      "records": 2196,
+      "bytes": 116091632,
+      "sha256": "b01a6929d42f8699a78f4fb7bee78486af06a2d8a258a5dd1177f0013513ad41"
+    },
+    {
+      "file": "shard_021.pkl",
+      "records": 2469,
+      "bytes": 130523522,
+      "sha256": "fb118b4c87a1bac0145d3547fc05833b642025d5c50348560fc2e0008eba92ee"
+    },
+    {
+      "file": "shard_022.pkl",
+      "records": 2504,
+      "bytes": 132373798,
+      "sha256": "8c24860e9b9564692d49d2807cd2a4376ca09f427412787f34c4f12a9f9c0ceb"
+    },
+    {
+      "file": "shard_023.pkl",
+      "records": 2354,
+      "bytes": 124444242,
+      "sha256": "13a1b2c9a49655f8df4f66a51c29a6e42e15636a871c9836e1bf5c41d0b57469"
+    },
+    {
+      "file": "shard_024.pkl",
+      "records": 2323,
+      "bytes": 122805419,
+      "sha256": "987f491af6221dfbf1facc5fad4ec536e30ac0e97c10a68b6f2d109ce668dee3"
+    },
+    {
+      "file": "shard_025.pkl",
+      "records": 2120,
+      "bytes": 112074003,
+      "sha256": "9c40867c81e5918984d6d96cb1b591a96f128f39da61ab3520f8a31b082ccbe9"
+    },
+    {
+      "file": "shard_026.pkl",
+      "records": 2281,
+      "bytes": 120585056,
+      "sha256": "b37dfe9b31b7c79447f96ff3253eedb22592aff8bfd42aa48eb0de730613d488"
+    },
+    {
+      "file": "shard_027.pkl",
+      "records": 2401,
+      "bytes": 126928773,
+      "sha256": "42d0408a58c63404d113af22e1084206ca999a9bc3f54d765306136053588a03"
+    },
+    {
+      "file": "shard_028.pkl",
+      "records": 2403,
+      "bytes": 127034603,
+      "sha256": "6b8d846a4dd0b195802a97bfec30c274b12c1915d655450258d7407f47d4b095"
+    },
+    {
+      "file": "shard_029.pkl",
+      "records": 2250,
+      "bytes": 118946374,
+      "sha256": "35e9bbbfb8371affc604d4ff5c0fadf4c69cc5335555dbb59d78735e58576517"
+    }
+  ],
+  "verification": {
+    "games": 300,
+    "wins": 230,
+    "losses": 70,
+    "records": 68915,
+    "shards": 30,
+    "bytes": 3643055077,
+    "all_shard_hashes_match": true,
+    "all_source_action_labels_match": true,
+    "all_record_outcomes_match": true,
+    "all_seeds_unique_and_disjoint_from_holdouts": true
+  },
+  "tokenizer_version": 13,
+  "tokenizer_semantics": "v13_phase_risk_economy_card_state",
+  "development_data": true,
+  "claimed_90_percent": false
+}

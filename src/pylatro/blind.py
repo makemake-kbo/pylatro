@@ -3,11 +3,23 @@ from __future__ import annotations
 from math import floor, fmod, isinf, isnan, log10
 from typing import TYPE_CHECKING
 
+from ._helpers import _clear_shop_cards
 from .pool import get_new_boss, get_next_tag_key, get_next_voucher_key
 from .runtime import apply_end_of_round
 
 if TYPE_CHECKING:
     from .models import RunState
+
+
+def blind_multiplier(state: RunState, blind: dict | None = None) -> float:
+    blind = blind if blind is not None else (state.round_resets.blind or {})
+    mult = blind.get("mult", 1)
+    if state.blind_disabled:
+        if blind.get("name") == "The Wall":
+            mult /= 2
+        elif blind.get("name") == "Violet Vessel":
+            mult /= 3
+    return mult
 
 
 def get_blind_amount(ante: int, scaling: int | None = None) -> int | float:
@@ -66,10 +78,10 @@ def select_blind(state: RunState, blind_type: str | None = None) -> None:
     blind_key = state.round_resets.blind_choices[blind_type]
     state.round_resets.blind = state.data.blinds[blind_key]
     state.round_resets.blind_states[blind_type] = "Current"
-    state.shop.cards = []
-    state.shop.vouchers = []
-    state.shop.boosters = []
-    state.pack = None
+    from .shop import close_pack
+
+    close_pack(state)
+    _clear_shop_cards(state)
     state.current_round.discards_left = max(0, state.round_resets.discards)
     state.current_round.hands_left = max(1, state.round_resets.hands)
     state.current_round.hands_played = 0
@@ -88,14 +100,32 @@ def skip_blind(state: RunState) -> str:
     skip_to = "Big" if skipped == "Small" else "Boss"
     state.skips += 1
     if tag := state.round_resets.blind_tags.get(skipped):
-        state.tags.append(tag)
+        copies = 1
+        if tag != "tag_double":
+            copies += state.tags.count("tag_double")
+            state.tags[:] = [held for held in state.tags if held != "tag_double"]
+        if tag == "tag_economy":
+            limit = state.data.tags[tag].get("config", {}).get("max", 40)
+            for _ in range(copies):
+                state.dollars += min(limit, max(0, state.dollars))
+        else:
+            state.tags.extend([tag] * copies)
     state.round_resets.blind_states[skipped] = "Skipped"
     state.round_resets.blind_states[skip_to] = "Select"
     state.blind_on_deck = skip_to
     return skip_to
 
 
+def can_reroll_boss(state: RunState) -> bool:
+    return state.dollars - state.bankrupt_at >= 10 and bool(
+        state.used_vouchers.get("v_retcon")
+        or (state.used_vouchers.get("v_directors_cut") and not state.round_resets.boss_rerolled)
+    )
+
+
 def reroll_boss(state: RunState, from_tag: bool = False) -> str:
+    if not from_tag and not can_reroll_boss(state):
+        raise ValueError("Boss reroll requires an available voucher use and $10")
     state.round_resets.boss_rerolled = True
     if not from_tag:
         state.dollars -= 10  # boss reroll costs $10 (free when granted by a tag)
@@ -121,10 +151,10 @@ def cash_out(state: RunState) -> None:
     state.current_round.jokers_purchased = 0
     state.current_round.discards_left = max(0, state.round_resets.discards)
     state.current_round.hands_left = max(1, state.round_resets.hands)
-    state.shop.cards = []
-    state.shop.vouchers = []
-    state.shop.boosters = []
-    state.pack = None
+    from .shop import close_pack
+
+    close_pack(state)
+    _clear_shop_cards(state)
     state.current_round.used_packs = []
     if state.round_resets.blind_states["Boss"] == "Defeated":
         most_played = max(

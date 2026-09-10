@@ -14,6 +14,7 @@ import cython
 import numpy as np
 
 from pylatro import can_use_consumable
+from pylatro.blind import blind_multiplier, can_reroll_boss
 from pylatro.runtime import consumable_limit, joker_limit
 from pylatro.shop import can_claim_pack_card
 from pylatro_cli.controller import GameController, GamePhase
@@ -37,7 +38,7 @@ from ..constants import (
 )
 from ..history import PlayHistoryTracker, blind_history_key
 from ..joker_layout import NO_ORDER_DECISION, apply_best_joker_order
-from ..masks import _mask_debuffed_plays
+from ..masks import _mask_debuffed_plays, _shop_consumable_allowed
 from ..subset_actions import (
     consumable_subset_indices,
     legal_consumable_subset_mask,
@@ -61,6 +62,7 @@ class FastRunner:
         "_max_ante",
         "_max_steps",
         "_prev_signature",
+        "_raise_errors",
         "_round_score",
         "_state",
         "_step_count",
@@ -76,11 +78,15 @@ class FastRunner:
         *,
         max_steps: int = 2000,
         win_ante: int = 8,
+        deck_key: str = "b_red",
+        stake: int = 1,
+        raise_errors: bool = False,
     ) -> None:
         ctrl = GameController(data=data)
-        ctrl.new_run(str(seed))
+        ctrl.new_run(str(seed), stake=stake, deck_key=deck_key)
         assert ctrl.state is not None
         self._ctrl = ctrl
+        self._raise_errors = raise_errors
         self._state: RunState = cast("RunState", ctrl.state)
         self._state.win_ante = validate_critic_win_ante(win_ante)
         self._sub_phase: SubPhase = SubPhase.BLIND_SELECT
@@ -168,6 +174,8 @@ class FastRunner:
         try:
             action_result = self._execute(action_id)
         except Exception:
+            if self._raise_errors:
+                raise
             self._steps_since_progress += 1
             if not self._done and (
                 self._steps_since_progress >= self._max_steps or self._step_count >= self._max_steps
@@ -321,6 +329,8 @@ class FastRunner:
 
         elif AR.SHOP_SELL_JOKER_START <= aid <= AR.SHOP_SELL_JOKER_END:
             ctrl.sell_joker(aid - AR.SHOP_SELL_JOKER_START)
+            if ctrl.phase == GamePhase.SHOP:
+                self._sub_phase = SubPhase.SHOP
 
         elif AR.SHOP_SELL_CONSUMABLE_START <= aid <= AR.SHOP_SELL_CONSUMABLE_END:
             ctrl.sell_consumable(aid - AR.SHOP_SELL_CONSUMABLE_START)
@@ -367,7 +377,7 @@ def _mask_blind(m, state, AR):
     blind_on_deck = state.blind_on_deck or "Small"
     if blind_on_deck in ("Small", "Big"):
         m[_bs] = 1
-    if blind_on_deck == "Boss" and state.dollars >= 10 and not state.round_resets.boss_rerolled:
+    if blind_on_deck == "Boss" and can_reroll_boss(state):
         m[_br] = 1
 
 
@@ -376,6 +386,9 @@ def _mask_blind(m, state, AR):
 def _mask_action(m, state, AR):
     _play_start = AR.PLAY_SUBSET_START
     _disc_start = AR.DISCARD_SUBSET_START
+    for i in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
+        if not state.jokers[i].eternal:
+            m[AR.SHOP_SELL_JOKER_START + i] = 1
     hand_size = len(state.hand_cards)
     forced_slots = {idx for idx, card in enumerate(state.hand_cards) if card.forced_selection}
     legal_subsets = legal_subset_mask(hand_size, forced_slots)
@@ -437,6 +450,7 @@ def _mask_shop(m, state, AR):
         m[_sell_cons + i] = 1
 
     m[_leave] = 1
+    _mask_consumable_flat(m, state, AR, in_shop=True)
 
 
 @cython.cfunc
@@ -445,6 +459,9 @@ def _mask_booster(m, state, AR):
     _claim_start = AR.PACK_CLAIM_START
     _skip = AR.PACK_SKIP
     pack = state.pack
+    for i in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
+        if not state.jokers[i].eternal:
+            m[AR.SHOP_SELL_JOKER_START + i] = 1
     if pack and pack.choices_remaining > 0:
         for i in range(min(len(pack.cards), MAX_PACK_CARDS)):
             card = pack.cards[i]
@@ -486,7 +503,7 @@ def _mask_booster(m, state, AR):
     _joker_off=cython.int,
     _per_slot=cython.int,
 )
-def _mask_consumable_flat(m, state, AR):
+def _mask_consumable_flat(m, state, AR, in_shop=False):
     base = int(AR.CONSUMABLE_FLAT_START)
     num_jokers = min(len(state.jokers), MAX_JOKER_SLOTS)
     hand_size = len(state.hand_cards)
@@ -501,6 +518,8 @@ def _mask_consumable_flat(m, state, AR):
     for slot in range(min(len(state.consumables), MAX_CONSUMABLE_SLOTS)):
         cons = state.consumables[slot]
         center = state.data.centers[cons.center_key]
+        if in_shop and not _shop_consumable_allowed(center):
+            continue
         config = center.get("config") or {}
         max_highlighted = config.get("max_highlighted")
         name = center.get("name", "")
@@ -547,5 +566,5 @@ def _blind_target(state):
     ante = state.round_resets.ante
     scaling = min(state.stake, 3)
     base = get_blind_amount(ante, scaling)
-    mult = blind.get("mult", 1)
+    mult = blind_multiplier(state, blind)
     return int(base * mult)

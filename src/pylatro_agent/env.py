@@ -747,6 +747,8 @@ class BalatroEnv(gymnasium.Env):
 
         elif at == ActionType.SHOP_SELL_JOKER:
             ctrl.sell_joker(decoded.index)
+            if ctrl.phase == GamePhase.SHOP:
+                self._sub_phase = SubPhase.SHOP
 
         elif at == ActionType.SHOP_SELL_CONSUMABLE:
             ctrl.sell_consumable(decoded.index)

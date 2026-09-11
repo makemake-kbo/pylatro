@@ -5,18 +5,19 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import time
-from collections import Counter
-from contextlib import ExitStack
+from collections import Counter, deque
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
 
 from ..action import decode_action
-from ..env import BalatroEnv
 from ..reward import RewardConfig
 from ..survival import terminal_outcome_class
+from .evaluation_envs import EvaluationEnvs
 from .ppo_observations import (
     _obs_dicts_to_batch,
 )
@@ -32,6 +33,38 @@ if TYPE_CHECKING:
     from ..vocab import Vocab
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _evaluation_threads(model, device: torch.device, requested: int | None):
+    """Scope CPU inference tuning without changing the trainer's thread pool.
+
+    None preserves the caller setting. Zero selects one thread for tiny models
+    and up to eight for larger transformers, bounded by CPU affinity.
+    """
+    if requested is not None and requested < 0:
+        raise ValueError("eval_cpu_threads must be non-negative")
+    if device.type != "cpu" or requested is None:
+        yield
+        return
+    threads = requested
+    if threads == 0:
+        base_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+        width = getattr(getattr(base_model, "config", None), "d_model", 0)
+        try:
+            available = len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            available = os.cpu_count() or 1
+        threads = min(8 if width >= 256 else 1, max(available, 1))
+    previous = torch.get_num_threads()
+    if threads == previous:
+        yield
+        return
+    torch.set_num_threads(threads)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(previous)
 
 
 def evaluation_seed_list(num_games: int, seeds: list[int] | None = None) -> list[int]:
@@ -135,6 +168,8 @@ def evaluate_model(
     policy_config=None,
     sampling_seed: int = 31013,
     summary_out: dict | None = None,
+    eval_workers: int = 0,
+    eval_cpu_threads: int | None = None,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games.
 
@@ -206,6 +241,8 @@ def evaluate_model(
             stake=stake,
             greedy=greedy,
             batch_size=eval_batch_size,
+            eval_workers=eval_workers,
+            eval_cpu_threads=eval_cpu_threads,
             reward_config=reward_config,
             record_critic=True,
             on_result=record,
@@ -224,7 +261,7 @@ def evaluate_model(
             float(reserved is not None and set(seed_list) <= set(reserved)),
             update_count,
         )
-        for name in ("policy_seconds", "env_seconds"):
+        for name in ("policy_seconds", "env_seconds", "env_wall_seconds"):
             writer.add_scalar(prefix + name, sum(row.get(name, 0) for row in outcomes), update_count)
     if greedy and sampled_games > 0:
         evaluate_model(
@@ -239,6 +276,8 @@ def evaluate_model(
             stake=stake,
             seeds=seed_list,
             eval_batch_size=eval_batch_size,
+            eval_workers=eval_workers,
+            eval_cpu_threads=eval_cpu_threads,
             reward_config=reward_config,
             results_path=results_path,
             writer=writer,
@@ -278,6 +317,8 @@ def run_seed_evaluation(
     record_critic: bool = False,
     on_result=None,
     policy_config=None,
+    eval_workers: int = 0,
+    eval_cpu_threads: int | None = None,
 ) -> list[dict]:
     """Play every seed and return its outcome, batching the policy forward pass.
 
@@ -286,8 +327,8 @@ def run_seed_evaluation(
     (measured on the Ante-5 runs: 60-95 minutes per 400-game eval against ~54
     minutes of training per 25-update interval). Here up to ``batch_size`` games
     advance in lockstep and share one forward pass, so the same GPU/CPU work
-    serves many games at once. Env stepping stays in-process and serial, so the
-    speedup tracks the forward-pass share of per-step cost.
+    serves many games at once. ``eval_workers`` CPU processes step disjoint
+    groups of games concurrently; zero keeps environments in-process.
 
     Determinism: each seed constructs its own env and greedy selection is a
     per-row argmax, so per-seed outcomes do not depend on batch composition or
@@ -306,34 +347,14 @@ def run_seed_evaluation(
     slot_count = max(1, min(int(batch_size), len(seeds)))
 
     results_by_seed: dict[int, dict] = {}
-    pending = list(seeds)
-    # Each live slot is (seed, env, obs). Slots advance in lockstep; a finished
-    # slot immediately picks up the next pending seed so the batch stays full.
-    slots: list[tuple[int, BalatroEnv, dict]] = []
+    pending = deque(seeds)
+    # Slots contain only observations and the pre-action phase. Engines stay
+    # in the environment group, never alongside GPU tensors in child processes.
+    slots: list[tuple[int, dict, str]] = []
     records: dict[int, dict] = {}
 
-    def _start(seed: int) -> tuple[int, BalatroEnv, dict]:
-        env = BalatroEnv(
-            seed=seed,
-            data=data,
-            vocab=vocab,
-            stake=stake,
-            max_steps=max_no_progress_steps,
-            win_ante=win_ante,
-            # Eval never reads teacher labels; the heuristic teacher would
-            # otherwise run twice per step of every eval game.
-            enable_teacher=False,
-            # No evaluation reward is optimized. Use explicit training reward
-            # semantics when supplied; avoid expensive shaped-reward defaults.
-            reward_config=reward_config
-            or (
-                RewardConfig(objective="milestone")
-                if (win_ante or 8) == 8
-                else RewardConfig(enable_score_build_potential=False)
-            ),
-        )
-        env_stack.callback(env.close)
-        obs, _ = env.reset(seed=seed)
+    def _start(seed: int) -> tuple[int, dict, str]:
+        obs, phase = envs.reset(seed)
         records[seed] = {
             "max_ante": 1,
             "steps": 0,
@@ -341,20 +362,31 @@ def run_seed_evaluation(
             "critic_forecasts": [],
             "policy_seconds": 0.0,
             "env_seconds": 0.0,
+            "env_wall_seconds": 0.0,
         }
-        return seed, env, obs
+        return seed, obs, phase
 
     with ExitStack() as env_stack, torch.inference_mode():
+        env_stack.enter_context(_evaluation_threads(model, device, eval_cpu_threads))
         env_stack.callback(model.train, model.training)
         model.eval()
+        envs = EvaluationEnvs(
+            min(eval_workers, slot_count), data=data, vocab=vocab, stake=stake,
+            max_steps=max_no_progress_steps, win_ante=win_ante, enable_teacher=False,
+            reward_config=reward_config or (
+                RewardConfig(objective="milestone") if (win_ante or 8) == 8
+                else RewardConfig(enable_score_build_potential=False)
+            ),
+        )
+        env_stack.callback(envs.close)
         while pending and len(slots) < slot_count:
-            slots.append(_start(pending.pop(0)))
+            slots.append(_start(pending.popleft()))
 
         steps_since_drain = 0
         last_progress = time.monotonic()
         while slots:
             policy_started = time.perf_counter()
-            batch = _obs_dicts_to_batch([obs for _seed, _env, obs in slots], device)
+            batch = _obs_dicts_to_batch([obs for _seed, obs, _phase in slots], device)
             policy_temperature = (
                 _policy_temperature_for_scalars(batch["scalars"], policy_config)
                 if policy_config is not None
@@ -368,8 +400,13 @@ def run_seed_evaluation(
             # the MPS allocator until the whole eval finishes.
             del batch, dist
 
-            next_slots: list[tuple[int, BalatroEnv, dict]] = []
-            for slot_index, (seed, env, _obs) in enumerate(slots):
+            env_started = time.perf_counter()
+            step_results = envs.step([
+                (seed, int(actions[index])) for index, (seed, _obs, _phase) in enumerate(slots)
+            ])
+            env_wall_seconds = (time.perf_counter() - env_started) / len(slots)
+            next_slots: list[tuple[int, dict, str]] = []
+            for slot_index, (seed, _obs, phase) in enumerate(slots):
                 record = records[seed]
                 record["policy_seconds"] += policy_seconds
                 record["steps"] += 1
@@ -378,13 +415,13 @@ def run_seed_evaluation(
                     record["critic_forecasts"].append(
                         {
                             "ante": int(_obs["scalars"][2]),
-                            "phase": str(env._sub_phase),
+                            "phase": phase,
                             "outcome_probabilities": critic_probs[slot_index],
                         }
                     )
-                env_started = time.perf_counter()
-                obs, _reward, terminated, truncated, info = env.step(int(actions[slot_index]))
-                record["env_seconds"] += time.perf_counter() - env_started
+                obs, terminated, truncated, info, env_seconds = step_results[seed]
+                record["env_seconds"] += env_seconds
+                record["env_wall_seconds"] += env_wall_seconds
                 record["max_ante"] = max(record["max_ante"], int(info.get("ante", 1) or 1))
                 if terminated or truncated:
                     results_by_seed[seed] = {
@@ -398,10 +435,8 @@ def run_seed_evaluation(
                         "cash": float(info.get("dollars", 0)),
                         "terminal_blind": str(info.get("blind_on_deck", "")),
                         "boss_key": str(info.get("boss_key", "")),
-                        "joker_keys": list(env.state.joker_keys),
-                        "cleared_antes": sorted(
-                            env._cleared_boss_antes | ({env.state.win_ante} if info.get("won") else set())
-                        ),
+                        "joker_keys": info["joker_keys"],
+                        "cleared_antes": info["cleared_antes"],
                         "critic": _score_critic_forecasts(
                             record["critic_forecasts"],
                             won=bool(info.get("won")),
@@ -411,11 +446,10 @@ def run_seed_evaluation(
                     }
                     if on_result is not None:
                         on_result(results_by_seed[seed])
-                    env.close()
                     if pending:
-                        next_slots.append(_start(pending.pop(0)))
+                        next_slots.append(_start(pending.popleft()))
                 else:
-                    next_slots.append((seed, env, obs))
+                    next_slots.append((seed, obs, info["phase"]))
             slots = next_slots
 
             if time.monotonic() - last_progress >= 30:

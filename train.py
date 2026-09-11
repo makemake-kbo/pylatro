@@ -278,6 +278,14 @@ def main():
         help="Games per PPO eval pass (default: 50). Wins are rare; small samples are noisy.",
     )
     parser.add_argument(
+        "--eval-workers", type=int, default=4,
+        help="CPU environment workers per PPO evaluation (default: 4; 0 runs in-process).",
+    )
+    parser.add_argument(
+        "--eval-cpu-threads", type=int, default=0,
+        help="CPU evaluation inference threads (0: choose by model width and CPU affinity).",
+    )
+    parser.add_argument(
         "--eval-batch-size",
         type=int,
         default=32,
@@ -889,6 +897,8 @@ def main():
                 win_ante=args.win_ante,
                 eval_games=args.eval_games,
                 eval_batch_size=args.eval_batch_size,
+                eval_workers=args.eval_workers,
+                eval_cpu_threads=args.eval_cpu_threads,
                 risk_forecast_log=args.risk_forecast_log,
                 eval_regression_tolerance=args.eval_regression_tolerance,
                 eval_regression_patience=args.eval_regression_patience,

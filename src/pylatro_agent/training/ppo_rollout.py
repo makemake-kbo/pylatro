@@ -30,7 +30,7 @@ from .ppo_observations import (
     _observation_buffer_batch,
     _ppo_terminal_flags,
 )
-from .ppo_policy import _grammar_distribution, _policy_temperature_for_scalars
+from .ppo_policy import _critic_predictions, _grammar_distribution, _policy_temperature_for_scalars
 from .rollout_buffer import RolloutBuffer
 from .sil import EpisodeReplayBuffer, EpisodeTracker
 
@@ -43,6 +43,15 @@ if TYPE_CHECKING:
     from .ppo_config import PPOConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _rollout_statistics_numpy(log_probs, values, chosen_probs, macro_max_probs, survival):
+    """Copy accelerator statistics together; CPU tensors keep zero-copy views."""
+    tensors = (log_probs, values, chosen_probs, macro_max_probs, survival)
+    if values.device.type == "cpu":
+        return tuple(tensor.cpu().numpy() for tensor in tensors)
+    packed = torch.cat([*(tensor[:, None] for tensor in tensors[:4]), survival], dim=1).cpu().numpy()
+    return packed[:, 0], packed[:, 1], packed[:, 2], packed[:, 3], packed[:, 4:]
 
 
 def _make_env(
@@ -183,15 +192,15 @@ def collect_rollout(
             max_action_type_probs = dist.action_type_probs.max(dim=-1).values
 
         actions_np = actions.cpu().numpy()
-        log_probs_np = log_probs.cpu().numpy()
-        values_np = values.cpu().numpy()
-        chosen_action_probs_np = chosen_action_probs.cpu().numpy()
-        max_action_type_probs_np = max_action_type_probs.cpu().numpy()
+        log_probs_np, values_np, chosen_action_probs_np, max_action_type_probs_np, survival_np = (
+            _rollout_statistics_numpy(
+                log_probs, values, chosen_action_probs, max_action_type_probs, value_dict["ante_survival"],
+            )
+        )
         pre_scalars = obs_buf._np_scalars
         pre_tokens = obs_buf._np_tokens
         rm.clear_probabilities.extend(pre_scalars[:, 11].astype(np.float64).tolist())
         rm.immediate_death_probabilities.extend(pre_scalars[:, 12].astype(np.float64).tolist())
-        survival_np = value_dict["ante_survival"].cpu().numpy()
         for env_idx, action_id in enumerate(actions_np):
             if _action_type_name(int(action_id)) != ActionType.SHOP_LEAVE.value:
                 continue
@@ -262,7 +271,7 @@ def collect_rollout(
             if truncated_indices:
                 final_obs_batch = _obs_dicts_to_batch([final_obs_arr[idx] for idx in truncated_indices], device)
                 with torch.no_grad():
-                    _, truncated_value_dict = _grammar_distribution(
+                    truncated_value_dict = _critic_predictions(
                         model,
                         final_obs_batch,
                         temperature=_policy_temperature_for_scalars(final_obs_batch["scalars"], config),
@@ -584,7 +593,7 @@ def collect_rollout(
 
     # Bootstrap values for GAE
     with torch.no_grad():
-        _, value_dict = _grammar_distribution(
+        value_dict = _critic_predictions(
             model,
             _observation_buffer_batch(obs_buf),
             temperature=_policy_temperature_for_scalars(obs_buf.scalars, config),

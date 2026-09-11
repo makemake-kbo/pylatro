@@ -41,6 +41,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rollout-length", type=_positive_int, default=256)
     parser.add_argument("--ppo-batch", type=_positive_int, default=320)
     parser.add_argument("--micro-batch", type=_positive_int, default=160)
+    parser.add_argument("--eval-cpu-threads", type=int, default=0)
+    parser.add_argument("--eval-workers", type=int, default=4)
     parser.add_argument("--eval-games", type=_positive_int, default=100)
     parser.add_argument("--eval-interval", type=_positive_int, default=10)
     parser.add_argument("--checkpoint-interval", type=_positive_int, default=100)
@@ -87,6 +89,8 @@ def _configs(args: argparse.Namespace):
         archive_config=ArchiveConfig(),
         reward_config=RewardConfig(objective="milestone"),
         eval_games=args.eval_games,
+        eval_workers=args.eval_workers,
+        eval_cpu_threads=args.eval_cpu_threads,
         eval_interval=args.eval_interval,
         checkpoint_interval=args.checkpoint_interval,
         log_interval=1,

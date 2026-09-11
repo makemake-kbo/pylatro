@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -497,7 +498,8 @@ def train_ppo(
                     model.to(baseline_device), data, vocab, config.eval_games, baseline_device,
                     max_no_progress_steps=config.max_no_progress_steps, win_ante=config.win_ante,
                     temperature=config.rollout_temperature, stake=config.stake, seeds=config.eval_seeds,
-                    eval_batch_size=config.eval_batch_size, reward_config=config.reward_config,
+                    eval_batch_size=config.eval_batch_size, eval_workers=config.eval_workers,
+                    eval_cpu_threads=config.eval_cpu_threads, reward_config=config.reward_config,
                     results_path=Path(config.log_dir) / "eval_outcomes.jsonl", writer=writer, update_count=0,
                     sampled_games=config.eval_sampled_games, policy_config=config, sampling_seed=config.seed + 31013,
                 )
@@ -508,10 +510,12 @@ def train_ppo(
                     torch.mps.empty_cache()
             writer.flush()
         while update_count < planned_updates:
+            update_started = time.perf_counter()
             if config.reward_config.objective == "milestone":
                 milestone_scale = resolve_milestone_scale(config, total_steps, schedule_total_steps)
                 vec_env.call("set_milestone_scale", milestone_scale)
                 writer.add_scalar("curriculum/milestone_scale", milestone_scale, update_count + 1)
+            rollout_started = time.perf_counter()
             buffer, rm, collected_steps = collect_rollout(
                 model,
                 vec_env,
@@ -523,6 +527,8 @@ def train_ppo(
                 risk_forecast_file=risk_forecast_file,
                 return_path_replay=return_path_replay,
             )
+            rollout_seconds = time.perf_counter() - rollout_started
+            rollout_postprocess_started = time.perf_counter()
             total_steps += collected_steps
             if return_path_replay is not None:
                 return_path_replay.advance(config.return_path_rebuild_steps)
@@ -547,6 +553,8 @@ def train_ppo(
                 and (update_count + 1) % config.sil_grad_diagnostics_interval == 0
             )
 
+            rollout_postprocess_seconds = time.perf_counter() - rollout_postprocess_started
+            optimization_started = time.perf_counter()
             update_stats = _run_ppo_update(
                 model=model,
                 optimizer=optimizer,
@@ -563,6 +571,8 @@ def train_ppo(
                 grad_diagnostics_due=sil_grad_diagnostics_due,
             )
 
+            optimization_seconds = time.perf_counter() - optimization_started
+            replay_started = time.perf_counter()
             terminal_replay_result = _run_terminal_replay_updates(
                 model,
                 optimizer,
@@ -571,6 +581,7 @@ def train_ppo(
                 device,
             )
 
+            replay_seconds = time.perf_counter() - replay_started
             update_policy_losses = update_stats.policy_losses
             update_entropies = update_stats.entropies
             update_normalized_entropies = update_stats.normalized_entropies
@@ -840,6 +851,8 @@ def train_ppo(
                         temperature=config.rollout_temperature,
                         seeds=config.eval_seeds,
                         eval_batch_size=config.eval_batch_size,
+                        eval_workers=config.eval_workers,
+                        eval_cpu_threads=config.eval_cpu_threads,
                         stake=config.stake,
                         reward_config=config.reward_config,
                         results_path=Path(config.log_dir) / "eval_outcomes.jsonl",
@@ -1118,6 +1131,14 @@ def train_ppo(
                         update_count,
                     )
 
+            update_seconds = time.perf_counter() - update_started
+            for name, seconds in (
+                ("rollout", rollout_seconds), ("rollout_postprocess", rollout_postprocess_seconds),
+                ("optimization", optimization_seconds), ("terminal_replay", replay_seconds),
+                ("update", update_seconds),
+            ):
+                writer.add_scalar(f"performance/{name}_wall_seconds", seconds, update_count)
+            writer.add_scalar("performance/steps_per_second", collected_steps / max(update_seconds, 1e-9), update_count)
             if early_stop_requested:
                 break
 

@@ -104,6 +104,12 @@ class PPOConfig:
     # the training between evals; batching amortizes the policy forward over
     # many games without changing any per-seed result.
     eval_batch_size: int = 32
+    # CPU engine workers per evaluation; inference stays on the eval device.
+    # Set zero for in-process evaluation of small panels or constrained hosts.
+    eval_workers: int = 4
+    # CPU inference only: 0 selects by model width/CPU affinity; positive is explicit.
+    # The training thread count is restored after evaluation, including errors.
+    eval_cpu_threads: int = 0
     # Curriculum: cap the run's victory threshold below the engine default
     # (8). Heuristic-teacher win rates by ante are ~39% at 4, ~12% at 5,
     # ~2% at 6. Set to None for the standard ante-8 victory condition.
@@ -349,6 +355,10 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("eval_interval must be positive")
     if config.eval_games < 1 or config.eval_sampled_games < 0:
         raise ValueError("eval_games must be positive and eval_sampled_games non-negative")
+    if config.eval_cpu_threads < 0:
+        raise ValueError("eval_cpu_threads must be non-negative")
+    if config.eval_workers < 0:
+        raise ValueError("eval_workers must be non-negative")
     if config.eval_regression_tolerance is not None and not 0.0 < config.eval_regression_tolerance <= 1.0:
         raise ValueError("eval_regression_tolerance must be in (0, 1] when set")
     if config.eval_regression_patience <= 0:

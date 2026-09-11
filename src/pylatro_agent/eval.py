@@ -96,6 +96,8 @@ def evaluate_on_seeds(
     stake: int = 1,
     greedy: bool = True,
     batch_size: int = 32,
+    eval_workers: int = 0,
+    eval_cpu_threads: int | None = None,
 ) -> list[SeedOutcome]:
     """Evaluate ``model`` on a fixed list of seeds, returning per-seed outcomes.
 
@@ -121,6 +123,8 @@ def evaluate_on_seeds(
         stake=stake,
         greedy=greedy,
         batch_size=batch_size,
+        eval_workers=eval_workers,
+        eval_cpu_threads=eval_cpu_threads,
     )
     return [
         SeedOutcome(

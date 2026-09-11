@@ -270,8 +270,12 @@ class EpisodeReplayBuffer:
         include_teacher_forced: bool = False,
         holdout: bool = False,
         row_uniform: bool = False,
+        include_action_mask: bool = True,
     ) -> dict[str, torch.Tensor] | None:
         """Sample a training batch, episode-uniform or row-uniform.
+
+        ``include_action_mask=False`` skips mask expansion and transfer for
+        critic-only consumers, without changing sampling or other tensors.
 
         By default this selects eligible episodes uniformly at random, gives
         selected episodes near-equal transition quotas, and samples transitions
@@ -329,7 +333,7 @@ class EpisodeReplayBuffer:
             for index in drawn:
                 episode, rows = eligible[index]
                 picks.append((episode, int(rows[self._rng.integers(rows.size)])))
-            return self._materialize_batch(picks, device)
+            return self._materialize_batch(picks, device, include_action_mask=include_action_mask)
 
         order = self._rng.permutation(len(eligible))
         selected = [eligible[i] for i in order]
@@ -350,9 +354,11 @@ class EpisodeReplayBuffer:
             idx = self._rng.permutation(len(picks))[:batch_size]
             picks = [picks[i] for i in idx]
 
-        return self._materialize_batch(picks, device)
+        return self._materialize_batch(picks, device, include_action_mask=include_action_mask)
 
-    def _materialize_batch(self, picks: list[tuple[dict, int]], device: torch.device) -> dict[str, torch.Tensor]:
+    def _materialize_batch(
+        self, picks: list[tuple[dict, int]], device: torch.device, *, include_action_mask: bool = True,
+    ) -> dict[str, torch.Tensor]:
         from ..history import HistoryArrays
 
         empty_history = HistoryArrays.empty().as_dict()
@@ -366,8 +372,9 @@ class EpisodeReplayBuffer:
         token_types = np.stack([ep["token_types"][t] for ep, t in picks])
         scalars = np.stack([ep["scalars"][t] for ep, t in picks])
         attention_mask = np.stack([ep["attention_mask"][t] for ep, t in picks])
-        packed = np.stack([ep["action_mask_packed"][t] for ep, t in picks])
-        action_mask = np.unpackbits(packed, axis=1, count=NUM_ACTIONS).astype(np.float32)
+        if include_action_mask:
+            packed = np.stack([ep["action_mask_packed"][t] for ep, t in picks])
+            action_mask = np.unpackbits(packed, axis=1, count=NUM_ACTIONS).astype(np.float32)
         actions = np.asarray([ep["actions"][t] for ep, t in picks], dtype=np.int64)
         returns = np.asarray([ep["returns"][t] for ep, t in picks], dtype=np.float32)
         teacher = np.asarray(
@@ -430,7 +437,7 @@ class EpisodeReplayBuffer:
             "token_types": torch.as_tensor(token_types.astype(np.int64), device=device),
             "scalars": torch.as_tensor(scalars, device=device),
             "attention_mask": torch.as_tensor(attention_mask.astype(np.int64), device=device),
-            "action_mask": torch.as_tensor(action_mask, device=device),
+            **({"action_mask": torch.as_tensor(action_mask, device=device)} if include_action_mask else {}),
             "history_events": torch.as_tensor(history_stack("history_events").astype(np.int64), device=device),
             "history_event_features": torch.as_tensor(history_stack("history_event_features"), device=device),
             "history_cards": torch.as_tensor(history_stack("history_cards").astype(np.int64), device=device),

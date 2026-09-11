@@ -206,6 +206,9 @@ def _save_checkpoint(
             "return_path_samples_per_episode",
             "return_path_rebuild_steps",
             "eval_games",
+            "eval_workers",
+            "eval_cpu_threads",
+            "eval_batch_size",
             "eval_sampled_games",
             "eval_seeds",
         ):

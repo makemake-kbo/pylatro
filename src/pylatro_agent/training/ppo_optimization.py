@@ -16,10 +16,12 @@ import torch.nn.functional as F
 from torch.optim import Adam
 
 from ..action_grammar import ActionGrammarDistribution
+from ..agent import BalatroAgent
 from ..value_head import outcome_nll, return_huber_loss
 from .ppo_policy import (
     _ACTION_ID_TO_TYPE_INDEX,
     _ACTION_TYPES,
+    _critic_predictions,
     _grammar_distribution,
     _policy_temperature_for_scalars,
     _unwrap_model,
@@ -731,6 +733,33 @@ def _terminal_aux_parameters(
     ]
 
 
+@torch.no_grad()
+def _outcome_metric_inputs_cpu(value_dict, sampled):
+    """Transfer the small diagnostic payload once, before bucket reductions.
+
+    Critic probabilities are FP32 in production. Ante/outcome labels are small
+    exact integers, so packing them alongside probabilities preserves labels.
+    This avoids GPU synchronization for every bucket, mask, and scalar metric.
+    """
+    probabilities = value_dict["outcome_probabilities"]
+    classes = probabilities.shape[1]
+    packed = torch.cat([
+        probabilities,
+        value_dict["win_prob"].reshape(-1, 1),
+        sampled["terminal_outcome_target"].to(probabilities.dtype).reshape(-1, 1),
+        sampled["current_antes"].long().to(probabilities.dtype).reshape(-1, 1),
+        (sampled["cross_rollout_flags"] > 0.5).to(probabilities.dtype).reshape(-1, 1),
+    ], dim=1).cpu()
+    return (
+        {"outcome_probabilities": packed[:, :classes], "win_prob": packed[:, classes]},
+        {
+            "terminal_outcome_target": packed[:, classes + 1].long(),
+            "current_antes": packed[:, classes + 2].long(),
+            "cross_rollout_flags": packed[:, classes + 3],
+        },
+    )
+
+
 def _outcome_metric_rows(
     value_dict: dict[str, torch.Tensor],
     sampled: dict[str, torch.Tensor],
@@ -744,6 +773,9 @@ def _outcome_metric_rows(
     factor ``(1 - 1/n)``, which on a 32-row bucket is a 3-point handicap
     charged to climatology and credited to the model.
     """
+
+    if value_dict["outcome_probabilities"].device.type != "cpu":
+        value_dict, sampled = _outcome_metric_inputs_cpu(value_dict, sampled)
 
     outcome_probabilities = value_dict["outcome_probabilities"]
     outcome_targets = sampled["terminal_outcome_target"]
@@ -857,7 +889,7 @@ def _run_terminal_replay_updates(
         metric_counts[key] += int(detached.numel())
 
     def forward_outcomes(sampled: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        _, value_dict = _grammar_distribution(
+        value_dict = _critic_predictions(
             model,
             sampled,
             temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
@@ -874,6 +906,7 @@ def _run_terminal_replay_updates(
             samples_per_episode=config.terminal_replay_samples_per_episode,
             include_teacher_forced=True,
             row_uniform=config.terminal_replay_row_uniform,
+            include_action_mask=not isinstance(_unwrap_model(model), BalatroAgent),
         )
         if sampled is None:
             break
@@ -914,6 +947,7 @@ def _run_terminal_replay_updates(
             include_teacher_forced=True,
             holdout=True,
             row_uniform=config.terminal_replay_row_uniform,
+            include_action_mask=not isinstance(_unwrap_model(model), BalatroAgent),
         )
         if holdout is not None:
             with torch.no_grad():

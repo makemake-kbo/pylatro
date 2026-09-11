@@ -218,3 +218,45 @@ plus 21 passed/1 skipped in a separate final precision/archive regression
 checks. The final remote CPU/CUDA suite passed all 15 tests, including BF16
 critic contexts at Antes 1, 5, 6, and 8. Local skips include CUDA-only coverage;
 that coverage was exercised on the remote GPU.
+
+## CPU evaluation and critic replay
+
+PPO evaluates active games with one central policy batch and four CPU engine
+workers by default. `--eval-workers 0` keeps environments in the parent process,
+which can be useful for very small panels. Workers are spawned without the
+model, use one torch thread, and release games as they finish. Binary action
+masks are bit-packed in transit and restored exactly before inference. Greedy and sampled
+per-seed parity, callback errors, worker crashes, and cleanup have regression
+coverage.
+
+`--eval-cpu-threads 0` chooses one inference thread for model widths below 256
+and up to eight for larger models, capped by CPU affinity. Positive values set
+an explicit count. The trainer's thread count is restored afterward, including
+on errors. This allows CPU evaluation to use multiple threads even when a GPU
+launcher exports `OMP_NUM_THREADS=1`. CUDA/MPS model inference retains the
+parent's thread setting. Thread counts can affect floating-point reductions;
+use an explicit value for reproducible performance comparisons.
+
+Analytic risk and score caches reuse identical calculations under immutable,
+content-based keys. They invalidate on scoring-input changes and are bounded
+per process. The engine RNG and scoring formulas are unchanged.
+
+Terminal critic replay and bootstrap calls skip unused policy heads. Replay
+also avoids the encoder autograd graph and expansion/transfer of unused action
+masks. Ordinary PPO/SIL batches retain policy gradients and action masks.
+Replay diagnostics transfer a compact payload once and compute their metric
+buckets on CPU. Accelerator rollout statistics also share one host transfer;
+CPU observations/statistics retain zero-copy views.
+
+TensorBoard now includes `performance/rollout_wall_seconds`,
+`performance/rollout_postprocess_wall_seconds`,
+`performance/optimization_wall_seconds`,
+`performance/terminal_replay_wall_seconds`, `performance/update_wall_seconds`,
+and `performance/steps_per_second`. Total update time includes periodic
+evaluation and checkpointing. These measure host wall time without introducing
+extra device synchronization. Evaluation separately reports engine work and
+batch stepping wall time (`eval/env_seconds` and `eval/env_wall_seconds`).
+
+See the [CPU audit](performance/2026-09-11-ppo-cpu-audit.md) for reproducible
+benchmarks, measured gains, validation scope, and remaining work. Local CPU
+results do not establish production GPU throughput or long-run learning quality.

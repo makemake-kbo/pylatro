@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from pickle import dumps
 from typing import Any, ClassVar
 
 import gymnasium
@@ -920,8 +921,19 @@ class BalatroEnv(gymnasium.Env):
             "pack_choices_remaining": pack_choices_remaining,
         }
         info.update(capture_build_features(state))
-        risk = estimate_clear_risk(info)
-        weakest = weakest_confident_joker(info)
+        # A post-step capture is normally repeated as the next pre-step
+        # capture. Compare fresh features so direct engine mutations, resets,
+        # and archive restores also invalidate this bounded one-entry cache.
+        cached = getattr(self, "_state_estimate_cache", None)
+        cache_key = dumps(info, protocol=5)
+        if cached is not None and cache_key == cached[0]:
+            risk, weakest = cached[1:]
+        else:
+            risk = estimate_clear_risk(info)
+            weakest = weakest_confident_joker(info)
+            # Immutable bytes isolate the key from caller mutations without
+            # deep-copying every card descriptor in Python. Never unpickled.
+            self._state_estimate_cache = (cache_key, risk, weakest)
         joker_count = len(info.get("joker_details") or ())
         joker_limit = max(int(info.get("joker_limit", 5) or 5), 0)
         info.update(

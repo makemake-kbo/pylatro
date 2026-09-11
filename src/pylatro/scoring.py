@@ -481,13 +481,15 @@ def _evaluate_joker(
 ) -> dict[str, float] | None:
     center = _joker_center(state, joker)
     name = center["name"]
+    if joker.debuff:
+        return None
     if name in {"Blueprint", "Brainstorm"}:
         if blueprint_depth > len(state.jokers) + 1:
             return None
         target = _blueprint_target(state, joker, index)
         if target is None:
             return None
-        target_index = state.jokers.index(target)
+        target_index = next(i for i, owned in enumerate(state.jokers) if owned is target)
         return _evaluate_joker(
             state,
             target,
@@ -504,9 +506,6 @@ def _evaluate_joker(
             lucky_triggered=lucky_triggered,
             blueprint_depth=blueprint_depth + 1,
         )
-
-    if joker.debuff:
-        return None
 
     # TODO: replace this name-dispatch if/elif chain with a per-joker handler
     # table keyed by center_key so each phase is a dict lookup.
@@ -568,7 +567,9 @@ def _evaluate_joker(
         return None
 
     if phase == "repetition_hand" and card_effects is not None:
-        if name == "Mime" and any(effect for effect in card_effects):
+        # Joker-provided held abilities (e.g. Baron) also retrigger, even when
+        # the card itself has no enhancement effect.
+        if name == "Mime":
             return {"repetitions": float(joker.extra if isinstance(joker.extra, int) else 0)}
         return None
 
@@ -855,9 +856,12 @@ def score_hand(
     if state.has_joker("Splash"):
         scoring_cards = list(full_hand)
     else:
-        scoring_cards = list(scoring_hand)
-        pure_stones = [card for card in full_hand if _card_effect(state, card) == "Stone Card" and card not in scoring_cards]
-        scoring_cards.extend(pure_stones)
+        # Hand detection groups ranks; scoring must preserve played order.
+        scoring_ids = {id(card) for card in scoring_hand}
+        scoring_cards = [
+            card for card in full_hand
+            if id(card) in scoring_ids or _card_effect(state, card) == "Stone Card"
+        ]
 
     state.current_round.free_rerolls = sum(
         1 for owned in state.jokers if _joker_center(state, owned)["name"] == "Chaos the Clown"
@@ -903,6 +907,10 @@ def score_hand(
             state.cards_played[rank_name]["total"] += 1
             state.cards_played[rank_name]["suits"][card.suit] = True
 
+        if card.debuff:
+            state.blind_triggered = True
+            continue
+
         repetitions = 1 + (1 if card.seal == "Red" else 0)
         for index, joker in enumerate(state.jokers):
             rep = _evaluate_joker(
@@ -936,6 +944,8 @@ def score_hand(
                 if _card_effect(state, card) == "Lucky Card":
                     lucky_triggered = True
 
+            hand_chips, mult = _flush_main_editions(hand_chips, mult, _edition_dict_from_key(card.edition_key))
+
             for index, joker in enumerate(state.jokers):
                 effect = _evaluate_joker(
                     state,
@@ -961,16 +971,16 @@ def score_hand(
                 if "dollars" in effect:
                     _add_money(state, int(effect["dollars"]))
 
-            hand_chips, mult = _flush_main_editions(hand_chips, mult, _edition_dict_from_key(card.edition_key))
-
     for card in held_cards:
+        if card.debuff:
+            continue
         base_effects: list[dict[str, float]] = []
         if h_mult := _chip_h_mult(state, card):
             base_effects.append({"h_mult": h_mult})
         if x_mult := _chip_h_x_mult(state, card):
             base_effects.append({"x_mult": x_mult})
 
-        repetitions = 1
+        repetitions = 1 + (1 if card.seal == "Red" else 0)
         for index, joker in enumerate(state.jokers):
             rep = _evaluate_joker(
                 state,
@@ -1014,7 +1024,9 @@ def score_hand(
                     _add_money(state, int(effect["dollars"]))
 
     for index, joker in enumerate(state.jokers):
-        hand_chips, mult = _flush_main_editions(hand_chips, mult, joker.edition)
+        if not joker.debuff:
+            hand_chips += _edition_chip_mod(joker.edition)
+            mult += _edition_mult_mod(joker.edition)
         effect = _evaluate_joker(
             state,
             joker,
@@ -1058,6 +1070,9 @@ def score_hand(
                     mult = _mod_mult(mult + on_joker["mult"])
                 if "x_mult" in on_joker:
                     mult = _mod_mult(mult * on_joker["x_mult"])
+
+        if not joker.debuff:
+            mult *= _edition_x_mult_mod(joker.edition)
 
     for consumable in state.consumables:
         effect = _evaluate_planet_consumable(state, consumable, scoring_name=scoring_name)

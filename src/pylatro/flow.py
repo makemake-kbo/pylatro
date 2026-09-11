@@ -14,10 +14,14 @@ from .scoring import (
     RANK_TO_NOMINAL,
     SUIT_TO_NOMINAL,
     ScoreResult,
+    _is_suit,
     _level_up_hand,
     get_poker_hand_info,
     resolve_after_hand,
     score_hand,
+)
+from .scoring import (
+    _is_face as _scoring_is_face,
 )
 
 if TYPE_CHECKING:
@@ -517,10 +521,10 @@ def _debuff_card(state: RunState, card: PlayingCard) -> None:
         return
 
     if debuff and not state.blind_disabled:
-        if debuff.get("suit") and _is_suit_raw(card, str(debuff["suit"])):
+        if debuff.get("suit") and _is_suit(state, card, str(debuff["suit"]), bypass_debuff=True):
             card.debuff = True
             return
-        if debuff.get("is_face") == "face" and _is_face(state, card):
+        if debuff.get("is_face") == "face" and _scoring_is_face(state, card, from_boss=True):
             card.debuff = True
             return
 
@@ -530,11 +534,6 @@ def _debuff_card(state: RunState, card: PlayingCard) -> None:
         return
 
     card.debuff = False
-
-
-def _is_suit_raw(card: PlayingCard, suit: str) -> bool:
-    """Check card suit for boss blind debuff (raw check, no joker interaction)."""
-    return card.suit == suit
 
 
 def _debuff_hand(state: RunState, cards: list[PlayingCard], hand_name: str, poker_hands: dict, *, check: bool = False) -> bool:

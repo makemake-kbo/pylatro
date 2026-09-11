@@ -193,7 +193,7 @@ def test_copy_joker_matches_simple_real_engine_target(
     assert analytic.joker_marginals[copy_index].modeled_effect_fraction == 1.0
 
 
-def test_mime_does_not_retrigger_plain_baron_or_shoot_the_moon_effects() -> None:
+def test_mime_retriggers_plain_baron_and_shoot_the_moon_effects() -> None:
     state = create_run_state("AAAAAAAA")
     add_joker(state, "j_baron")
     add_joker(state, "j_shoot_the_moon")
@@ -225,8 +225,9 @@ def test_mime_does_not_retrigger_plain_baron_or_shoot_the_moon_effects() -> None
     snapshot["joker_slots_left"] = 2
     analytic = estimate_build_value(snapshot)
 
-    assert exact_with == exact_without
-    assert analytic.joker_marginal_score_ratios[2] == pytest.approx(1.0)
+    # Wiki activation sequence: Mime repeats Joker-provided held abilities too.
+    assert (exact_with, exact_without) == (1410, 640)
+    assert analytic.joker_marginal_score_ratios[2] > 1.0
 
 
 def test_suit_joker_uses_deck_concentration() -> None:

@@ -453,7 +453,7 @@ def _held_effects(
         if enhancement == "Steel Card" and base_h_x_mult <= 1.0:
             base_h_x_mult = 1.5
         has_base_held_effect = base_h_mult != 0.0 or base_h_x_mult > 1.0
-        repetitions = 1.0 + mime_extra if has_base_held_effect else 1.0
+        repetitions = 1.0 + mime_extra + (1.0 if card.get("seal") == "Red" else 0.0)
         reps = weight * repetitions
         mime_triggered = mime_triggered or (has_base_held_effect and mime_extra > 0.0)
 
@@ -473,11 +473,13 @@ def _held_effects(
             name = str(joker.get("name") or "")
             rank = str(card.get("rank") or "")
             if name == "Shoot the Moon" and rank == "Q":
+                mime_triggered = mime_triggered or mime_extra > 0.0
                 amount = 13.0 * reps
                 state.mult += amount
                 state.mult_added += amount
                 modeled.append((index, "held_queens"))
             elif name == "Baron" and rank == "K":
+                mime_triggered = mime_triggered or mime_extra > 0.0
                 factor = _number(_joker_extra(joker), 1.0) ** reps
                 state.mult *= factor
                 state.x_mult *= factor

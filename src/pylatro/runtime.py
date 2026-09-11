@@ -117,6 +117,29 @@ def add_generated_consumable(
     return add_consumable(state, forced_key, edition=edition)
 
 
+def _held_end_of_round_repetitions(state: RunState, card: PlayingCard) -> int:
+    """Red seals and active Mime copies add retriggers, never multiply them."""
+    from .scoring import _blueprint_target
+
+    repetitions = 1 + int(card.seal == "Red")
+    for index, joker in enumerate(state.jokers):
+        seen: set[int] = set()
+        while not joker.debuff and id(joker) not in seen:
+            seen.add(id(joker))
+            name = state.data.centers[joker.center_key]["name"]
+            if name == "Mime":
+                repetitions += int(joker.extra)
+                break
+            if name not in {"Blueprint", "Brainstorm"}:
+                break
+            target = _blueprint_target(state, joker, index)
+            if target is None:
+                break
+            joker = target
+            index = next(i for i, owned in enumerate(state.jokers) if owned is target)
+    return repetitions
+
+
 def resolve_blue_seals(
     state: RunState,
     held_cards: Iterable[PlayingCard],
@@ -139,16 +162,17 @@ def resolve_blue_seals(
     for card in held_cards:
         if card.seal != "Blue" or card.debuff:
             continue
-        planet = add_generated_consumable(
-            state,
-            "Planet",
-            forced_key=planet_key,
-            append="blue_seal",
-            soulable=False,
-        )
-        if planet is None:
-            break
-        generated.append(planet)
+        for _ in range(_held_end_of_round_repetitions(state, card)):
+            planet = add_generated_consumable(
+                state,
+                "Planet",
+                forced_key=planet_key,
+                append="blue_seal",
+                soulable=False,
+            )
+            if planet is None:
+                return generated
+            generated.append(planet)
     return generated
 
 
@@ -178,7 +202,7 @@ def resolve_held_gold_cards(
         if amount <= 0:
             continue
         count += 1
-        payout += amount
+        payout += amount * _held_end_of_round_repetitions(state, card)
     if payout:
         state.dollars += payout
         state.current_round.round_dollars += payout
@@ -508,6 +532,9 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     hands_left = max(0, state.current_round.hands_left)
     money_per_hand = int(state.modifiers.get("money_per_hand", 1))
     results["dollars"] = int(results["dollars"]) + hands_left * money_per_hand
+    discards_left = max(0, state.current_round.discards_left)
+    money_per_discard = int(state.modifiers.get("money_per_discard", 0))
+    results["dollars"] = int(results["dollars"]) + discards_left * money_per_discard
 
     if is_boss:
         investments = state.tags.count("tag_investment")

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 import torch
@@ -108,11 +109,92 @@ for _idx, _bits in enumerate(CONSUMABLE_HAND_SUBSET_BITS):
     _BIT_TO_CONSUMABLE_SUBSET_INDEX[int(_bits)] = _idx
 
 _SLOT_BITS = np.asarray([1 << slot for slot in range(MAX_HAND_SIZE)], dtype=np.int64)
+_BIT_TO_SLOT = np.full(_BIT_TABLE_SIZE, MAX_HAND_SIZE, dtype=np.int64)
+_BIT_TO_SLOT[_SLOT_BITS] = np.arange(MAX_HAND_SIZE)
 _HAND_SUBSET_BITS64 = HAND_SUBSET_BITS.astype(np.int64)
 _HAND_SUBSET_SIZES64 = HAND_SUBSET_SIZES.astype(np.int64)
 _CONSUMABLE_SUBSET_BITS64 = CONSUMABLE_HAND_SUBSET_BITS.astype(np.int64)
 _CONSUMABLE_SUBSET_SIZES64 = CONSUMABLE_HAND_SUBSET_SIZES.astype(np.int64)
 _TENSOR_CACHE: dict[tuple[int, str, torch.dtype], torch.Tensor] = {}
+
+
+def _subset_trie(subsets: tuple, max_count: int) -> tuple:
+    """Static leaf-to-edge maps for each depth of the ordered subset trie.
+
+    Counts have separate roots. A node is (target count, selected prefix), so
+    every subset has exactly one path and each edge's legal mask is the OR of
+    its legal descendant leaves. No repeated [leaves x leaves] expansion.
+    """
+    levels = []
+    for depth in range(max_count):
+        parents: dict[tuple, int] = {}
+        edges = np.zeros(len(subsets), dtype=np.int64)
+        active = np.zeros(len(subsets), dtype=np.bool_)
+        for index, subset in enumerate(subsets):
+            if len(subset) <= depth:
+                continue
+            key = (len(subset), tuple(subset[:depth]))
+            parent = parents.setdefault(key, len(parents))
+            edges[index] = parent * MAX_HAND_SIZE + subset[depth]
+            active[index] = True
+        levels.append((edges, active, len(parents)))
+    return tuple(levels)
+
+
+@lru_cache(maxsize=2 * MAX_HAND_SIZE)
+def _compact_subset_trie(max_count: int, width: int) -> tuple:
+    subsets = HAND_SUBSETS if max_count == 5 else CONSUMABLE_HAND_SUBSETS
+    bits = _HAND_SUBSET_BITS64 if max_count == 5 else _CONSUMABLE_SUBSET_BITS64
+    indices = np.flatnonzero(bits < (1 << width))
+    return indices, _subset_trie(tuple(subsets[index] for index in indices), min(max_count, width))
+
+
+def _all_subset_log_probs(
+    count_logits: torch.Tensor,
+    card_logits: torch.Tensor,
+    valid: torch.Tensor,
+    *,
+    sizes: torch.Tensor,
+    subset_bits: torch.Tensor,
+) -> torch.Tensor:
+    """Exact leaf log-probabilities of count -> ordered legal card selection.
+
+    Differentiable through every conditional choice, including its occupancy
+    probability. Used by entropy and exact mode; sampling/log_prob retain the
+    cheaper single-path implementation and are checked against this in tests.
+    """
+    # A normal eight-card hand has 218 subsets, not the full 6,884-slot
+    # sixteen-card support. Prune only slots absent from ALL legal actions,
+    # never candidate proposals: this preserves arbitrary legality masks and
+    # the AR component's full support, including non-candidate actions.
+    width = int((valid.any(dim=0).long() * subset_bits).max().item()).bit_length()
+    if width == 0:
+        return count_logits.new_full(valid.shape, -1e8)
+    support, trie = _compact_subset_trie(count_logits.shape[-1], width)
+    support_indices = _to_device(support, valid.device)
+    compact_valid = valid[:, support_indices]
+    compact_sizes = sizes[support_indices]
+    count_mask = _subset_count_mask(compact_valid, compact_sizes, count_logits.shape[-1])
+    logp = _masked_log_softmax(count_logits, count_mask)[:, compact_sizes - 1]
+    for edge_ids, active_leaves, nodes in trie:
+        edges = _to_device(edge_ids, valid.device)
+        active = _to_device(active_leaves, valid.device, dtype=torch.bool)
+        allowed = torch.zeros((valid.shape[0], nodes * MAX_HAND_SIZE), dtype=torch.int32, device=valid.device)
+        allowed.scatter_add_(1, edges.expand(valid.shape[0], -1), (compact_valid & active).to(torch.int32))
+        edge_logp = _masked_log_softmax(
+            card_logits[:, None, :].expand(-1, nodes, -1),
+            allowed.view(-1, nodes, MAX_HAND_SIZE) > 0,
+        )
+        selected = edge_logp.flatten(1).gather(1, edges.expand(valid.shape[0], -1))
+        logp = logp + torch.where(active, selected, torch.zeros_like(selected))
+    return logp.new_full(valid.shape, -1e8).scatter(
+        1, support_indices.expand(valid.shape[0], -1), logp.masked_fill(~compact_valid, -1e8),
+    )
+
+
+def _probability_entropy(probs: torch.Tensor) -> torch.Tensor:
+    # Finite at p=0, with no 0 * -inf autograd path.
+    return -(probs * probs.clamp_min(torch.finfo(probs.dtype).tiny).log()).sum(dim=-1)
 
 
 @dataclass(slots=True)
@@ -658,122 +740,17 @@ class ActionGrammarDistribution:
 
     def _best_hand_actions(self, *, is_play: bool) -> tuple[torch.Tensor, torch.Tensor]:
         """Exact conditional mode of the candidate/AR hand mixture."""
-        valid_subsets = self._hand_valid_subset_mask(is_play)
-        family = 0 if is_play else 1
         base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
-        cand_logits, cand_valid, cand_actions = self._candidate_distribution(is_play=is_play)
-        cand_log_probs = _masked_log_softmax(cand_logits, cand_valid)
-        has_candidates = cand_valid.any(dim=-1)
-        count_masks = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
-        count_log_probs = _masked_log_softmax(self._t(self.output.hand_count_logits[:, family]), count_masks)
-        card_logits = self._t(self.output.hand_card_logits[:, family])
-
-        best_actions = self._first_valid_actions()
-        best_logps = torch.full_like(best_actions, -1e8, dtype=card_logits.dtype)
-        subset_sizes = _hand_subset_sizes(self.device)
-        subset_slots = _hand_subset_slots(self.device)
-        eps = self.hand_ar_mixture_eps
-
-        for row in range(self.batch_size):
-            legal = valid_subsets[row].nonzero(as_tuple=False).squeeze(-1)
-            if legal.numel() == 0:
-                continue
-            row_best_logp = card_logits.new_tensor(-1e8)
-            row_best_subset = legal.new_tensor(0)
-            for chunk in legal.split(256):
-                counts = subset_sizes[chunk]
-                chunk_size = int(chunk.numel())
-                ar_logp = count_log_probs[row, counts - 1] + _ordered_card_log_prob(
-                    card_logits[row : row + 1].expand(chunk_size, -1),
-                    valid_subsets[row : row + 1].expand(chunk_size, -1),
-                    subset_slots[chunk],
-                    counts,
-                    max_count=5,
-                    subset_bits=_hand_subset_bits(self.device),
-                    subset_sizes=subset_sizes,
-                    slot_bits=_slot_bits(self.device),
-                )
-                if has_candidates[row] and eps < 1.0:
-                    flat_actions = base + chunk
-                    matches = cand_actions[row].unsqueeze(0).eq(flat_actions.unsqueeze(1)) & cand_valid[row].unsqueeze(
-                        0
-                    )
-                    has_match = matches.any(dim=-1)
-                    slots = matches.long().argmax(dim=-1)
-                    candidate_logp = cand_log_probs[row, slots]
-                    candidate_logp = torch.where(
-                        has_match,
-                        candidate_logp,
-                        torch.full_like(candidate_logp, -1e8),
-                    )
-                    if eps <= 0.0:
-                        mixed_logp = candidate_logp
-                    else:
-                        mixed_logp = torch.logsumexp(
-                            torch.stack(
-                                [math.log(1.0 - eps) + candidate_logp, math.log(eps) + ar_logp],
-                                dim=-1,
-                            ),
-                            dim=-1,
-                        )
-                else:
-                    mixed_logp = ar_logp
-                chunk_logp, chunk_slot = mixed_logp.max(dim=0)
-                if chunk_logp > row_best_logp:
-                    row_best_logp = chunk_logp
-                    row_best_subset = chunk[chunk_slot]
-            best_actions[row] = base + row_best_subset
-            best_logps[row] = row_best_logp
-        return best_actions, best_logps
+        best_prob, subset = self._hand_probabilities(is_play=is_play).max(dim=-1)
+        return base + subset, best_prob.clamp_min(torch.finfo(best_prob.dtype).tiny).log()
 
     def _best_consumable_hand_actions(self) -> tuple[torch.Tensor, torch.Tensor]:
-        blocks = self._consumable_blocks()
-        hand_start = CONSUMABLE_HAND_SUBSET_OFFSET
-        valid = blocks[:, :, hand_start : hand_start + NUM_CONSUMABLE_HAND_SUBSETS]
-        slot_mask = valid.any(dim=-1)
-        slot_logp = _masked_log_softmax(self._t(self.output.consumable_slot_logits[:, 1]), slot_mask)
-        subset_sizes = _consumable_subset_sizes(self.device)
-        subset_slots = _consumable_subset_slots(self.device)
-        best_actions = self._first_valid_actions()
-        best_logps = torch.full_like(best_actions, -1e8, dtype=slot_logp.dtype)
-
-        for row in range(self.batch_size):
-            for slot in slot_mask[row].nonzero(as_tuple=False).squeeze(-1):
-                slot_index = int(slot.item())
-                slot_valid = valid[row, slot_index]
-                legal = slot_valid.nonzero(as_tuple=False).squeeze(-1)
-                if legal.numel() == 0:
-                    continue
-                count_mask = _subset_count_mask(slot_valid.unsqueeze(0), subset_sizes, MAX_CONSUMABLE_HAND_TARGETS)
-                count_logp = _masked_log_softmax(
-                    self._t(self.output.consumable_count_logits[row : row + 1, slot_index]),
-                    count_mask,
-                )[0]
-                for chunk in legal.split(256):
-                    counts = subset_sizes[chunk]
-                    chunk_size = int(chunk.numel())
-                    leaf_logp = count_logp[counts - 1] + _ordered_card_log_prob(
-                        self._t(self.output.consumable_card_logits[row : row + 1, slot_index]).expand(chunk_size, -1),
-                        slot_valid.unsqueeze(0).expand(chunk_size, -1),
-                        subset_slots[chunk],
-                        counts,
-                        max_count=MAX_CONSUMABLE_HAND_TARGETS,
-                        subset_bits=_consumable_subset_bits(self.device),
-                        subset_sizes=subset_sizes,
-                        slot_bits=_slot_bits(self.device),
-                    )
-                    leaf_logp = leaf_logp + slot_logp[row, slot_index]
-                    chunk_logp, chunk_index = leaf_logp.max(dim=0)
-                    if chunk_logp > best_logps[row]:
-                        detail = chunk[chunk_index]
-                        best_logps[row] = chunk_logp
-                        best_actions[row] = (
-                            int(ActionRange.CONSUMABLE_FLAT_START)
-                            + slot_index * CONSUMABLE_ACTIONS_PER_SLOT
-                            + CONSUMABLE_HAND_SUBSET_OFFSET
-                            + detail
-                        )
-        return best_actions, best_logps
+        best_prob, leaf = self._consumable_hand_probabilities().flatten(1).max(dim=-1)
+        slot = leaf // NUM_CONSUMABLE_HAND_SUBSETS
+        detail = leaf % NUM_CONSUMABLE_HAND_SUBSETS
+        action = (int(ActionRange.CONSUMABLE_FLAT_START) + slot * CONSUMABLE_ACTIONS_PER_SLOT
+                  + CONSUMABLE_HAND_SUBSET_OFFSET + detail)
+        return action, best_prob.clamp_min(torch.finfo(best_prob.dtype).tiny).log()
 
     def _best_consumable_joker_actions(self) -> tuple[torch.Tensor, torch.Tensor]:
         blocks = self._consumable_blocks()
@@ -828,9 +805,9 @@ class ActionGrammarDistribution:
 
         matches = (cand_actions == actions.unsqueeze(-1)) & cand_valid
         has_match = matches.any(dim=-1)
-        matched_slot = matches.long().argmax(dim=-1)
         cand_log_probs = _masked_log_softmax(cand_logits, cand_valid)
-        cand_logp = cand_log_probs.gather(1, matched_slot.unsqueeze(-1)).squeeze(-1)
+        # Sum duplicate proposal slots mapping to the same atomic action.
+        cand_logp = torch.logsumexp(cand_log_probs.masked_fill(~matches, -1e8), dim=-1)
         # If candidates exist but this action isn't reachable through them, the
         # sampler can't produce it, so log_prob is -inf (use a finite floor so
         # PPO ratios don't NaN; the policy gradient will still push away from
@@ -892,31 +869,47 @@ class ActionGrammarDistribution:
         return count_logp + card_logp
 
     def _hand_entropy(self, *, is_play: bool) -> torch.Tensor:
-        cand_logits, cand_valid, _ = self._candidate_distribution(is_play=is_play)
-        has_candidates = cand_valid.any(dim=-1)
-        cand_entropy = _masked_entropy(cand_logits, cand_valid)
-        ar_entropy = self._hand_entropy_autoregressive(is_play=is_play)
-        eps = self.hand_ar_mixture_eps
-        if eps <= 0.0:
-            return torch.where(has_candidates, cand_entropy, ar_entropy)
-        # Exact mixture entropy is expensive; use the standard lower bound
-        # H >= (1-eps)*H_cand + eps*H_ar. Entropy here only feeds a small bonus
-        # coefficient; the bound's bias is acceptable and monotone in eps.
-        mix_entropy = (1.0 - eps) * cand_entropy + eps * ar_entropy
-        return torch.where(has_candidates, mix_entropy, ar_entropy)
+        return _probability_entropy(self._hand_probabilities(is_play=is_play))
+
+    def _hand_probabilities(self, *, is_play: bool) -> torch.Tensor:
+        """Exact candidate/AR mixture over atomic subsets, not proposal slots."""
+        cache = getattr(self, "_hand_probability_cache", None)
+        if cache is None:
+            self._hand_probability_cache = cache = {}
+        if is_play in cache:
+            return cache[is_play]
+        family = 0 if is_play else 1
+        valid = self._hand_valid_subset_mask(is_play)
+        if not valid.any():
+            cache[is_play] = self.output.macro_logits.new_zeros(valid.shape)
+            return cache[is_play]
+        ar_logp = _all_subset_log_probs(
+            self._t(self.output.hand_count_logits[:, family]),
+            self._t(self.output.hand_card_logits[:, family]),
+            valid,
+            sizes=_hand_subset_sizes(self.device),
+            subset_bits=_hand_subset_bits(self.device),
+        )
+        ar_probs = ar_logp.exp() * valid
+        cand_logits, cand_valid, cand_actions = self._candidate_distribution(is_play=is_play)
+        base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
+        indices = (cand_actions - base).clamp(0, valid.shape[-1] - 1)
+        cand_probs = torch.zeros_like(ar_probs).scatter_add(1, indices, _masked_softmax(cand_logits, cand_valid))
+        mixed = (1.0 - self.hand_ar_mixture_eps) * cand_probs + self.hand_ar_mixture_eps * ar_probs
+        cache[is_play] = torch.where(cand_valid.any(dim=-1, keepdim=True), mixed, ar_probs)
+        return cache[is_play]
 
     def _hand_entropy_autoregressive(self, *, is_play: bool) -> torch.Tensor:
         family = 0 if is_play else 1
         valid_subsets = self._hand_valid_subset_mask(is_play)
-        count_mask = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
-        count_logits = self._t(self.output.hand_count_logits[:, family])
-        count_probs = _masked_softmax(count_logits, count_mask)
-        count_entropy = _masked_entropy(count_logits, count_mask)
-        card_logits = self._t(self.output.hand_card_logits[:, family])
-        card_mask = _subset_card_mask(valid_subsets, _hand_subset_bits(self.device), _slot_bits(self.device))
-        count_values = torch.arange(1, 6, dtype=count_probs.dtype, device=self.device)
-        expected_count = (count_probs * count_values.unsqueeze(0)).sum(dim=-1)
-        return count_entropy + expected_count * _masked_entropy(card_logits, card_mask)
+        logp = _all_subset_log_probs(
+            self._t(self.output.hand_count_logits[:, family]),
+            self._t(self.output.hand_card_logits[:, family]),
+            valid_subsets,
+            sizes=_hand_subset_sizes(self.device),
+            subset_bits=_hand_subset_bits(self.device),
+        )
+        return _probability_entropy(logp.exp() * valid_subsets)
 
     def _sample_hand_actions(self, *, is_play: bool) -> torch.Tensor:
         eps = self.hand_ar_mixture_eps
@@ -1180,12 +1173,34 @@ class ActionGrammarDistribution:
         )
 
     def _consumable_hand_entropy(self) -> torch.Tensor:
-        slot_mask = self._consumable_hand_slot_mask()
-        return _masked_entropy(self._t(self.output.consumable_slot_logits[:, 1]), slot_mask)
+        return _probability_entropy(self._consumable_hand_probabilities().flatten(1))
+
+    def _consumable_hand_probabilities(self) -> torch.Tensor:
+        cached = getattr(self, "_consumable_hand_probability_cache", None)
+        if cached is not None:
+            return cached
+        valid = self._consumable_blocks()[:, :, CONSUMABLE_HAND_SUBSET_OFFSET:
+                                          CONSUMABLE_HAND_SUBSET_OFFSET + NUM_CONSUMABLE_HAND_SUBSETS]
+        if not valid.any():
+            self._consumable_hand_probability_cache = self.output.macro_logits.new_zeros(valid.shape)
+            return self._consumable_hand_probability_cache
+        slot_probs = _masked_softmax(self._t(self.output.consumable_slot_logits[:, 1]), valid.any(dim=-1))
+        logp = _all_subset_log_probs(
+            self._t(self.output.consumable_count_logits).flatten(0, 1),
+            self._t(self.output.consumable_card_logits).flatten(0, 1),
+            valid.flatten(0, 1),
+            sizes=_consumable_subset_sizes(self.device),
+            subset_bits=_consumable_subset_bits(self.device),
+        ).view_as(valid)
+        self._consumable_hand_probability_cache = slot_probs.unsqueeze(-1) * logp.exp() * valid
+        return self._consumable_hand_probability_cache
 
     def _consumable_joker_entropy(self) -> torch.Tensor:
-        slot_mask = self._consumable_joker_slot_mask()
-        return _masked_entropy(self._t(self.output.consumable_slot_logits[:, 2]), slot_mask)
+        valid = self._consumable_blocks()[:, :, CONSUMABLE_JOKER_OFFSET:
+                                          CONSUMABLE_JOKER_OFFSET + MAX_JOKER_SLOTS]
+        slot_probs = _masked_softmax(self._t(self.output.consumable_slot_logits[:, 2]), valid.any(dim=-1))
+        joker_probs = _masked_softmax(self._t(self.output.consumable_joker_logits), valid)
+        return _probability_entropy((slot_probs.unsqueeze(-1) * joker_probs).flatten(1))
 
     def _indexed_log_prob(
         self,
@@ -1328,6 +1343,12 @@ def _next_slot_mask(
     subset_sizes: torch.Tensor,
     slot_bits: torch.Tensor,
 ) -> torch.Tensor:
+    """Legal extensions of an ordered prefix (``last_slots`` is its last card).
+
+    Every compatible subset contributes at most one next card: its lowest
+    remaining bit. Reduce those slot IDs instead of scanning all subsets once
+    per hand slot. Integer counts keep legality exact on every device.
+    """
     bits = subset_bits.view(1, -1)
     sizes = subset_sizes.view(1, -1)
     counts = target_counts.long().view(-1, 1)
@@ -1335,16 +1356,15 @@ def _next_slot_mask(
     valid = valid_subset_mask & sizes.eq(counts)
     valid = valid & torch.bitwise_and(bits, prefix).eq(prefix)
 
-    per_slot = []
-    for slot in range(MAX_HAND_SIZE):
-        bit = slot_bits[slot]
-        low_mask = (1 << (slot + 1)) - 1
-        prefix_with_slot = torch.bitwise_or(prefix_bits.long(), bit)
-        low_bits = torch.bitwise_and(bits, low_mask)
-        is_next = low_bits.eq(prefix_with_slot.view(-1, 1))
-        slot_after_last = last_slots < slot
-        per_slot.append((valid & is_next).any(dim=-1) & slot_after_last)
-    return torch.stack(per_slot, dim=-1)
+    remaining = torch.bitwise_and(bits, torch.bitwise_not(prefix))
+    next_bit = torch.bitwise_and(remaining, -remaining)
+    next_slots = _to_device(_BIT_TO_SLOT, bits.device)[next_bit]
+    valid = valid & (next_slots > last_slots.view(-1, 1)) & (prefix < next_bit)
+    counts_by_slot = torch.zeros(
+        (valid.shape[0], MAX_HAND_SIZE + 1), dtype=torch.int32, device=valid.device
+    )
+    counts_by_slot.scatter_add_(1, next_slots, valid.to(torch.int32))
+    return counts_by_slot[:, :MAX_HAND_SIZE] > 0
 
 
 def _subset_card_mask(
@@ -1433,8 +1453,12 @@ def _sample_ordered_cards(
 def _to_device(array: np.ndarray, device: torch.device, dtype: torch.dtype = torch.long) -> torch.Tensor:
     key = (id(array), str(device), dtype)
     cached = _TENSOR_CACHE.get(key)
-    if cached is None:
-        cached = torch.as_tensor(array, dtype=dtype, device=device)
+    if cached is None or torch.is_inference(cached):
+        # Evaluation often warms this shared cache under inference_mode. These
+        # indices are later saved by gather/scatter's training backward pass,
+        # which cannot save inference tensors, even when they have no gradient.
+        with torch.inference_mode(False):
+            cached = torch.as_tensor(array, dtype=dtype, device=device)
         _TENSOR_CACHE[key] = cached
     return cached
 

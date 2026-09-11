@@ -6,6 +6,7 @@ from enum import StrEnum
 from itertools import count
 from typing import Any, ClassVar
 
+from ._state_copy import copy_state_object
 from .data import GameData  # noqa: TC001
 from .rng import PseudorandomState
 
@@ -78,17 +79,7 @@ class _FastStateCopy:
     __dataclass_fields__: ClassVar[dict[str, Any]]
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Any:
-        clone = object.__new__(type(self))
-        memo[id(self)] = clone
-        for name in self.__dataclass_fields__:
-            value = getattr(self, name)
-            if value is not None and type(value) not in (str, int, float, bool):
-                value = deepcopy(value, memo)
-            setattr(clone, name, value)
-        attributes = getattr(self, "__dict__", None)
-        if attributes is not None:
-            clone.__dict__.update(deepcopy(attributes, memo))
-        return clone
+        return copy_state_object(self, memo)
 
 
 @dataclass(slots=True)

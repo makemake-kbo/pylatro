@@ -1,12 +1,14 @@
 """Bounded archives of reachable simulator states for return-and-explore training.
 
-Archives store simulator snapshots, never policy actions. After a return the
-current policy generates an entirely new continuation. Buckets are sampled
-uniformly over Ante and phase so opening shops cannot crowd out deeper states.
+After a return the current policy generates an entirely new PPO continuation.
+Snapshots also retain bounded action lineage for a separate winning-prefix
+imitation objective; those historical actions never enter the PPO surrogate.
+Buckets are sampled uniformly over Ante and phase.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import pickle
 from dataclasses import asdict, dataclass
@@ -14,7 +16,18 @@ from typing import Any
 
 import numpy as np
 
-ARCHIVE_VERSION = 1
+ARCHIVE_VERSION = 2
+MAX_RETURN_PATH_ACTIONS = 2048
+
+
+def observation_fingerprint(obs: dict[str, np.ndarray]) -> str:
+    """Verify deterministic prefix reconstruction before any imitation loss."""
+    digest = hashlib.sha256()
+    for key, array in sorted(obs.items()):
+        digest.update(key.encode())
+        digest.update(str((array.shape, array.dtype.str)).encode())
+        digest.update(np.ascontiguousarray(array).tobytes())
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True)

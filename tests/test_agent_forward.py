@@ -9,7 +9,7 @@ from pylatro import load_game_data
 from pylatro_agent.action_grammar import NUM_GRAMMAR_ACTIONS, ActionGrammarDistribution
 from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
-from pylatro_agent.training.ppo import _grammar_distribution
+from pylatro_agent.training.ppo_policy import _grammar_distribution
 from pylatro_agent.vocab import build_vocab
 
 

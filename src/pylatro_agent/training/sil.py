@@ -181,7 +181,7 @@ class EpisodeReplayBuffer:
 
     @property
     def num_holdout_episodes(self) -> int:
-        """Stored episodes withheld from every training sampler."""
+        """Stored episodes withheld from replay/SIL only (not on-policy PPO)."""
 
         return int(sum(1 for ep in self._episodes if ep.get("holdout", False)))
 

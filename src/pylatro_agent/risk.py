@@ -265,8 +265,13 @@ def best_confident_joker_rescue(info: Mapping[str, Any]) -> JokerRescue | None:
     return best
 
 
-def capture_state_risk(state, round_score: int = 0) -> ClearRiskEstimate:
-    """Build the serialized strategy snapshot needed for observation risk."""
+def capture_state_risk(state, round_score: int = 0, *, sub_phase) -> ClearRiskEstimate:
+    """Use the same explicit phase semantics as the Gym risk observation.
+
+    A retained controller score is meaningful only during active hand play.
+    Requiring phase prevents teacher/live callers from silently subtracting
+    the previous blind's score from the next blind's target.
+    """
 
     from .shop_eval import capture_build_features
 
@@ -277,6 +282,8 @@ def capture_state_risk(state, round_score: int = 0) -> ClearRiskEstimate:
         "blind_on_deck": blind_on_deck,
         "boss_key": str(state.round_resets.blind_choices.get("Boss", "") or ""),
         "dollars": float(state.dollars),
+        "sub_phase": sub_phase,
+        "in_shop": str(sub_phase) == "shop",
     }
     info.update(capture_build_features(state))
     return estimate_clear_risk(info)

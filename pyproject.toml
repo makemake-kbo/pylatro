@@ -20,6 +20,7 @@ agent = [
     "gymnasium>=1.0",
     "numpy>=1.26",
     "tensorboard>=2.14",
+    "pyarrow>=18.0",
 ]
 
 [project.scripts]
@@ -31,6 +32,7 @@ dev = [
     "cython>=3.2.4",
     "numpy>=1.26",
     "pytest>=8.3.5",
+    "pyarrow>=18.0",
     "pytest-asyncio>=1.0",
     "ruff>=0.9",
     "setuptools>=80",

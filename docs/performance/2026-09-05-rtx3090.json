@@ -1,0 +1,411 @@
+{
+  "description": "SSH GPU 0, isolated microbenchmarks; random initialization, not learning curves or RTX 4090 measurements.",
+  "baseline_source_parent_commit": "bb05c0092cadf02f02790cb0e4ae8ca8a6692ca5",
+  "baseline_archive_sha256": "86eea9cee2197359eef75b13fb1d5fdbb4490004f30b3371f2b292b7a95e3684",
+  "baseline_note": "Source-preserving PPO module split plus benchmark harness, frozen before kernel/performance edits.",
+  "baseline_fp32": {
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "device": "cuda:0",
+    "threads": 1,
+    "model": {
+      "d_model": 384,
+      "n_layers": 12,
+      "n_heads": 8,
+      "d_ff": 1536,
+      "dropout": 0.1,
+      "max_seq_len": 160,
+      "hand_ar_mixture_eps": 0.1,
+      "danger_shop_leave_logit_penalty": 0,
+      "win_only_value": true
+    },
+    "envs": 16,
+    "micro_batch": 160,
+    "logical_batch": 320,
+    "samples": 320,
+    "ppo_epochs": 2,
+    "results": {
+      "obs_staging": {
+        "median_ms": 0.8132560033118352,
+        "min_ms": 0.8036769941099919,
+        "samples_ms": [
+          0.8194960028049536,
+          0.8132560033118352,
+          0.8105169981718063,
+          0.8213859982788563,
+          0.8036769941099919
+        ],
+        "peak_allocated_mb": 175.06103515625,
+        "profile_counts": {
+          "cudaStreamSynchronize": 14,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "rollout_policy": {
+        "median_ms": 125.42804900294868,
+        "min_ms": 125.23697700089542,
+        "samples_ms": [
+          126.32205899717519,
+          125.42804900294868,
+          125.48859299567994,
+          125.24749600561336,
+          125.23697700089542
+        ],
+        "peak_allocated_mb": 232.30712890625,
+        "profile_counts": {
+          "cudaStreamSynchronize": 32,
+          "aten::_native_multi_head_attention": 12,
+          "aten::item": 31,
+          "aten::_local_scalar_dense": 31,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "model_backward": {
+        "median_ms": 388.09557399508776,
+        "min_ms": 387.6610859952052,
+        "samples_ms": [
+          390.3324299972155,
+          387.74025499878917,
+          388.09557399508776,
+          387.6610859952052,
+          391.93181700102286
+        ],
+        "peak_allocated_mb": 9697.869140625,
+        "profile_counts": {
+          "cudaStreamSynchronize": 3,
+          "aten::item": 2,
+          "aten::_local_scalar_dense": 2,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "batches": {
+        "median_ms": 17.882349995488767,
+        "min_ms": 17.82955400267383,
+        "samples_ms": [
+          17.882349995488767,
+          17.82955400267383,
+          17.855361998954322,
+          17.944633997103665,
+          18.467091002094094
+        ],
+        "peak_allocated_mb": 338.650390625,
+        "profile_counts": {
+          "cudaStreamSynchronize": 46,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "ppo": {
+        "median_ms": 2236.438915999315,
+        "min_ms": 2220.4003779988852,
+        "samples_ms": [
+          2229.971540000406,
+          2220.4003779988852,
+          2238.274328003172,
+          2238.2752420016914,
+          2236.438915999315
+        ],
+        "peak_allocated_mb": 10032.07470703125,
+        "profile_counts": {
+          "cudaStreamSynchronize": 320,
+          "aten::item": 1328,
+          "aten::_local_scalar_dense": 1328,
+          "aten::_native_multi_head_attention": 48,
+          "cudaDeviceSynchronize": 2
+        }
+      }
+    },
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [
+      8,
+      6
+    ],
+    "gpu_memory_mb": 24124.1875
+  },
+  "optimized_fp32": {
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "device": "cuda:0",
+    "threads": 1,
+    "model": {
+      "d_model": 384,
+      "n_layers": 12,
+      "n_heads": 8,
+      "d_ff": 1536,
+      "dropout": 0.1,
+      "max_seq_len": 160,
+      "hand_ar_mixture_eps": 0.1,
+      "danger_shop_leave_logit_penalty": 0,
+      "win_only_value": true,
+      "precision": "fp32"
+    },
+    "envs": 16,
+    "micro_batch": 160,
+    "logical_batch": 320,
+    "samples": 320,
+    "ppo_epochs": 2,
+    "precision": "fp32",
+    "seed": 1701,
+    "warmup": 2,
+    "repeats": 5,
+    "results": {
+      "obs_staging": {
+        "median_ms": 0.42369700531708077,
+        "min_ms": 0.4153970003244467,
+        "samples_ms": [
+          0.42454600043129176,
+          0.42369700531708077,
+          0.4283660018700175,
+          0.4168069935985841,
+          0.4153970003244467
+        ],
+        "peak_allocated_mb": 175.56103515625,
+        "profile_counts": {
+          "cudaEventSynchronize": 1,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "rollout_policy": {
+        "median_ms": 53.783514005772304,
+        "min_ms": 53.660537996620405,
+        "samples_ms": [
+          53.7998330037226,
+          53.829431999474764,
+          53.76378400251269,
+          53.783514005772304,
+          53.660537996620405
+        ],
+        "peak_allocated_mb": 231.13427734375,
+        "profile_counts": {
+          "cudaStreamSynchronize": 32,
+          "aten::_native_multi_head_attention": 12,
+          "aten::item": 31,
+          "aten::_local_scalar_dense": 31,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "model_backward": {
+        "median_ms": 365.4761369980406,
+        "min_ms": 363.65196199767524,
+        "samples_ms": [
+          365.4761369980406,
+          363.65196199767524,
+          364.2192960032844,
+          365.9691889988608,
+          365.9325260014157
+        ],
+        "peak_allocated_mb": 8220.619140625,
+        "profile_counts": {
+          "cudaStreamSynchronize": 3,
+          "aten::scaled_dot_product_attention": 12,
+          "aten::_scaled_dot_product_efficient_attention": 12,
+          "aten::_efficient_attention_forward": 12,
+          "aten::item": 2,
+          "aten::_local_scalar_dense": 2,
+          "aten::_scaled_dot_product_efficient_attention_backward": 12,
+          "aten::_efficient_attention_backward": 12,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "batches": {
+        "median_ms": 16.452550997200888,
+        "min_ms": 16.25510599842528,
+        "samples_ms": [
+          16.452550997200888,
+          17.363375998684205,
+          17.620749000343494,
+          16.25510599842528,
+          16.320285001711454
+        ],
+        "peak_allocated_mb": 338.837890625,
+        "profile_counts": {
+          "cudaStreamSynchronize": 46,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "ppo": {
+        "median_ms": 2036.1114719999023,
+        "min_ms": 2032.5101850030478,
+        "samples_ms": [
+          2034.0947479999159,
+          2043.6610750039108,
+          2038.092967995908,
+          2032.5101850030478,
+          2036.1114719999023
+        ],
+        "peak_allocated_mb": 8555.748046875,
+        "profile_counts": {
+          "cudaStreamSynchronize": 236,
+          "aten::item": 1248,
+          "aten::_local_scalar_dense": 1248,
+          "aten::scaled_dot_product_attention": 48,
+          "aten::_scaled_dot_product_efficient_attention": 48,
+          "aten::_efficient_attention_forward": 48,
+          "aten::_scaled_dot_product_efficient_attention_backward": 48,
+          "aten::_efficient_attention_backward": 48,
+          "aten::_native_multi_head_attention": 48,
+          "cudaDeviceSynchronize": 2
+        }
+      }
+    },
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [
+      8,
+      6
+    ],
+    "gpu_memory_mb": 24124.1875,
+    "native_bf16_supported": true,
+    "finite_parameters_and_optimizer": true
+  },
+  "optimized_bf16": {
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "device": "cuda:0",
+    "threads": 1,
+    "model": {
+      "d_model": 384,
+      "n_layers": 12,
+      "n_heads": 8,
+      "d_ff": 1536,
+      "dropout": 0.1,
+      "max_seq_len": 160,
+      "hand_ar_mixture_eps": 0.1,
+      "danger_shop_leave_logit_penalty": 0,
+      "win_only_value": true,
+      "precision": "bf16"
+    },
+    "envs": 16,
+    "micro_batch": 160,
+    "logical_batch": 320,
+    "samples": 320,
+    "ppo_epochs": 2,
+    "precision": "bf16",
+    "seed": 1701,
+    "warmup": 2,
+    "repeats": 5,
+    "results": {
+      "obs_staging": {
+        "median_ms": 0.4257549953763373,
+        "min_ms": 0.4172249973635189,
+        "samples_ms": [
+          0.4345260022091679,
+          0.42238600144628435,
+          0.4257549953763373,
+          0.4355649944045581,
+          0.4172249973635189
+        ],
+        "peak_allocated_mb": 184.06103515625,
+        "profile_counts": {
+          "cudaEventSynchronize": 1,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "rollout_policy": {
+        "median_ms": 56.70933699730085,
+        "min_ms": 56.28539199824445,
+        "samples_ms": [
+          61.313304999202956,
+          58.11229000391904,
+          56.28539199824445,
+          56.341720002819784,
+          56.70933699730085
+        ],
+        "peak_allocated_mb": 264.17333984375,
+        "profile_counts": {
+          "cudaStreamSynchronize": 32,
+          "aten::scaled_dot_product_attention": 24,
+          "aten::_scaled_dot_product_efficient_attention": 12,
+          "aten::_efficient_attention_forward": 12,
+          "aten::item": 31,
+          "aten::_local_scalar_dense": 31,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "model_backward": {
+        "median_ms": 190.1194210004178,
+        "min_ms": 188.71910400048364,
+        "samples_ms": [
+          188.71910400048364,
+          190.6756940006744,
+          190.1194210004178,
+          190.75170399446506,
+          189.550846000202
+        ],
+        "peak_allocated_mb": 4834.0908203125,
+        "profile_counts": {
+          "cudaStreamSynchronize": 3,
+          "aten::scaled_dot_product_attention": 24,
+          "aten::_scaled_dot_product_efficient_attention": 12,
+          "aten::_efficient_attention_forward": 12,
+          "aten::item": 2,
+          "aten::_local_scalar_dense": 2,
+          "aten::_scaled_dot_product_efficient_attention_backward": 12,
+          "aten::_efficient_attention_backward": 12,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "batches": {
+        "median_ms": 16.062413997133262,
+        "min_ms": 16.025352997530717,
+        "samples_ms": [
+          16.121651999128517,
+          16.027302997827064,
+          16.025352997530717,
+          16.062413997133262,
+          16.261605996987782
+        ],
+        "peak_allocated_mb": 339.9873046875,
+        "profile_counts": {
+          "cudaStreamSynchronize": 46,
+          "cudaDeviceSynchronize": 2
+        }
+      },
+      "ppo": {
+        "median_ms": 1114.3690989993047,
+        "min_ms": 1110.487292004109,
+        "samples_ms": [
+          1111.8695930053946,
+          1110.487292004109,
+          1117.439744004514,
+          1117.8451989981113,
+          1114.3690989993047
+        ],
+        "peak_allocated_mb": 5168.73876953125,
+        "profile_counts": {
+          "cudaStreamSynchronize": 238,
+          "aten::item": 1250,
+          "aten::_local_scalar_dense": 1250,
+          "aten::scaled_dot_product_attention": 192,
+          "aten::_scaled_dot_product_efficient_attention": 96,
+          "aten::_efficient_attention_forward": 96,
+          "aten::_scaled_dot_product_efficient_attention_backward": 48,
+          "aten::_efficient_attention_backward": 48,
+          "cudaDeviceSynchronize": 2
+        }
+      }
+    },
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [
+      8,
+      6
+    ],
+    "gpu_memory_mb": 24124.1875,
+    "native_bf16_supported": true,
+    "precision_checks": {
+      "fp32": {
+        "finite_loss_and_gradients": true,
+        "rollout_ppo_log_prob_max_abs": 4.76837158203125e-7,
+        "rollout_ppo_spurious_kl": 9.313225746154785e-9
+      },
+      "bf16": {
+        "finite_loss_and_gradients": true,
+        "rollout_ppo_log_prob_max_abs": 0.000537872314453125,
+        "rollout_ppo_spurious_kl": 3.3527614018424856e-9,
+        "gradient_cosine_vs_fp32": 0.9999997019767761,
+        "ratio_error_p99_vs_fp32": 0.0005980393616482615,
+        "ratio_error_max_vs_fp32": 0.0007479190826416016,
+        "expected_return_max_abs_vs_fp32": 0.00006626173853874207
+      }
+    },
+    "finite_parameters_and_optimizer": true
+  }
+}

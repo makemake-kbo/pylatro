@@ -17,7 +17,7 @@ from pylatro_agent.constants import (
     SubPhase,
 )
 from pylatro_agent.env import BalatroEnv
-from pylatro_agent.training.ppo import _make_vectorized_envs
+from pylatro_agent.training.ppo_rollout import _make_vectorized_envs
 from pylatro_agent.vocab import build_vocab
 from pylatro_cli.controller import GamePhase
 

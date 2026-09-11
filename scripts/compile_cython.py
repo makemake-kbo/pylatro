@@ -19,6 +19,7 @@ SRC = ROOT / "src" / "pylatro"
 SRC_AGENT = ROOT / "src" / "pylatro_agent"
 
 MODULES: list[str] = [
+    "_state_copy",
     "rng",
     "scoring",
     "flow",

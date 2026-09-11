@@ -15,27 +15,14 @@ from pylatro_agent.constants import (
 )
 from pylatro_agent.reward import RewardConfig
 from pylatro_agent.survival import DEFAULT_MAX_ANTES, hazard_outcome_probabilities
-from pylatro_agent.training.ppo import (
-    PPOConfig,
-    _effective_reward_config,
-    _entropy_alpha_loss,
-    _extract_step_info_value,
-    _load_checkpoint_strict,
-    _make_alpha_optimizer,
-    _make_policy_optimizer,
-    _mean_valid_action_type_count,
+from pylatro_agent.training.ppo import PPOConfig
+from pylatro_agent.training.ppo_checkpoint import _load_checkpoint_strict
+from pylatro_agent.training.ppo_config import _effective_reward_config, _validate_ppo_config
+from pylatro_agent.training.ppo_evaluation import _next_eval_regression_streak
+from pylatro_agent.training.ppo_metrics import (
     _next_blind_clear_outcome,
-    _next_eval_regression_streak,
-    _per_state_normalized_entropy,
-    _physical_minibatch_count,
-    _policy_temperature_for_scalars,
-    _ppo_terminal_flags,
     _record_action_diagnostics,
     _RolloutMetrics,
-    _run_ppo_update,
-    _sample_weighted_mean,
-    _smoothed_entropy_signal,
-    _validate_ppo_config,
     _write_action_behavior_metrics,
     _write_ante1_metrics,
     _write_consumable_strategy_metrics,
@@ -43,6 +30,19 @@ from pylatro_agent.training.ppo import (
     _write_rollout_episode_metrics,
     _write_terminal_loss_metrics,
 )
+from pylatro_agent.training.ppo_observations import _extract_step_info_value, _ppo_terminal_flags
+from pylatro_agent.training.ppo_optimization import (
+    _entropy_alpha_loss,
+    _make_alpha_optimizer,
+    _make_policy_optimizer,
+    _mean_valid_action_type_count,
+    _per_state_normalized_entropy,
+    _physical_minibatch_count,
+    _run_ppo_update,
+    _sample_weighted_mean,
+    _smoothed_entropy_signal,
+)
+from pylatro_agent.training.ppo_policy import _policy_temperature_for_scalars
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
 
 
@@ -373,6 +373,61 @@ def test_ppo_update_increases_probability_of_positive_advantage_action() -> None
     assert probs[good_action].item() > probs[bad_action].item()
     assert stats.approx_kls
     assert min(stats.approx_kls) >= 0.0
+
+
+@pytest.mark.parametrize("coeff,micro_batch", [(0.0, 4), (0.02, 4), (0.02, 2)])
+def test_return_path_loss_is_actor_only_once_per_update(coeff, micro_batch):
+    from types import SimpleNamespace
+
+    action = int(ActionRange.SHOP_LEAVE)
+    model = _TinyAuxPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
+    buffer = _make_signal_buffer(actions=[action] * 8, advantages=[0.0] * 8)
+    advantages = buffer.advantages.copy()
+    returns = buffer.returns.copy()
+    calls = []
+    prefix = {key: torch.as_tensor(value) for key, value in _dummy_obs(2).items()}
+    prefix["actions"] = torch.tensor([action, action])
+
+    def sample(*args, **kwargs):
+        calls.append((args, kwargs))
+        return prefix
+
+    config = PPOConfig(ppo_epochs=3, mini_batch_size=4, return_path_coeff=coeff,
+                       value_loss_coeff=0, outcome_loss_coeff=0, target_kl=None)
+    critic_before = model.hazard_logits.detach().clone()
+    stats = _run_ppo_update(
+        model, optimizer, buffer, 0.0, config, 4 // micro_batch, micro_batch,
+        torch.device("cpu"), False, return_path_replay=SimpleNamespace(sample=sample),
+    )
+    assert len(calls) == int(coeff > 0)  # not once per microbatch or PPO epoch
+    assert stats.return_path_samples == (2 if coeff > 0 else 0)
+    assert sum(stats.sample_counts) == 8 * config.ppo_epochs  # BC is never PPO data
+    np.testing.assert_array_equal(buffer.advantages, advantages)
+    np.testing.assert_array_equal(buffer.returns, returns)
+    torch.testing.assert_close(model.hazard_logits, critic_before)
+    assert model.value.item() == 0
+    assert (model.logits[action].item() > 0) == (coeff > 0)
+
+
+def test_return_path_actor_update_is_reverted_by_hard_kl_guard():
+    from types import SimpleNamespace
+
+    action = int(ActionRange.SHOP_LEAVE)
+    model = _TinyPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=1.0)
+    prefix = {key: torch.as_tensor(value) for key, value in _dummy_obs(2).items()}
+    prefix["actions"] = torch.tensor([action, action])
+    buffer = _make_signal_buffer(actions=[action] * 2, advantages=[0.0] * 2)
+    config = PPOConfig(ppo_epochs=1, mini_batch_size=2, return_path_coeff=1.0,
+                       value_loss_coeff=0, outcome_loss_coeff=0, target_kl=None, target_kl_max=1e-6)
+    stats = _run_ppo_update(
+        model, optimizer, buffer, 0.0, config, 1, 2, torch.device("cpu"), False,
+        return_path_replay=SimpleNamespace(sample=lambda *_a, **_kw: prefix),
+    )
+    assert stats.kl_rollback
+    assert torch.count_nonzero(model.logits) == 0
+    assert not optimizer.state
 
 
 def test_strict_checkpoint_load_rejects_architecture_mismatch(tmp_path) -> None:

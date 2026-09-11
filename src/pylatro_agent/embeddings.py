@@ -15,6 +15,8 @@ from .constants import (
     CURRENT_ANTE_SCALAR_INDEX,
     DECK_MAX,
     DECK_START,
+    ECONOMY_SCALAR_DIM,
+    ECONOMY_SCALAR_START,
     HAND_CANDIDATE_MAX,
     HAND_CANDIDATE_START,
     HAND_LEVEL_MAX,
@@ -63,6 +65,7 @@ class MetaEmbedding(nn.Module):
         # Each meta token gets its own projection
         self.money_proj = nn.Linear(1, d_model)
         self.interest_proj = nn.Linear(1, d_model)
+        self.economy_proj = nn.Linear(ECONOMY_SCALAR_DIM, d_model, bias=False)
         self.ante_emb = nn.Embedding(12, d_model)
         self.win_ante_emb = nn.Embedding(12, d_model)
         self.blind_type_emb = nn.Embedding(4, d_model)
@@ -92,7 +95,12 @@ class MetaEmbedding(nn.Module):
         d = self.money_proj.out_features
         out = torch.zeros(batch, META_COUNT, d, device=tokens.device, dtype=torch.float32)
 
-        out[:, 0] = self.money_proj(scalars[:, 0:1])
+        economy_end = ECONOMY_SCALAR_START + ECONOMY_SCALAR_DIM
+        economy_context = (
+            scalars[:, ECONOMY_SCALAR_START:economy_end]
+            if scalars.shape[1] >= economy_end else scalars.new_zeros((batch, ECONOMY_SCALAR_DIM))
+        )
+        out[:, 0] = self.money_proj(scalars[:, 0:1]) + self.economy_proj(economy_context)
         out[:, 1] = self.interest_proj(scalars[:, 1:2])
         current_ante = scalars[:, CURRENT_ANTE_SCALAR_INDEX].long().clamp(0, 11)
         win_ante = scalars[:, WIN_ANTE_SCALAR_INDEX].long().clamp(1, 11)
@@ -151,6 +159,7 @@ class DeckCardEmbedding(nn.Module):
         self.seal_emb = nn.Embedding(vocab.seal_size, d_model)
         self.location_emb = nn.Embedding(4, d_model)
         self.hand_slot_emb = hand_slot_emb
+        self.card_state_proj = nn.Linear(4, d_model, bias=False)
         self.proj = nn.Linear(d_model, d_model)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -171,6 +180,11 @@ class DeckCardEmbedding(nn.Module):
             + self.seal_emb(seal)
             + self.location_emb(loc)
             + self.hand_slot_emb(slot)
+            + self.card_state_proj(torch.stack(
+                (tokens[:, :, 6].float(), tokens[:, :, 7].float(),
+                 tokens[:, :, 8].float() / 31.0, tokens[:, :, 10].float()),
+                dim=-1,
+            ))
         )
         return self.proj(h)
 

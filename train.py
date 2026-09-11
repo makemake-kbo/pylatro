@@ -75,6 +75,10 @@ def main():
     parser.add_argument("--archive-return", action="store_true",
                         help="Train from a mix of fresh runs and archived states")
     parser.add_argument("--archive-return-probability", type=float, default=0.5)
+    parser.add_argument("--return-path-coeff", type=float, default=0.02,
+                        help="Separate BC weight for verified winning archive prefixes; 0 disables")
+    parser.add_argument("--return-path-rebuild-steps", type=int, default=64,
+                        help="Maximum CPU simulator actions rebuilding archive prefixes per PPO update")
     parser.add_argument("--archive-min-ante", type=int, default=4)
     parser.add_argument("--archive-max-ante", type=int, default=8)
     parser.add_argument("--archive-capacity-per-bucket", type=int, default=8,
@@ -105,6 +109,13 @@ def main():
         ),
     )
     parser.add_argument("--ppo-epochs", type=int, default=4, help="PPO epochs per update (default: 4)")
+    parser.add_argument(
+        "--precision", choices=("fp32", "bf16"), default=None,
+        help=(
+            "Supervised/PPO transformer compute precision on CUDA; heads/weights/Adam stay FP32. "
+            "Default: saved precision on resume, otherwise FP32."
+        ),
+    )
     parser.add_argument(
         "--pretrained",
         type=str,
@@ -709,7 +720,7 @@ def main():
         "--data-path",
         type=str,
         default=None,
-        help="Load records from this path if present; otherwise save generated records here",
+        help="Supervised: load a Parquet file/directory. Checkpoint generation: load or save records at this path",
     )
     parser.add_argument(
         "--sample-temperature",
@@ -731,6 +742,8 @@ def main():
         parser.error("Archive/milestone training requires --win-ante 8")
     if args.actor_transfer and args.phase != "ppo":
         parser.error("--actor-transfer is a PPO initialization option")
+    if args.precision is not None and args.phase not in ("supervised", "ppo"):
+        parser.error("--precision is currently a supervised/PPO option")
     from pylatro_agent.survival import validate_critic_win_ante
 
     if args.win_ante is not None:
@@ -759,6 +772,7 @@ def main():
         n_heads=args.n_heads,
         d_ff=args.d_ff,
         danger_shop_leave_logit_penalty=args.danger_shop_leave_logit_penalty,
+        precision=args.precision or "fp32",
     )
 
     checkpoint_dir = args.checkpoint_dir
@@ -772,6 +786,7 @@ def main():
         train_supervised(
             SupervisedConfig(
                 num_games=args.games,
+                data_path=args.data_path,
                 batch_size=args.batch,
                 gamma=args.gamma,
                 max_epochs=args.epochs,
@@ -830,6 +845,8 @@ def main():
                     max_ante=args.archive_max_ante,
                     capacity_per_bucket=args.archive_capacity_per_bucket,
                 ) if args.archive_return else None,
+                return_path_coeff=args.return_path_coeff,
+                return_path_rebuild_steps=args.return_path_rebuild_steps,
                 milestone_final_scale=args.milestone_final_scale,
                 milestone_decay_fraction=args.milestone_decay_fraction,
                 seed=args.seed,
@@ -840,6 +857,7 @@ def main():
                 ppo_epochs=args.ppo_epochs,
                 mini_batch_size=args.batch,
                 micro_batch_size=args.micro_batch_size or args.batch,
+                precision=args.precision,
                 lr=args.lr,
                 clip_epsilon=args.clip_eps,
                 gae_lambda=args.gae_lambda,

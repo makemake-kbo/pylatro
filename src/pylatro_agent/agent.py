@@ -18,6 +18,7 @@ from .constants import (
     WIN_ANTE_SCALAR_INDEX,
 )
 from .embeddings import ContentEmbeddingLayer
+from .precision import backbone_autocast
 from .value_head import ValueHead
 
 if TYPE_CHECKING:
@@ -43,6 +44,13 @@ class AgentConfig:
     # retaining the learned direct danger-conditioning path.
     danger_shop_leave_logit_penalty: float = 0.0
     win_only_value: bool = False
+    # CUDA transformer autocast only. Weights, embeddings, grammar/value heads,
+    # probability arithmetic, and optimizer state remain FP32. CPU/MPS use FP32.
+    precision: str = "fp32"
+
+    def __post_init__(self) -> None:
+        if self.precision not in ("fp32", "bf16"):
+            raise ValueError("precision must be 'fp32' or 'bf16'")
 
 
 class BalatroAgent(nn.Module):
@@ -106,14 +114,19 @@ class BalatroAgent(nn.Module):
             history_event_mask,
             history_omitted,
         )
-        x = self.backbone(x, padding_mask=(attention_mask == 0))
-        grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
-        value_dict = self.value_head(
-            x,
-            attention_mask,
-            current_antes=scalars[:, CURRENT_ANTE_SCALAR_INDEX],
-            win_antes=scalars[:, WIN_ANTE_SCALAR_INDEX],
-        )
+        with backbone_autocast(self.config.precision, x.device):
+            x = self.backbone(x, padding_mask=(attention_mask == 0))
+        # Keep small policy differences, hazard products, and PPO log-ratios
+        # away from BF16 rounding. Backprop still traverses the autocast trunk.
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            x = x.float()
+            grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
+            value_dict = self.value_head(
+                x,
+                attention_mask,
+                current_antes=scalars[:, CURRENT_ANTE_SCALAR_INDEX],
+                win_antes=scalars[:, WIN_ANTE_SCALAR_INDEX],
+            )
         if return_raw_outputs:
             # DataParallel can gather nested tensor containers, but not an
             # ActionGrammarDistribution (which also closes over the unsharded

@@ -7,7 +7,7 @@ import time
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -21,8 +21,9 @@ from ..action import ActionType, decode_action
 from ..action_grammar import ActionGrammarDistribution, ActionGrammarOutput
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
-from ..constants import NUM_ACTIONS
+from ..constants import NUM_ACTIONS, SCALAR_DIM, TOKENIZER_VERSION
 from ..history import HistoryArrays
+from ..precision import backbone_autocast
 from ..reward import (
     DEFAULT_REWARD_CONFIG,
     RewardConfig,
@@ -33,6 +34,9 @@ from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..value_head import outcome_nll, return_huber_loss
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 _ACTION_ID_TO_TYPE = tuple(decode_action(action_id).action_type.value for action_id in range(NUM_ACTIONS))
@@ -80,6 +84,8 @@ class SupervisedConfig:
     hand_ar_mixture_eps: float = 0.5
     win_ante: int = 8
     reward_config: RewardConfig | None = None
+    excluded_seeds: tuple[int, ...] = ()
+    data_path: str | None = None
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -135,7 +141,7 @@ def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor]):
     )
 
 
-def _action_type_dataset_stats(records: list[dict[str, Any]]) -> dict[str, Counter]:
+def _action_type_dataset_stats(records: Sequence[dict[str, Any]]) -> dict[str, Counter]:
     """Summarize chosen and valid action families in generated BC records."""
     chosen: Counter = Counter()
     valid_states: Counter = Counter()
@@ -150,7 +156,7 @@ def train_supervised(
     config: SupervisedConfig,
     agent_config: AgentConfig | None = None,
     data: GameData | None = None,
-    records: list[dict[str, Any]] | None = None,
+    records: Sequence[dict[str, Any]] | None = None,
 ) -> BalatroAgent:
     """Run supervised pretraining.
 
@@ -171,6 +177,9 @@ def train_supervised(
     from torch.utils.tensorboard import SummaryWriter
 
     device = torch.device(config.device)
+    # Reject unsupported CUDA BF16 before generating an expensive dataset.
+    with backbone_autocast(agent_config.precision, device):
+        pass
     model = BalatroAgent(agent_config, vocab).to(device)
     if config.device == "cuda" and torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
@@ -183,6 +192,10 @@ def train_supervised(
         potential_win_ante=config.win_ante,
     )
     logger.info(f"Model parameters: {base_model.count_parameters():,}")
+    if records is None and config.data_path is not None:
+        from .model_generate import load_records
+
+        records = load_records(config.data_path, reward_config=active_reward_config)
     if records is None:
         logger.info("Generating training data from heuristic agent...")
         t_gen_start = time.monotonic()
@@ -197,6 +210,7 @@ def train_supervised(
             chunk_size=config.chunk_size,
             win_ante=config.win_ante,
             reward_config=active_reward_config,
+            excluded_seeds=config.excluded_seeds,
         )
         t_gen_elapsed = time.monotonic() - t_gen_start
         logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)
@@ -206,6 +220,14 @@ def train_supervised(
     if not records:
         logger.error("No training records provided, check min_ante or the upstream generator")
         return model
+
+    excluded_seeds = frozenset(config.excluded_seeds)
+    for record in records:
+        if (record.get("tokenizer_version", TOKENIZER_VERSION) != TOKENIZER_VERSION
+                or len(record["obs"]["scalars"]) != SCALAR_DIM):
+            raise ValueError("Teacher observation schema mismatch; regenerate the dataset for tokenizer v13")
+        if excluded_seeds and ("seed" not in record or int(record["seed"]) in excluded_seeds):
+            raise ValueError("Reserved evaluation seeds require disjoint, seed-labeled teacher records")
 
     wins = sum(1 for r in records if r["won"])
     max_antes = [r.get("max_ante", 1) for r in records]
@@ -253,7 +275,9 @@ def train_supervised(
 
     global_step = 0
     for epoch in range(config.max_epochs):
-        indices = np.random.permutation(n)
+        from .parquet_records import ParquetRecords
+
+        indices = records.shuffled_indices() if isinstance(records, ParquetRecords) else np.random.permutation(n)
         epoch_loss = torch.zeros((), device=device)
         epoch_action_loss = torch.zeros((), device=device)
         epoch_value_loss = torch.zeros((), device=device)
@@ -344,7 +368,9 @@ def train_supervised(
 
             optimizer.zero_grad()
             loss.backward()
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            grad_norm = nn.utils.clip_grad_norm_(
+                model.parameters(), 1.0, error_if_nonfinite=agent_config.precision == "bf16"
+            )
             optimizer.step()
 
             # Warmup
@@ -417,6 +443,7 @@ def train_supervised(
             tmp_path,
             extra={
                 "agent_config": asdict(save_model.config),
+                "training_reserved_seeds": list(config.excluded_seeds),
                 **reward_checkpoint_metadata(active_reward_config),
             },
         )

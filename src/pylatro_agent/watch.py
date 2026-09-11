@@ -326,7 +326,7 @@ def _topk_actions(model, batch, valid_ids, k: int, temperature: float):
     """
     import torch
 
-    from .training.ppo import _grammar_distribution
+    from .training.ppo_policy import _grammar_distribution
 
     n = len(valid_ids)
     big = {key: value.repeat(n, *([1] * (value.dim() - 1))) for key, value in batch.items()}
@@ -348,7 +348,8 @@ def _play(args) -> int:
     from pylatro import load_game_data
 
     from .env import BalatroEnv
-    from .training.ppo import _grammar_distribution, _single_obs_to_batch
+    from .training.ppo_observations import _single_obs_to_batch
+    from .training.ppo_policy import _grammar_distribution
     from .vocab import build_vocab
 
     data = load_game_data()

@@ -498,7 +498,7 @@ def test_sil_coeff_floor_clamped_to_coeff() -> None:
 
 
 def test_grad_diagnostics_ratio_and_cosine() -> None:
-    from pylatro_agent.training.ppo import _sil_grad_diagnostics
+    from pylatro_agent.training.ppo_optimization import _sil_grad_diagnostics
 
     sil = [torch.tensor([1.0, 0.0])]
     total = [torch.tensor([2.0, 0.0])]  # ppo = [1,0]
@@ -511,7 +511,7 @@ def test_grad_diagnostics_ratio_and_cosine() -> None:
 
 
 def test_grad_diagnostics_zero_norms_are_safe() -> None:
-    from pylatro_agent.training.ppo import _sil_grad_diagnostics
+    from pylatro_agent.training.ppo_optimization import _sil_grad_diagnostics
 
     # Zero SIL gradient -> ratio and cosine must not be infinity/nan.
     sil = [torch.zeros(3)]
@@ -526,7 +526,7 @@ def test_grad_diagnostics_zero_norms_are_safe() -> None:
 
 
 def test_grad_diagnostics_opposing_gradients_negative_cosine() -> None:
-    from pylatro_agent.training.ppo import _sil_grad_diagnostics
+    from pylatro_agent.training.ppo_optimization import _sil_grad_diagnostics
 
     sil = [torch.tensor([1.0, 0.0])]
     total = [torch.tensor([0.0, 0.0])]  # ppo = -sil
@@ -540,7 +540,8 @@ def test_grad_diagnostics_opposing_gradients_negative_cosine() -> None:
 
 
 def test_config_validation() -> None:
-    from pylatro_agent.training.ppo import PPOConfig, _validate_ppo_config
+    from pylatro_agent.training.ppo import PPOConfig
+    from pylatro_agent.training.ppo_config import _validate_ppo_config
 
     _validate_ppo_config(PPOConfig(sil_coeff=0.1))
     with pytest.raises(ValueError):
@@ -565,7 +566,7 @@ def test_config_validation() -> None:
 
 
 def test_seed_training_rngs_repeats_all_process_rngs() -> None:
-    from pylatro_agent.training.ppo import _seed_training_rngs
+    from pylatro_agent.training.ppo_config import _seed_training_rngs
 
     python_state = random.getstate()
     numpy_state = np.random.get_state()
@@ -590,7 +591,8 @@ def test_checkpoint_records_training_seed(
     tmp_path,
 ) -> None:
     from pylatro_agent import checkpoint as checkpoint_module
-    from pylatro_agent.training.ppo import PPOConfig, _save_checkpoint
+    from pylatro_agent.training.ppo import PPOConfig
+    from pylatro_agent.training.ppo_checkpoint import _save_checkpoint
 
     captured: dict[str, object] = {}
 
@@ -745,7 +747,7 @@ def _sil_ppo_config(**overrides):
 
 
 def test_exactly_one_sil_logical_group_attempted_per_update() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
@@ -769,7 +771,7 @@ def test_exactly_one_sil_logical_group_attempted_per_update() -> None:
 
 
 def test_two_sil_logical_groups_when_configured() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
@@ -791,7 +793,7 @@ def test_two_sil_logical_groups_when_configured() -> None:
 
 
 def test_grad_accumulation_does_not_multiply_sil() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
@@ -816,7 +818,7 @@ def test_grad_accumulation_does_not_multiply_sil() -> None:
 
 
 def test_kl_stop_at_logical_boundary() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.5)  # large lr -> big KL
@@ -871,7 +873,7 @@ def _assert_nested_tensors_equal(left, right) -> None:
 
 
 def test_weighted_kl_uses_sample_count() -> None:
-    from pylatro_agent.training.ppo import _WeightedKL
+    from pylatro_agent.training.ppo_optimization import _WeightedKL
 
     aggregate = _WeightedKL()
     aggregate.add(0.01, 10)
@@ -882,7 +884,7 @@ def test_weighted_kl_uses_sample_count() -> None:
 
 
 def test_soft_kl_stop_cannot_happen_before_min_fraction(monkeypatch) -> None:
-    import pylatro_agent.training.ppo as ppo
+    import pylatro_agent.training.ppo_optimization as ppo
 
     model = _SilModel()
     optimizer = ppo._make_policy_optimizer(model.parameters(), lr=0.01)
@@ -918,7 +920,7 @@ def test_soft_kl_stop_cannot_happen_before_min_fraction(monkeypatch) -> None:
 
 
 def test_hard_kl_breach_restores_model_and_adam_exactly() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.5)
@@ -958,7 +960,7 @@ def test_hard_kl_breach_restores_model_and_adam_exactly() -> None:
 
 
 def test_no_kl_breach_path_trains_normally() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
@@ -991,7 +993,7 @@ def test_no_kl_breach_path_trains_normally() -> None:
 
 
 def test_sil_shares_optimizer_step_with_ppo() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     def run(with_sil: bool) -> int:
         torch.manual_seed(0)
@@ -1027,7 +1029,7 @@ def test_sil_shares_optimizer_step_with_ppo() -> None:
 
 
 def test_sil_grad_diagnostics_captured() -> None:
-    from pylatro_agent.training.ppo import _make_policy_optimizer, _run_ppo_update
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 
     model = _SilModel()
     optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)

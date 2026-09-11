@@ -98,6 +98,50 @@ def _dummy_obs() -> dict[str, np.ndarray]:
     }
 
 
+@pytest.mark.parametrize("invalid", ["old_scalars", "old_version", "reserved_seed", "missing_seed"])
+def test_teacher_data_rejects_stale_schema_or_reserved_seed(game_data, tmp_path, invalid):
+    record = {"obs": _dummy_obs(), "seed": 2, "tokenizer_version": TOKENIZER_VERSION}
+    if invalid == "old_scalars":
+        record["obs"]["scalars"] = np.zeros(25)
+    elif invalid == "old_version":
+        record["tokenizer_version"] = 12
+    elif invalid == "reserved_seed":
+        record["seed"] = 42
+    else:
+        record.pop("seed")
+    config = SupervisedConfig(device="cpu", max_epochs=1, excluded_seeds=(42,),
+                              save_dir=str(tmp_path / "checkpoints"), log_dir=str(tmp_path / "events"))
+    small = AgentConfig(d_model=16, n_layers=1, n_heads=2, d_ff=32)
+    message = "schema mismatch" if invalid.startswith("old") else "Reserved evaluation seeds"
+    with pytest.raises(ValueError, match=message):
+        train_supervised(config, small, data=game_data, records=[record])
+
+
+@pytest.mark.parametrize("min_ante", [1, 3])
+def test_teacher_worker_skips_reserved_seeds_before_playing(game_data, monkeypatch, min_ante):
+    import multiprocessing
+
+    counters = [multiprocessing.Value("i", 0) for _ in range(3)]
+    for name, value in zip(("_shared_counter", "_shared_total_attempted", "_shared_busy"), counters, strict=True):
+        monkeypatch.setattr(fast_generate, name, value)
+    monkeypatch.setattr(fast_generate, "_shared_target", 1)
+    attempted = []
+
+    def no_obs(seed, *_args):
+        attempted.append(seed)
+        return 8, True
+
+    def single(seed, *_args):
+        attempted.append(seed)
+        return [{"seed": seed}], 8, True
+
+    monkeypatch.setattr(fast_generate, "_run_game_fast_no_obs", no_obs)
+    monkeypatch.setattr(fast_generate, "_run_game_single_pass", single)
+    records = fast_generate._generate_games_worker((42, min_ante, 0.997, 0.0, 8, None, (42, 43)))
+    assert records == [{"seed": 44}]
+    assert attempted and set(attempted) == {44}
+
+
 # ── FastRunner termination tests ──
 
 

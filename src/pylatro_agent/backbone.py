@@ -26,7 +26,9 @@ class PreNormTransformerLayer(nn.Module):
     def forward(self, x: torch.Tensor, key_padding_mask: torch.Tensor | None = None) -> torch.Tensor:
         # Pre-LN → MHA → residual
         normed = self.norm1(x)
-        attn_out, _ = self.attn(normed, normed, normed, key_padding_mask=key_padding_mask)
+        # We never consume attention weights. This permits PyTorch's SDPA path
+        # without changing parameter names, shapes, or checkpoint compatibility.
+        attn_out, _ = self.attn(normed, normed, normed, key_padding_mask=key_padding_mask, need_weights=False)
         x = x + self.dropout(attn_out)
         # Pre-LN → FFN → residual
         x = x + self.ffn(self.norm2(x))
@@ -45,10 +47,7 @@ class TransformerBackbone(nn.Module):
         dropout: float = 0.1,
     ):
         super().__init__()
-        self.layers = nn.ModuleList([
-            PreNormTransformerLayer(d_model, n_heads, d_ff, dropout)
-            for _ in range(n_layers)
-        ])
+        self.layers = nn.ModuleList([PreNormTransformerLayer(d_model, n_heads, d_ff, dropout) for _ in range(n_layers)])
         self.final_norm = nn.LayerNorm(d_model)
 
     def forward(self, x: torch.Tensor, padding_mask: torch.Tensor | None = None) -> torch.Tensor:

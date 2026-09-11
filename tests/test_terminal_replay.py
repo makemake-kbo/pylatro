@@ -7,7 +7,8 @@ import torch
 
 from pylatro_agent.constants import MAX_SEQ_LEN, NUM_ACTIONS, SCALAR_DIM, TOKEN_DIM
 from pylatro_agent.survival import DEFAULT_MAX_ANTES, hazard_outcome_probabilities
-from pylatro_agent.training.ppo import PPOConfig, _run_terminal_replay_updates
+from pylatro_agent.training.ppo import PPOConfig
+from pylatro_agent.training.ppo_optimization import _run_terminal_replay_updates
 from pylatro_agent.training.sil import EpisodeReplayBuffer, EpisodeTracker
 
 
@@ -322,7 +323,7 @@ def test_climatology_reference_is_unbiased_at_small_bucket_sizes() -> None:
     the 32-row cross-rollout bucket look worse than climatology.
     """
 
-    from pylatro_agent.training.ppo import _outcome_metric_rows
+    from pylatro_agent.training.ppo_optimization import _outcome_metric_rows
 
     torch.manual_seed(0)
     rows, classes = 32, DEFAULT_MAX_ANTES + 1
@@ -346,7 +347,7 @@ def test_climatology_reference_is_unbiased_at_small_bucket_sizes() -> None:
     assert climatology.mean() > in_sample.mean()
 
 
-def test_replay_reports_holdout_metrics_from_untrained_episodes() -> None:
+def test_replay_reports_explicitly_replay_only_holdout_metrics() -> None:
     buffer = EpisodeReplayBuffer(capacity_episodes=64, seed=5, holdout_fraction=0.5)
     for index in range(24):
         _record_episode(buffer, steps=4, won=index % 2 == 0, final_ante=3)
@@ -371,12 +372,12 @@ def test_replay_reports_holdout_metrics_from_untrained_episodes() -> None:
 
     assert result.updates_applied == 2
     assert result.diagnostics["buffer_holdout_episodes"] > 0
-    assert result.diagnostics["holdout/samples"] == 16.0
-    # The generalization pair the run has been missing: same metric, one on
-    # episodes the optimizer stepped on and one on episodes it never saw.
+    assert result.diagnostics["replay_holdout/samples"] == 16.0
+    # PPO may already have trained on this split; do not call it independent.
     for key in ("outcome_nll", "outcome_brier", "outcome_brier_skill"):
         assert key in result.diagnostics
-        assert "holdout/" + key in result.diagnostics
+        assert "replay_holdout/" + key in result.diagnostics
+    assert not any(key.startswith("holdout/") for key in result.diagnostics)
 
 
 def test_replay_skips_holdout_metrics_when_the_split_is_disabled() -> None:
@@ -402,13 +403,13 @@ def test_replay_skips_holdout_metrics_when_the_split_is_disabled() -> None:
     )
 
     assert result.updates_applied == 1
-    assert not any(key.startswith("holdout/") for key in result.diagnostics)
+    assert not any(key.startswith("replay_holdout/") for key in result.diagnostics)
 
 
 def test_singleton_bucket_keeps_scores_but_publishes_no_climatology() -> None:
     """A one-row Ante bucket must not manufacture skill against itself."""
 
-    from pylatro_agent.training.ppo import _outcome_metric_rows
+    from pylatro_agent.training.ppo_optimization import _outcome_metric_rows
 
     classes = DEFAULT_MAX_ANTES + 1
     probabilities = torch.full((3, classes), 1.0 / classes)

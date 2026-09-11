@@ -1,0 +1,63 @@
+{
+  "source_sha256": "4b7782e3939c5dec43c7a58e93d903148190c52f3812c49572dba553e5ded7c1",
+  "extension_sha256": "91aca91c17da682d239c2bf769b600ae63a5ec7dcc57651612bdd0c330ddb443",
+  "parity_passed": true,
+  "rows": [
+    {
+      "mode": "copy",
+      "repeat": 0,
+      "variant": "python",
+      "seconds": 0.5512646279967157,
+      "copies": 2000
+    },
+    {
+      "mode": "copy",
+      "repeat": 0,
+      "variant": "native",
+      "seconds": 0.3779553880012827,
+      "copies": 2000
+    },
+    {
+      "mode": "copy",
+      "repeat": 1,
+      "variant": "native",
+      "seconds": 0.37752270299824886,
+      "copies": 2000
+    },
+    {
+      "mode": "copy",
+      "repeat": 1,
+      "variant": "python",
+      "seconds": 0.598281386999588,
+      "copies": 2000
+    },
+    {
+      "mode": "copy",
+      "repeat": 2,
+      "variant": "python",
+      "seconds": 0.5653208509975229,
+      "copies": 2000
+    },
+    {
+      "mode": "copy",
+      "repeat": 2,
+      "variant": "native",
+      "seconds": 0.3845154279988492,
+      "copies": 2000
+    },
+    {
+      "mode": "generate",
+      "seed": 0,
+      "variant": "python",
+      "seconds": 25.442592790997878,
+      "records": 125
+    },
+    {
+      "mode": "generate",
+      "seed": 0,
+      "variant": "native",
+      "seconds": 22.724499435993494,
+      "records": 125
+    }
+  ]
+}

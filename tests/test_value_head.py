@@ -196,7 +196,8 @@ def test_advantage_clip_clamps_outliers() -> None:
 
 
 def test_ppo_config_rejects_negative_advantage_clip() -> None:
-    from pylatro_agent.training.ppo import PPOConfig, _validate_ppo_config
+    from pylatro_agent.training.ppo import PPOConfig
+    from pylatro_agent.training.ppo_config import _validate_ppo_config
 
     with pytest.raises(ValueError, match="advantage_clip_sigma"):
         _validate_ppo_config(PPOConfig(advantage_clip_sigma=-1.0))
@@ -204,7 +205,8 @@ def test_ppo_config_rejects_negative_advantage_clip() -> None:
 
 @pytest.mark.parametrize("win_ante", [0, DEFAULT_MAX_ANTES + 1])
 def test_ppo_config_rejects_win_ante_outside_critic_horizon(win_ante: int) -> None:
-    from pylatro_agent.training.ppo import PPOConfig, _validate_ppo_config
+    from pylatro_agent.training.ppo import PPOConfig
+    from pylatro_agent.training.ppo_config import _validate_ppo_config
 
     with pytest.raises(ValueError, match="win_ante must be between 1 and 8"):
         _validate_ppo_config(PPOConfig(win_ante=win_ante))

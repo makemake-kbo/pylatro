@@ -14,10 +14,10 @@ from pylatro_agent.constants import (
     TOKENIZER_VERSION,
 )
 from pylatro_agent.reward import RewardConfig
-from pylatro_agent.training.ppo import (
-    PPOConfig,
+from pylatro_agent.training.ppo import PPOConfig
+from pylatro_agent.training.ppo_checkpoint import _load_checkpoint_strict
+from pylatro_agent.training.ppo_optimization import (
     _apply_lr_override,
-    _load_checkpoint_strict,
     _make_policy_optimizer,
     _optimizer_to,
     _restore_policy_optimizer_state,

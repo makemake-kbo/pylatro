@@ -28,11 +28,11 @@ from pylatro_agent.survival import (
     terminal_outcome_class,
     validate_critic_win_ante,
 )
-from pylatro_agent.training.ppo import (
+from pylatro_agent.training.ppo_observations import (
     _extract_step_info_value,
-    _make_vectorized_envs,
     _ObsBuffer,
 )
+from pylatro_agent.training.ppo_rollout import _make_vectorized_envs
 from pylatro_agent.training.sil import sil_percentile_gate
 from pylatro_agent.vocab import build_vocab
 

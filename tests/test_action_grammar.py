@@ -50,6 +50,97 @@ def _blank_output(batch_size: int) -> ActionGrammarOutput:
     )
 
 
+@pytest.mark.parametrize("eps", [0.0, 0.1, 0.5, 1.0])
+def test_exact_entropy_and_gradients_match_enumerated_atomic_policy(eps):
+    torch.manual_seed(23)
+    output = _blank_output(1)
+    # Exercise nonuniform conditional logits, multiple lengths, both target
+    # families, duplicated candidate slots, and deterministic decisions.
+    for name in output.__dataclass_fields__:
+        tensor = getattr(output, name)
+        if not name.startswith("candidate"):
+            tensor.copy_(torch.randn_like(tensor))
+        tensor.requires_grad_(True)
+    tokens = torch.zeros(1, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long)
+    tokens[0, HAND_CANDIDATE_START:HAND_CANDIDATE_START + 2, 5:7] = torch.tensor([1, 2])
+    with torch.no_grad():
+        output.candidate_play_logits[0, :2] = torch.tensor([0.2, -0.4])
+    actions = [encode_action(ActionType.PLAY_SUBSET, subset_index(cards))
+               for cards in ([0, 1], [0, 2], [1], [0, 1, 2])]
+    actions += [encode_action(ActionType.DISCARD_SUBSET, subset_index([0, 1]))]
+    actions += [encode_action(ActionType.USE_CONSUMABLE_HAND_SUBSET, slot, consumable_subset_index(cards))
+                for slot, cards in ((0, [0]), (0, [0, 1]), (1, [0, 2]))]
+    actions += [encode_action(ActionType.USE_CONSUMABLE_JOKER, 0, slot) for slot in (0, 1)]
+    mask = torch.zeros(1, NUM_ACTIONS)
+    mask[0, actions] = 1
+    dist = ActionGrammarDistribution(output, mask, tokens=tokens, hand_ar_mixture_eps=eps)
+    probs = torch.stack([dist.log_prob(torch.tensor([action])).exp()[0] for action in actions])
+    exact = -(probs * probs.clamp_min(1e-30).log()).sum()
+    actual = dist.entropy().sum()
+    torch.testing.assert_close(probs.sum(), torch.tensor(1.0))
+    torch.testing.assert_close(actual, exact, atol=2e-6, rtol=2e-6)
+    assert 0 <= actual.item() <= math.log(len(actions)) + 1e-6
+    parameters = [getattr(output, name) for name in output.__dataclass_fields__]
+    reference_grad = torch.autograd.grad(exact, parameters, retain_graph=True, allow_unused=True)
+    actual_grad = torch.autograd.grad(actual, parameters, allow_unused=True)
+    for tensor, reference, observed in zip(parameters, reference_grad, actual_grad, strict=True):
+        reference = torch.zeros_like(tensor) if reference is None else reference
+        observed = torch.zeros_like(tensor) if observed is None else observed
+        torch.testing.assert_close(observed, reference, atol=2e-6, rtol=2e-5)
+    assert dist.mode().item() == actions[int(probs.argmax())]
+
+
+def test_deterministic_card_choices_have_zero_entropy_gradient():
+    output = _blank_output(1)
+    output.hand_card_logits[0, :, 0] = 1.0
+    output.hand_card_logits.requires_grad_(True)
+    mask = torch.zeros(1, NUM_ACTIONS)
+    for family in (ActionType.PLAY_SUBSET, ActionType.DISCARD_SUBSET):
+        mask[0, encode_action(family, subset_index([0, 1]))] = 1
+    dist = ActionGrammarDistribution(output, mask, hand_ar_mixture_eps=0.1)
+    entropy = dist.entropy()
+    torch.testing.assert_close(entropy, torch.tensor([math.log(2)]))
+    entropy.sum().backward()
+    assert output.hand_card_logits.grad.abs().max().item() == 0.0
+
+
+def test_inference_cache_warmup_does_not_break_training_backward():
+    from pylatro_agent.action_grammar import _TENSOR_CACHE
+
+    _TENSOR_CACHE.clear()
+    mask = torch.zeros(1, NUM_ACTIONS)
+    for cards in ([0], [0, 1], [1, 2]):
+        mask[0, encode_action(ActionType.PLAY_SUBSET, subset_index(cards))] = 1
+    with torch.inference_mode():
+        ActionGrammarDistribution(_blank_output(1), mask).mode()
+    assert all(not torch.is_inference(tensor) for tensor in _TENSOR_CACHE.values())
+    output = _blank_output(1)
+    output.hand_card_logits.requires_grad_(True)
+    dist = ActionGrammarDistribution(output, mask)
+    dist.entropy().sum().backward()
+    assert torch.isfinite(output.hand_card_logits.grad).all()
+
+
+@pytest.mark.parametrize("width", [1, 3, 8, 16])
+def test_compact_trie_preserves_sparse_legal_support_and_empty_rows(width):
+    output = _blank_output(2)
+    torch.manual_seed(width)
+    output.hand_card_logits = torch.randn_like(output.hand_card_logits, requires_grad=True)
+    output.hand_count_logits = torch.randn_like(output.hand_count_logits, requires_grad=True)
+    cards = {(0,), (width - 1,), tuple(range(min(5, width)))}
+    actions = [encode_action(ActionType.PLAY_SUBSET, subset_index(list(row))) for row in sorted(cards)]
+    mask = torch.zeros(2, NUM_ACTIONS)
+    mask[0, actions] = 1
+    mask[1, int(ActionRange.SHOP_LEAVE)] = 1
+    dist = ActionGrammarDistribution(output, mask, hand_ar_mixture_eps=1.0)
+    probs = torch.stack([dist.log_prob(torch.tensor([action, int(ActionRange.SHOP_LEAVE)])).exp()[0]
+                         for action in actions])
+    entropy = -(probs * probs.log()).sum()
+    torch.testing.assert_close(probs.sum(), torch.tensor(1.0))
+    torch.testing.assert_close(dist.entropy(), torch.stack([entropy, entropy * 0]))
+    assert dist.mode().tolist() == [actions[int(probs.argmax())], int(ActionRange.SHOP_LEAVE)]
+
+
 def _grammar_head_inputs(batch_size: int, d_model: int) -> tuple[torch.Tensor, ...]:
     return (
         torch.zeros(batch_size, MAX_SEQ_LEN, d_model),

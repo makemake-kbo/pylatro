@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Any, ClassVar
 
@@ -13,7 +14,15 @@ from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GameController, GamePhase
 
 from .action import ActionType, decode_action
-from .archive import ARCHIVE_VERSION, ArchiveConfig, StateArchive, pack_snapshot, unpack_snapshot
+from .archive import (
+    ARCHIVE_VERSION,
+    MAX_RETURN_PATH_ACTIONS,
+    ArchiveConfig,
+    StateArchive,
+    observation_fingerprint,
+    pack_snapshot,
+    unpack_snapshot,
+)
 from .constants import (
     CURRENT_ANTE_SCALAR_INDEX,
     HISTORY_EVENT_DIM,
@@ -83,6 +92,7 @@ class BalatroEnv(gymnasium.Env):
         counterfactual_diagnostic_interval: int = 0,
         archive_config: ArchiveConfig | None = None,
         archive_index: int = 0,
+        excluded_seeds: tuple[int, ...] = (),
     ):
         super().__init__()
         self._data = data or load_game_data()
@@ -101,12 +111,17 @@ class BalatroEnv(gymnasium.Env):
         self._reward_config = reward_config or DEFAULT_REWARD_CONFIG
         self._seed = seed
         self._initial_seed_pending = seed is not None
+        self._excluded_seeds = frozenset(int(value) for value in excluded_seeds)
         if archive_config is not None and (win_ante or 8) != 8:
             raise ValueError("Archive training always targets Ante 8")
         self._archive = StateArchive(archive_config, seed=seed) if archive_config is not None else None
         self._archive_index = archive_index
         self._archive_start = False
         self._start_ante = 1
+        self._action_lineage: list[int] = []
+        self._lineage_complete = True
+        self._archive_prefix_length = 0
+        self._archive_prefix_fingerprint = ""
         self._cleared_boss_antes: set[int] = set()
         self._milestone_scale = 1.0
         if counterfactual_diagnostic_interval < 0:
@@ -184,6 +199,8 @@ class BalatroEnv(gymnasium.Env):
         return self._controller.state if self._controller else None
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[dict, dict]:
+        if seed is not None and seed in self._excluded_seeds:
+            raise ValueError("Training cannot reset to a reserved evaluation seed")
         # Explicit seeds mean reproducible fresh evaluation. Gym autoresets
         # have no seed; only those may draw a training continuation.
         snapshot = self._archive.choose(
@@ -210,6 +227,9 @@ class BalatroEnv(gymnasium.Env):
             super().reset(seed=None)
             effective_seed = int(self.np_random.integers(0, 2**31))
 
+        while effective_seed in self._excluded_seeds:
+            effective_seed = int(self.np_random.integers(0, 2**31))
+
         self._controller = GameController(data=self._data)
         self._controller.new_run(str(effective_seed), stake=self._stake, deck_key=self._deck_key)
         if self._win_ante_override is not None and self._controller.state is not None:
@@ -223,6 +243,10 @@ class BalatroEnv(gymnasium.Env):
         self._cleared_boss_antes.clear()
         self._archive_start = False
         self._start_ante = 1
+        self._action_lineage = []
+        self._lineage_complete = True
+        self._archive_prefix_length = 0
+        self._archive_prefix_fingerprint = ""
         self._last_order_decision = NO_ORDER_DECISION
         self._history.reset()
         self._prev_info = self._capture_state_info()
@@ -260,6 +284,8 @@ class BalatroEnv(gymnasium.Env):
             "joker_replacement_clear_baseline": self._joker_replacement_clear_baseline,
             "rewarded_gold_card_ids": self._rewarded_gold_card_ids,
             "cleared_boss_antes": self._cleared_boss_antes,
+            "action_lineage": self._action_lineage,
+            "lineage_complete": self._lineage_complete,
         }, {id(self._data): self._data})
 
     def restore_snapshot(self, snapshot: dict[str, Any]) -> None:
@@ -274,6 +300,8 @@ class BalatroEnv(gymnasium.Env):
                 or saved_controller.state.won
                 or saved_controller.state.win_ante != (self._win_ante_override or 8)):
             raise ValueError("Snapshot must be a live boundary with the same victory target")
+        if str(saved_controller.state.seed) in {str(seed) for seed in self._excluded_seeds}:
+            raise ValueError("Archive contains a reserved evaluation seed")
         saved = deepcopy(snapshot, {id(saved_controller.data): self._data})
         self._controller = saved["controller"]
         self._sub_phase = saved["sub_phase"]
@@ -299,7 +327,11 @@ class BalatroEnv(gymnasium.Env):
             if paid:
                 self._rewarded_gold_card_ids.add(card.reward_uid)
         self._cleared_boss_antes = saved["cleared_boss_antes"]
+        self._action_lineage = list(saved["action_lineage"])
+        self._lineage_complete = bool(saved["lineage_complete"])
+        self._archive_prefix_length = len(self._action_lineage)
         self._prev_info = self._capture_state_info()
+        self._archive_prefix_fingerprint = observation_fingerprint(self._obs_to_dict(self._build_obs(self._prev_info)))
 
     def _archive_boundary(self, prev_info: dict) -> None:
         if self._archive is None or self._sub_phase not in (SubPhase.SHOP, SubPhase.BLIND_SELECT):
@@ -385,6 +417,8 @@ class BalatroEnv(gymnasium.Env):
             # Masking should prevent this; if it happens it's a bug to investigate.
             import logging
 
+            self._lineage_complete = False
+
             logging.getLogger(__name__).warning(f"Action {action} raised {type(e).__name__}: {e}")
             reward = -1.0
             obs = self._build_obs(self._prev_info)
@@ -398,6 +432,13 @@ class BalatroEnv(gymnasium.Env):
                 action_diagnostics["counterfactual_failure_reason"] = "action_error"
             info.update(action_diagnostics)
             return self._obs_to_dict(obs), reward, False, False, info
+
+        if self._lineage_complete:
+            if len(self._action_lineage) < MAX_RETURN_PATH_ACTIONS:
+                self._action_lineage.append(int(action))
+            else:
+                self._lineage_complete = False
+                self._action_lineage.clear()
 
         # Check terminal conditions driven by the underlying game state.
         terminated = self._controller.phase in (GamePhase.GAME_OVER, GamePhase.GAME_WON)
@@ -595,6 +636,8 @@ class BalatroEnv(gymnasium.Env):
             "planet_usage_total": curr_info.get("planet_usage_total", 0),
             "archive_start": self._archive_start,
             "start_ante": self._start_ante,
+            "origin_seed": str(state.seed),
+            "archive_prefix_length": self._archive_prefix_length,
             "boss_cleared_ante": curr_info.get("boss_cleared_ante", 0),
         }
         for component_name, component_value in reward_components.items():
@@ -603,6 +646,17 @@ class BalatroEnv(gymnasium.Env):
         info["teacher_action"] = teacher_action
         info["teacher_action_match"] = curr_info["teacher_action_match"]
         info["next_teacher_action"] = -1 if terminated or truncated else self._current_teacher_action()
+        if won and self._archive_start and self._lineage_complete and self._archive_prefix_length > 0:
+            # Small recipe, not an observation trajectory, crosses the worker
+            # boundary. Reconstructed prefixes are validated and used ONLY by
+            # the separately weighted return-path BC loss in the learner.
+            info["winning_return_path"] = json.dumps({
+                "tokenizer_version": TOKENIZER_VERSION,
+                "seed": str(state.seed), "stake": self._stake, "deck_key": self._deck_key,
+                "actions": self._action_lineage[:self._archive_prefix_length],
+                "boundary_fingerprint": self._archive_prefix_fingerprint,
+                "won": True, "win_ante": int(state.win_ante),
+            }).encode()
         if not terminated and not truncated:
             self._archive_boundary(self._prev_info)
         return self._obs_to_dict(obs), reward, terminated, truncated, info

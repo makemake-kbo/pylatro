@@ -21,6 +21,7 @@ from .constants import (
     CONSUMABLE_START,
     DECK_MAX,
     DECK_START,
+    ECONOMY_SCALAR_START,
     HAND_CANDIDATE_MAX,
     HAND_CANDIDATE_START,
     HAND_LEVEL_MAX,
@@ -259,7 +260,7 @@ class Tokenizer:
         scalars[6] = float(state.current_round.hand_size)
         scalars[7] = float(self._sub_phase_id(sub_phase))
         blind_target = float(self._blind_target(state))
-        round_score_f = max(float(round_score), 0.0)
+        round_score_f = max(float(round_score), 0.0) if sub_phase == SubPhase.CHOOSE_ACTION else 0.0
         score_remaining = max(blind_target - round_score_f, 0.0)
         scalars[8] = sign_log(round_score_f)
         scalars[9] = sign_log(score_remaining)
@@ -267,7 +268,7 @@ class Tokenizer:
         if clear_probability is None or immediate_death_probability is None:
             from .risk import capture_state_risk
 
-            risk = capture_state_risk(state, round_score)
+            risk = capture_state_risk(state, round_score, sub_phase=sub_phase)
             if clear_probability is None:
                 clear_probability = risk.clear_probability
             if immediate_death_probability is None:
@@ -288,6 +289,26 @@ class Tokenizer:
         # until a play has happened.
         scalars[ORDER_OBJECTIVE_SCALAR_INDEX] = 1.0 if order_objective_money else 0.0
         scalars[ORDER_DOLLARS_SCALAR_INDEX] = sign_log(float(order_dollars_gained))
+
+        # Expose costs and opportunity costs, not a handcrafted reroll policy.
+        # Interest is the engine's current cash-only entitlement; future Joker
+        # income and survival remain decisions for the policy to learn.
+        from pylatro.runtime import compute_interest, joker_limit
+
+        reroll_cost = max(int(state.current_round.reroll_cost), 0)
+        cash_after_reroll = int(state.dollars) - reroll_cost
+        economy = (
+            sign_log(reroll_cost),
+            sign_log(max(int(state.current_round.free_rerolls), 0)),
+            sign_log(cash_after_reroll),
+            sign_log(compute_interest(state.dollars, state.interest_cap, state.interest_amount)),
+            sign_log(compute_interest(cash_after_reroll, state.interest_cap, state.interest_amount)),
+            sign_log(state.interest_amount),
+            float(state.pack.choices_remaining if state.pack is not None else 0),
+            float(joker_limit(state) - len(state.jokers)),
+        )
+        for i, val in enumerate(economy):
+            scalars[ECONOMY_SCALAR_START + i] = val
 
         pos = DECK_START
         hand_cards = state.hand_cards

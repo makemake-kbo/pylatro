@@ -16,13 +16,9 @@ from pylatro_agent.constants import JOKER_START, ActionRange, SubPhase
 from pylatro_agent.env import BalatroEnv
 from pylatro_agent.joker_features import JOKER_FEATURE_NAMES, JOKER_FEATURE_START
 from pylatro_agent.reward import RewardConfig, default_reward_components
-from pylatro_agent.training.ppo import (
-    PPOConfig,
-    _make_vectorized_envs,
-    _save_checkpoint,
-    load_actor_transfer,
-    resolve_milestone_scale,
-)
+from pylatro_agent.training.ppo import PPOConfig, load_actor_transfer, resolve_milestone_scale
+from pylatro_agent.training.ppo_checkpoint import _save_checkpoint
+from pylatro_agent.training.ppo_rollout import _make_vectorized_envs
 from pylatro_agent.value_head import ValueHead
 from pylatro_agent.vocab import build_vocab
 
@@ -212,18 +208,23 @@ def test_new_joker_features_distinguish_growth_and_decay(data):
     assert before[JOKER_START + 2, chips_index] > after[JOKER_START + 2, chips_index]
 
 
-def test_actor_transfer_keeps_actor_resets_critic_and_initializes_target(data, tmp_path):
+@pytest.mark.parametrize("version", [11, 12])
+def test_actor_transfer_keeps_actor_resets_critic_and_initializes_target(data, tmp_path, version):
     config = AgentConfig(d_model=32, n_layers=1, n_heads=4, d_ff=64)
     source = BalatroAgent(config, build_vocab(data))
-    old_weights = {k: v.clone() for k, v in source.state_dict().items() if k != "embedding.joker_emb.state_proj.weight"}
+    new_adapters = {key for key in source.state_dict()
+                    if key.endswith(("economy_proj.weight", "card_state_proj.weight"))}
+    if version == 11:
+        new_adapters.add("embedding.joker_emb.state_proj.weight")
+    old_weights = {k: v.clone() for k, v in source.state_dict().items() if k not in new_adapters}
     for key in old_weights:
         if key.startswith("value_head."):
             old_weights[key].fill_(42)
-    path = tmp_path / "actor_v11.pt"
+    path = tmp_path / f"actor_v{version}.pt"
     torch.save(
         {
-            "tokenizer_version": 11,
-            "tokenizer_semantics": "v8_conditional_survival_critic",
+            "tokenizer_version": version,
+            "tokenizer_semantics": "v8_conditional_survival_critic" if version == 11 else "v12_joker_state_archive",
             "state_dict": old_weights,
             "ppo_config_fields": {"win_ante": 5},
         },
@@ -238,7 +239,8 @@ def test_actor_transfer_keeps_actor_resets_critic_and_initializes_target(data, t
     torch.testing.assert_close(
         target.embedding.meta_emb.win_ante_emb.weight[8], source.embedding.meta_emb.win_ante_emb.weight[5]
     )
-    assert target.embedding.joker_emb.state_proj.weight.count_nonzero() == 0
+    for key in new_adapters:
+        assert target.state_dict()[key].count_nonzero() == 0
 
 
 def test_win_only_critic_and_schedule():
@@ -284,7 +286,8 @@ def test_checkpoint_contains_archive_and_can_restart_from_it(data, tmp_path):
         vec.close()
 
 
-def test_ppo_collects_new_archive_suffixes_and_resumes(data, tmp_path, monkeypatch):
+@pytest.mark.parametrize("precision", ["fp32", "bf16"])
+def test_ppo_collects_new_archive_suffixes_and_resumes(data, tmp_path, monkeypatch, precision):
     from dataclasses import replace
 
     from pylatro_agent.training import ppo
@@ -328,6 +331,7 @@ def test_ppo_collects_new_archive_suffixes_and_resumes(data, tmp_path, monkeypat
         save_dir=str(tmp_path / "checkpoints"),
         log_dir=str(tmp_path / "logs"),
         risk_forecast_log=False,
+        precision=precision,
     )
     model_config = AgentConfig(d_model=32, n_layers=1, n_heads=4, d_ff=64)
     model = ppo.train_ppo(config, model_config, data=data)
@@ -335,11 +339,19 @@ def test_ppo_collects_new_archive_suffixes_and_resumes(data, tmp_path, monkeypat
     saved = torch.load(checkpoint, weights_only=False)
     assert saved["archive_states"][0]["returns"] >= 1
     assert saved["agent_config"]["win_only_value"] is True
+    assert saved["agent_config"]["precision"] == precision
+    assert saved["ppo_config_fields"]["precision"] == precision
     assert model.config.win_only_value
     assert saved["total_steps"] == 4  # only newly collected suffix steps count
     assert saved["archive_states"][0]["buckets"]
-    ppo.train_ppo(replace(config, total_updates=3), model_config, resume_path=str(checkpoint), data=data)
+    resumed_model = ppo.train_ppo(
+        replace(config, total_updates=3, precision=None),
+        AgentConfig(d_model=32, n_layers=1, n_heads=4, d_ff=64),
+        resume_path=str(checkpoint),
+        data=data,
+    )
+    assert resumed_model.config.precision == precision
     resumed = torch.load(checkpoint, weights_only=False)
     assert resumed["update_count"] == 3 and resumed["total_steps"] == 6
     assert resumed["schedule_total_steps"] == saved["schedule_total_steps"]
-    assert eval_targets == [8, 8, 8]
+    assert eval_targets == [8, 8, 8, 8]  # baseline + two updates + one resumed update

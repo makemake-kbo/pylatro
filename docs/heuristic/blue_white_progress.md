@@ -1,5 +1,9 @@
 # Blue Deck / White Stake heuristic improvement
 
+September 10: the user clarified that the current task is speed only. The
+historical win-rate objective below is not part of this speed change. See
+[the measured speed improvements](../performance/2026-09-10-state-copy.md).
+
 Goal: at least 90% full-game wins through the Ante 8 boss on fresh Blue Deck,
 White Stake runs, with a usable heuristic for pretraining generation. **Not achieved.**
 Use a fresh held-out seed panel after tuning; never treat reaching Ante 8 or

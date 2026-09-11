@@ -14,7 +14,8 @@ from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
 from ..reward import reward_checkpoint_metadata
 from ..vocab import build_vocab
-from .ppo import PPOConfig, _effective_reward_config, evaluate_model, train_ppo
+from .ppo import PPOConfig, evaluate_model, train_ppo
+from .ppo_config import _effective_reward_config
 
 logger = logging.getLogger(__name__)
 

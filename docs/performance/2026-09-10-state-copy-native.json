@@ -1,0 +1,72 @@
+[
+  {
+    "mode": "copy",
+    "repeat": 0,
+    "variant": "python",
+    "seconds": 0.5451499319970026,
+    "copies": 2000
+  },
+  {
+    "mode": "copy",
+    "repeat": 0,
+    "variant": "native",
+    "seconds": 0.3670756089995848,
+    "copies": 2000
+  },
+  {
+    "mode": "copy",
+    "repeat": 1,
+    "variant": "native",
+    "seconds": 0.36592562499572523,
+    "copies": 2000
+  },
+  {
+    "mode": "copy",
+    "repeat": 1,
+    "variant": "python",
+    "seconds": 0.5520306000034907,
+    "copies": 2000
+  },
+  {
+    "mode": "copy",
+    "repeat": 2,
+    "variant": "python",
+    "seconds": 0.5518788859990309,
+    "copies": 2000
+  },
+  {
+    "mode": "copy",
+    "repeat": 2,
+    "variant": "native",
+    "seconds": 0.3639128719951259,
+    "copies": 2000
+  },
+  {
+    "mode": "play",
+    "seed": 0,
+    "variant": "python",
+    "seconds": 14.655106606995105,
+    "steps": 125
+  },
+  {
+    "mode": "play",
+    "seed": 0,
+    "variant": "native",
+    "seconds": 11.39523435299634,
+    "steps": 125
+  },
+  {
+    "mode": "play",
+    "seed": 2,
+    "variant": "python",
+    "seconds": 43.716490123995754,
+    "steps": 219
+  },
+  {
+    "mode": "play",
+    "seed": 2,
+    "variant": "native",
+    "seconds": 35.18207152499963,
+    "steps": 219
+  }
+]

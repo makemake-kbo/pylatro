@@ -16,6 +16,7 @@ import logging
 import math
 import pickle
 import time
+import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,9 +38,12 @@ from ..reward import (
 )
 from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..vocab import Vocab, build_vocab
-from .ppo import _extract_step_info_value, _load_checkpoint_strict, _ObsBuffer
+from .ppo_checkpoint import _load_checkpoint_strict
+from .ppo_observations import _extract_step_info_value, _ObsBuffer
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -401,8 +405,19 @@ def save_records(
     *,
     reward_config: RewardConfig,
 ) -> None:
-    """Persist generated records to disk using pickle (protocol 5)."""
+    """Persist records as Parquet; pickle output is deprecated."""
     path = Path(path)
+    if path.suffix == ".parquet":
+        from .parquet_records import save_parquet_records
+
+        save_parquet_records(records, path, metadata={
+            "tokenizer_version": TOKENIZER_VERSION,
+            "tokenizer_semantics": TOKENIZER_SEMANTICS,
+            **reward_checkpoint_metadata(reward_config),
+        })
+        return
+    warnings.warn("Pickle datasets are deprecated; save to a .parquet path instead.",
+                  FutureWarning, stacklevel=2)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "wb") as f:
@@ -424,11 +439,26 @@ def load_records(
     path: str | Path,
     *,
     reward_config: RewardConfig,
-) -> list[dict[str, Any]]:
-    """Load previously generated records from disk."""
+) -> Sequence[dict[str, Any]]:
+    """Open Parquet records lazily, or load a deprecated pickle dataset."""
     path = Path(path)
+    if path.is_dir() or path.suffix == ".parquet":
+        from .parquet_records import ParquetRecords
+
+        return ParquetRecords(path, reward_config=reward_config)
+    warnings.warn("Pickle datasets are deprecated; use Parquet for new datasets.",
+                  FutureWarning, stacklevel=2)
     with open(path, "rb") as f:
         payload = pickle.load(f)
+    _validate_record_metadata(payload, reward_config)
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise ValueError("Observation dataset has an invalid records payload")
+    logger.info("Loaded %d records from %s", len(records), path)
+    return records
+
+
+def _validate_record_metadata(payload: dict, reward_config: RewardConfig) -> None:
     if not isinstance(payload, dict) or "tokenizer_version" not in payload:
         raise ValueError(
             "Observation dataset predates tokenizer version metadata; regenerate it for "
@@ -463,8 +493,3 @@ def load_records(
             f"active_version={REWARD_MODEL_VERSION}); regenerate it with the active "
             "gamma, victory Ante, and shaping configuration."
         )
-    records = payload.get("records")
-    if not isinstance(records, list):
-        raise ValueError("Observation dataset has an invalid records payload")
-    logger.info("Loaded %d records from %s", len(records), path)
-    return records

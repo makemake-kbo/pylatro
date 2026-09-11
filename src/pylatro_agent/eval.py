@@ -351,7 +351,7 @@ def evaluate_history_ablation(
     import torch.nn.functional as F
 
     from .action import ActionType, decode_action
-    from .training.ppo import _grammar_distribution
+    from .training.ppo_policy import _grammar_distribution
     from .training.supervised import SupervisedConfig, _collate_batch
 
     if not records:

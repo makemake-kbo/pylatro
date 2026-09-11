@@ -12,7 +12,10 @@ from .schema import TOKENIZER_VERSION as TOKENIZER_VERSION
 # Sequence / observation constants
 MAX_SEQ_LEN = 160
 TOKEN_DIM = JOKER_FEATURE_START + len(JOKER_FEATURE_NAMES)
-SCALAR_DIM = 25  # v7's 22, the configured win Ante, plus 2 harness-ordering features
+ECONOMY_SCALAR_START = 25
+ECONOMY_SCALAR_DIM = 8
+SCALAR_DIM = ECONOMY_SCALAR_START + ECONOMY_SCALAR_DIM
+REROLL_COST_SCALAR_INDEX = ECONOMY_SCALAR_START
 CURRENT_ANTE_SCALAR_INDEX = 2
 WIN_ANTE_SCALAR_INDEX = 22
 # What the harness's joker ordering did on the most recent played hand.

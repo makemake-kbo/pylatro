@@ -57,10 +57,10 @@ def can_use_consumable(
         return bool(_eligible_editionless_jokers(state))
     if name in {"The Emperor", "The High Priestess"}:
         # Using the card frees a slot, so allow if we're at capacity with the consumable in our area
-        return len(state.consumables) < consumable_limit(state) or item in state.consumables
+        return len(state.consumables) < consumable_limit(state) or any(owned is item for owned in state.consumables)
     if name == "The Fool":
         has_target = bool(state.last_tarot_planet and state.last_tarot_planet != "c_fool")
-        return (len(state.consumables) < consumable_limit(state) or item in state.consumables) and has_target
+        return (len(state.consumables) < consumable_limit(state) or any(owned is item for owned in state.consumables)) and has_target
     if name in {"Judgement", "The Soul", "Wraith"}:
         return len(state.jokers) < joker_limit(state)
     if name in {"Familiar", "Grim", "Incantation", "Immolate", "Sigil", "Ouija"}:

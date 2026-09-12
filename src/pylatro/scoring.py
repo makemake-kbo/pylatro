@@ -864,7 +864,7 @@ def score_hand(
         ]
 
     state.current_round.free_rerolls = sum(
-        1 for owned in state.jokers if _joker_center(state, owned)["name"] == "Chaos the Clown"
+        1 for owned in state.jokers if not owned.debuff and _joker_center(state, owned)["name"] == "Chaos the Clown"
     )
 
     for index, joker in enumerate(state.jokers):

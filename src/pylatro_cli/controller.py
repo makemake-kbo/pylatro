@@ -183,9 +183,15 @@ class GameController:
         self.phase = GamePhase.BOOSTER_PACK
         return pack
 
-    def claim_from_pack(self, index: int) -> ShopCard:
+    def claim_from_pack(
+        self, index: int, *, hand_targets: tuple[int, ...] | None = None,
+        joker_targets: tuple[int, ...] = (),
+    ) -> ShopCard:
         assert self.state is not None
-        return pylatro.claim_pack_card(self.state, index)
+        result = pylatro.claim_pack_card(self.state, index, hand_targets=hand_targets, joker_targets=joker_targets)
+        if self.state.pack is None:
+            self.phase = GamePhase.SHOP
+        return result
 
     def close_current_pack(self, *, skipped: bool = True) -> None:
         assert self.state is not None

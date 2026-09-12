@@ -225,7 +225,7 @@ def _pack_confident_rank(rank_counts: Counter[str]) -> str:
     return best if rank_counts[best] >= rank_counts[ordered[1]] + 2 else ""
 
 
-def pack_consumable_use_targets(
+def _preferred_pack_consumable_targets(
     state: RunState,
     center_key: str,
     *,
@@ -374,14 +374,63 @@ def pack_consumable_use_targets(
     return None
 
 
-def claim_pack_card(state: RunState, index: int) -> ShopCard:
+def legal_pack_consumable_targets(
+    state: RunState, center_key: str, *, edition: dict[str, bool] | None = None,
+) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
+    """Find a legal immediate use without imposing a strategy on the player."""
+    from .consumables import can_use_consumable
+    from .instances import create_consumable_instance
+
+    instance = create_consumable_instance(state, center_key, edition=edition)
+    if can_use_consumable(state, instance):
+        return (), ()
+    center = state.data.centers[center_key]
+    config = center.get("config") or {}
+    maximum = 1 if center["name"] == "Aura" else int(config.get("max_highlighted", 0) or 0)
+    minimum = int(config.get("min_highlighted", 1) or 1)
+    for size in range(minimum, min(maximum, len(state.hand_cards)) + 1):
+        for targets in combinations(range(len(state.hand_cards)), size):
+            if can_use_consumable(state, instance, hand_targets=targets):
+                return targets, ()
+    return None
+
+
+def pack_consumable_use_targets(
+    state: RunState, center_key: str, *, edition: dict[str, bool] | None = None,
+) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
+    """Default agent continuation; callers may instead supply explicit targets."""
+    legal = legal_pack_consumable_targets(state, center_key, edition=edition)
+    if legal is None:
+        return None
+    return _preferred_pack_consumable_targets(state, center_key, edition=edition)
+
+
+def claim_pack_card(
+    state: RunState, index: int, *,
+    hand_targets: tuple[int, ...] | None = None,
+    joker_targets: tuple[int, ...] = (),
+) -> ShopCard:
     if state.pack is None:
         raise ValueError("No active pack")
     card = state.pack.cards[index]
     if not can_claim_pack_card(state, card):
         raise ValueError("Pack card cannot be claimed at current capacity")
-    card = state.pack.cards.pop(index)
     center = state.data.centers[card.center_key]
+    if center.get("consumeable"):
+        from .consumables import can_use_consumable, use_consumable
+        from .instances import create_consumable_instance
+
+        instance = create_consumable_instance(state, card.center_key, edition=card.edition)
+        targets = (hand_targets, joker_targets) if hand_targets is not None else pack_consumable_use_targets(
+            state, card.center_key, edition=card.edition,
+        )
+        if targets is None and hand_targets is None:
+            targets = legal_pack_consumable_targets(state, card.center_key, edition=card.edition)
+        if targets is None or not can_use_consumable(
+            state, instance, hand_targets=targets[0], joker_targets=targets[1],
+        ):
+            raise ValueError("Pack consumable requires legal immediate targets")
+    card = state.pack.cards.pop(index)
     if center.get("set") in {"Default", "Enhanced"}:
         if not card.front_key:
             raise ValueError("Playing card pack reward requires a front key")
@@ -396,31 +445,11 @@ def claim_pack_card(state: RunState, index: int) -> ShopCard:
         )
         add_playing_cards(state, [created], area="draw")
     elif center.get("consumeable"):
-        # Balatro pack consumables apply on claim whenever they have one legal,
-        # non-destructive immediate continuation. Target selection is shared
-        # with the mask above, including Death's rightmost-source direction.
-        from .consumables import use_consumable
-        from .instances import create_consumable_instance
-
-        instance = create_consumable_instance(state, card.center_key, edition=card.edition)
-        targets = pack_consumable_use_targets(
-            state,
-            card.center_key,
-            edition=card.edition,
+        card.auto_used = True
+        card.auto_used_hand_targets, card.auto_used_joker_targets = targets
+        card.use_result = use_consumable(
+            state, instance, hand_targets=targets[0], joker_targets=targets[1],
         )
-        if targets is not None:
-            hand_targets, joker_targets = targets
-            card.auto_used = True
-            card.auto_used_hand_targets = hand_targets
-            card.auto_used_joker_targets = joker_targets
-            card.use_result = use_consumable(
-                state,
-                instance,
-                hand_targets=hand_targets,
-                joker_targets=joker_targets,
-            )
-        else:
-            add_consumable(state, card.center_key, edition=card.edition)
     else:
         add_joker(
             state,
@@ -443,12 +472,8 @@ def can_claim_pack_consumable(
     *,
     edition: dict[str, bool] | None = None,
 ) -> bool:
-    """Whether a pack consumable can auto-use now or be banked safely."""
-    from .runtime import can_add_consumable
-
-    if pack_consumable_use_targets(state, center_key, edition=edition) is not None:
-        return True
-    return bool(can_add_consumable(state))
+    """Pack consumables must be usable now; inventory space cannot bank them."""
+    return legal_pack_consumable_targets(state, center_key, edition=edition) is not None
 
 
 def can_claim_pack_card(state: RunState, card: ShopCard) -> bool:
@@ -465,6 +490,8 @@ def can_claim_pack_card(state: RunState, card: ShopCard) -> bool:
 
 
 def open_booster_pack(state: RunState, index: int) -> PackState:
+    if state.pack is not None:
+        raise ValueError("Close the active pack first")
     booster = state.shop.boosters.pop(index)
     state.dollars -= booster.cost
     if booster.booster_pos is not None:
@@ -555,6 +582,23 @@ def open_booster_pack(state: RunState, index: int) -> PackState:
         cards=cards,
         source_slot=booster.booster_pos,
     )
+    if state_name in {"TAROT_PACK", "SPECTRAL_PACK"}:
+        # Pack hands are dealt from the whole surviving deck, without blind or
+        # first-hand Joker hooks. Mutations stay on these actual deck objects.
+        state.hand_cards.clear()
+        state.discard_pile.clear()
+        state.play_cards.clear()
+        state.draw_pile = state.pseudorandom.pseudoshuffle(
+            list(state.deck_cards), state.pseudorandom.pseudoseed(f"pack{state.round_resets.ante}"),
+        )
+        for playing_card in state.draw_pile:
+            playing_card.debuff = False
+            playing_card.face_down = False
+            playing_card.forced_selection = False
+        state.current_round.hand_size = max(0, state.starting_params.hand_size)
+        for _ in range(min(state.current_round.hand_size, len(state.draw_pile))):
+            state.hand_cards.append(state.draw_pile.pop())
+        state.pack.hand_drawn = True
     apply_open_booster(state)
     return state.pack
 
@@ -565,6 +609,9 @@ def close_pack(state: RunState, *, skipped: bool = False) -> None:
     if skipped and state.pack.cards:
         apply_skip_booster(state)
     removed = state.pack.cards
+    if state.pack.hand_drawn:
+        state.draw_pile.extend(state.hand_cards)
+        state.hand_cards.clear()
     state.pack = None
     for card in removed:
         _release_center(state, card.center_key)

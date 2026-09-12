@@ -455,7 +455,6 @@ def test_flint_halves_base_values_before_card_bonuses():
     assert (result.chips, result.mult, result.total) == (14, 5, 70)
 
 
-@pytest.mark.xfail(strict=True, reason="Known fidelity gap: pack claims bank unusable Tarot cards; see wiki audit")
 def test_pack_tarots_cannot_be_banked_for_later():
     from pylatro.models import PackState, ShopCard
     from pylatro.shop import can_claim_pack_card
@@ -469,7 +468,6 @@ def test_pack_tarots_cannot_be_banked_for_later():
     assert not can_claim_pack_card(state, offered)
 
 
-@pytest.mark.xfail(strict=True, reason="Known fidelity gap: Perishable lifecycle is absent; see wiki audit")
 def test_perishable_expires_after_five_completed_rounds():
     from pylatro.runtime import apply_end_of_round
 
@@ -483,7 +481,6 @@ def test_perishable_expires_after_five_completed_rounds():
     assert joker.perish_tally == 0
 
 
-@pytest.mark.xfail(strict=True, reason="Known fidelity gap: Rental round-end charge is absent; see wiki audit")
 def test_rental_charges_three_dollars_even_when_debuffed():
     from pylatro.runtime import apply_end_of_round
 

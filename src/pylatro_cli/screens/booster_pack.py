@@ -67,6 +67,7 @@ class BoosterPackScreen(Screen):
         with Vertical(id="pack-container"):
             yield Static("", id="pack-header")
             yield Static("", id="pack-cards-display")
+            yield Vertical(id="pack-consumables")
             with Horizontal(id="pack-buttons"):
                 yield Button("Claim", id="claim-btn", variant="primary")
                 yield Button("Skip Pack", id="skip-btn", variant="default")
@@ -104,7 +105,19 @@ class BoosterPackScreen(Screen):
             t.append(f"[{card.card_type}] ", style=tc)
             t.append(f"{name}\n", style="bold #ecf0f1")
 
+        if pack.hand_drawn:
+            t.append("\nHand: " + "  ".join(f"{c.rank} {c.suit}" for c in state.hand_cards))
         self.query_one("#pack-cards-display", Static).update(t)
+        inventory = self.query_one("#pack-consumables", Vertical)
+        buttons = list(inventory.query(Button))
+        for index, button in enumerate(buttons):
+            button.display = index < len(state.consumables)
+            if button.display:
+                name = state.data.centers[state.consumables[index].center_key]["name"]
+                button.label = f"Use {name}"
+        for index in range(len(buttons), len(state.consumables)):
+            name = state.data.centers[state.consumables[index].center_key]["name"]
+            inventory.mount(Button(f"Use {name}", id=f"pack-use-{index}"))
 
     def watch_cursor(self, value: int) -> None:
         if self.is_mounted:
@@ -140,6 +153,15 @@ class BoosterPackScreen(Screen):
         if self.cursor >= len(state.pack.cards):
             self.cursor = max(0, len(state.pack.cards) - 1)
 
+        offered = state.pack.cards[self.cursor]
+        center = state.data.centers[offered.center_key]
+        config = center.get("config") or {}
+        if center.get("consumeable") and (config.get("max_highlighted") or center["name"] == "Aura"):
+            from .consumable_target import ConsumableTargetScreen
+
+            self.app.push_screen(ConsumableTargetScreen(pack_index=self.cursor), self._after_use)
+            return
+
         try:
             claimed = ctrl.claim_from_pack(self.cursor)
             name = state.data.centers.get(claimed.center_key, {}).get("name", claimed.center_key)
@@ -156,12 +178,36 @@ class BoosterPackScreen(Screen):
             self.cursor = min(self.cursor, max(0, len(state.pack.cards) - 1))
             self._refresh_display()
 
+    def _after_use(self, used: bool = False) -> None:
+        state = self.app.controller.state
+        if state is None or state.pack is None:
+            self.app.pop_screen()
+            return
+        self.cursor = min(self.cursor, max(0, len(state.pack.cards) - 1))
+        self._refresh_display()
+
+    def _use_inventory(self, index: int) -> None:
+        ctrl = self.app.controller
+        state = ctrl.state
+        if state is None or index >= len(state.consumables):
+            return
+        if ctrl.can_use(index):
+            ctrl.use_consumable_on(index)
+            self._refresh_display()
+        else:
+            from .consumable_target import ConsumableTargetScreen
+
+            self.app.push_screen(ConsumableTargetScreen(index), self._after_use)
+
     def action_skip_pack(self) -> None:
         ctrl = self.app.controller
         ctrl.close_current_pack(skipped=True)
         self.app.pop_screen()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id and event.button.id.startswith("pack-use-"):
+            self._use_inventory(int(event.button.id.removeprefix("pack-use-")))
+            return
         match event.button.id:
             case "claim-btn":
                 self.action_claim()

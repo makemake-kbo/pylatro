@@ -89,7 +89,7 @@ def select_blind(state: RunState, blind_type: str | None = None) -> None:
     state.current_round.reroll_cost_increase = 0
     state.current_round.used_packs = []
     state.current_round.free_rerolls = sum(
-        1 for key in state.joker_keys if state.data.centers[key]["name"] == "Chaos the Clown"
+        1 for joker in state.jokers if not joker.debuff and state.data.centers[joker.center_key]["name"] == "Chaos the Clown"
     )
     state.calculate_reroll_cost(skip_increment=True)
     state.current_round.dollars = 0

@@ -814,7 +814,7 @@ class BalatroEnv(gymnasium.Env):
 
         elif at == ActionType.PACK_CLAIM:
             result = ctrl.claim_from_pack(decoded.index)
-            if state.pack and state.pack.choices_remaining <= 0:
+            if state.pack is None or state.pack.choices_remaining <= 0:
                 ctrl.close_current_pack(skipped=False)
                 self._sub_phase = SubPhase.SHOP
             return result

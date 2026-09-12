@@ -5,7 +5,15 @@ from copy import deepcopy
 from math import floor
 from typing import TYPE_CHECKING
 
-from .instances import add_consumable, add_joker, remove_consumable, remove_joker, sync_all_jokers
+from .instances import (
+    add_consumable,
+    add_joker,
+    joker_is_expired,
+    remove_consumable,
+    remove_joker,
+    set_joker_debuff,
+    sync_all_jokers,
+)
 from .models import ConsumableInstance, JokerInstance, PlayingCard
 from .pool import _pick_pool_key, create_card_spec, get_current_pool
 
@@ -345,7 +353,7 @@ def disable_blind(state: RunState) -> None:
         card.forced_selection = False
         card.face_down = False
     for joker in state.jokers:
-        joker.debuff = False
+        set_joker_debuff(state, joker, False)
     # Chicot runs before the opening draw; Luchador may restore a slot in
     # an already dealt hand. Do not draw before start_blind shuffles the deck.
     if name == "The Manacle" and state.current_round.first_hand_drawn:
@@ -441,16 +449,25 @@ def apply_end_shop(state: RunState) -> list[str]:
 
 
 def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
-    results: dict[str, int | bool] = {"dollars": 0, "saved": False}
+    rent = sum(state.rental_rate for joker in state.jokers if joker.rental)
+    state.dollars -= rent  # Rent precedes cash-out and therefore reduces interest.
+    results: dict[str, int | bool] = {"dollars": -rent, "saved": False}
+    # The fifth hand/held-card resolution has finished, but cash-out bonuses
+    # (Golden Joker, interest, etc.) no longer apply once the sticker expires.
+    for joker in state.jokers:
+        if joker.perishable and joker.perish_tally is not None:
+            joker.perish_tally = max(0, joker.perish_tally - 1)
     blind = state.round_resets.blind or {}
     is_boss = bool(blind.get("boss"))
     to_remove: list[JokerInstance] = []
 
     for joker in list(state.jokers):
-        if joker.debuff:
-            continue
         center = state.data.centers[joker.center_key]
         name = center["name"]
+        if joker.debuff or (joker_is_expired(joker) and name in {
+            "Rocket", "Cloud 9", "Golden Joker", "Satellite", "Delayed Gratification",
+        }):
+            continue
         if name == "Campfire" and is_boss and joker.x_mult > 1:
             joker.x_mult = 1
         elif name == "Rocket" and isinstance(joker.extra, dict):
@@ -515,6 +532,8 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     for joker in to_remove:
         remove_joker(state, joker)
 
+    # Round-end decay finishes before expiry disables cash-out/passive bonuses.
+    sync_all_jokers(state)
     blind = state.round_resets.blind or {}
     blind_type = None
     for bt in ("Small", "Big", "Boss"):
@@ -548,9 +567,8 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
         results["dollars"] = int(results["dollars"]) + max(0, interest)
 
     dollars = int(results["dollars"])
-    if dollars:
-        state.dollars += dollars
-        state.current_round.round_dollars += dollars
+    state.dollars += dollars + rent  # Rent was already charged above.
+    state.current_round.round_dollars += dollars
     sync_all_jokers(state)
     return results
 

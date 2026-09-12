@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .blind import select_blind
-from .instances import sync_all_jokers
+from .instances import joker_is_expired, set_joker_debuff, sync_all_jokers
 from .models import PlayingCard
 from .runtime import add_generated_consumable, apply_playing_card_added, apply_setting_blind
 from .scoring import (
@@ -271,7 +271,7 @@ def _reset_for_blind(state: RunState, blind_type: str) -> None:
         card.face_down = False
         _debuff_card(state, card)
     for joker in state.jokers:
-        joker.debuff = False
+        set_joker_debuff(state, joker, False)
 
     _reset_round_cards(state)
 
@@ -385,21 +385,22 @@ def _drawn_to_hand(state: RunState) -> None:
     if blind_name == "Crimson Heart" and state.blind_prepped and state.jokers:
         available: list[JokerInstance] = []
         for joker in state.jokers:
-            if not joker.debuff or len(available) < 2:
+            if not joker_is_expired(joker) and (not joker.debuff or len(available) < 2):
                 available.append(joker)
-            joker.debuff = False
-        chosen, _ = state.pseudorandom.pseudorandom_element(
-            available,
-            state.pseudorandom.pseudoseed("crimson_heart"),
-        )
-        chosen.debuff = True
+            set_joker_debuff(state, joker, False)
+        if available:
+            chosen, _ = state.pseudorandom.pseudorandom_element(
+                available,
+                state.pseudorandom.pseudoseed("crimson_heart"),
+            )
+            set_joker_debuff(state, chosen, True)
 
     state.blind_prepped = False
 
 
 def _first_hand_drawn(state: RunState) -> None:
     for joker in state.jokers:
-        if state.data.centers[joker.center_key]["name"] != "Certificate":
+        if joker.debuff or state.data.centers[joker.center_key]["name"] != "Certificate":
             continue
         front, front_key = state.pseudorandom.pseudorandom_element(
             state.data.cards,

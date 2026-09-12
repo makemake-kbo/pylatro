@@ -107,6 +107,21 @@ def _grammar_distribution(
     )
 
 
+def _critic_predictions(model, batch, temperature=1.0):
+    """Predict values with a frozen encoder and no unused policy-head work."""
+    if isinstance(_unwrap_model(model), BalatroAgent):
+        inputs = {key: batch[key] for key in (
+            "tokens", "token_types", "scalars", "attention_mask", "action_mask",
+            "history_events", "history_event_features", "history_cards", "history_card_mask",
+            "history_jokers", "history_joker_mask", "history_event_mask", "history_round_mask", "history_omitted",
+        ) if key in batch}
+        _, values = model(**inputs, critic_only=True)
+        return values
+    # Lightweight test/custom policies may only expose action_distribution.
+    _, values = _grammar_distribution(model, batch, temperature=temperature)
+    return values
+
+
 def _policy_temperature_for_scalars(
     scalars: torch.Tensor,
     config: PPOConfig,

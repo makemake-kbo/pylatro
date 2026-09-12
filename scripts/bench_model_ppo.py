@@ -27,6 +27,7 @@ from pylatro_agent.reward import RewardConfig
 from pylatro_agent.training.ppo_config import PPOConfig
 from pylatro_agent.training.ppo_observations import _obs_dicts_to_batch, _ObsBuffer
 from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
+from pylatro_agent.training.ppo_policy import _critic_predictions
 from pylatro_agent.training.rollout_buffer import RolloutBuffer
 from pylatro_agent.vocab import build_vocab
 
@@ -146,7 +147,10 @@ def main() -> None:
         "--check-precision", action="store_true", help="Validate FP32/BF16 outputs and gradients on CUDA"
     )
     parser.add_argument(
-        "--case", choices=["all", "rollout_policy", "model_backward", "obs_staging", "batches", "ppo"], default="all"
+        "--case",
+        choices=["all", "rollout_policy", "model_backward", "obs_staging", "batches", "ppo",
+                 "critic_replay", "critic_reference"],
+        default="all",
     )
     parser.add_argument("--envs", type=int, default=16)
     parser.add_argument("--micro-batch", type=int, default=160)
@@ -262,7 +266,16 @@ def main() -> None:
             device.type == "cuda",
         )
 
+    def critic_step(optimized):
+        model.zero_grad(set_to_none=True)
+        values = _critic_predictions(model, micro_batch) if optimized else model(**micro_batch)[1]
+        loss = -values["outcome_probabilities"][:, 0].clamp_min(1e-7).log().mean()
+        params = [*model.value_head.outcome_proj.parameters(), *model.value_head.ante_survival.parameters()]
+        return torch.autograd.grad(loss, params)
+
     cases = {
+        "critic_reference": lambda: critic_step(False),
+        "critic_replay": lambda: critic_step(True),
         "obs_staging": lambda: obs_buf.update(vector_obs),
         "rollout_policy": rollout_policy,
         "model_backward": model_backward,

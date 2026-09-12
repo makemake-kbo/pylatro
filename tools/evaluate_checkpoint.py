@@ -43,11 +43,16 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to the checkpoint to evaluate.")
     parser.add_argument("--games", type=int, default=500, help="Number of eval games (default: 500).")
     parser.add_argument(
+        "--eval-cpu-threads", type=int, default=0,
+        help="CPU evaluation inference threads (0: choose by model width and CPU affinity).",
+    )
+    parser.add_argument(
         "--eval-batch-size",
         type=int,
         default=32,
         help="Games advanced in lockstep per policy forward pass (default: 32).",
     )
+    parser.add_argument("--eval-workers", type=int, default=4, help="CPU engine workers; 0 runs in-process.")
     parser.add_argument("--device", type=str, default=None, help="Model load device (default: auto-detect).")
     parser.add_argument(
         "--eval-device",
@@ -212,6 +217,8 @@ def main() -> None:
                 temperature=args.rollout_temperature,
                 stake=args.stake,
                 batch_size=args.eval_batch_size,
+                eval_workers=args.eval_workers,
+                eval_cpu_threads=args.eval_cpu_threads,
             )
 
         elapsed = time.time() - start
@@ -337,6 +344,8 @@ def main() -> None:
         temperature=args.rollout_temperature,
         stake=args.stake,
         eval_batch_size=args.eval_batch_size,
+        eval_workers=args.eval_workers,
+        eval_cpu_threads=args.eval_cpu_threads,
     )
     elapsed = time.time() - start
 

@@ -429,3 +429,19 @@ def test_singleton_bucket_keeps_scores_but_publishes_no_climatology() -> None:
     assert "ante_4/outcome_nll" in metrics
     assert "ante_4/outcome_climatology_brier" not in metrics
     assert "ante_2/outcome_climatology_brier" in metrics
+
+
+def test_critic_batches_skip_large_action_masks_without_changing_samples():
+    import copy
+
+    buffer = EpisodeReplayBuffer(capacity_episodes=4, seed=0)
+    _record_cross_rollout_loss(buffer)
+    rng_state = copy.deepcopy(buffer._rng.bit_generator.state)
+    full = buffer.sample(32, torch.device('cpu'), row_uniform=True)
+    buffer._rng.bit_generator.state = rng_state
+    critic = buffer.sample(32, torch.device('cpu'), row_uniform=True, include_action_mask=False)
+    assert full is not None and critic is not None
+    assert 'action_mask' not in critic
+    assert set(critic) == set(full) - {'action_mask'}
+    for key, tensor in critic.items():
+        torch.testing.assert_close(tensor, full[key], atol=0, rtol=0)

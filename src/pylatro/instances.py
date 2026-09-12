@@ -113,6 +113,46 @@ def create_joker_instance(
     return instance
 
 
+def _apply_joker_passives(state: RunState, joker: JokerInstance, direction: int) -> None:
+    """Apply/remove owned Joker bonuses; editions keep their slots when debuffed."""
+    name = state.data.centers[joker.center_key]["name"]
+    if joker.d_size:
+        state.round_resets.discards += direction * joker.d_size
+        state.current_round.discards_left = max(0, state.current_round.discards_left + direction * joker.d_size)
+    hand_size = joker.h_size
+    if name == "Credit Card" and isinstance(joker.extra, int):
+        state.bankrupt_at -= direction * joker.extra
+    elif name == "Chaos the Clown":
+        state.current_round.free_rerolls = max(0, state.current_round.free_rerolls + direction)
+        state.calculate_reroll_cost(skip_increment=True)
+    elif name == "Oops! All 6s":
+        for key, value in list(state.probabilities.items()):
+            state.probabilities[key] = value * (2 if direction > 0 else 0.5)
+    elif name == "To the Moon" and isinstance(joker.extra, int):
+        state.interest_amount += direction * joker.extra
+    elif name == "Troubadour" and isinstance(joker.extra, dict):
+        hand_size += int(joker.extra.get("h_size", 0) or 0)
+        state.round_resets.hands += direction * int(joker.extra.get("h_plays", 0) or 0)
+    elif name == "Stuntman" and isinstance(joker.extra, dict):
+        hand_size -= int(joker.extra.get("h_size", 0) or 0)
+    elif name == "Turtle Bean" and isinstance(joker.extra, dict):
+        hand_size += int(joker.extra.get("h_size", 0) or 0)
+    state.starting_params.hand_size += direction * hand_size
+    state.current_round.hand_size += direction * hand_size
+    joker.passive_effects_active = direction > 0
+
+
+def joker_is_expired(joker: JokerInstance) -> bool:
+    return joker.perishable and joker.perish_tally is not None and joker.perish_tally <= 0
+
+
+def set_joker_debuff(state: RunState, joker: JokerInstance, debuff: bool) -> None:
+    """Clear temporary debuffs without reviving expired Perishable Jokers."""
+    joker.debuff = debuff or joker_is_expired(joker)
+    if joker.passive_effects_active == joker.debuff:
+        _apply_joker_passives(state, joker, -1 if joker.debuff else 1)
+
+
 def add_joker(
     state: RunState,
     center_key: str,
@@ -134,33 +174,7 @@ def add_joker(
     state.joker_keys.append(center_key)
     _mark_center_used(state, center_key)
 
-    name = state.data.centers[center_key]["name"]
-    if joker.d_size > 0:
-        state.round_resets.discards += joker.d_size
-        state.current_round.discards_left += joker.d_size
-    if joker.h_size != 0:
-        state.starting_params.hand_size += joker.h_size
-        state.current_round.hand_size += joker.h_size
-    if name == "Credit Card" and isinstance(joker.extra, int):
-        state.bankrupt_at -= joker.extra
-    elif name == "Chaos the Clown":
-        state.current_round.free_rerolls += 1
-        state.calculate_reroll_cost(skip_increment=True)
-    elif name == "Oops! All 6s":
-        for key, value in list(state.probabilities.items()):
-            state.probabilities[key] = value * 2
-    elif name == "To the Moon" and isinstance(joker.extra, int):
-        state.interest_amount += joker.extra
-    elif name == "Troubadour" and isinstance(joker.extra, dict):
-        state.starting_params.hand_size += int(joker.extra.get("h_size", 0) or 0)
-        state.round_resets.hands += int(joker.extra.get("h_plays", 0) or 0)
-        state.current_round.hand_size += int(joker.extra.get("h_size", 0) or 0)
-    elif name == "Stuntman" and isinstance(joker.extra, dict):
-        state.starting_params.hand_size -= int(joker.extra.get("h_size", 0) or 0)
-        state.current_round.hand_size -= int(joker.extra.get("h_size", 0) or 0)
-    elif name == "Turtle Bean" and isinstance(joker.extra, dict):
-        state.starting_params.hand_size += int(joker.extra.get("h_size", 0) or 0)
-        state.current_round.hand_size += int(joker.extra.get("h_size", 0) or 0)
+    _apply_joker_passives(state, joker, 1)
 
     # Negative edition grants a slot regardless of which joker it is on.
     # remove_joker undoes this unconditionally, so it must not sit in the
@@ -185,30 +199,8 @@ def remove_joker(state: RunState, joker: JokerInstance) -> None:
         return
 
     _release_center(state, joker.center_key)
-    name = state.data.centers[joker.center_key]["name"]
-    if joker.d_size > 0:
-        state.round_resets.discards -= joker.d_size
-        state.current_round.discards_left = max(0, state.current_round.discards_left - joker.d_size)
-    if joker.h_size != 0:
-        state.starting_params.hand_size -= joker.h_size
-        state.current_round.hand_size -= joker.h_size
-    if name == "Credit Card" and isinstance(joker.extra, int):
-        state.bankrupt_at += joker.extra
-    elif name == "Oops! All 6s":
-        for key, value in list(state.probabilities.items()):
-            state.probabilities[key] = value / 2
-    elif name == "To the Moon" and isinstance(joker.extra, int):
-        state.interest_amount = max(1, state.interest_amount - joker.extra)
-    elif name == "Troubadour" and isinstance(joker.extra, dict):
-        state.starting_params.hand_size -= int(joker.extra.get("h_size", 0) or 0)
-        state.round_resets.hands -= int(joker.extra.get("h_plays", 0) or 0)
-        state.current_round.hand_size -= int(joker.extra.get("h_size", 0) or 0)
-    elif name == "Stuntman" and isinstance(joker.extra, dict):
-        state.starting_params.hand_size += int(joker.extra.get("h_size", 0) or 0)
-        state.current_round.hand_size += int(joker.extra.get("h_size", 0) or 0)
-    elif name == "Turtle Bean" and isinstance(joker.extra, dict):
-        state.starting_params.hand_size -= int(joker.extra.get("h_size", 0) or 0)
-        state.current_round.hand_size -= int(joker.extra.get("h_size", 0) or 0)
+    if joker.passive_effects_active:
+        _apply_joker_passives(state, joker, -1)
     if joker.edition and joker.edition.get("negative"):
         state.starting_params.joker_slots -= 1
     sync_all_jokers(state)
@@ -228,6 +220,7 @@ def move_joker(state: RunState, source: int, destination: int) -> None:
 
 
 def sync_joker_state(state: RunState, joker: JokerInstance, *, index: int | None = None) -> None:
+    set_joker_debuff(state, joker, joker.debuff)
     center = state.data.centers[joker.center_key]
     name = center["name"]
 
@@ -241,7 +234,9 @@ def sync_joker_state(state: RunState, joker: JokerInstance, *, index: int | None
         joker.stone_tally = sum(1 for card in state.deck_cards if card.center_key == "m_stone")
     elif name == "Joker Stencil":
         joker.x_mult = state.starting_params.joker_slots - len(state.jokers)
-        joker.x_mult += sum(1 for other in state.jokers if state.data.centers[other.center_key]["name"] == "Joker Stencil")
+        joker.x_mult += sum(
+            1 for other in state.jokers if state.data.centers[other.center_key]["name"] == "Joker Stencil"
+        )
     elif name == "Cloud 9":
         joker.nine_tally = sum(1 for card in state.deck_cards if card.rank == "9")
     elif name == "Swashbuckler":

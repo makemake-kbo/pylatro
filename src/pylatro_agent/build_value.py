@@ -6,10 +6,16 @@ not inspect or mutate a live ``RunState`` and never calls ``score_hand``.
 
 from __future__ import annotations
 
+import os
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from math import floor, isclose
+from pickle import PickleError, dumps
+from threading import RLock
 from typing import Any
+
+_MAPPING_TYPES = (dict, Mapping)  # Native dicts avoid the slower ABC instance check.
 
 _RANK_NOMINAL = {
     "2": 2.0,
@@ -149,7 +155,9 @@ def _number(value: Any, default: float = 0.0) -> float:
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
+    if value is None:
+        return {}
+    return value if isinstance(value, _MAPPING_TYPES) else {}
 
 
 def _is_active(joker: Mapping[str, Any]) -> bool:
@@ -218,7 +226,7 @@ def _hand_base(hand_type: str, detail: Mapping[str, Any]) -> tuple[float, float]
 def _cards(info: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     deck = _mapping(info.get("deck_stats"))
     raw = deck.get("cards") or deck.get("card_descriptors") or ()
-    cards = tuple(card for card in raw if isinstance(card, Mapping))
+    cards = tuple(card for card in raw if isinstance(card, _MAPPING_TYPES))
     if cards:
         return cards
 
@@ -445,7 +453,7 @@ def _held_effects(
         if enhancement == "Steel Card" and base_h_x_mult <= 1.0:
             base_h_x_mult = 1.5
         has_base_held_effect = base_h_mult != 0.0 or base_h_x_mult > 1.0
-        repetitions = 1.0 + mime_extra if has_base_held_effect else 1.0
+        repetitions = 1.0 + mime_extra + (1.0 if card.get("seal") == "Red" else 0.0)
         reps = weight * repetitions
         mime_triggered = mime_triggered or (has_base_held_effect and mime_extra > 0.0)
 
@@ -465,11 +473,13 @@ def _held_effects(
             name = str(joker.get("name") or "")
             rank = str(card.get("rank") or "")
             if name == "Shoot the Moon" and rank == "Q":
+                mime_triggered = mime_triggered or mime_extra > 0.0
                 amount = 13.0 * reps
                 state.mult += amount
                 state.mult_added += amount
                 modeled.append((index, "held_queens"))
             elif name == "Baron" and rank == "K":
+                mime_triggered = mime_triggered or mime_extra > 0.0
                 factor = _number(_joker_extra(joker), 1.0) ** reps
                 state.mult *= factor
                 state.x_mult *= factor
@@ -556,7 +566,76 @@ def _has_unknown_effect(joker: Mapping[str, Any], modeled: set[str]) -> bool:
     return bool(joker.get("effect") or joker.get("name") or joker.get("key"))
 
 
+# Score calculations depend on deck/build descriptors, not cash, blind targets,
+# progress, or shop offers. Risk, hand planning, and diagnostics repeatedly ask
+# for identical passes while those other fields change. Retain immutable results
+# under immutable keys, bounded by both entry count and serialized-key bytes.
+_SCORE_CACHE: OrderedDict[bytes, _ScorePass] = OrderedDict()
+_SCORE_CACHE_BYTES = 0
+_SCORE_CACHE_LOCK = RLock()
+_SCORE_CACHE_MAX_BYTES = 2 * 1024 * 1024
+_SCORE_CACHE_MAX_ENTRIES = 256
+
+
+def _reset_score_cache_after_fork() -> None:
+    # AsyncVectorEnv can fork a trainer with background threads. A child must
+    # not inherit a lock held by a thread that only exists in the parent.
+    global _SCORE_CACHE, _SCORE_CACHE_BYTES, _SCORE_CACHE_LOCK
+    _SCORE_CACHE = OrderedDict()
+    _SCORE_CACHE_BYTES = 0
+    _SCORE_CACHE_LOCK = RLock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_score_cache_after_fork)
+
+
 def _score_pass(
+    info: Mapping[str, Any],
+    jokers: Sequence[Mapping[str, Any]],
+    *,
+    hand_type: str,
+    hand_detail: Mapping[str, Any],
+) -> _ScorePass:
+    global _SCORE_CACHE_BYTES
+    try:
+        key = dumps(
+            (
+                _cards(info),
+                tuple(jokers),
+                hand_type,
+                _hand_base(hand_type, hand_detail),
+                max(1, int(info.get("hands_available") or info.get("hands_left") or 4)),
+                int(info.get("hand_size") or 8),
+                _mapping(info.get("idol_card") or _mapping(info.get("dynamic_targets")).get("idol_card")),
+            ),
+            protocol=5,
+        )
+    except (PickleError, TypeError, AttributeError):
+        # Public estimators also accept custom Mapping objects. They need not
+        # support serialization to retain the uncached estimator's behavior.
+        return _score_pass_uncached(info, jokers, hand_type=hand_type, hand_detail=hand_detail)
+    with _SCORE_CACHE_LOCK:
+        cached = _SCORE_CACHE.get(key)
+        if cached is not None:
+            _SCORE_CACHE.move_to_end(key)
+            return cached
+    result = _score_pass_uncached(info, jokers, hand_type=hand_type, hand_detail=hand_detail)
+    with _SCORE_CACHE_LOCK:
+        if key in _SCORE_CACHE:
+            return _SCORE_CACHE[key]
+        if len(key) <= _SCORE_CACHE_MAX_BYTES:
+            while _SCORE_CACHE and (
+                len(_SCORE_CACHE) >= _SCORE_CACHE_MAX_ENTRIES or _SCORE_CACHE_BYTES + len(key) > _SCORE_CACHE_MAX_BYTES
+            ):
+                old_key, _ = _SCORE_CACHE.popitem(last=False)
+                _SCORE_CACHE_BYTES -= len(old_key)
+            _SCORE_CACHE[key] = result
+            _SCORE_CACHE_BYTES += len(key)
+    return result
+
+
+def _score_pass_uncached(
     info: Mapping[str, Any],
     jokers: Sequence[Mapping[str, Any]],
     *,

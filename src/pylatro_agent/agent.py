@@ -82,7 +82,7 @@ class BalatroAgent(nn.Module):
         token_types: torch.Tensor,
         scalars: torch.Tensor,
         attention_mask: torch.Tensor,
-        action_mask: torch.Tensor,
+        action_mask: torch.Tensor | None = None,
         history_events: torch.Tensor | None = None,
         history_event_features: torch.Tensor | None = None,
         history_cards: torch.Tensor | None = None,
@@ -95,38 +95,49 @@ class BalatroAgent(nn.Module):
         temperature: float | torch.Tensor = 1.0,
         hand_ar_mixture_eps: float | None = None,
         return_raw_outputs: bool = False,
+        critic_only: bool = False,
     ) -> tuple[ActionGrammarDistribution | dict[str, torch.Tensor], dict[str, torch.Tensor]]:
-        """Return the structured policy distribution and value predictions."""
+        """Return policy/value predictions; critic_only freezes the encoder and skips policy work."""
+        if not critic_only and action_mask is None:
+            raise ValueError("Policy inference requires action_mask")
         eps = self.config.hand_ar_mixture_eps if hand_ar_mixture_eps is None else hand_ar_mixture_eps
         if history_events is not None and history_round_mask is not None:
             attention_mask = attention_mask.clone()
             attention_mask[:, HISTORY_START : HISTORY_START + HISTORY_ROUNDS] = history_round_mask
-        x = self.embedding(
-            tokens,
-            token_types,
-            scalars,
-            history_events,
-            history_event_features,
-            history_cards,
-            history_card_mask,
-            history_jokers,
-            history_joker_mask,
-            history_event_mask,
-            history_omitted,
-        )
-        with backbone_autocast(self.config.precision, x.device):
-            x = self.backbone(x, padding_mask=(attention_mask == 0))
+        # Terminal replay updates only critic heads. Avoid constructing the
+        # unused encoder graph and policy heads for those batches.
+        with torch.set_grad_enabled(torch.is_grad_enabled() and not critic_only):
+            x = self.embedding(
+                tokens,
+                token_types,
+                scalars,
+                history_events,
+                history_event_features,
+                history_cards,
+                history_card_mask,
+                history_jokers,
+                history_joker_mask,
+                history_event_mask,
+                history_omitted,
+            )
+            with backbone_autocast(self.config.precision, x.device):
+                x = self.backbone(x, padding_mask=(attention_mask == 0))
         # Keep small policy differences, hazard products, and PPO log-ratios
         # away from BF16 rounding. Backprop still traverses the autocast trunk.
         with torch.autocast(device_type=x.device.type, enabled=False):
             x = x.float()
-            grammar_output = self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
+            grammar_output = (
+                None if critic_only else self.action_grammar_head(x, attention_mask, tokens, token_types, scalars)
+            )
             value_dict = self.value_head(
                 x,
                 attention_mask,
                 current_antes=scalars[:, CURRENT_ANTE_SCALAR_INDEX],
                 win_antes=scalars[:, WIN_ANTE_SCALAR_INDEX],
             )
+        if critic_only:
+            return {}, value_dict
+        assert grammar_output is not None
         if return_raw_outputs:
             # DataParallel can gather nested tensor containers, but not an
             # ActionGrammarDistribution (which also closes over the unsharded

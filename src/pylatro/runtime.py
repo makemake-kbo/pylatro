@@ -5,7 +5,15 @@ from copy import deepcopy
 from math import floor
 from typing import TYPE_CHECKING
 
-from .instances import add_consumable, add_joker, remove_consumable, remove_joker, sync_all_jokers
+from .instances import (
+    add_consumable,
+    add_joker,
+    joker_is_expired,
+    remove_consumable,
+    remove_joker,
+    set_joker_debuff,
+    sync_all_jokers,
+)
 from .models import ConsumableInstance, JokerInstance, PlayingCard
 from .pool import _pick_pool_key, create_card_spec, get_current_pool
 
@@ -117,6 +125,29 @@ def add_generated_consumable(
     return add_consumable(state, forced_key, edition=edition)
 
 
+def _held_end_of_round_repetitions(state: RunState, card: PlayingCard) -> int:
+    """Red seals and active Mime copies add retriggers, never multiply them."""
+    from .scoring import _blueprint_target
+
+    repetitions = 1 + int(card.seal == "Red")
+    for index, joker in enumerate(state.jokers):
+        seen: set[int] = set()
+        while not joker.debuff and id(joker) not in seen:
+            seen.add(id(joker))
+            name = state.data.centers[joker.center_key]["name"]
+            if name == "Mime":
+                repetitions += int(joker.extra)
+                break
+            if name not in {"Blueprint", "Brainstorm"}:
+                break
+            target = _blueprint_target(state, joker, index)
+            if target is None:
+                break
+            joker = target
+            index = next(i for i, owned in enumerate(state.jokers) if owned is target)
+    return repetitions
+
+
 def resolve_blue_seals(
     state: RunState,
     held_cards: Iterable[PlayingCard],
@@ -139,16 +170,17 @@ def resolve_blue_seals(
     for card in held_cards:
         if card.seal != "Blue" or card.debuff:
             continue
-        planet = add_generated_consumable(
-            state,
-            "Planet",
-            forced_key=planet_key,
-            append="blue_seal",
-            soulable=False,
-        )
-        if planet is None:
-            break
-        generated.append(planet)
+        for _ in range(_held_end_of_round_repetitions(state, card)):
+            planet = add_generated_consumable(
+                state,
+                "Planet",
+                forced_key=planet_key,
+                append="blue_seal",
+                soulable=False,
+            )
+            if planet is None:
+                return generated
+            generated.append(planet)
     return generated
 
 
@@ -178,7 +210,7 @@ def resolve_held_gold_cards(
         if amount <= 0:
             continue
         count += 1
-        payout += amount
+        payout += amount * _held_end_of_round_repetitions(state, card)
     if payout:
         state.dollars += payout
         state.current_round.round_dollars += payout
@@ -321,7 +353,7 @@ def disable_blind(state: RunState) -> None:
         card.forced_selection = False
         card.face_down = False
     for joker in state.jokers:
-        joker.debuff = False
+        set_joker_debuff(state, joker, False)
     # Chicot runs before the opening draw; Luchador may restore a slot in
     # an already dealt hand. Do not draw before start_blind shuffles the deck.
     if name == "The Manacle" and state.current_round.first_hand_drawn:
@@ -417,16 +449,25 @@ def apply_end_shop(state: RunState) -> list[str]:
 
 
 def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
-    results: dict[str, int | bool] = {"dollars": 0, "saved": False}
+    rent = sum(state.rental_rate for joker in state.jokers if joker.rental)
+    state.dollars -= rent  # Rent precedes cash-out and therefore reduces interest.
+    results: dict[str, int | bool] = {"dollars": -rent, "saved": False}
+    # The fifth hand/held-card resolution has finished, but cash-out bonuses
+    # (Golden Joker, interest, etc.) no longer apply once the sticker expires.
+    for joker in state.jokers:
+        if joker.perishable and joker.perish_tally is not None:
+            joker.perish_tally = max(0, joker.perish_tally - 1)
     blind = state.round_resets.blind or {}
     is_boss = bool(blind.get("boss"))
     to_remove: list[JokerInstance] = []
 
     for joker in list(state.jokers):
-        if joker.debuff:
-            continue
         center = state.data.centers[joker.center_key]
         name = center["name"]
+        if joker.debuff or (joker_is_expired(joker) and name in {
+            "Rocket", "Cloud 9", "Golden Joker", "Satellite", "Delayed Gratification",
+        }):
+            continue
         if name == "Campfire" and is_boss and joker.x_mult > 1:
             joker.x_mult = 1
         elif name == "Rocket" and isinstance(joker.extra, dict):
@@ -491,6 +532,8 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     for joker in to_remove:
         remove_joker(state, joker)
 
+    # Round-end decay finishes before expiry disables cash-out/passive bonuses.
+    sync_all_jokers(state)
     blind = state.round_resets.blind or {}
     blind_type = None
     for bt in ("Small", "Big", "Boss"):
@@ -508,6 +551,9 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
     hands_left = max(0, state.current_round.hands_left)
     money_per_hand = int(state.modifiers.get("money_per_hand", 1))
     results["dollars"] = int(results["dollars"]) + hands_left * money_per_hand
+    discards_left = max(0, state.current_round.discards_left)
+    money_per_discard = int(state.modifiers.get("money_per_discard", 0))
+    results["dollars"] = int(results["dollars"]) + discards_left * money_per_discard
 
     if is_boss:
         investments = state.tags.count("tag_investment")
@@ -521,9 +567,8 @@ def apply_end_of_round(state: RunState) -> dict[str, int | bool]:
         results["dollars"] = int(results["dollars"]) + max(0, interest)
 
     dollars = int(results["dollars"])
-    if dollars:
-        state.dollars += dollars
-        state.current_round.round_dollars += dollars
+    state.dollars += dollars + rent  # Rent was already charged above.
+    state.current_round.round_dollars += dollars
     sync_all_jokers(state)
     return results
 

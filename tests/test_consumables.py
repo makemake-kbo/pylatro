@@ -1,3 +1,5 @@
+import pytest
+
 from pylatro import add_consumable, add_joker, create_run_state, score_hand, start_blind, use_consumable
 from pylatro.models import PackState, PlayingCard, ShopCard
 from pylatro.shop import claim_pack_card
@@ -68,9 +70,8 @@ def test_planet_claimed_from_pack_is_used_immediately_not_banked() -> None:
     assert state.jokers[0].x_mult == 1.1  # Constellation counted the use
 
 
-def test_targeted_tarot_claimed_from_pack_falls_back_to_inventory() -> None:
-    # The Magician needs highlighted cards, which the pack flow cannot supply
-    # (no hand is drawn in the shop), so it banks for later use instead.
+def test_targeted_tarot_without_targets_cannot_be_banked() -> None:
+    # A targeted card cannot be taken from a pack without a playable target.
     state = create_run_state("AAAAAAAA")
     state.hand_cards.clear()
     magician = next(
@@ -85,9 +86,11 @@ def test_targeted_tarot_claimed_from_pack_falls_back_to_inventory() -> None:
         cards=[ShopCard(center_key=magician, card_type="Tarot", cost=0, base_cost=0)],
     )
 
-    claim_pack_card(state, 0)
+    with pytest.raises(ValueError, match="cannot be claimed"):
+        claim_pack_card(state, 0)
 
-    assert [c.center_key for c in state.consumables] == [magician]
+    assert state.consumables == []
+    assert len(state.pack.cards) == 1
 
 
 def test_observatory_reads_held_planets_during_scoring() -> None:

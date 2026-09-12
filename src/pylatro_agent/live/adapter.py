@@ -354,6 +354,7 @@ class SnapshotAdapter:
             perish_tally=(_integer(raw["perish_tally"]) if raw.get("perish_tally") is not None else None),
             rental=bool(raw.get("rental", False)),
             debuff=bool(raw.get("debuff", False)),
+            passive_effects_active=not bool(raw.get("debuff", False)),
             **values,
         )
 

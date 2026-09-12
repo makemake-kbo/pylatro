@@ -219,9 +219,9 @@ def test_full_consumable_slots_allow_immediate_pack_auto_use(game_data, center_k
 
 @pytest.mark.parametrize(
     ("center_key", "negative"),
-    (("c_fool", False), ("c_pluto", True)),
+    (("c_fool", False),),
 )
-def test_full_consumable_slots_block_targeted_or_banked_pack_cards(game_data, center_key, negative):
+def test_full_consumable_slots_block_pack_generation(game_data, center_key, negative):
     state = _full_consumable_pack_state(game_data, center_key, negative=negative)
     state.last_tarot_planet = "c_hermit"
 
@@ -324,7 +324,7 @@ def test_pack_suit_tarot_never_targets_upcoming_boss_suit(game_data, center_key,
 
     assert pack_consumable_use_targets(state, center_key) is None
     mask = compute_action_mask(state, SubPhase.BOOSTER_PACK)
-    assert mask[ActionRange.PACK_CLAIM_START] == 0
+    assert mask[ActionRange.PACK_CLAIM_START] == 1
 
 
 def test_pack_suit_tarot_reinforces_confident_suit_without_converting_away(game_data) -> None:
@@ -348,7 +348,7 @@ def test_pack_suit_tarot_never_overwrites_protected_targets(game_data) -> None:
             card.seal = "Gold"
 
     assert pack_consumable_use_targets(state, "c_sun") is None
-    assert compute_action_mask(state, SubPhase.BOOSTER_PACK)[ActionRange.PACK_CLAIM_START] == 0
+    assert compute_action_mask(state, SubPhase.BOOSTER_PACK)[ActionRange.PACK_CLAIM_START] == 1
 
 
 @pytest.mark.parametrize(
@@ -473,7 +473,7 @@ def test_full_slots_allow_hanged_man_only_for_unprotected_off_plan_cards(game_da
 
 
 @pytest.mark.parametrize("center_key", ("c_death", "c_hanged_man"))
-def test_full_slots_block_targeted_pack_use_without_safe_target(game_data, center_key) -> None:
+def test_full_slots_allow_legal_targets_even_when_policy_dislikes_them(game_data, center_key) -> None:
     state = _full_consumable_pack_state(game_data, center_key)
     _put_pack_target_hand(state)
     for card in state.hand_cards:
@@ -481,12 +481,13 @@ def test_full_slots_block_targeted_pack_use_without_safe_target(game_data, cente
 
     mask = compute_action_mask(state, SubPhase.BOOSTER_PACK)
 
-    assert mask[ActionRange.PACK_CLAIM_START] == 0
-    with pytest.raises(ValueError, match="cannot be claimed"):
-        claim_pack_card(state, 0)
+    assert mask[ActionRange.PACK_CLAIM_START] == 1
+    claimed = claim_pack_card(state, 0)
+    assert claimed.auto_used
+    assert len(state.consumables) == consumable_limit(state)
 
 
-def test_targeted_pack_card_banks_with_room_only_when_no_safe_target(game_data) -> None:
+def test_targeted_pack_card_uses_legal_fallback_instead_of_banking(game_data) -> None:
     state = create_run_state("pack_target_bank", 1, "b_red", data=game_data)
     _put_pack_target_hand(state)
     for card in state.hand_cards:
@@ -500,8 +501,8 @@ def test_targeted_pack_card_banks_with_room_only_when_no_safe_target(game_data) 
 
     claimed = claim_pack_card(state, 0)
 
-    assert not claimed.auto_used
-    assert state.consumables[-1].center_key == "c_death"
+    assert claimed.auto_used
+    assert state.consumables == []
 
 
 def test_targeted_pack_card_auto_uses_with_room_when_safe_target_exists(game_data) -> None:

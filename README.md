@@ -31,6 +31,11 @@ The current implementation includes:
 - joker instance tracking with preserved in-run order for copy and position-sensitive effects
 - differential and behavior tests over the deterministic core
 
+The [wiki rules audit](docs/audits/2026-09-11-wiki-rules.md) records verified
+mechanics, regression coverage, and known fidelity gaps. Pack consumable handling
+and Perishable/Rental lifecycles still differ from Balatro; strict expected-failure
+tests track these discrepancies.
+
 ## Seed search
 
 `pylatro seed-search spec.json` finds run seeds whose vouchers, shops, blinds,

@@ -208,6 +208,7 @@ class PackState(_FastStateCopy):
     choices_remaining: int
     cards: list[ShopCard] = field(default_factory=list)
     source_slot: int | None = None
+    hand_drawn: bool = False
 
 
 @dataclass(slots=True)
@@ -225,6 +226,7 @@ class JokerInstance(_FastStateCopy):
     eternal: bool = False
     perishable: bool = False
     perish_tally: int | None = None
+    passive_effects_active: bool = True
     rental: bool = False
     debuff: bool = False
     mult: int = 0
@@ -350,7 +352,13 @@ class RunState(_FastStateCopy):
         # contents. Comparing identity + length is not enough: selling one joker
         # and gaining another leaves the same list at the same length.
         cache = getattr(self, "_joker_name_cache", None)
-        keys = tuple(self.joker_keys)
+        keys = tuple(
+            key for index, key in enumerate(self.joker_keys)
+            if index >= len(self.jokers) or not (
+                self.jokers[index].debuff
+                or (self.jokers[index].perishable and self.jokers[index].perish_tally == 0)
+            )
+        )
         if cache is None or cache[0] != keys:
             names = frozenset(self.data.centers[k]["name"] for k in keys)
             self._joker_name_cache = (keys, names)

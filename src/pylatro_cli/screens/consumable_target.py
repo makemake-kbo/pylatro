@@ -22,6 +22,8 @@ class ConsumableTargetScreen(Screen):
         Binding("left", "cursor_left", "Left", show=False),
         Binding("right", "cursor_right", "Right", show=False),
         Binding("space", "toggle_select", "Toggle", show=False),
+        Binding("shift+left", "move_left", "Move card left"),
+        Binding("shift+right", "move_right", "Move card right"),
         Binding("enter", "confirm", "Confirm"),
         Binding("escape", "cancel", "Cancel"),
     ]
@@ -61,9 +63,10 @@ class ConsumableTargetScreen(Screen):
     cursor: reactive[int] = reactive(0)
     selected: reactive[frozenset[int]] = reactive(frozenset())
 
-    def __init__(self, consumable_index: int, **kwargs) -> None:
+    def __init__(self, consumable_index: int | None = None, *, pack_index: int | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self.consumable_index = consumable_index
+        self.pack_index = pack_index
 
     def compose(self) -> ComposeResult:
         with Vertical(id="target-container"):
@@ -82,14 +85,16 @@ class ConsumableTargetScreen(Screen):
         if state is None:
             return
 
-        consumable = state.consumables[self.consumable_index]
+        consumable = (
+            state.pack.cards[self.pack_index]
+            if self.pack_index is not None
+            else state.consumables[self.consumable_index]
+        )
         center = state.data.centers.get(consumable.center_key, {})
         name = center.get("name", consumable.center_key)
         desc = center.get("description", "")
 
-        self.query_one("#target-header", Static).update(
-            f"Use {name}\n{desc}\n\nSelect target cards:"
-        )
+        self.query_one("#target-header", Static).update(f"Use {name}\n{desc}\n\nSelect target cards:")
 
         # Show hand cards as targets
         t = Text()
@@ -135,6 +140,24 @@ class ConsumableTargetScreen(Screen):
         else:
             self.selected = self.selected | {self.cursor}
 
+    def _move_card(self, offset: int) -> None:
+        state = self.app.controller.state
+        destination = self.cursor + offset
+        if state is None or not 0 <= destination < len(state.hand_cards):
+            return
+        selected_cards = {id(state.hand_cards[index]) for index in self.selected}
+        moved = state.hand_cards.pop(self.cursor)
+        state.hand_cards.insert(destination, moved)
+        self.selected = frozenset(i for i, card in enumerate(state.hand_cards) if id(card) in selected_cards)
+        self.cursor = destination
+        self._refresh_display()
+
+    def action_move_left(self) -> None:
+        self._move_card(-1)
+
+    def action_move_right(self) -> None:
+        self._move_card(1)
+
     def action_confirm(self) -> None:
         ctrl = self.app.controller
         state = ctrl.state
@@ -143,6 +166,15 @@ class ConsumableTargetScreen(Screen):
 
         hand_targets = tuple(sorted(self.selected))
 
+        if self.pack_index is not None:
+            try:
+                ctrl.claim_from_pack(self.pack_index, hand_targets=hand_targets)
+            except ValueError as error:
+                self.notify(str(error), severity="warning")
+                return
+            self.dismiss(True)
+            return
+
         if not ctrl.can_use(self.consumable_index, hand_targets=hand_targets):
             self.notify("Cannot use consumable with this selection", severity="warning")
             return
@@ -150,10 +182,10 @@ class ConsumableTargetScreen(Screen):
         result = ctrl.use_consumable_on(self.consumable_index, hand_targets=hand_targets)
         name = state.data.centers.get(result.consumable_key, {}).get("name", result.consumable_key)
         self.notify(f"Used {name}")
-        self.app.pop_screen()
+        self.dismiss(True)
 
     def action_cancel(self) -> None:
-        self.app.pop_screen()
+        self.dismiss(False)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         match event.button.id:

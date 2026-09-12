@@ -341,7 +341,7 @@ class FastRunner:
 
         elif AR.PACK_CLAIM_START <= aid <= AR.PACK_CLAIM_END:
             result = ctrl.claim_from_pack(aid - AR.PACK_CLAIM_START)
-            if state.pack and state.pack.choices_remaining <= 0:
+            if state.pack is None or state.pack.choices_remaining <= 0:
                 ctrl.close_current_pack(skipped=False)
                 self._sub_phase = SubPhase.SHOP
             return result

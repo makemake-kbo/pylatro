@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
@@ -86,6 +87,7 @@ class SupervisedConfig:
     reward_config: RewardConfig | None = None
     excluded_seeds: tuple[int, ...] = ()
     data_path: str | None = None
+    seed: int = 0
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -165,6 +167,9 @@ def train_supervised(
     pretraining workflows that build records from a separate model checkpoint.
     """
     validate_critic_win_ante(config.win_ante)
+    random.seed(config.seed)
+    np.random.seed(config.seed)
+    torch.manual_seed(config.seed)
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
@@ -259,7 +264,11 @@ def train_supervised(
     n = len(records)
     steps_per_epoch = (n + config.batch_size - 1) // config.batch_size
     total_steps = steps_per_epoch * config.max_epochs
-    scheduler = CosineAnnealingLR(optimizer, T_max=total_steps)
+    scheduler = CosineAnnealingLR(optimizer, T_max=max(total_steps - config.warmup_steps, 1))
+    logger.info(
+        "Supervised training: seed=%d, batch=%d, lr=%g, warmup=%d, epochs=%d, updates=%d",
+        config.seed, config.batch_size, config.lr, config.warmup_steps, config.max_epochs, total_steps,
+    )
     log_interval = max(int(config.log_interval), 1)
 
     save_path = Path(config.save_dir)
@@ -371,14 +380,14 @@ def train_supervised(
             grad_norm = nn.utils.clip_grad_norm_(
                 model.parameters(), 1.0, error_if_nonfinite=agent_config.precision == "bf16"
             )
-            optimizer.step()
-
-            # Warmup
+            # Set warmup before the update, including the very first one.
             if global_step < config.warmup_steps:
                 warmup_factor = (global_step + 1) / config.warmup_steps
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = config.lr * warmup_factor
-            else:
+            update_lr = optimizer.param_groups[0]["lr"]
+            optimizer.step()
+            if global_step >= config.warmup_steps:
                 scheduler.step()
 
             # Track epoch metrics on-device; synchronizing every batch is
@@ -401,7 +410,7 @@ def train_supervised(
                 writer.add_scalar("train/value_loss", critic_loss, global_step)
                 writer.add_scalar("train/accuracy", batch_acc, global_step)
                 writer.add_scalar("train/grad_norm", grad_norm, global_step)
-                writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
+                writer.add_scalar("train/lr", update_lr, global_step)
                 writer.add_scalar("train/entropy", entropy_bonus, global_step)
                 writer.add_scalar(
                     "train/action_entropy_bonus",
@@ -443,6 +452,7 @@ def train_supervised(
             tmp_path,
             extra={
                 "agent_config": asdict(save_model.config),
+                "supervised_config": asdict(config),
                 "training_reserved_seeds": list(config.excluded_seeds),
                 **reward_checkpoint_metadata(active_reward_config),
             },

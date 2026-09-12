@@ -172,7 +172,10 @@ def main():
             "and environment seed streams (default: 0)."
         ),
     )
-    parser.add_argument("--lr", type=float, default=5e-5, help="PPO learning rate (default: 5e-5)")
+    parser.add_argument(
+        "--lr", type=float, default=None,
+        help="Learning rate (default: 3e-4 for supervised pretraining, 5e-5 for PPO)",
+    )
     parser.add_argument(
         "--clip-eps",
         type=float,
@@ -192,8 +195,8 @@ def main():
     parser.add_argument(
         "--value-loss-coeff",
         type=float,
-        default=0.25,
-        help="Weight on the critic (value) loss (default: 0.25).",
+        default=None,
+        help="Weight on the critic return loss (default: 0.5 for supervised pretraining, 0.25 for PPO).",
     )
     parser.add_argument(
         "--outcome-loss-coeff",
@@ -735,6 +738,11 @@ def main():
         help="Per-env stall limit during data generation (default: 2000)",
     )
     args = parser.parse_args()
+    supervised_phase = args.phase in ("supervised", "pretrain_from_checkpoint")
+    if args.lr is None:
+        args.lr = 3e-4 if supervised_phase else 5e-5
+    if args.value_loss_coeff is None:
+        args.value_loss_coeff = 0.5 if supervised_phase else 0.25
     reward_objective = args.reward_objective or ("milestone" if args.archive_return else "shaped")
     if (args.archive_return or reward_objective == "milestone") and args.phase != "ppo":
         parser.error("Archive/milestone training is currently a PPO experiment; initialize with --actor-transfer")
@@ -788,6 +796,9 @@ def main():
                 num_games=args.games,
                 data_path=args.data_path,
                 batch_size=args.batch,
+                lr=args.lr,
+                value_loss_coeff=args.value_loss_coeff,
+                seed=args.seed,
                 gamma=args.gamma,
                 max_epochs=args.epochs,
                 action_entropy_coeff=args.supervised_entropy_coeff,
@@ -1024,6 +1035,9 @@ def main():
             SupervisedConfig(
                 num_games=args.games,
                 batch_size=args.batch,
+                lr=args.lr,
+                value_loss_coeff=args.value_loss_coeff,
+                seed=args.seed,
                 gamma=args.gamma,
                 max_epochs=args.epochs,
                 num_workers=args.workers,

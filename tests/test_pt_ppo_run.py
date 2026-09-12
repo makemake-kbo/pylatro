@@ -21,6 +21,7 @@ def test_long_run_recipe(tmp_path):
     assert ppo.reward_config.objective == "milestone"
     assert ppo.win_ante == supervised.win_ante == 8
     assert ppo.gamma == supervised.gamma
+    assert supervised.seed == ppo.seed == args.seed
     assert ppo.archive_config.min_ante == 4
     assert ppo.device == supervised.device == "cuda:0"
 

@@ -128,6 +128,19 @@ uv run python train.py supervised --games 5000 --epochs 10 --device mps
 
 Checkpoints saved to `checkpoints/supervised/`. TensorBoard logs in `runs/supervised/`.
 
+To train on downloaded demonstrations, pass `--data-path` with the Parquet
+dataset directory (including its `metadata/` directory); this skips game
+generation. Keep `--gamma`, `--win-ante`, and reward shaping consistent with the
+dataset's saved targets. `--games` then supplies only the game count for logging.
+
+Supervised training defaults to AdamW with `--lr 3e-4`, weight decay `0.01`,
+1,000 updates of linear warmup starting with the first update, and cosine decay
+over the remaining updates. `--value-loss-coeff` defaults to `0.5` for
+pretraining; PPO retains its defaults of `5e-5` and `0.25`. `--seed` seeds model
+initialization, dropout, and dataset shuffling. TensorBoard records the learning
+rate used for each logged update, and checkpoints include the supervised
+configuration. Seeding does not guarantee bitwise equality across devices.
+
 #### Phase 2: PPO Fine-Tuning
 
 Reinforcement learning from self-play, starting from the pretrained checkpoint.

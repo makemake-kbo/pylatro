@@ -61,6 +61,7 @@ def _configs(args: argparse.Namespace):
     root = args.run_dir.resolve()
     agent = AgentConfig(precision=args.precision)
     supervised = SupervisedConfig(
+        seed=args.seed,
         num_games=args.games,
         max_epochs=args.epochs,
         batch_size=args.pt_batch,

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -58,6 +59,7 @@ def main():
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--trial", required=True)
     parser.add_argument("--name", required=True)
+    parser.add_argument("--through-update", type=int, help="Reproduce a completed prefix after later continuations")
     args = parser.parse_args()
     destination = args.root / f"{args.name}.json"
     if destination.exists():
@@ -65,13 +67,22 @@ def main():
     directory = args.root / "trials" / args.trial
     recipe = read_json(directory / "recipe.json")
     source = directory / "tensorboard/training_episodes.jsonl"
-    episodes = [json.loads(line) for line in source.read_text().splitlines()]
+    lines = source.read_text().splitlines()
     legs = [read_json(path) for path in directory.glob("leg_*/manifest.json")]
+    if args.through_update is not None:
+        if args.through_update < 1:
+            raise ValueError("A positive completed update prefix is required")
+        legs = [leg for leg in legs if leg["start_update"] < args.through_update]
+        lines = [line for line in lines if json.loads(line)["update"] <= args.through_update]
     if not legs or any(leg["status"] != "complete" for leg in legs):
         raise ValueError("This audit requires completed training legs")
+    through = args.through_update or max(leg["update_count"] for leg in legs)
+    if through > max(leg["update_count"] for leg in legs):
+        raise ValueError("The requested prefix exceeds completed training")
+    episodes = [json.loads(line) for line in lines]
     annotated = []
     for leg in sorted(legs, key=lambda item: item["start_update"]):
-        rows = [row for row in episodes if leg["start_update"] < row["update"] <= leg["update_count"]]
+        rows = [row for row in episodes if leg["start_update"] < row["update"] <= min(through, leg["update_count"])]
         annotated.extend(reconstruct_labels(rows, leg["start_update"], recipe["ppo_config"]["rollout_length"]))
     if len(annotated) != len(episodes):
         raise ValueError("Missing or duplicated training episodes")
@@ -79,11 +90,14 @@ def main():
     for row in annotated:
         labeled_by_update[row["update"]] += row["label_available_states"]
     events = EventAccumulator(str(directory / "tensorboard"), size_guidance={"scalars": 0}).Reload()
-    logged = {row.step: row.value for row in events.Scalars("critic/rollout_labels/labeled_rows")}
+    logged = {row.step: row.value for row in events.Scalars("critic/rollout_labels/labeled_rows")
+              if row.step <= through}
+    for update in logged:
+        labeled_by_update.setdefault(update, 0)
     if dict(labeled_by_update) != logged:
         raise ValueError("Reconstructed label counts differ from the actual PPO buffer metrics")
     forecast_panels = {}
-    names = ["baseline_dev200", f"{args.trial}_u{max(leg['update_count'] for leg in legs)}_dev200"]
+    names = ["baseline_dev200", f"{args.trial}_u{through}_dev200"]
     for name in names:
         path = args.root / "evaluations" / name
         if not (path / "comparison.json").exists():
@@ -101,6 +115,9 @@ def main():
     result = dict(
         trial=args.trial, recipe_sha256=sha256(directory / "recipe.json"),
         episode_log_sha256=sha256(source), source_sha256=sha256(__file__),
+        through_update=through,
+        selected_episode_lines_sha256=hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest(),
+        outcome_labels_used_in_ppo_loss=not bool(recipe.get("critic_intervention")),
         source_rollout_sha256=sha256("src/pylatro_agent/training/ppo_rollout.py"),
         metrics=label_metrics(annotated), labeled_rows_by_update=labeled_by_update,
         exact_match_to_logged_ppo_label_counts=True, forecast_panels=forecast_panels,

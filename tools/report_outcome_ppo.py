@@ -111,7 +111,9 @@ def compare_panel(root, recipe, updates, stage):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--recipe", choices=("gae100", "gae097"), required=True)
+    parser.add_argument("--recipe", choices=("gae100", "gae097", "gae100_lr3e5", "gae097_lr3e5",
+                                             "gae100_terminal", "gae097_terminal",
+                                             "gae100_terminal_lr3e5", "gae097_terminal_lr3e5"), required=True)
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--stage", choices=("development", "confirmation"), default="development")
     parser.add_argument("--freeze", action="store_true")

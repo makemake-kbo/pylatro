@@ -29,6 +29,20 @@ def completed_checkpoint(directory):
     return max(completed, default=(0, None), key=lambda item: item[0])
 
 
+def checkpoint_at_update(directory, update):
+    matches = []
+    for path in directory.glob("leg_*/manifest.json"):
+        metadata = read_json(path)
+        if metadata["status"] == "complete" and metadata["update_count"] == update:
+            checkpoint = Path(metadata["checkpoint"])
+            if sha256(checkpoint) != metadata["checkpoint_sha256"]:
+                raise ValueError("Branch parent checkpoint changed")
+            matches.append(checkpoint)
+    if len(matches) != 1:
+        raise ValueError(f"Expected one immutable checkpoint at update {update}, found {len(matches)}")
+    return matches[0]
+
+
 def command_run(command, log):
     print(json.dumps(dict(command=command, log=str(log))), flush=True)
     started = time.monotonic()
@@ -42,7 +56,12 @@ def main():
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--updates", type=int, default=20)
     parser.add_argument("--hours-per-leg", type=float, default=1.3)
-    parser.add_argument("--recipes", nargs="+", choices=("gae100", "gae097"), default=["gae100", "gae097"])
+    parser.add_argument("--recipes", nargs="+", choices=("gae100", "gae097", "gae100_lr3e5", "gae097_lr3e5",
+                                                        "gae100_terminal", "gae097_terminal",
+                                                        "gae100_terminal_lr3e5", "gae097_terminal_lr3e5"),
+                        default=["gae100", "gae097"])
+    parser.add_argument("--branch-base", choices=("gae100", "gae097", "gae100_terminal", "gae097_terminal"))
+    parser.add_argument("--branch-update", type=int, default=20)
     parser.add_argument("--stage-name", required=True)
     args = parser.parse_args()
     if args.updates < 1 or args.hours_per_leg <= 0 or len(set(args.recipes)) != len(args.recipes):
@@ -56,6 +75,8 @@ def main():
         training_replicates=[0, 1],
         development_games=200,
         source_hashes=source_hashes(),
+        branch_base=args.branch_base,
+        branch_update=args.branch_update if args.branch_base else None,
         jobs=[],
     )
     atomic_json(directory / "manifest.json", metadata)
@@ -80,6 +101,13 @@ def main():
                             evaluation.result()
                     trial = args.root / "trials" / f"{recipe}_seed{seed}"
                     update, checkpoint = completed_checkpoint(trial)
+                    branch = None
+                    if update == 0 and args.branch_base and recipe != args.branch_base:
+                        if recipe not in (f"{args.branch_base}_lr3e5", f"{args.branch_base}_terminal"):
+                            raise ValueError("The declared branch must retain the selected GAE setting")
+                        parent = args.root / "trials" / f"{args.branch_base}_seed{seed}"
+                        branch = checkpoint_at_update(parent, args.branch_update)
+                        update = args.branch_update
                     if update >= args.updates:
                         raise ValueError("Pilot target must extend the current checkpoint")
                     command = [*executable,
@@ -89,6 +117,8 @@ def main():
                     ]
                     if checkpoint:
                         command += ["--resume", str(checkpoint)]
+                    elif branch:
+                        command += ["--branch-from", str(branch)]
                     job = command_run(command, directory / f"{recipe}_seed{seed}_training.log")
                     actual, checkpoint = completed_checkpoint(trial)
                     if actual != args.updates:

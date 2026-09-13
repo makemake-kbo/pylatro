@@ -65,6 +65,9 @@ def render(root, output):
                       "not evidence that the task is solved or that its current win rate is a ceiling.")
         if not verified:
             paragraph("**Final artifact and compute verification is still pending.**")
+        figure = Path("docs/transfer/assets/outcome_confirmation.png")
+        if figure.exists():
+            paragraph("!" + link(figure, "Sampled confirmation rates and paired confidence intervals"))
     else:
         paragraph("**Study in progress. No candidate has completed independent confirmation.** "
                   "The tables below contain completed measurements only; development gains are exploratory.")
@@ -104,11 +107,20 @@ def render(root, output):
         ["Long-term credit", link(root / "credit_audit.json", "Complete-game trace audit"),
          "Lambda .97 and 1 disagree in sign on 27.7% of decisions. Actual PPO bootstraps fragments; "
          "a realized outcome does not establish whether each preceding action was good."],
+        ["Mixture is a reference distribution",
+         link(root / "mixture_capacity_audit.json", "Production normalizer probe"),
+         "Learned hand scores reweight the mixture before final normalization. An action absent from candidates "
+         "can rise from .1 to .9 probability at mixture .5. The distribution layer has no fixed .5 cap; "
+         "learned representations and finite exploration remain separate questions."],
         ["Checkpoint and reservation defects", link(root / "reservation_before.log", "Failing reservation regression")
-         + "; " + link(root / "mps_rng_diagnosis.json", "MPS RNG diagnosis"),
+         + "; " + link(root / "mps_rng_hardware/result.json", "MPS hardware reproducer"),
          "Complete seed reservations and checkpoint configuration were fixed before this PPO study. "
-         "MPS RNG omission is a reproducibility defect; its separate fix does not establish a win-rate gain."],
+         "The separate MPS RNG fix reproduces all 512 test draws exactly, versus 31 matches before. "
+         "This establishes RNG persistence, with no claim of a win-rate gain."],
     ])
+    diagnostic_figure = Path("docs/transfer/assets/outcome_diagnostics.png")
+    if diagnostic_figure.exists():
+        paragraph("!" + link(diagnostic_figure, "Phase-policy headroom and controlled critic-label bias"))
 
     paragraph("Development uses CPU, 200 game seeds, three sampling repeats and two training replicas. "
               "Intervals resample game seeds after averaging repeats and replicas. "
@@ -240,11 +252,16 @@ def render(root, output):
               "seeds, the separate contributions inside the complete-critic treatment, and information available to "
               "the teacher that the student cannot observe. Two training replicas and one confirmation seed panel "
               "do not settle these questions. No new observation features are inserted into v13.")
-    paragraph("Recreate the numeric tables with `python tools/render_outcome_report.py`. "
+    paragraph("Recreate the numeric tables with `.venv/bin/python tools/render_outcome_report.py`. "
               "The strict evaluation and paired-report commands, frozen checkpoint hashes, immutable game rows, "
               "TensorBoard curves and exact reference source are retained under " + link(root, str(root)) + ". "
               "The source archive contains compiled simulator artifacts as well as Python code; environment and "
               "replay resets across PPO legs remain explicit limitations to whole-process exact replay.")
+    paragraph("Standalone PNG and SVG figures use `.venv/bin/python tools/plot_outcome_study.py "
+              "--kind diagnostics` or `--kind confirmation`. "
+              "Runtime and plotting package versions are recorded in "
+              + link(root / "environment.json", "environment.json") + " and "
+              + link(root / "plotting_environment.json", "plotting_environment.json") + ".")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(lines))
 

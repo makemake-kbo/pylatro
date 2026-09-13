@@ -32,6 +32,46 @@ def compare_replicates(candidates, control):
     return result
 
 
+def compare_matched_training(candidates, controls):
+    """Compare an intervention with its trained control for each training replica."""
+    if set(candidates) != {0, 1} or set(controls) != {0, 1}:
+        raise ValueError("Both matched training replicas are required")
+    result = dict(per_replicate={})
+    for seed in (0, 1):
+        result["per_replicate"][seed] = {
+            mode: paired_statistics(candidates[seed][mode], controls[seed][mode])
+            for mode in ("sampled", "greedy")
+        }
+    for mode in ("sampled", "greedy"):
+        pooled = [dict(row, sampling_seed=f"train{seed}/sample{row['sampling_seed']}")
+                  for seed in (0, 1) for row in candidates[seed][mode]]
+        reference = [dict(row, sampling_seed=f"train{seed}/sample{row['sampling_seed']}")
+                     for seed in (0, 1) for row in controls[seed][mode]]
+        result[mode] = dict(candidate=summarize(pooled), control=summarize(reference),
+                            paired=paired_statistics(pooled, reference))
+    return result
+
+
+def compare_interventions(root, base, updates):
+    if base not in ("gae100", "gae097"):
+        raise ValueError("Interventions require the selected original-critic GAE base")
+    seeds = read_json(root / "manifest.json")["development_seeds"]
+    panels, evidence = {}, {}
+    for recipe in (base, f"{base}_terminal", f"{base}_lr3e5"):
+        panels[recipe], evidence[recipe] = {}, {}
+        for seed in (0, 1):
+            name = f"{recipe}_seed{seed}_u{updates}_dev200"
+            panels[recipe][seed], evidence[recipe][seed] = verified_panel(root / "evaluations" / name, seeds)
+    return dict(
+        stage="development", base=base, updates=updates, evidence=evidence,
+        comparisons={recipe: compare_matched_training(panels[recipe], panels[base])
+                     for recipe in (f"{base}_terminal", f"{base}_lr3e5")},
+        interpretation="Each intervention is paired with the original-critic continuation at the same update "
+                       "and training seed. Average both training replicas and sampling repeats within game seed "
+                       "before bootstrapping. These development comparisons are exploratory, not confirmation.",
+    )
+
+
 def verified_panel(path, seeds, device="cpu"):
     modes, evidence = {}, []
     checkpoint_hash = None
@@ -119,7 +159,16 @@ def main():
     parser.add_argument("--freeze", action="store_true")
     parser.add_argument("--selection-reason")
     parser.add_argument("--confirmation-device", choices=("cpu", "mps"), default="mps")
+    parser.add_argument("--interventions", action="store_true",
+                        help="Compare the critic and LR arms with their matched trained controls")
     args = parser.parse_args()
+    if args.interventions:
+        if args.stage != "development" or args.freeze:
+            parser.error("Intervention diagnostics use development games and cannot freeze a candidate")
+        result = compare_interventions(args.root, args.recipe, args.updates)
+        atomic_json(args.root / f"intervention_comparison_u{args.updates}.json", result)
+        print(json.dumps(result["comparisons"], indent=2))
+        return
     if args.freeze and (args.stage != "development" or not args.selection_reason):
         parser.error("Freeze requires development results and an explicit selection reason")
     result = compare_panel(args.root, args.recipe, args.updates, args.stage)

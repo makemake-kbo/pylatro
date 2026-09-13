@@ -113,7 +113,7 @@ def _validate_checkpoint_schema(
 
 
 def capture_rng_states() -> dict[str, Any]:
-    """Snapshot Python, NumPy, and Torch RNG states for deterministic resume."""
+    """Snapshot Python, NumPy, and available Torch CPU/CUDA/MPS generators."""
     states: dict[str, Any] = {
         "python": random.getstate(),
         "numpy": np.random.get_state(),
@@ -121,14 +121,17 @@ def capture_rng_states() -> dict[str, Any]:
     }
     if torch.cuda.is_available():
         states["torch_cuda"] = torch.cuda.get_rng_state_all()
+    if torch.backends.mps.is_available():
+        states["torch_mps"] = torch.mps.get_rng_state()
     return states
 
 
 def restore_rng_states(states: dict[str, Any]) -> None:
     """Restore RNG states captured by :func:`capture_rng_states`.
 
-    Missing keys are skipped so a checkpoint saved on CPU can resume on a
-    CUDA host (and vice-versa) without error.
+    Missing keys and unavailable backends are skipped for cross-device and
+    legacy compatibility. An omitted accelerator state cannot be reconstructed;
+    only generators present in the checkpoint resume their original streams.
     """
     if not states:
         return
@@ -145,6 +148,8 @@ def restore_rng_states(states: dict[str, Any]) -> None:
         # the accelerator, but set_rng_state_all requires CPU ByteTensors.
         cuda_states = [state.to(device="cpu", dtype=torch.uint8) for state in states["torch_cuda"]]
         torch.cuda.set_rng_state_all(cuda_states)
+    if "torch_mps" in states and torch.backends.mps.is_available():
+        torch.mps.set_rng_state(states["torch_mps"].to(device="cpu", dtype=torch.uint8))
 
 
 def save_ppo_checkpoint(

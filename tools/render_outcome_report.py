@@ -110,7 +110,7 @@ def render(root, output):
          "MPS RNG omission is a reproducibility defect; its separate fix does not establish a win-rate gain."],
     ])
 
-    paragraph("Completed development comparisons use 200 game seeds, three sampling repeats and two training replicas. "
+    paragraph("Development uses CPU, 200 game seeds, three sampling repeats and two training replicas. "
               "Intervals resample game seeds after averaging repeats and replicas. "
               "The initial control has 600 physical sampled games and is not counted twice.")
     rows = []
@@ -141,8 +141,35 @@ def render(root, output):
             for recipe, item in data["comparisons"].items()
         ])
 
+    calibration = []
+    for path in sorted(root.glob("labels_gae*_u*.json")):
+        audit = read_json(path)
+        forecast = {name: item for name, item in audit["forecast_panels"].items() if name != "baseline_dev200"}
+        for name, item in forecast.items():
+            calibration.append([link(path, name), percentage(item["mean_start_win_forecast"]),
+                                percentage(item["observed_win_rate"]), f"{item['start_win_brier']:.4f}",
+                                str(audit.get("outcome_labels_used_in_ppo_loss", True))])
+    if calibration:
+        paragraph("Critic forecasts on student-played development games are descriptive. Each policy has its own "
+                  "realized outcomes; lower calibration error alone does not demonstrate better gameplay. "
+                  "The final column shows whether rollout outcome labels actually train the critic.")
+        table(["Checkpoint", "Initial win forecast", "Observed sampled wins", "Start Brier loss",
+               "Uses rollout outcome labels"], calibration)
+
+    phase_path = root / "phase_oracle_cpu/results.json"
+    if phase_path.exists():
+        phase = read_json(phase_path)
+        paragraph("Teacher phase replacements are a separate CPU diagnosis on 50 reserved seeds. "
+                  "They never supply PPO labels or select the candidate. "
+                  "Student and partial-replacement arms have three repeats; the full teacher is deterministic.")
+        table(["Diagnostic arm", "Wins/games", "Win rate", "Mean final ante"], [
+            [name, f"{item['wins']}/{item['games']}", percentage(item["win_rate"]), f"{item['mean_final_ante']:.3f}"]
+            for name, item in phase["summaries"].items()
+        ])
+
     if confirmation:
-        paragraph("Independent confirmation outcomes:")
+        paragraph(f"Independent confirmation uses {confirmation['device'].upper()} for every arm, "
+                  "batch 32 and four engine workers. All 400 seeds and all four modes are evaluated:")
         rows = []
         for name, arm in confirmation["physical_arms"].items():
             for mode, item in arm.items():
@@ -176,7 +203,7 @@ def render(root, output):
 
     paragraph("Pilots use Blue Deck, White Stake, ante eight, v13 observations, FP32, mixture .5, temperature one, "
               "32 environments and 256 steps per rollout (8,192 transitions). PPO makes two passes with logical "
-              "batch 640 and physical batch 320, clip .1, entropy coefficient .001, and LR 1e-5 unless explicitly "
+              "batch 640 and physical batch 320, clip .1, entropy coefficient .001, and Adam LR 1e-5 unless explicitly "
               "testing 3e-5. The complete-episode treatment uses a zero return residual, freezes critic parameters "
               "during actor updates, and applies 30 private outcome-tower replay updates of 256 rows instead of "
               "the reference's masked PPO outcome updates plus four replay updates. This is a declared bundle of "

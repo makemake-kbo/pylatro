@@ -15,6 +15,7 @@ from pylatro_agent.training.ppo_optimization import _restore_policy_optimizer_st
 from pylatro_agent.transfer import sha256
 from pylatro_agent.value_head import outcome_nll, return_huber_loss
 from pylatro_agent.vocab import build_vocab
+from tools.outcome_critic_intervention import COMPLETE_CRITIC_PROTOCOL
 from tools.run_outcome_pilots import checkpoint_at_update, completed_checkpoint
 from tools.train_outcome_ppo import branch_checkpoint, same_state_tree, validate_branch_recipe
 
@@ -123,4 +124,13 @@ def test_terminal_critic_resets_return_moments_and_stays_zero_during_updates(tmp
         optimizer.step()
         assert all(torch.count_nonzero(parameter) == 0 for parameter in model.value_head.return_residual.parameters())
         assert torch.equal(values["expected_return"], values["terminal_value"])
+    assert sha256(source) == source_hash
+    complete = replace(changed, ppo_run_uuid="complete", ppo_recipe_id="gae100_complete",
+                       terminal_replay_updates_per_ppo_update=30)
+    validate_branch_recipe(recipe, complete, "complete_critic")
+    complete_path = tmp_path / "complete.pt"
+    branch_checkpoint(source, complete_path, complete, "complete_critic", asdict(config))
+    full = load_checkpoint_payload(complete_path, "cpu")
+    assert full["outcome_study_critic_protocol"] == COMPLETE_CRITIC_PROTOCOL
+    assert full["outcome_study_branch"]["kind"] == "complete_critic"
     assert sha256(source) == source_hash

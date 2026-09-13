@@ -111,6 +111,10 @@ def verify(root, *, final=False):
         # can be integrated only after this final study audit has been saved.
         if any(sha256(name) != digest for name, digest in core.items()):
             raise ValueError("Core code changed while a pinned study was active")
+        if recipe.get("critic_intervention"):
+            helper = "tools/outcome_critic_intervention.py"
+            if sha256(helper) != recipe["source_hashes"][helper]:
+                raise ValueError("The declared critic intervention implementation changed")
         legs = [read_json(p) for p in sorted(path.parent.glob("leg_*/manifest.json"))]
         complete = [leg for leg in legs if leg["status"] == "complete"]
         if final and len(complete) != len(legs):

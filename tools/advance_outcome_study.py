@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--wait-for-stage", default="pilot20")
     parser.add_argument("--hours-per-leg", type=float, default=.85)
+    parser.add_argument("--adaptive-rule", default="adaptive_trial_rule_v4.json")
     args = parser.parse_args()
     if args.hours_per_leg <= 0:
         parser.error("A positive per-leg time allowance is required")
@@ -47,8 +48,10 @@ def main():
     selection_path = root / "continuation_selection.json"
     if selection_path.exists() or (root / "interventions30").exists():
         raise FileExistsError("A continuation selection or stage already exists; inspect before recovery")
-    rule = root / "adaptive_trial_rule_v3.json"
-    read_json(rule)
+    rule = root / args.adaptive_rule
+    critic_suffix = read_json(rule).get("critic_recipe_suffix", "terminal")
+    if critic_suffix not in ("terminal", "complete"):
+        raise ValueError("Unknown declared critic intervention")
     while True:
         metadata = read_json(root / args.wait_for_stage / "manifest.json")
         status = metadata["status"]
@@ -67,7 +70,7 @@ def main():
         recorded_utc=datetime.now(UTC).isoformat(),
         rule=str(rule), rule_sha256=sha256(rule),
         selected_base=base, starting_update=20, target_update=30,
-        recipes=[base, f"{base}_terminal", f"{base}_lr3e5"], training_replicates=[0, 1],
+        recipes=[base, f"{base}_{critic_suffix}", f"{base}_lr3e5"], training_replicates=[0, 1],
         selection_rule="Prefer recipes whose development greedy interval rules out a >5-point regression; "
                        "then maximize mean sampled win rate across both replicas, with greedy win rate as tie-break. "
                        "If neither passes the guardrail, retain the strongest sampled recipe for diagnostic trials.",

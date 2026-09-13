@@ -25,9 +25,15 @@ from pylatro_agent.training.ppo import train_ppo
 from pylatro_agent.training.ppo_config import PPOConfig, _ppo_run_provenance
 from pylatro_agent.transfer import load_policy, restore_configuration, sha256, source_hashes
 
+if __package__:
+    from .outcome_critic_intervention import COMPLETE_CRITIC_PROTOCOL, complete_episode_critic_updates
+else:
+    from outcome_critic_intervention import COMPLETE_CRITIC_PROTOCOL, complete_episode_critic_updates
+
 RECIPES = {"gae097": 0.97, "gae100": 1.0, "gae097_lr3e5": 0.97, "gae100_lr3e5": 1.0,
            "gae097_terminal": 0.97, "gae100_terminal": 1.0,
-           "gae097_terminal_lr3e5": 0.97, "gae100_terminal_lr3e5": 1.0}
+           "gae097_terminal_lr3e5": 0.97, "gae100_terminal_lr3e5": 1.0,
+           "gae097_complete": 0.97, "gae100_complete": 1.0}
 
 
 def same_state_tree(left, right):
@@ -48,11 +54,13 @@ def same_state_tree(left, right):
 
 def validate_branch_recipe(parent_recipe, config, intervention="lr"):
     saved, active = parent_recipe["ppo_config"], asdict(config)
-    if intervention not in ("lr", "terminal_critic"):
+    if intervention not in ("lr", "terminal_critic", "complete_critic"):
         raise ValueError("Unknown branch intervention")
     setting = "lr" if intervention == "lr" else "value_loss_coeff"
     permitted = {setting, "ppo_run_uuid", "ppo_source_sha256", "ppo_recipe_id",
                  "save_dir", "log_dir", "stop_request_path"}
+    if intervention == "complete_critic":
+        permitted.add("terminal_replay_updates_per_ppo_update")
     if set(saved) != set(active):
         raise ValueError("Branch requires the same complete PPO configuration schema")
     changed = [key for key in saved if key not in permitted and saved[key] != active[key]]
@@ -71,10 +79,13 @@ def branch_checkpoint(source, destination, config, intervention="lr", parent_con
     saved, active = original["ppo_config_fields"], asdict(config)
     identity_keys = {"ppo_run_uuid", "ppo_source_sha256", "ppo_recipe_id"}
     changed_setting = "lr" if intervention == "lr" else "value_loss_coeff"
-    if intervention not in ("lr", "terminal_critic"):
+    if intervention not in ("lr", "terminal_critic", "complete_critic"):
         raise ValueError("Unknown branch intervention")
+    allowed = identity_keys | {changed_setting}
+    if intervention == "complete_critic":
+        allowed.add("terminal_replay_updates_per_ppo_update")
     undeclared = [key for key, value in saved.items()
-                  if key not in identity_keys | {changed_setting} and active.get(key) != value]
+                  if key not in allowed and active.get(key) != value]
     if undeclared:
         raise ValueError(f"Undeclared branch configuration changes: {undeclared}")
     if not original.get("optimizer_state_dict") or not original.get("rng_states"):
@@ -84,7 +95,7 @@ def branch_checkpoint(source, destination, config, intervention="lr", parent_con
     payload["ppo_run_provenance"] = _ppo_run_provenance(config)
     changed_names, changed_ids = set(), set()
     details = {"lr": {"from": saved["lr"], "to": config.lr}}
-    if intervention == "terminal_critic":
+    if intervention in ("terminal_critic", "complete_critic"):
         from pylatro import load_game_data
         from pylatro_agent.vocab import build_vocab
 
@@ -118,6 +129,9 @@ def branch_checkpoint(source, destination, config, intervention="lr", parent_con
         details = dict(value_loss_coeff={"from": parent_config["value_loss_coeff"], "to": 0.},
                        return_residual="Zero weights, bias and their Adam moments; all other state preserved",
                        value_definition="10 * outcome_head_probability_of_winning")
+        if intervention == "complete_critic":
+            details["complete_episode_critic"] = COMPLETE_CRITIC_PROTOCOL
+            payload["outcome_study_critic_protocol"] = COMPLETE_CRITIC_PROTOCOL
     payload["outcome_study_branch"] = dict(
         parent_checkpoint=str(source), parent_checkpoint_sha256=sha256(source), parent_provenance=provenance,
         intervention=details, kind=intervention,
@@ -171,7 +185,7 @@ def recipe_config(root, recipe, seed, device):
         entropy_coeff=0.001,
         adaptive_entropy=False,
         action_type_entropy_scale=0.0,
-        value_loss_coeff=0. if "_terminal" in recipe else .25,
+        value_loss_coeff=0. if "_terminal" in recipe or "_complete" in recipe else .25,
         outcome_loss_coeff=0.1,
         advantage_clip_sigma=0.0,
         reward_config=outcome_reward(),
@@ -182,7 +196,7 @@ def recipe_config(root, recipe, seed, device):
         return_path_coeff=0,
         archive_config=None,
         terminal_replay_batch_size=256,
-        terminal_replay_updates_per_ppo_update=4,
+        terminal_replay_updates_per_ppo_update=30 if "_complete" in recipe else 4,
         terminal_replay_holdout_fraction=0.1,
         terminal_replay_row_uniform=True,
         eval_games=50,
@@ -260,7 +274,8 @@ def main():
     if args.branch_from:
         parent_recipe = args.branch_from.parent.parent / "recipe.json"
         parent = read_json(parent_recipe)
-        intervention = "terminal_critic" if args.recipe.endswith("_terminal") else "lr"
+        intervention = ("complete_critic" if args.recipe.endswith("_complete")
+                        else "terminal_critic" if args.recipe.endswith("_terminal") else "lr")
         validate_branch_recipe(parent, config, intervention)
         resume = directory / "branch_initial.pt"
         branch = branch_checkpoint(args.branch_from, resume, config, intervention, parent["ppo_config"])
@@ -279,13 +294,23 @@ def main():
                 study_manifest_sha256=sha256(root / "manifest.json"),
                 evaluation="Separate CPU development panels; periodic checkpoints do not use confirmation",
                 branch=branch,
+                critic_intervention=COMPLETE_CRITIC_PROTOCOL if "_complete" in args.recipe else None,
             ),
         )
     payload = load_checkpoint_payload(resume or source, "cpu")
     agent_config, reward = restore_configuration(payload, mixture=0.5)
     if reward != outcome_reward() or not agent_config.win_only_value:
         raise ValueError("PPO initialization does not use the pure outcome task")
-    if "_terminal" in args.recipe and any(
+    if "_complete" in args.recipe:
+        saved_recipe = read_json(recipe_path)
+        if saved_recipe.get("critic_intervention") != COMPLETE_CRITIC_PROTOCOL:
+            raise ValueError("Complete-episode critic protocol changed")
+        helper = "tools/outcome_critic_intervention.py"
+        if saved_recipe["source_hashes"].get(helper) != sha256(helper):
+            raise ValueError("Complete-episode critic implementation changed")
+        if payload.get("outcome_study_critic_protocol") != COMPLETE_CRITIC_PROTOCOL:
+            raise ValueError("Checkpoint omits the explicit complete-episode critic treatment")
+    if ("_terminal" in args.recipe or "_complete" in args.recipe) and any(
         torch.count_nonzero(value).item() for name, value in payload["state_dict"].items()
         if name.startswith("value_head.return_residual.")
     ):
@@ -330,14 +355,15 @@ def main():
             kwargs.update(resume_path=str(resume))
         else:
             kwargs.update(pretrained_path=str(source))
-        if args.device == "mps":
-            with accelerator_job(root, f"ppo/{args.recipe}/seed{args.seed}/from{start_update}", max_seconds):
+        with complete_episode_critic_updates("_complete" in args.recipe):
+            if args.device == "mps":
+                with accelerator_job(root, f"ppo/{args.recipe}/seed{args.seed}/from{start_update}", max_seconds):
+                    train_ppo(**kwargs)
+            else:
                 train_ppo(**kwargs)
-        else:
-            train_ppo(**kwargs)
         latest = Path(config.save_dir) / "ppo_latest.pt"
         final = load_checkpoint_payload(latest, "cpu")
-        if "_terminal" in args.recipe and any(
+        if ("_terminal" in args.recipe or "_complete" in args.recipe) and any(
             torch.count_nonzero(value).item() for name, value in final["state_dict"].items()
             if name.startswith("value_head.return_residual.")
         ):

@@ -52,12 +52,12 @@ def compare_matched_training(candidates, controls):
     return result
 
 
-def compare_interventions(root, base, updates):
+def compare_interventions(root, base, updates, critic_suffix="complete"):
     if base not in ("gae100", "gae097"):
         raise ValueError("Interventions require the selected original-critic GAE base")
     seeds = read_json(root / "manifest.json")["development_seeds"]
     panels, evidence = {}, {}
-    for recipe in (base, f"{base}_terminal", f"{base}_lr3e5"):
+    for recipe in (base, f"{base}_{critic_suffix}", f"{base}_lr3e5"):
         panels[recipe], evidence[recipe] = {}, {}
         for seed in (0, 1):
             name = f"{recipe}_seed{seed}_u{updates}_dev200"
@@ -65,7 +65,7 @@ def compare_interventions(root, base, updates):
     return dict(
         stage="development", base=base, updates=updates, evidence=evidence,
         comparisons={recipe: compare_matched_training(panels[recipe], panels[base])
-                     for recipe in (f"{base}_terminal", f"{base}_lr3e5")},
+                     for recipe in (f"{base}_{critic_suffix}", f"{base}_lr3e5")},
         interpretation="Each intervention is paired with the original-critic continuation at the same update "
                        "and training seed. Average both training replicas and sampling repeats within game seed "
                        "before bootstrapping. These development comparisons are exploratory, not confirmation.",
@@ -153,7 +153,8 @@ def main():
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--recipe", choices=("gae100", "gae097", "gae100_lr3e5", "gae097_lr3e5",
                                              "gae100_terminal", "gae097_terminal",
-                                             "gae100_terminal_lr3e5", "gae097_terminal_lr3e5"), required=True)
+                                             "gae100_terminal_lr3e5", "gae097_terminal_lr3e5",
+                                             "gae100_complete", "gae097_complete"), required=True)
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--stage", choices=("development", "confirmation"), default="development")
     parser.add_argument("--freeze", action="store_true")
@@ -161,11 +162,12 @@ def main():
     parser.add_argument("--confirmation-device", choices=("cpu", "mps"), default="mps")
     parser.add_argument("--interventions", action="store_true",
                         help="Compare the critic and LR arms with their matched trained controls")
+    parser.add_argument("--critic-suffix", choices=("complete", "terminal"), default="complete")
     args = parser.parse_args()
     if args.interventions:
         if args.stage != "development" or args.freeze:
             parser.error("Intervention diagnostics use development games and cannot freeze a candidate")
-        result = compare_interventions(args.root, args.recipe, args.updates)
+        result = compare_interventions(args.root, args.recipe, args.updates, args.critic_suffix)
         atomic_json(args.root / f"intervention_comparison_u{args.updates}.json", result)
         print(json.dumps(result["comparisons"], indent=2))
         return

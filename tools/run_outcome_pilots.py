@@ -58,7 +58,8 @@ def main():
     parser.add_argument("--hours-per-leg", type=float, default=1.3)
     parser.add_argument("--recipes", nargs="+", choices=("gae100", "gae097", "gae100_lr3e5", "gae097_lr3e5",
                                                         "gae100_terminal", "gae097_terminal",
-                                                        "gae100_terminal_lr3e5", "gae097_terminal_lr3e5"),
+                                                        "gae100_terminal_lr3e5", "gae097_terminal_lr3e5",
+                                                        "gae100_complete", "gae097_complete"),
                         default=["gae100", "gae097"])
     parser.add_argument("--branch-base", choices=("gae100", "gae097", "gae100_terminal", "gae097_terminal"))
     parser.add_argument("--branch-update", type=int, default=20)
@@ -103,7 +104,8 @@ def main():
                     update, checkpoint = completed_checkpoint(trial)
                     branch = None
                     if update == 0 and args.branch_base and recipe != args.branch_base:
-                        if recipe not in (f"{args.branch_base}_lr3e5", f"{args.branch_base}_terminal"):
+                        if recipe not in (f"{args.branch_base}_lr3e5", f"{args.branch_base}_terminal",
+                                          f"{args.branch_base}_complete"):
                             raise ValueError("The declared branch must retain the selected GAE setting")
                         parent = args.root / "trials" / f"{args.branch_base}_seed{seed}"
                         branch = checkpoint_at_update(parent, args.branch_update)

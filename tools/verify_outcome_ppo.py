@@ -46,8 +46,31 @@ def validate_training_rows(rows, reserved):
             raise ValueError("Incomplete, archived or wrong-deck training episode")
 
 
-def verify(root, *, final=False):
+def reference_source_gate(root, reference_source, *, final):
+    if reference_source is None:
+        return dict(mode="current_workspace"), None
+    if not final:
+        raise ValueError("Archived reference verification requires a completed final study audit")
+    prior_path = root / "verification_final.json"
+    prior = read_json(prior_path)
+    if (not prior["passed"] or not prior["final"]
+            or prior.get("source_verification", {}).get("mode") != "current_workspace"):
+        raise ValueError("First verify the finished study against its still-pinned workspace code")
+    ledger = read_json(root / "compute.json")
+    if any(job["status"] == "running" for job in ledger["jobs"]) or ledger != prior["compute"]:
+        raise ValueError("Accelerator activity changed after the final study audit")
+    metadata = read_json(reference_source / "manifest.json")
+    for name, digest in metadata["source_hashes"].items():
+        if sha256(reference_source / name) != digest:
+            raise ValueError(f"Archived reference source changed: {name}")
+    return dict(mode="archived_reference_after_maintenance", reference_source=str(reference_source),
+                reference_manifest_sha256=sha256(reference_source / "manifest.json"),
+                prior_final_audit_sha256=sha256(prior_path)), prior
+
+
+def verify(root, *, final=False, reference_source=None):
     started = time.monotonic()
+    source_verification, prior_final = reference_source_gate(root, reference_source, final=final)
     protocol = read_json(root / "manifest.json")
     preserved = read_json(Path("eval/learning_bottleneck_20260913/original_hashes.json"))
     for path, digest in preserved.items():
@@ -107,9 +130,10 @@ def verify(root, *, final=False):
         if not reserved <= held_out:
             raise ValueError("A trial omitted reserved game seeds")
         core = {name: digest for name, digest in recipe["source_hashes"].items() if name.startswith("src/")}
-        # Verify the code used for this study. A later isolated maintenance fix
-        # can be integrated only after this final study audit has been saved.
-        if any(sha256(name) != digest for name, digest in core.items()):
+        # An archived source is accepted only after a final workspace audit;
+        # it cannot bypass source pinning while a study is running.
+        source_root = reference_source or Path()
+        if any(sha256(source_root / name) != digest for name, digest in core.items()):
             raise ValueError("Core code changed while a pinned study was active")
         if recipe.get("critic_intervention"):
             helper = "tools/outcome_critic_intervention.py"
@@ -184,6 +208,14 @@ def verify(root, *, final=False):
         raise ValueError("Compute accounting differs or exceeds the allowance")
     if final and any(job["status"] == "running" for job in ledger["jobs"]):
         raise ValueError("An accelerator job is still running")
+    if prior_final:
+        def immutable_training_state(items):
+            return {name: dict(recipe=item["recipe_sha256"], episodes=item["episode_file_sha256"],
+                               legs=item["completed_legs"], incomplete=item["incomplete_legs"])
+                    for name, item in items.items()}
+
+        if immutable_training_state(trials) != immutable_training_state(prior_final["trials"]):
+            raise ValueError("Training artifacts changed after the final workspace audit")
     result = dict(
         passed=True, final=final, original_artifacts_verified=len(preserved), critic_games=len(games),
         critic_states=sum(row["steps"] for row in games), critic_preparations=critics, trials=trials,
@@ -192,8 +224,11 @@ def verify(root, *, final=False):
               "Fresh-panel outcomes and paired acceptance are verified separately by report_outcome_ppo.py. "
               "Completed-game training rates are descriptive, since policies change during collection.",
         source_sha256=sha256(__file__),
+        source_verification=source_verification,
     )
-    atomic_json(root / ("verification_final.json" if final else "verification_progress.json"), result)
+    name = ("verification_after_maintenance.json" if reference_source else
+            "verification_final.json" if final else "verification_progress.json")
+    atomic_json(root / name, result)
     print(json.dumps(dict(passed=True, final=final, trials=len(trials), protected_artifacts=len(preserved),
                           compute_hours=elapsed / 3600, first_rollout_matching=first_rollouts)), flush=True)
     return result
@@ -203,5 +238,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--final", action="store_true")
+    parser.add_argument("--reference-source", type=Path,
+                        help="After a final workspace audit, verify the archived study code following maintenance")
     args = parser.parse_args()
-    verify(args.root, final=args.final)
+    verify(args.root, final=args.final, reference_source=args.reference_source)

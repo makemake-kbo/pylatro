@@ -52,6 +52,68 @@ def compare_matched_training(candidates, controls):
     return result
 
 
+def acceptance_rules(results, *, independent_confirmation):
+    sampled, greedy = results["sampled"]["paired"], results["greedy"]["paired"]
+    return dict(
+        independent_confirmation=independent_confirmation,
+        sampled_gain_at_least_five_points=sampled["sampled_or_greedy_delta"] >= .05,
+        sampled_paired_ci_excludes_zero=sampled["paired_ci95"][0] > 0,
+        both_replicates_positive=all(
+            item["sampled"]["sampled_or_greedy_delta"] > 0 for item in results["per_replicate"].values()),
+        greedy_rules_out_five_point_regression=greedy["paired_ci95"][0] >= -.05,
+        no_infrastructure_failures=True,
+    )
+
+
+def frozen_checkpoints(selection):
+    """Include separately frozen, equally trained controls without duplicating the baseline."""
+    paths, hashes = dict(selection["checkpoints"]), dict(selection["checkpoint_hashes"])
+    if set(paths) != {"control", "seed0", "seed1"} or set(hashes) != set(paths):
+        raise ValueError("Confirmation requires one initial control and both trained candidates")
+    matched = selection.get("matched_training_control")
+    if matched:
+        expected = {"matched_control_seed0", "matched_control_seed1"}
+        if set(matched["checkpoints"]) != expected or set(matched["checkpoint_hashes"]) != expected:
+            raise ValueError("Both matched trained controls must be frozen")
+        if matched["updates"] != selection["updates"]:
+            raise ValueError("Matched controls require equal training update counts")
+        paths.update(matched["checkpoints"])
+        hashes.update(matched["checkpoint_hashes"])
+    for name, path in paths.items():
+        if sha256(path) != hashes[name]:
+            raise ValueError(f"A frozen confirmation checkpoint changed: {name}")
+    return paths, hashes
+
+
+def compare_frozen_training_control(root):
+    """Secondary confirmation contrast: the selected treatment versus equal extra PPO training."""
+    selection = read_json(root / "candidate_selection.json")
+    matched = selection["matched_training_control"]
+    _, frozen = frozen_checkpoints(selection)
+    seeds = read_json(root / "manifest.json")["confirmation_seeds"]
+    candidates, controls, evidence = {}, {}, {}
+    for seed in (0, 1):
+        for recipe, group, key in (
+            (selection["recipe"], candidates, f"seed{seed}"),
+            (matched["recipe"], controls, f"matched_control_seed{seed}"),
+        ):
+            name = f"{recipe}_seed{seed}_u{selection['updates']}_confirmation400"
+            group[seed], evidence[key] = verified_panel(root / "evaluations" / name, seeds,
+                                                      selection["confirmation_device"])
+            if evidence[key]["checkpoint_sha256"] != frozen[key]:
+                raise ValueError("Matched-control confirmation differs from frozen checkpoints")
+    results = compare_matched_training(candidates, controls)
+    acceptance = acceptance_rules(results, independent_confirmation=True)
+    return dict(
+        stage="confirmation", recipe=selection["recipe"], control_recipe=matched["recipe"],
+        updates=selection["updates"], results=results, evidence=evidence, acceptance=acceptance,
+        validated=all(acceptance.values()), physical_games=4 * len(seeds) * 4,
+        interpretation="Secondary prespecified contrast against the equally trained original-critic continuation. "
+                       "A gain over the initial actor alone does not establish a benefit from the treatment. "
+                       "Sampling repeats and both fixed training replicas are grouped by game seed.",
+    )
+
+
 def compare_interventions(root, base, updates, critic_suffix="complete"):
     if base not in ("gae100", "gae097"):
         raise ValueError("Interventions require the selected original-critic GAE base")
@@ -124,16 +186,8 @@ def compare_panel(root, recipe, updates, stage):
         if selection["recipe"] != recipe or selection["updates"] != updates or hashes != selection["checkpoint_hashes"]:
             raise ValueError("Confirmation differs from the frozen candidate selection")
     results = compare_replicates(candidates, control)
-    sampled, greedy = results["sampled"]["paired"], results["greedy"]["paired"]
-    acceptance = dict(
-        independent_confirmation=stage == "confirmation",
-        sampled_gain_at_least_five_points=sampled["sampled_or_greedy_delta"] >= .05,
-        sampled_paired_ci_excludes_zero=sampled["paired_ci95"][0] > 0,
-        both_replicates_positive=all(results["per_replicate"][seed]["sampled"]["sampled_or_greedy_delta"] > 0
-                                    for seed in (0, 1)),
-        greedy_rules_out_five_point_regression=greedy["paired_ci95"][0] >= -.05,
-        no_infrastructure_failures=True,
-    )
+    sampled = results["sampled"]["paired"]
+    acceptance = acceptance_rules(results, independent_confirmation=stage == "confirmation")
     return dict(
         stage=stage, recipe=recipe, updates=updates, game_seeds=seeds, device=device,
         results=results, physical_arms=physical,
@@ -160,6 +214,8 @@ def main():
     parser.add_argument("--freeze", action="store_true")
     parser.add_argument("--selection-reason")
     parser.add_argument("--confirmation-device", choices=("cpu", "mps"), default="mps")
+    parser.add_argument("--matched-control-recipe", choices=("gae100", "gae097"),
+                        help="Also freeze both equally trained original-critic controls for confirmation")
     parser.add_argument("--interventions", action="store_true",
                         help="Compare the critic and LR arms with their matched trained controls")
     parser.add_argument("--critic-suffix", choices=("complete", "terminal"), default="complete")
@@ -173,6 +229,9 @@ def main():
         return
     if args.freeze and (args.stage != "development" or not args.selection_reason):
         parser.error("Freeze requires development results and an explicit selection reason")
+    if args.matched_control_recipe and (
+            not args.freeze or not args.recipe.startswith(args.matched_control_recipe + "_")):
+        parser.error("Matched controls require freezing a declared intervention from that base recipe")
     result = compare_panel(args.root, args.recipe, args.updates, args.stage)
     path = args.root / f"{args.stage}_{args.recipe}_u{args.updates}_comparison.json"
     atomic_json(path, result)
@@ -189,7 +248,25 @@ def main():
             confirmation_device=args.confirmation_device,
             study_manifest_sha256=sha256(args.root / "manifest.json"),
         )
+        if args.matched_control_recipe:
+            control_result = compare_panel(args.root, args.matched_control_recipe, args.updates, "development")
+            control_path = args.root / f"development_{args.matched_control_recipe}_u{args.updates}_comparison.json"
+            atomic_json(control_path, control_result)
+            selection["matched_training_control"] = dict(
+                recipe=args.matched_control_recipe, updates=args.updates,
+                checkpoints={f"matched_control_seed{seed}": control_result["evidence"][f"seed{seed}"]["checkpoint"]
+                             for seed in (0, 1)},
+                checkpoint_hashes={f"matched_control_seed{seed}": control_result["checkpoint_hashes"][f"seed{seed}"]
+                                   for seed in (0, 1)},
+                development_comparison=str(control_path), development_comparison_sha256=sha256(control_path),
+                contrast="Secondary: isolate the selected treatment from equal additional PPO training",
+            )
+        frozen_checkpoints(selection)
         atomic_json(selection_path, selection)
+    if args.stage == "confirmation" and read_json(
+            args.root / "candidate_selection.json").get("matched_training_control"):
+        matched_result = compare_frozen_training_control(args.root)
+        atomic_json(args.root / "confirmation_matched_control_comparison.json", matched_result)
     print(json.dumps({key: result[key] for key in ("stage", "recipe", "updates", "results", "acceptance")}, indent=2))
 
 

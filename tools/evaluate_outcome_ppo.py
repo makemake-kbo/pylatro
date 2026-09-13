@@ -27,7 +27,9 @@ def run_evaluation(args):
         raise ValueError("Invalid seed count")
     if args.stage == "confirmation":
         selection = read_json(args.root / "candidate_selection.json")
-        if args.games != 400 or sha256(args.checkpoint) not in selection["checkpoint_hashes"].values():
+        hashes = dict(selection["checkpoint_hashes"])
+        hashes.update(selection.get("matched_training_control", {}).get("checkpoint_hashes", {}))
+        if args.games != 400 or sha256(args.checkpoint) not in hashes.values():
             raise ValueError("Confirmation requires the full panel and a frozen checkpoint")
         if args.device != selection.get("confirmation_device", "cpu"):
             raise ValueError("Confirmation device differs from its frozen protocol")

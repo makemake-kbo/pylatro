@@ -52,10 +52,13 @@ def fitting_extension(seconds_per_update, remaining, reserve, maximum_updates):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument("--rule-name", default="longer_continuation_rule.json")
     args = parser.parse_args()
     root = args.root
     allocation, resource_evidence = cpu_confirmation_plan(root)
-    rule_path = root / "longer_continuation_rule.json"
+    if Path(args.rule_name).name != args.rule_name:
+        parser.error("The rule must be a filename within the study directory")
+    rule_path = root / args.rule_name
     if rule_path.exists() or (root / "longer_continuation_selection.json").exists():
         raise FileExistsError("A longer-continuation rule already exists; inspect it before recovery")
     rule = dict(
@@ -89,10 +92,20 @@ def main():
     if current_evidence != resource_evidence:
         raise ValueError("The resource allocation changed while waiting")
     base = read_json(root / "continuation_selection.json")["selected_base"]
+    # The preceding controller owns these derived files. Wait for its writes
+    # to finish, then independently verify them without competing for atomic
+    # temporary filenames or rewriting hashes referenced by selection records.
+    report_paths = [root / f"development_{name}_u30_comparison.json"
+                    for name in (base, f"{base}_complete", f"{base}_lr3e5")]
+    report_deadline = time.monotonic() + 300
+    while not all(path.exists() for path in report_paths):
+        if time.monotonic() >= report_deadline:
+            raise TimeoutError("The completed intervention stage is missing its controller's reports")
+        time.sleep(5)
     comparisons = [compare_panel(root, recipe, 30, "development")
                    for recipe in (base, f"{base}_complete", f"{base}_lr3e5")]
-    for item in comparisons:
-        atomic_json(root / f"development_{item['recipe']}_u30_comparison.json", item)
+    if any(read_json(path) != item for path, item in zip(report_paths, comparisons, strict=True)):
+        raise ValueError("The prior controller's report differs from verified raw outcomes")
     atomic_json(root / "intervention_comparison_u30.json", compare_interventions(root, base, 30))
     chosen, guardrail = select_development(comparisons)
     recipe = chosen["recipe"]

@@ -211,6 +211,8 @@ def _save_checkpoint(
             "eval_batch_size",
             "eval_sampled_games",
             "eval_seeds",
+            "deck_key",
+            "training_excluded_seeds",
         ):
             config_fields[key] = getattr(config, key)
         config_fields["archive_config"] = asdict(config.archive_config) if config.archive_config else None

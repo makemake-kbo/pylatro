@@ -186,12 +186,19 @@ class PPOConfig:
     # the input to tools/fit_risk_calibration.py, which refits the analytic
     # death-probability Platt constants in pylatro_agent.risk.
     risk_forecast_log: bool = True
+    # Auditable actual training-game seeds and complete outcomes. No state
+    # observations or teacher labels are stored in this optional JSONL log.
+    training_episode_log: bool = False
     # Fixed, versioned seed list for the in-training eval pass. Passing a
     # stable list (pylatro_agent.eval.EVAL_SEEDS_V1) makes every checkpoint's
     # eval reproducible and pairable across runs via the McNemar / paired
     # bootstrap harness in pylatro_agent.eval. None preserves the historical
     # 10000 + game_idx seeds.
     eval_seeds: list[int] | None = None
+    # Additional held-out panels (for example final confirmation and critic
+    # validation). Training excludes these and the ENTIRE eval_seeds list,
+    # including seeds beyond the prefix evaluated during training.
+    training_excluded_seeds: list[int] | None = None
     # Mixture weight on the autoregressive hand/discard head. 0.0
     # selects candidate-only support; 0.1 (default for PPO)
     # gives the policy full support over every legal hand play while keeping

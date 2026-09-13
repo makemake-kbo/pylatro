@@ -74,6 +74,18 @@ def evaluation_seed_list(num_games: int, seeds: list[int] | None = None) -> list
     return result
 
 
+def training_seed_reservations(config) -> list[int]:
+    """Reserve complete panels independently of the cheaper evaluation prefix."""
+    get = config.get if isinstance(config, dict) else lambda key, default=None: getattr(config, key, default)
+    supplied = get("eval_seeds")
+    prefix = evaluation_seed_list(get("eval_games"), supplied)
+    panel = evaluation_seed_list(len(supplied), supplied) if supplied is not None else prefix
+    excluded = list(get("training_excluded_seeds") or [])
+    if any(not isinstance(seed, int) or isinstance(seed, bool) or seed < 0 for seed in panel + excluded):
+        raise ValueError("Training seed reservations require nonnegative integer game seeds")
+    return sorted(set(panel + excluded))
+
+
 def validate_resume_evaluation_seeds(config, saved_config: dict) -> None:
     """Keep the evaluation task and reserved seed panel stable on resume."""
     if saved_config.get("deck_key", "b_red") != config.deck_key:
@@ -84,6 +96,14 @@ def validate_resume_evaluation_seeds(config, saved_config: dict) -> None:
     active = evaluation_seed_list(config.eval_games, config.eval_seeds)
     if active != saved:
         raise ValueError("Evaluation seeds changed on resume; keep the reserved seed panel")
+    # Old checkpoints excluded only their evaluated prefix. Do not silently
+    # claim that an unprotected tail was held out by the previous trainer.
+    saved_reserved = (
+        training_seed_reservations(saved_config)
+        if "training_excluded_seeds" in saved_config else sorted(saved)
+    )
+    if training_seed_reservations(config) != saved_reserved:
+        raise ValueError("Training seed reservations changed on resume; use explicit actor transfer for a new panel")
 
 
 def summarize_evaluation(outcomes: list[dict]) -> dict[str, float]:

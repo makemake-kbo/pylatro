@@ -45,7 +45,7 @@ from .ppo_config import (
 from .ppo_evaluation import (
     _next_eval_regression_streak,
     evaluation_rank,
-    evaluation_seed_list,
+    training_seed_reservations,
     validate_resume_evaluation_seeds,
 )
 from .ppo_evaluation import (
@@ -178,12 +178,12 @@ def train_ppo(
     elif actor_transfer_path:
         load_actor_transfer(model, actor_transfer_path, device)
     _validate_resume_provenance(config, resume_state)
-    eval_panel = evaluation_seed_list(config.eval_games, config.eval_seeds)
-    known_reserved = getattr(model, "_training_reserved_seeds", eval_panel)
+    training_reserved = training_seed_reservations(config)
+    known_reserved = getattr(model, "_training_reserved_seeds", training_reserved)
     model._training_reserved_seeds = (
-        sorted(set(known_reserved) & set(eval_panel)) if known_reserved is not None else None
+        sorted(set(known_reserved) & set(training_reserved)) if known_reserved is not None else None
     )
-    if model._training_reserved_seeds != sorted(eval_panel):
+    if model._training_reserved_seeds != training_reserved:
         logger.warning("Evaluation seeds are excluded from this PPO run, but complete source-training "
                        "disjointness is unverified; do not claim these metrics are wholly unseen-data results")
     if resume_state is not None and not config.reset_best_eval and "best_eval_rank" in resume_state:
@@ -286,7 +286,7 @@ def train_ppo(
         env_seed_base=env_seed_base,
         counterfactual_diagnostic_interval=config.counterfactual_diagnostic_interval,
         archive_config=config.archive_config,
-        excluded_seeds=tuple(evaluation_seed_list(config.eval_games, config.eval_seeds)),
+        excluded_seeds=tuple(training_reserved),
         deck_key=config.deck_key,
     )
     if resume_state is not None and config.archive_config is not None:
@@ -475,11 +475,12 @@ def train_ppo(
     return_path_replay = None
     risk_forecast_path = Path(config.log_dir) / "risk_forecasts.jsonl"
     risk_forecast_file = None
+    training_episode_file = None
     try:
         if config.archive_config is not None and config.return_path_coeff > 0:
             return_path_replay = ReturnPathReplay(
                 data, vocab, capacity=config.return_path_capacity, seed=config.seed,
-                excluded_seeds=tuple(eval_panel),
+                excluded_seeds=tuple(training_reserved),
             )
             if resume_state is not None:
                 saved_paths = resume_state.get("return_path_replay")
@@ -491,6 +492,8 @@ def train_ppo(
             risk_forecast_path.parent.mkdir(parents=True, exist_ok=True)
             # Long-lived append handle; closed in this function's finally block.
             risk_forecast_file = open(risk_forecast_path, "a", buffering=1)  # noqa: SIM115
+        if config.training_episode_log:
+            training_episode_file = open(Path(config.log_dir) / "training_episodes.jsonl", "a", buffering=1)  # noqa: SIM115
 
         initial_stop_pending = bool(config.stop_request_path and Path(config.stop_request_path).is_file())
         if update_count == 0 and config.eval_before_training and not initial_stop_pending:
@@ -528,6 +531,7 @@ def train_ppo(
                 episode_buffer,
                 update_count=update_count,
                 risk_forecast_file=risk_forecast_file,
+                training_episode_file=training_episode_file,
                 return_path_replay=return_path_replay,
             )
             rollout_seconds = time.perf_counter() - rollout_started
@@ -1174,6 +1178,8 @@ def train_ppo(
                 risk_forecast_file.close()
             except Exception:
                 logger.exception("Failed to close risk forecast log cleanly")
+        if training_episode_file is not None:
+            training_episode_file.close()
     logger.info(
         "PPO training complete after %d updates and %d env steps.",
         update_count,

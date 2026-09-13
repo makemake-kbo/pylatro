@@ -35,17 +35,34 @@ def main():
     parser.add_argument("--root", type=Path, default=Path("eval/learning_bottleneck_20260913"))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--hours", type=float, default=2)
+    parser.add_argument("--checkpoint", type=Path, default=CHECKPOINT)
+    parser.add_argument("--seed-start", type=int, default=ORACLE_SEEDS[0])
+    parser.add_argument("--games", type=int, default=len(ORACLE_SEEDS))
     args = parser.parse_args()
+    if args.games < 1 or args.workers < 1 or args.hours <= 0:
+        parser.error("Games, workers and the wall-time budget must be positive")
+    seeds = tuple(range(args.seed_start, args.seed_start + args.games))
     output = args.root / "phase_oracle_cpu"
     if output.exists():
         raise RuntimeError("Use an explicit inspected recovery; phase-oracle outputs are preserved")
-    if set(ORACLE_SEEDS) & set(TRAIN_SEEDS + VALIDATION_SEEDS + DEV_SEEDS + CONFIRM_SEEDS):
+    if set(seeds) & set(TRAIN_SEEDS + VALIDATION_SEEDS + DEV_SEEDS + CONFIRM_SEEDS):
         raise RuntimeError("Exploratory seeds overlap the main experiment")
     study = read_json(args.root / "manifest.json")
     manifests = [entry["path"] for entry in study["seed_separation"]]
-    manifests += [args.root / "data/training/generation.json", args.root / "data/validation/generation.json"]
-    separation = check_seed_separation(ORACLE_SEEDS, manifests)
-    config, reward = restore_configuration(load_checkpoint_payload(CHECKPOINT, "cpu"), mixture=0.5)
+    manifests += [
+        path
+        for path in (
+            args.root / "data/training/generation.json",
+            args.root / "data/validation/generation.json",
+            args.root / "critic_training_seeds.json",
+            args.root / "critic_validation_seeds.json",
+            args.root / "development_seeds.json",
+            args.root / "confirmation_seeds.json",
+        )
+        if path.exists()
+    ]
+    separation = check_seed_separation(seeds, manifests)
+    config, reward = restore_configuration(load_checkpoint_payload(args.checkpoint, "cpu"), mixture=0.5)
     output.mkdir()
     (output / "games").mkdir()
     manifest = dict(
@@ -54,12 +71,12 @@ def main():
         device="cpu",
         batch_size=1,
         workers=args.workers,
-        checkpoint=str(CHECKPOINT),
-        checkpoint_sha256=sha256(CHECKPOINT),
+        checkpoint=str(args.checkpoint),
+        checkpoint_sha256=sha256(args.checkpoint),
         source_hashes=source_hashes(),
         agent_config=asdict(config),
         reward_config=asdict(reward),
-        seeds=ORACLE_SEEDS,
+        seeds=seeds,
         seed_separation=separation,
         never_train_on_seeds=True,
         sampling_seeds=[0, 1, 2],
@@ -86,7 +103,7 @@ def main():
     )
     write_json(output / "manifest.json", manifest)
     tasks = []
-    for seed in ORACLE_SEEDS:
+    for seed in seeds:
         tasks.extend((arm, seed, sampling, str(output / "games")) for sampling in (0, 1, 2) for arm in ORACLE_ARMS[:-1])
         tasks.append(("teacher_all", seed, None, str(output / "games")))
     started = time.monotonic()
@@ -98,7 +115,7 @@ def main():
     signal.setitimer(signal.ITIMER_REAL, args.hours * 3600)
     rows = []
     try:
-        with mp.get_context("spawn").Pool(args.workers, initializer=worker_init, initargs=(CHECKPOINT,)) as pool:
+        with mp.get_context("spawn").Pool(args.workers, initializer=worker_init, initargs=(args.checkpoint,)) as pool:
             for result in pool.imap_unordered(run_game, tasks, chunksize=1):
                 rows.append(result)
                 if len(rows) % 10 == 0:
@@ -124,7 +141,7 @@ def main():
                 summaries=summaries,
                 comparisons=comparisons,
                 note=(
-                    "50 game seeds are the bootstrap units. "
+                    f"{len(seeds)} game seeds are the bootstrap units. "
                     "Teacher-all outcomes are reused only to align sampling repeats."
                 ),
             ),

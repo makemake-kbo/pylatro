@@ -157,6 +157,7 @@ def collect_rollout(
     *,
     update_count: int,
     risk_forecast_file=None,
+    training_episode_file=None,
     return_path_replay=None,
 ) -> tuple[RolloutBuffer, _RolloutMetrics, int]:
     """Collect a fresh on-policy suffix, label completions, and compute GAE.
@@ -167,6 +168,10 @@ def collect_rollout(
     """
     device = obs_buf.device
     effective_win_ante = config.win_ante or 8
+    if training_episode_file is not None:
+        from .ppo_evaluation import training_seed_reservations
+
+        reserved_seeds = set(training_seed_reservations(config))
     collected_steps = 0
     buffer = RolloutBuffer(
         num_envs=config.num_envs,
@@ -406,6 +411,15 @@ def collect_rollout(
             state.history.origin_wins["archive" if from_archive else "fresh"].append(float(ep_won))
             ep_stalled = bool(stalled_flags[i])
             ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+            if training_episode_file is not None:
+                origin = _extract_step_info_value(infos, "origin_seed", i, done=True)
+                if origin is None or int(origin) in reserved_seeds:
+                    raise RuntimeError(f"Missing or reserved training-game seed: {origin}")
+                training_episode_file.write(json.dumps(dict(
+                    seed=int(origin), update=update_count + 1, environment=int(i), won=ep_won,
+                    final_ante=ep_ante, steps=ep_length, reward=ep_reward, stalled=ep_stalled,
+                    censored=bool(truncated[i]), archive_start=from_archive, deck=config.deck_key,
+                )) + "\n")
             if not ep_stalled:
                 for ante in range(start_ante, min(ep_ante, 8) + 1):
                     state.history.continuation_survival[ante].append(float(ep_won or ep_ante > ante))

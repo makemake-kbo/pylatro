@@ -79,6 +79,12 @@ def render(root, output):
               "The ledger includes failed jobs and CPU work inside an exclusive accelerator job. "
               "Separate CPU diagnostics and evaluations do not consume that allowance. "
               + link(root / "compute.json", "Compute ledger") + ".")
+    resource_plan = root / "resource_allocation_v2.json"
+    if resource_plan.exists():
+        paragraph("Final confirmation is allocated to CPU for every arm. This releases MPS time for explicitly "
+                  "declared matched continuations while retaining five accelerator minutes for backend checks. "
+                  "The 12-hour cap and full confirmation panel remain fixed. "
+                  + link(resource_plan, "Prospective resource allocation") + ".")
     paragraph("PPO uses ten points for an Ante-8 win and zero otherwise, with discount one. "
               "It receives no teacher labels, teacher action replacements, imitation loss, self-imitation, "
               "or strategic reward bonuses. Existing pretrained weights, candidates, risk inputs and automatic "
@@ -140,6 +146,12 @@ def render(root, output):
               "Its initial GAE comparison is therefore not a pure trace-length intervention. "
               "Seed-one initial legs are uninterrupted. Later treatment arms share their replica's restart boundary. "
               "The original checkpoints omit MPS RNG state, so their stream restarts cannot be undone retroactively.")
+    gae_contrast = root / "initial_gae_contrast.json"
+    if gae_contrast.exists():
+        item = read_json(gae_contrast)["results"]
+        paragraph("The direct replicated lambda-.97 versus lambda-one sampled difference is "
+                  + paired(item["sampled"]["paired"]) + " points. This does not establish a superior GAE setting. "
+                  + link(gae_contrast, "Matched initial recipe comparison") + ".")
 
     for path in sorted(root.glob("intervention_comparison_u*.json")):
         data = read_json(path)

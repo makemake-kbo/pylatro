@@ -64,6 +64,7 @@ def main():
     parser.add_argument("--branch-base", choices=("gae100", "gae097", "gae100_terminal", "gae097_terminal"))
     parser.add_argument("--branch-update", type=int, default=20)
     parser.add_argument("--stage-name", required=True)
+    parser.add_argument("--resource-plan", type=Path)
     args = parser.parse_args()
     if args.updates < 1 or args.hours_per_leg <= 0 or len(set(args.recipes)) != len(args.recipes):
         parser.error("Positive update and time limits, and distinct recipes, are required")
@@ -79,6 +80,8 @@ def main():
         branch_base=args.branch_base,
         branch_update=args.branch_update if args.branch_base else None,
         jobs=[],
+        resource_allocation=(dict(path=str(args.resource_plan), sha256=sha256(args.resource_plan))
+                             if args.resource_plan else None),
     )
     atomic_json(directory / "manifest.json", metadata)
     executable = [sys.executable, "-u"]
@@ -121,6 +124,8 @@ def main():
                         command += ["--resume", str(checkpoint)]
                     elif branch:
                         command += ["--branch-from", str(branch)]
+                    if args.resource_plan:
+                        command += ["--resource-plan", str(args.resource_plan)]
                     job = command_run(command, directory / f"{recipe}_seed{seed}_training.log")
                     actual, checkpoint = completed_checkpoint(trial)
                     if actual != args.updates:

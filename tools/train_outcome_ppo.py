@@ -27,8 +27,10 @@ from pylatro_agent.transfer import load_policy, restore_configuration, sha256, s
 
 if __package__:
     from .outcome_critic_intervention import COMPLETE_CRITIC_PROTOCOL, complete_episode_critic_updates
+    from .outcome_resource_plan import training_reserve
 else:
     from outcome_critic_intervention import COMPLETE_CRITIC_PROTOCOL, complete_episode_critic_updates
+    from outcome_resource_plan import training_reserve
 
 RECIPES = {"gae097": 0.97, "gae100": 1.0, "gae097_lr3e5": 0.97, "gae100_lr3e5": 1.0,
            "gae097_terminal": 0.97, "gae100_terminal": 1.0,
@@ -233,6 +235,8 @@ def main():
     initialize.add_argument("--branch-from", type=Path,
                             help="Declared LR or critic intervention preserving unrelated checkpoint state")
     parser.add_argument("--device", choices=("mps", "cpu"), default="mps")
+    parser.add_argument("--resource-plan", type=Path,
+                        help="Explicit verified CPU-confirmation allocation for later training legs")
     args = parser.parse_args()
     if args.hours <= 0 or args.updates <= 0:
         parser.error("Hours and update count must be positive")
@@ -324,10 +328,11 @@ def main():
     stop_path.unlink(missing_ok=True)
     max_seconds = args.hours * 3600
     ledger = read_json(root / "compute.json")
+    reserve_seconds, resource_evidence = training_reserve(root, args.resource_plan)
     available = (
         ledger["limit_seconds"]
         - ledger["elapsed_seconds"]
-        - read_json(root / "manifest.json")["confirmation_reserve_seconds"]
+        - reserve_seconds
     )
     if args.device == "mps" and max_seconds + 600 > available:
         raise TimeoutError("This training leg would spend the confirmation reserve")
@@ -345,6 +350,8 @@ def main():
         source_checkpoint=str(resume or source),
         source_checkpoint_sha256=sha256(resume or source),
         wall_limit_seconds=max_seconds,
+        resource_allocation=resource_evidence,
+        accelerator_reserve_seconds=reserve_seconds,
     )
     atomic_json(leg / "manifest.json", metadata)
     started = time.monotonic()

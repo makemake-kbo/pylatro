@@ -16,8 +16,10 @@ from pylatro_agent.outcome_study import ROOT
 from pylatro_agent.transfer import sha256, source_hashes
 
 if __package__:
+    from .outcome_resource_plan import RESOURCE_PLAN, cpu_confirmation_plan
     from .report_outcome_ppo import frozen_checkpoints
 else:
+    from outcome_resource_plan import RESOURCE_PLAN, cpu_confirmation_plan
     from report_outcome_ppo import frozen_checkpoints
 
 
@@ -32,6 +34,13 @@ def confirmation_plan(root):
     device = selection["confirmation_device"]
     if device not in ("mps", "cpu"):
         raise ValueError("Unsupported frozen confirmation device")
+    parallel_modes = selection.get("confirmation_parallel_modes", 2)
+    if (root / RESOURCE_PLAN).exists():
+        allocation, evidence = cpu_confirmation_plan(root)
+        if (device != allocation["confirmation_device"]
+                or parallel_modes != allocation["parallel_modes"]
+                or selection.get("resource_allocation") != evidence):
+            raise ValueError("Frozen confirmation differs from the declared CPU allocation")
     jobs = []
     for key, checkpoint in paths.items():
         if key == "control":
@@ -45,6 +54,7 @@ def confirmation_plan(root):
             sys.executable, "-u", "tools/evaluate_outcome_ppo.py", "--root", str(root),
             "--checkpoint", checkpoint, "--name", name, "--games", "400",
             "--stage", "confirmation", "--device", device,
+            "--parallel-modes", str(parallel_modes),
         ]))
     # Every checkpoint sees exactly the same seeds, device and all four modes.
     if len({job["name"] for job in jobs}) != len(jobs):

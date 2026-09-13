@@ -13,6 +13,11 @@ from pylatro_agent.learning_bottleneck import atomic_json, read_json
 from pylatro_agent.outcome_study import ROOT, outcome_reward
 from pylatro_agent.transfer import paired_statistics, sha256, summarize
 
+if __package__:
+    from .outcome_resource_plan import RESOURCE_PLAN, cpu_confirmation_plan
+else:
+    from outcome_resource_plan import RESOURCE_PLAN, cpu_confirmation_plan
+
 
 def compare_replicates(candidates, control):
     if set(candidates) != {0, 1}:
@@ -239,7 +244,15 @@ def main():
         selection_path = args.root / "candidate_selection.json"
         if selection_path.exists():
             raise ValueError("A candidate selection already exists; do not change it after confirmation begins")
+        resource_evidence = None
+        parallel_modes = 2
+        if (args.root / RESOURCE_PLAN).exists():
+            allocation, resource_evidence = cpu_confirmation_plan(args.root)
+            if args.confirmation_device != allocation["confirmation_device"]:
+                raise ValueError("Confirmation must use the prospectively declared CPU allocation")
+            parallel_modes = allocation["parallel_modes"]
         selection = dict(
+            resource_allocation=resource_evidence, confirmation_parallel_modes=parallel_modes,
             recipe=args.recipe, updates=args.updates, checkpoint_hashes=result["checkpoint_hashes"],
             checkpoints={key: item["checkpoint"] for key, item in result["evidence"].items()},
             development_comparison=str(path), development_comparison_sha256=sha256(path),

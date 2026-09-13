@@ -1,0 +1,4438 @@
+{
+  "status": "inconclusive",
+  "teacher": {
+    "game_seeds": 200,
+    "games": 200,
+    "wins": 143,
+    "win_rate": 0.715,
+    "win_rate_cluster_ci95": [
+      0.65,
+      0.775
+    ],
+    "win_rate_wilson_ci95": [
+      0.6488465397039482,
+      0.7730499699538271
+    ],
+    "mean_final_ante": 8.23,
+    "stalls": 0,
+    "censored": 0,
+    "ante_clear_rates": {
+      "1": 0.995,
+      "2": 0.98,
+      "3": 0.975,
+      "4": 0.96,
+      "5": 0.93,
+      "6": 0.88,
+      "7": 0.795,
+      "8": 0.715
+    }
+  },
+  "teacher_timing": {
+    "elapsed_seconds": 1627.143326832971,
+    "workers": 4
+  },
+  "screening": [
+    {
+      "epoch": 1,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 0,
+        "win_rate": 0.0,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.0
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 1.8733333333333333,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.37333333333333335,
+          "2": 0.24,
+          "3": 0.16,
+          "4": 0.07333333333333333,
+          "5": 0.013333333333333334,
+          "6": 0.013333333333333334,
+          "7": 0.0,
+          "8": 0.0
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 1,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.06
+        ],
+        "win_rate_wilson_ci95": [
+          0.003539259271646236,
+          0.10495443589637815
+        ],
+        "mean_final_ante": 3.4,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.74,
+          "2": 0.58,
+          "3": 0.5,
+          "4": 0.32,
+          "5": 0.1,
+          "6": 0.08,
+          "7": 0.06,
+          "8": 0.02
+        }
+      }
+    },
+    {
+      "epoch": 2,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 3,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.04666666666666666
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 2.993333333333333,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.6666666666666666,
+          "2": 0.5333333333333333,
+          "3": 0.3933333333333333,
+          "4": 0.20666666666666667,
+          "5": 0.08666666666666667,
+          "6": 0.04666666666666667,
+          "7": 0.04,
+          "8": 0.02
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 1,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.06
+        ],
+        "win_rate_wilson_ci95": [
+          0.003539259271646236,
+          0.10495443589637815
+        ],
+        "mean_final_ante": 3.94,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.8,
+          "2": 0.72,
+          "3": 0.58,
+          "4": 0.4,
+          "5": 0.16,
+          "6": 0.14,
+          "7": 0.12,
+          "8": 0.02
+        }
+      }
+    },
+    {
+      "epoch": 3,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 4,
+        "win_rate": 0.026666666666666665,
+        "win_rate_cluster_ci95": [
+          0.006666666666666666,
+          0.05333333333333333
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.433333333333333,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.76,
+          "2": 0.6333333333333333,
+          "3": 0.52,
+          "4": 0.29333333333333333,
+          "5": 0.11333333333333333,
+          "6": 0.05333333333333334,
+          "7": 0.03333333333333333,
+          "8": 0.02666666666666667
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 2,
+        "win_rate": 0.04,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.1
+        ],
+        "win_rate_wilson_ci95": [
+          0.011038884327619805,
+          0.1346009068750702
+        ],
+        "mean_final_ante": 4.3,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.92,
+          "2": 0.82,
+          "3": 0.58,
+          "4": 0.46,
+          "5": 0.3,
+          "6": 0.1,
+          "7": 0.08,
+          "8": 0.04
+        }
+      }
+    },
+    {
+      "epoch": 4,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 0,
+        "win_rate": 0.0,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.0
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.1933333333333334,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.72,
+          "2": 0.5933333333333334,
+          "3": 0.44,
+          "4": 0.2733333333333333,
+          "5": 0.12,
+          "6": 0.02666666666666667,
+          "7": 0.02,
+          "8": 0.0
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 4,
+        "win_rate": 0.08,
+        "win_rate_cluster_ci95": [
+          0.02,
+          0.16
+        ],
+        "win_rate_wilson_ci95": [
+          0.03154951408859298,
+          0.18838246918342838
+        ],
+        "mean_final_ante": 4.66,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.92,
+          "2": 0.78,
+          "3": 0.7,
+          "4": 0.48,
+          "5": 0.32,
+          "6": 0.22,
+          "7": 0.16,
+          "8": 0.08
+        }
+      }
+    },
+    {
+      "epoch": 5,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 3,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.04666666666666666
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.5866666666666664,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7733333333333333,
+          "2": 0.6933333333333334,
+          "3": 0.5466666666666666,
+          "4": 0.29333333333333333,
+          "5": 0.13333333333333333,
+          "6": 0.07333333333333333,
+          "7": 0.05333333333333334,
+          "8": 0.02
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 7,
+        "win_rate": 0.14,
+        "win_rate_cluster_ci95": [
+          0.06,
+          0.24
+        ],
+        "win_rate_wilson_ci95": [
+          0.06950833427016294,
+          0.2618619371058554
+        ],
+        "mean_final_ante": 5.46,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.94,
+          "2": 0.9,
+          "3": 0.84,
+          "4": 0.64,
+          "5": 0.44,
+          "6": 0.34,
+          "7": 0.22,
+          "8": 0.14
+        }
+      }
+    },
+    {
+      "epoch": 6,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 2,
+        "win_rate": 0.013333333333333332,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.03333333333333333
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.4066666666666667,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7533333333333333,
+          "2": 0.58,
+          "3": 0.48,
+          "4": 0.26666666666666666,
+          "5": 0.16,
+          "6": 0.09333333333333334,
+          "7": 0.06,
+          "8": 0.013333333333333334
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 4,
+        "win_rate": 0.08,
+        "win_rate_cluster_ci95": [
+          0.02,
+          0.16
+        ],
+        "win_rate_wilson_ci95": [
+          0.03154951408859298,
+          0.18838246918342838
+        ],
+        "mean_final_ante": 4.72,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.92,
+          "2": 0.84,
+          "3": 0.7,
+          "4": 0.54,
+          "5": 0.28,
+          "6": 0.22,
+          "7": 0.14,
+          "8": 0.08
+        }
+      }
+    },
+    {
+      "epoch": 7,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 4,
+        "win_rate": 0.026666666666666665,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.06
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.9466666666666668,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.86,
+          "2": 0.6866666666666666,
+          "3": 0.58,
+          "4": 0.38666666666666666,
+          "5": 0.2,
+          "6": 0.11333333333333333,
+          "7": 0.09333333333333334,
+          "8": 0.02666666666666667
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 4,
+        "win_rate": 0.08,
+        "win_rate_cluster_ci95": [
+          0.02,
+          0.16
+        ],
+        "win_rate_wilson_ci95": [
+          0.03154951408859298,
+          0.18838246918342838
+        ],
+        "mean_final_ante": 4.98,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.96,
+          "2": 0.92,
+          "3": 0.8,
+          "4": 0.52,
+          "5": 0.38,
+          "6": 0.2,
+          "7": 0.12,
+          "8": 0.08
+        }
+      }
+    },
+    {
+      "epoch": 8,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 3,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.04666666666666666
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 4.16,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.88,
+          "2": 0.74,
+          "3": 0.64,
+          "4": 0.43333333333333335,
+          "5": 0.22666666666666666,
+          "6": 0.13333333333333333,
+          "7": 0.08666666666666667,
+          "8": 0.02
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 5,
+        "win_rate": 0.1,
+        "win_rate_cluster_ci95": [
+          0.02,
+          0.18
+        ],
+        "win_rate_wilson_ci95": [
+          0.04347576493189041,
+          0.21360231437479654
+        ],
+        "mean_final_ante": 5.26,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.98,
+          "2": 0.88,
+          "3": 0.8,
+          "4": 0.6,
+          "5": 0.4,
+          "6": 0.3,
+          "7": 0.2,
+          "8": 0.1
+        }
+      }
+    },
+    {
+      "epoch": 9,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 2,
+        "win_rate": 0.013333333333333332,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.03333333333333333
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.68,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.78,
+          "2": 0.68,
+          "3": 0.56,
+          "4": 0.38666666666666666,
+          "5": 0.15333333333333332,
+          "6": 0.07333333333333333,
+          "7": 0.03333333333333333,
+          "8": 0.013333333333333334
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 3,
+        "win_rate": 0.06,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.14
+        ],
+        "win_rate_wilson_ci95": [
+          0.02061497034897397,
+          0.16217091688838173
+        ],
+        "mean_final_ante": 4.88,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.98,
+          "2": 0.86,
+          "3": 0.7,
+          "4": 0.56,
+          "5": 0.32,
+          "6": 0.24,
+          "7": 0.16,
+          "8": 0.06
+        }
+      }
+    },
+    {
+      "epoch": 10,
+      "sampled": {
+        "game_seeds": 50,
+        "games": 150,
+        "wins": 3,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.04666666666666666
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.7933333333333334,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.8,
+          "2": 0.6466666666666666,
+          "3": 0.54,
+          "4": 0.35333333333333333,
+          "5": 0.2,
+          "6": 0.14666666666666667,
+          "7": 0.08666666666666667,
+          "8": 0.02
+        }
+      },
+      "greedy": {
+        "game_seeds": 50,
+        "games": 50,
+        "wins": 3,
+        "win_rate": 0.06,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.14
+        ],
+        "win_rate_wilson_ci95": [
+          0.02061497034897397,
+          0.16217091688838173
+        ],
+        "mean_final_ante": 5.2,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.98,
+          "2": 0.9,
+          "3": 0.76,
+          "4": 0.62,
+          "5": 0.42,
+          "6": 0.26,
+          "7": 0.2,
+          "8": 0.06
+        }
+      }
+    }
+  ],
+  "expanded": [
+    {
+      "epoch": 7,
+      "sampled": {
+        "game_seeds": 200,
+        "games": 600,
+        "wins": 16,
+        "win_rate": 0.026666666666666665,
+        "win_rate_cluster_ci95": [
+          0.013333333333333332,
+          0.04166666666666666
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.736666666666667,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.8266666666666667,
+          "2": 0.65,
+          "3": 0.525,
+          "4": 0.36,
+          "5": 0.19666666666666666,
+          "6": 0.095,
+          "7": 0.056666666666666664,
+          "8": 0.02666666666666667
+        }
+      },
+      "greedy": {
+        "game_seeds": 200,
+        "games": 200,
+        "wins": 13,
+        "win_rate": 0.065,
+        "win_rate_cluster_ci95": [
+          0.035,
+          0.1
+        ],
+        "win_rate_wilson_ci95": [
+          0.03837635464915299,
+          0.10801907929906895
+        ],
+        "mean_final_ante": 4.925,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.965,
+          "2": 0.89,
+          "3": 0.765,
+          "4": 0.54,
+          "5": 0.335,
+          "6": 0.225,
+          "7": 0.14,
+          "8": 0.065
+        }
+      }
+    },
+    {
+      "epoch": 3,
+      "sampled": {
+        "game_seeds": 200,
+        "games": 600,
+        "wins": 2,
+        "win_rate": 0.003333333333333333,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.008333333333333333
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.2816666666666667,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7633333333333333,
+          "2": 0.5866666666666667,
+          "3": 0.46,
+          "4": 0.2833333333333333,
+          "5": 0.12,
+          "6": 0.04833333333333333,
+          "7": 0.016666666666666666,
+          "8": 0.0033333333333333335
+        }
+      },
+      "greedy": {
+        "game_seeds": 200,
+        "games": 200,
+        "wins": 5,
+        "win_rate": 0.025,
+        "win_rate_cluster_ci95": [
+          0.005,
+          0.05
+        ],
+        "win_rate_wilson_ci95": [
+          0.010724719651761264,
+          0.05717834040664198
+        ],
+        "mean_final_ante": 4.315,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.935,
+          "2": 0.79,
+          "3": 0.625,
+          "4": 0.455,
+          "5": 0.27,
+          "6": 0.145,
+          "7": 0.07,
+          "8": 0.025
+        }
+      }
+    }
+  ],
+  "factorial": [
+    {
+      "deck": "b_red",
+      "mixture": 0.1,
+      "sampled": {
+        "game_seeds": 100,
+        "games": 300,
+        "wins": 5,
+        "win_rate": 0.016666666666666666,
+        "win_rate_cluster_ci95": [
+          0.003333333333333333,
+          0.03666666666666666
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.0533333333333332,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.72,
+          "2": 0.5566666666666666,
+          "3": 0.39,
+          "4": 0.22,
+          "5": 0.11,
+          "6": 0.023333333333333334,
+          "7": 0.016666666666666666,
+          "8": 0.016666666666666666
+        }
+      },
+      "greedy": {
+        "game_seeds": 100,
+        "games": 100,
+        "wins": 2,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.05
+        ],
+        "win_rate_wilson_ci95": [
+          0.00550196755016235,
+          0.07001179072854388
+        ],
+        "mean_final_ante": 3.09,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.71,
+          "2": 0.53,
+          "3": 0.41,
+          "4": 0.24,
+          "5": 0.11,
+          "6": 0.04,
+          "7": 0.03,
+          "8": 0.02
+        }
+      }
+    },
+    {
+      "deck": "b_red",
+      "mixture": 0.5,
+      "sampled": {
+        "game_seeds": 100,
+        "games": 300,
+        "wins": 4,
+        "win_rate": 0.013333333333333332,
+        "win_rate_cluster_ci95": [
+          0.0,
+          0.03
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 2.6333333333333333,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.6,
+          "2": 0.43333333333333335,
+          "3": 0.2966666666666667,
+          "4": 0.16,
+          "5": 0.07,
+          "6": 0.04,
+          "7": 0.02,
+          "8": 0.013333333333333334
+        }
+      },
+      "greedy": {
+        "game_seeds": 100,
+        "games": 100,
+        "wins": 4,
+        "win_rate": 0.04,
+        "win_rate_cluster_ci95": [
+          0.01,
+          0.08
+        ],
+        "win_rate_wilson_ci95": [
+          0.01566330399154762,
+          0.0983707143588792
+        ],
+        "mean_final_ante": 3.88,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.88,
+          "2": 0.71,
+          "3": 0.5,
+          "4": 0.4,
+          "5": 0.2,
+          "6": 0.09,
+          "7": 0.06,
+          "8": 0.04
+        }
+      }
+    },
+    {
+      "deck": "b_blue",
+      "mixture": 0.1,
+      "sampled": {
+        "game_seeds": 100,
+        "games": 300,
+        "wins": 8,
+        "win_rate": 0.02666666666666667,
+        "win_rate_cluster_ci95": [
+          0.01,
+          0.04666666666666667
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 4.123333333333333,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.8766666666666667,
+          "2": 0.79,
+          "3": 0.6133333333333333,
+          "4": 0.4166666666666667,
+          "5": 0.22,
+          "6": 0.12333333333333334,
+          "7": 0.056666666666666664,
+          "8": 0.02666666666666667
+        }
+      },
+      "greedy": {
+        "game_seeds": 100,
+        "games": 100,
+        "wins": 5,
+        "win_rate": 0.05,
+        "win_rate_cluster_ci95": [
+          0.01,
+          0.1
+        ],
+        "win_rate_wilson_ci95": [
+          0.02154367915436796,
+          0.11175046923191913
+        ],
+        "mean_final_ante": 4.36,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.87,
+          "2": 0.73,
+          "3": 0.63,
+          "4": 0.51,
+          "5": 0.29,
+          "6": 0.17,
+          "7": 0.11,
+          "8": 0.05
+        }
+      }
+    },
+    {
+      "deck": "b_blue",
+      "mixture": 0.5,
+      "sampled": {
+        "game_seeds": 100,
+        "games": 300,
+        "wins": 6,
+        "win_rate": 0.02,
+        "win_rate_cluster_ci95": [
+          0.006666666666666666,
+          0.03666666666666667
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.78,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.8033333333333333,
+          "2": 0.64,
+          "3": 0.5333333333333333,
+          "4": 0.37,
+          "5": 0.19666666666666666,
+          "6": 0.14,
+          "7": 0.07666666666666666,
+          "8": 0.02
+        }
+      },
+      "greedy": {
+        "game_seeds": 100,
+        "games": 100,
+        "wins": 8,
+        "win_rate": 0.08,
+        "win_rate_cluster_ci95": [
+          0.03,
+          0.14
+        ],
+        "win_rate_wilson_ci95": [
+          0.041093461484380624,
+          0.14998107700948735
+        ],
+        "mean_final_ante": 4.95,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.96,
+          "2": 0.87,
+          "3": 0.72,
+          "4": 0.55,
+          "5": 0.36,
+          "6": 0.22,
+          "7": 0.19,
+          "8": 0.08
+        }
+      }
+    }
+  ],
+  "paired_diagnostics": {
+    "selected_student_minus_teacher": {
+      "game_seeds": 200,
+      "games_per_arm": 600,
+      "sampled_or_greedy_delta": -0.6883333333333334,
+      "paired_ci95": [
+        -0.750041666666667,
+        -0.625
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "current_minus_historical_rules": {
+      "game_seeds": 100,
+      "games_per_arm": 300,
+      "sampled_or_greedy_delta": -0.006666666666666667,
+      "paired_ci95": [
+        -0.023333333333333,
+        0.01
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "current_minus_historical_rules_greedy": {
+      "game_seeds": 100,
+      "games_per_arm": 100,
+      "sampled_or_greedy_delta": -0.04,
+      "paired_ci95": [
+        -0.09,
+        0.0
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "b_blue_mixture_05_minus_01": {
+      "game_seeds": 100,
+      "games_per_arm": 300,
+      "sampled_or_greedy_delta": -0.006666666666666667,
+      "paired_ci95": [
+        -0.03,
+        0.016666666666667
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "b_red_mixture_05_minus_01": {
+      "game_seeds": 100,
+      "games_per_arm": 300,
+      "sampled_or_greedy_delta": -0.0033333333333333335,
+      "paired_ci95": [
+        -0.026666666666667,
+        0.02
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "mixture_0.1_blue_minus_red": {
+      "game_seeds": 100,
+      "games_per_arm": 300,
+      "sampled_or_greedy_delta": 0.01,
+      "paired_ci95": [
+        -0.01,
+        0.033333333333333
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "mixture_0.5_blue_minus_red": {
+      "game_seeds": 100,
+      "games_per_arm": 300,
+      "sampled_or_greedy_delta": 0.006666666666666667,
+      "paired_ci95": [
+        -0.016666666666667,
+        0.03
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    }
+  },
+  "previous_panel_regression": {
+    "greedy": {
+      "game_seeds": 50,
+      "games": 50,
+      "wins": 8,
+      "win_rate": 0.16,
+      "win_rate_cluster_ci95": [
+        0.06,
+        0.26
+      ],
+      "win_rate_wilson_ci95": [
+        0.08337420678033404,
+        0.2851421606303499
+      ],
+      "mean_final_ante": 5.22,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.96,
+        "2": 0.88,
+        "3": 0.8,
+        "4": 0.62,
+        "5": 0.32,
+        "6": 0.26,
+        "7": 0.22,
+        "8": 0.16
+      }
+    },
+    "sampled": {
+      "game_seeds": 25,
+      "games": 25,
+      "wins": 0,
+      "win_rate": 0.0,
+      "win_rate_cluster_ci95": [
+        0.0,
+        0.0
+      ],
+      "win_rate_wilson_ci95": [
+        1.3877787807814457e-17,
+        0.13319225093904846
+      ],
+      "mean_final_ante": 4.24,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.8,
+        "2": 0.72,
+        "3": 0.64,
+        "4": 0.56,
+        "5": 0.32,
+        "6": 0.12,
+        "7": 0.08,
+        "8": 0.0
+      }
+    }
+  },
+  "continuation_development": [
+    {
+      "arm": "actor_only",
+      "status": "development_only",
+      "criteria_met": false,
+      "paired": {
+        "sampled": {
+          "game_seeds": 200,
+          "games_per_arm": 1200,
+          "sampled_or_greedy_delta": -0.0008333333333333334,
+          "paired_ci95": [
+            -0.013333333333333,
+            0.011666666666667
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 200,
+          "games_per_arm": 400,
+          "sampled_or_greedy_delta": -0.01,
+          "paired_ci95": [
+            -0.03,
+            0.01
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "sampled_training_replicate_deltas": [
+        0.006666666666666667,
+        -0.008333333333333333
+      ],
+      "criteria": {
+        "sampled_minimum_gain": 0.05,
+        "sampled_ci_lower_positive": true,
+        "both_training_replicates_positive": true,
+        "greedy_ci_lower_minimum": -0.05
+      }
+    },
+    {
+      "arm": "correction",
+      "status": "development_only",
+      "criteria_met": false,
+      "paired": {
+        "sampled": {
+          "game_seeds": 200,
+          "games_per_arm": 1200,
+          "sampled_or_greedy_delta": -0.015833333333333335,
+          "paired_ci95": [
+            -0.026666666666667,
+            -0.005833333333333
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 200,
+          "games_per_arm": 400,
+          "sampled_or_greedy_delta": 0.0175,
+          "paired_ci95": [
+            -0.015,
+            0.05
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "sampled_training_replicate_deltas": [
+        -0.016666666666666666,
+        -0.015
+      ],
+      "criteria": {
+        "sampled_minimum_gain": 0.05,
+        "sampled_ci_lower_positive": true,
+        "both_training_replicates_positive": true,
+        "greedy_ci_lower_minimum": -0.05
+      }
+    }
+  ],
+  "correction_ablation_development": {
+    "candidate_arm": "correction",
+    "reference_arm": "actor_only",
+    "status": "development_only",
+    "criteria_met": false,
+    "paired": {
+      "sampled": {
+        "game_seeds": 200,
+        "games_per_arm": 1200,
+        "sampled_or_greedy_delta": -0.015,
+        "paired_ci95": [
+          -0.026666666666667,
+          -0.004166666666667
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling"
+      },
+      "greedy": {
+        "game_seeds": 200,
+        "games_per_arm": 400,
+        "sampled_or_greedy_delta": 0.0275,
+        "paired_ci95": [
+          -0.0025,
+          0.0575
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling"
+      }
+    },
+    "sampled_training_replicate_deltas": [
+      -0.023333333333333334,
+      -0.006666666666666667
+    ],
+    "criteria": {
+      "sampled_minimum_gain": 0.05,
+      "sampled_ci_lower_positive": true,
+      "both_training_replicates_positive": true,
+      "greedy_ci_lower_minimum": -0.05
+    }
+  },
+  "confirmation": {
+    "status": "inconclusive",
+    "criteria_met": false,
+    "paired": {
+      "sampled": {
+        "game_seeds": 400,
+        "games_per_arm": 2400,
+        "sampled_or_greedy_delta": -0.004583333333333333,
+        "paired_ci95": [
+          -0.01375,
+          0.004583333333333
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling"
+      },
+      "greedy": {
+        "game_seeds": 400,
+        "games_per_arm": 800,
+        "sampled_or_greedy_delta": 0.0175,
+        "paired_ci95": [
+          -0.0025,
+          0.0375
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling"
+      }
+    },
+    "sampled_training_replicate_deltas": [
+      -0.0075,
+      -0.0016666666666666668
+    ],
+    "criteria": {
+      "sampled_minimum_gain": 0.05,
+      "sampled_ci_lower_positive": true,
+      "both_training_replicates_positive": true,
+      "greedy_ci_lower_minimum": -0.05
+    },
+    "candidate_arm": "actor_only",
+    "per_arm": {
+      "actor_only/seed0/sampled": {
+        "game_seeds": 400,
+        "games": 1200,
+        "wins": 32,
+        "win_rate": 0.026666666666666665,
+        "win_rate_cluster_ci95": [
+          0.0175,
+          0.0375
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.6375,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7866666666666666,
+          "2": 0.63,
+          "3": 0.5166666666666667,
+          "4": 0.35,
+          "5": 0.18416666666666667,
+          "6": 0.09,
+          "7": 0.05333333333333334,
+          "8": 0.02666666666666667
+        }
+      },
+      "actor_only/seed0/greedy": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 53,
+        "win_rate": 0.1325,
+        "win_rate_cluster_ci95": [
+          0.1,
+          0.165
+        ],
+        "win_rate_wilson_ci95": [
+          0.10274521663902703,
+          0.1692463196966809
+        ],
+        "mean_final_ante": 5.115,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.9425,
+          "2": 0.8575,
+          "3": 0.7425,
+          "4": 0.5575,
+          "5": 0.4025,
+          "6": 0.2825,
+          "7": 0.1975,
+          "8": 0.1325
+        }
+      },
+      "actor_only/seed1/sampled": {
+        "game_seeds": 400,
+        "games": 1200,
+        "wins": 30,
+        "win_rate": 0.024999999999999994,
+        "win_rate_cluster_ci95": [
+          0.015833333333333,
+          0.035833333333333
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.6066666666666665,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7758333333333334,
+          "2": 0.6441666666666667,
+          "3": 0.5083333333333333,
+          "4": 0.33,
+          "5": 0.17916666666666667,
+          "6": 0.09666666666666666,
+          "7": 0.0475,
+          "8": 0.025
+        }
+      },
+      "actor_only/seed1/greedy": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 48,
+        "win_rate": 0.12,
+        "win_rate_cluster_ci95": [
+          0.09,
+          0.1525
+        ],
+        "win_rate_wilson_ci95": [
+          0.09171539075382554,
+          0.15551395294023979
+        ],
+        "mean_final_ante": 5.1275,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.9575,
+          "2": 0.8725,
+          "3": 0.77,
+          "4": 0.5825,
+          "5": 0.3875,
+          "6": 0.265,
+          "7": 0.1725,
+          "8": 0.12
+        }
+      },
+      "control/seed0/sampled": {
+        "game_seeds": 400,
+        "games": 1200,
+        "wins": 41,
+        "win_rate": 0.034166666666666665,
+        "win_rate_cluster_ci95": [
+          0.023333333333333,
+          0.046666666666667
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.6441666666666666,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7758333333333334,
+          "2": 0.625,
+          "3": 0.5183333333333333,
+          "4": 0.3491666666666667,
+          "5": 0.18416666666666667,
+          "6": 0.1025,
+          "7": 0.055,
+          "8": 0.034166666666666665
+        }
+      },
+      "control/seed0/greedy": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 46,
+        "win_rate": 0.115,
+        "win_rate_cluster_ci95": [
+          0.085,
+          0.1475
+        ],
+        "win_rate_wilson_ci95": [
+          0.0873329226216324,
+          0.1499915440157759
+        ],
+        "mean_final_ante": 5.0975,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.9475,
+          "2": 0.8725,
+          "3": 0.76,
+          "4": 0.5725,
+          "5": 0.4025,
+          "6": 0.25,
+          "7": 0.1775,
+          "8": 0.115
+        }
+      },
+      "control/seed1/sampled": {
+        "game_seeds": 400,
+        "games": 1200,
+        "wins": 32,
+        "win_rate": 0.026666666666666665,
+        "win_rate_cluster_ci95": [
+          0.016666666666667,
+          0.0375
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 3.5975,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.7616666666666667,
+          "2": 0.6241666666666666,
+          "3": 0.5075,
+          "4": 0.3416666666666667,
+          "5": 0.195,
+          "6": 0.09166666666666666,
+          "7": 0.049166666666666664,
+          "8": 0.02666666666666667
+        }
+      },
+      "control/seed1/greedy": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 41,
+        "win_rate": 0.1025,
+        "win_rate_cluster_ci95": [
+          0.0725,
+          0.1325
+        ],
+        "win_rate_wilson_ci95": [
+          0.07645885298219338,
+          0.1361034210135723
+        ],
+        "mean_final_ante": 5.0025,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.95,
+          "2": 0.8575,
+          "3": 0.7625,
+          "4": 0.5725,
+          "5": 0.3625,
+          "6": 0.24,
+          "7": 0.155,
+          "8": 0.1025
+        }
+      }
+    }
+  },
+  "interventions": {
+    "teacher": {
+      "games": 100,
+      "won": {
+        "mean_difference": 0.03,
+        "paired_ci95": [
+          -0.02,
+          0.08
+        ]
+      },
+      "max_ante": {
+        "mean_difference": 0.34,
+        "paired_ci95": [
+          -0.05,
+          0.75
+        ]
+      },
+      "blind_survived": {
+        "mean_difference": 0.09,
+        "paired_ci95": [
+          0.02,
+          0.17
+        ]
+      }
+    },
+    "exact_candidate_oracle": {
+      "games": 49,
+      "won": {
+        "mean_difference": -0.02040816326530612,
+        "paired_ci95": [
+          -0.061224489795918,
+          0.0
+        ]
+      },
+      "max_ante": {
+        "mean_difference": 0.3877551020408163,
+        "paired_ci95": [
+          -0.061224489795918,
+          0.857142857142857
+        ]
+      },
+      "blind_survived": {
+        "mean_difference": 0.10204081632653061,
+        "paired_ci95": [
+          0.0,
+          0.224489795918367
+        ]
+      }
+    }
+  },
+  "input_audit": {
+    "states": 100,
+    "exact_score_states": 49,
+    "states_with_structural_exact_argmax_disagreement": 12,
+    "states_with_candidate_score_token_collision": 41,
+    "states_with_lossy_permanent_bonus_token": 0,
+    "unencoded_extra_keys": [
+      "d_remaining",
+      "faces",
+      "max",
+      "min",
+      "poker_hand",
+      "s_mult",
+      "size",
+      "suit"
+    ]
+  },
+  "demonstration_sampled": {
+    "game_seeds": 200,
+    "games": 600,
+    "wins": 16,
+    "win_rate": 0.026666666666666665,
+    "win_rate_cluster_ci95": [
+      0.011666666666667,
+      0.045
+    ],
+    "win_rate_wilson_ci95": null,
+    "mean_final_ante": 3.7333333333333334,
+    "stalls": 0,
+    "censored": 0,
+    "ante_clear_rates": {
+      "1": 0.77,
+      "2": 0.645,
+      "3": 0.5466666666666666,
+      "4": 0.37666666666666665,
+      "5": 0.19333333333333333,
+      "6": 0.11,
+      "7": 0.065,
+      "8": 0.02666666666666667
+    }
+  },
+  "demonstration_greedy": {
+    "game_seeds": 200,
+    "games": 200,
+    "wins": 26,
+    "win_rate": 0.13,
+    "win_rate_cluster_ci95": [
+      0.085,
+      0.175
+    ],
+    "win_rate_wilson_ci95": [
+      0.0902820227966932,
+      0.18366351872248407
+    ],
+    "mean_final_ante": 5.235,
+    "stalls": 0,
+    "censored": 0,
+    "ante_clear_rates": {
+      "1": 0.935,
+      "2": 0.85,
+      "3": 0.74,
+      "4": 0.615,
+      "5": 0.445,
+      "6": 0.32,
+      "7": 0.2,
+      "8": 0.13
+    }
+  },
+  "selected_checkpoint_agreement": {
+    "teacher_states": {
+      "strata": {
+        "overall": {
+          "decisions": 44348,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.7864841706503112,
+            "nll": 0.7266727647282311,
+            "teacher_probability": 0.713708742738299,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40455174800969196
+          },
+          "game_weighted": {
+            "accuracy": 0.7791207501172476,
+            "nll": 0.7662460456236083,
+            "teacher_probability": 0.7046641574896213,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40689300559105235
+          }
+        },
+        "phase/0": {
+          "decisions": 4511,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.9982265573043672,
+            "nll": 0.00411879073767317,
+            "teacher_probability": 0.9971767014957431,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.998138752913753,
+            "nll": 0.0041931461905379205,
+            "teacher_probability": 0.9971817090081401,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/1": {
+          "decisions": 3306,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.7934059286146401,
+            "nll": 0.9226399380416985,
+            "teacher_probability": 0.6439839080153158,
+            "unreachable": 0.0,
+            "candidate_covered": 0.576875
+          },
+          "game_weighted": {
+            "accuracy": 0.7997282135932896,
+            "nll": 0.8857108761041897,
+            "teacher_probability": 0.6519259484456106,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5811353438228438
+          }
+        },
+        "family/blind_play": {
+          "decisions": 4484,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.9995539696699376,
+            "nll": 0.0012767013933599534,
+            "teacher_probability": 0.9989848732549521,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9995833333333334,
+            "nll": 0.0012283708106392553,
+            "teacher_probability": 0.9990207233259887,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "outcome/False": {
+          "decisions": 9394,
+          "games": 53,
+          "decision_weighted": {
+            "accuracy": 0.7349371939535874,
+            "nll": 0.9513539501149431,
+            "teacher_probability": 0.6499780412877318,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4211387434554974
+          },
+          "game_weighted": {
+            "accuracy": 0.7199099785841863,
+            "nll": 1.0498469447969216,
+            "teacher_probability": 0.6315369059611515,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4378329467129148
+          }
+        },
+        "phase/1": {
+          "decisions": 12639,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.4745628609858375,
+            "nll": 1.9011147476740746,
+            "teacher_probability": 0.31183054959171586,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40455174800969196
+          },
+          "game_weighted": {
+            "accuracy": 0.4793313479438808,
+            "nll": 1.890208940597364,
+            "teacher_probability": 0.3149267601443927,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40689300559105235
+          }
+        },
+        "family/discard_subset": {
+          "decisions": 2220,
+          "games": 187,
+          "decision_weighted": {
+            "accuracy": 0.3891891891891892,
+            "nll": 2.8459030357726456,
+            "teacher_probability": 0.22021592349207575,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40855855855855855
+          },
+          "game_weighted": {
+            "accuracy": 0.39496637354857406,
+            "nll": 3.112583727249556,
+            "teacher_probability": 0.22392530318185588,
+            "unreachable": 0.0,
+            "candidate_covered": 0.43213158970388776
+          }
+        },
+        "family/play_subset": {
+          "decisions": 9336,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.4773993144815767,
+            "nll": 1.7414760140270136,
+            "teacher_probability": 0.3126082528075648,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40359897172236503
+          },
+          "game_weighted": {
+            "accuracy": 0.48168939785832715,
+            "nll": 1.731870794146483,
+            "teacher_probability": 0.31478450994935714,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4088880093780546
+          }
+        },
+        "phase/2": {
+          "decisions": 17635,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.8911823079104054,
+            "nll": 0.331913808308059,
+            "teacher_probability": 0.8450683931144889,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.8824067740783771,
+            "nll": 0.3501526604945447,
+            "teacher_probability": 0.8348465833754516,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/shop_buy": {
+          "decisions": 8192,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.938720703125,
+            "nll": 0.19123140311508124,
+            "teacher_probability": 0.8851986725695369,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9319970442100101,
+            "nll": 0.2065724438838262,
+            "teacher_probability": 0.8758884707699246,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "phase/3": {
+          "decisions": 9563,
+          "games": 199,
+          "decision_weighted": {
+            "accuracy": 0.9057827041723309,
+            "nll": 0.2432724667766072,
+            "teacher_probability": 0.8688992778047763,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.8985605150401615,
+            "nll": 0.25752169407670183,
+            "teacher_probability": 0.8618953901874277,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/pack_claim": {
+          "decisions": 4117,
+          "games": 197,
+          "decision_weighted": {
+            "accuracy": 0.8394461986883653,
+            "nll": 0.3896943334448067,
+            "teacher_probability": 0.7916078178992145,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.8312950769688298,
+            "nll": 0.411195166854556,
+            "teacher_probability": 0.7809216430402517,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/pack_skip": {
+          "decisions": 5298,
+          "games": 199,
+          "decision_weighted": {
+            "accuracy": 0.979992449981125,
+            "nll": 0.07617644721740074,
+            "teacher_probability": 0.9494852186236903,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9732640726201375,
+            "nll": 0.08683903778308273,
+            "teacher_probability": 0.9448836695804232,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/shop_leave": {
+          "decisions": 4284,
+          "games": 200,
+          "decision_weighted": {
+            "accuracy": 0.9439775910364145,
+            "nll": 0.19201768295409347,
+            "teacher_probability": 0.8839035087431545,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9369328259908083,
+            "nll": 0.2030344008000483,
+            "teacher_probability": 0.877784528156298,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/use_consumable_no_target": {
+          "decisions": 1020,
+          "games": 189,
+          "decision_weighted": {
+            "accuracy": 0.9970588235294118,
+            "nll": 0.02233423867110074,
+            "teacher_probability": 0.9833260447006015,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9983193277310924,
+            "nll": 0.01709663292069213,
+            "teacher_probability": 0.9865269905000724,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/2": {
+          "decisions": 3797,
+          "games": 199,
+          "decision_weighted": {
+            "accuracy": 0.7687648143271003,
+            "nll": 0.8567865026904218,
+            "teacher_probability": 0.6709171489695792,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5375399361022364
+          },
+          "game_weighted": {
+            "accuracy": 0.7778023521703333,
+            "nll": 0.8117826839939917,
+            "teacher_probability": 0.6787283852259794,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5339799901874983
+          }
+        },
+        "ante/3": {
+          "decisions": 5345,
+          "games": 195,
+          "decision_weighted": {
+            "accuracy": 0.7854069223573433,
+            "nll": 0.7081765942588854,
+            "teacher_probability": 0.7222412429461755,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4680664916885389
+          },
+          "game_weighted": {
+            "accuracy": 0.7828702000134218,
+            "nll": 0.7079537879182424,
+            "teacher_probability": 0.7199223695285897,
+            "unreachable": 0.0,
+            "candidate_covered": 0.44532434801665566
+          }
+        },
+        "ante/4": {
+          "decisions": 6512,
+          "games": 193,
+          "decision_weighted": {
+            "accuracy": 0.7897727272727273,
+            "nll": 0.6663467716705997,
+            "teacher_probability": 0.7291818172527981,
+            "unreachable": 0.0,
+            "candidate_covered": 0.394356005788712
+          },
+          "game_weighted": {
+            "accuracy": 0.7909346118149989,
+            "nll": 0.6573324128536804,
+            "teacher_probability": 0.7299213829571146,
+            "unreachable": 0.0,
+            "candidate_covered": 0.35852428105060447
+          }
+        },
+        "family/shop_reroll": {
+          "decisions": 3212,
+          "games": 195,
+          "decision_weighted": {
+            "accuracy": 0.9439601494396015,
+            "nll": 0.1900123171555973,
+            "teacher_probability": 0.8944500197067418,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9003966454111612,
+            "nll": 0.3091201549824635,
+            "teacher_probability": 0.8484504712813098,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/shop_sell_joker": {
+          "decisions": 1237,
+          "games": 192,
+          "decision_weighted": {
+            "accuracy": 0.06224737267582862,
+            "nll": 2.660887126009023,
+            "teacher_probability": 0.10407573053116494,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.060364924427424436,
+            "nll": 2.667260059706097,
+            "teacher_probability": 0.10246100810630117,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/use_consumable_hand_subset": {
+          "decisions": 900,
+          "games": 183,
+          "decision_weighted": {
+            "accuracy": 0.5844444444444444,
+            "nll": 1.4544194399205865,
+            "teacher_probability": 0.4370891501527229,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.5848977221928042,
+            "nll": 1.4670508533368902,
+            "teacher_probability": 0.44116344631440146,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/5": {
+          "decisions": 6890,
+          "games": 188,
+          "decision_weighted": {
+            "accuracy": 0.7878084179970972,
+            "nll": 0.6914048746619912,
+            "teacher_probability": 0.7203320232178807,
+            "unreachable": 0.0,
+            "candidate_covered": 0.3607164916615195
+          },
+          "game_weighted": {
+            "accuracy": 0.7861889970092779,
+            "nll": 0.6959789373598936,
+            "teacher_probability": 0.719636198842148,
+            "unreachable": 0.0,
+            "candidate_covered": 0.3411308111128199
+          }
+        },
+        "ante/6": {
+          "decisions": 6642,
+          "games": 181,
+          "decision_weighted": {
+            "accuracy": 0.7905751279735019,
+            "nll": 0.6921923839529164,
+            "teacher_probability": 0.7245494275941301,
+            "unreachable": 0.0,
+            "candidate_covered": 0.3133375877472878
+          },
+          "game_weighted": {
+            "accuracy": 0.7891152585527982,
+            "nll": 0.696628432044602,
+            "teacher_probability": 0.7225022003897762,
+            "unreachable": 0.0,
+            "candidate_covered": 0.3009411759655503
+          }
+        },
+        "ante/7": {
+          "decisions": 6440,
+          "games": 178,
+          "decision_weighted": {
+            "accuracy": 0.7937888198757764,
+            "nll": 0.6978344557570547,
+            "teacher_probability": 0.733031454720889,
+            "unreachable": 0.0,
+            "candidate_covered": 0.3052030456852792
+          },
+          "game_weighted": {
+            "accuracy": 0.7915727848185107,
+            "nll": 0.700359527310276,
+            "teacher_probability": 0.7311944828165137,
+            "unreachable": 0.0,
+            "candidate_covered": 0.291154935612966
+          }
+        },
+        "ante/8": {
+          "decisions": 5416,
+          "games": 164,
+          "decision_weighted": {
+            "accuracy": 0.7764032496307238,
+            "nll": 0.7280628536081414,
+            "teacher_probability": 0.714548220914049,
+            "unreachable": 0.0,
+            "candidate_covered": 0.31263232180663375
+          },
+          "game_weighted": {
+            "accuracy": 0.7795900648532115,
+            "nll": 0.7144030356824176,
+            "teacher_probability": 0.7179443441264797,
+            "unreachable": 0.0,
+            "candidate_covered": 0.2998744243734419
+          }
+        },
+        "outcome/True": {
+          "decisions": 34954,
+          "games": 147,
+          "decision_weighted": {
+            "accuracy": 0.8003375865423128,
+            "nll": 0.6662889730156152,
+            "teacher_probability": 0.7308365738714061,
+            "unreachable": 0.0,
+            "candidate_covered": 0.39858823529411763
+          },
+          "game_weighted": {
+            "accuracy": 0.8004688514182833,
+            "nll": 0.663995381295815,
+            "teacher_probability": 0.7310297651835593,
+            "unreachable": 0.0,
+            "candidate_covered": 0.39573778872398613
+          }
+        },
+        "family/blind_reroll": {
+          "decisions": 27,
+          "games": 21,
+          "decision_weighted": {
+            "accuracy": 0.7777777777777778,
+            "nll": 0.4761161470302829,
+            "teacher_probability": 0.6968862508182172,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.7698412698412698,
+            "nll": 0.4882874646859746,
+            "teacher_probability": 0.6909016940801863,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/use_consumable_joker": {
+          "decisions": 21,
+          "games": 18,
+          "decision_weighted": {
+            "accuracy": 1.0,
+            "nll": 0.04085455163537214,
+            "teacher_probability": 0.9619547497658503,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 1.0,
+            "nll": 0.03498918496512084,
+            "teacher_probability": 0.9672107464737363,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        }
+      },
+      "family_confusion_counts": {
+        "blind_play -> blind_play": 4482,
+        "discard_subset -> discard_subset": 1870,
+        "play_subset -> play_subset": 9092,
+        "shop_buy -> shop_buy": 7996,
+        "pack_claim -> pack_claim": 4025,
+        "pack_skip -> pack_skip": 5192,
+        "shop_leave -> shop_leave": 4044,
+        "use_consumable_no_target -> use_consumable_no_target": 1017,
+        "shop_leave -> shop_buy": 117,
+        "shop_reroll -> shop_reroll": 3032,
+        "shop_sell_joker -> shop_sell_joker": 315,
+        "use_consumable_hand_subset -> use_consumable_hand_subset": 827,
+        "shop_sell_joker -> pack_skip": 91,
+        "shop_sell_joker -> shop_buy": 430,
+        "play_subset -> discard_subset": 232,
+        "shop_sell_joker -> shop_leave": 225,
+        "use_consumable_hand_subset -> play_subset": 45,
+        "discard_subset -> play_subset": 337,
+        "shop_sell_joker -> shop_reroll": 152,
+        "shop_buy -> shop_leave": 136,
+        "shop_leave -> shop_reroll": 112,
+        "shop_reroll -> shop_buy": 43,
+        "pack_skip -> pack_claim": 102,
+        "pack_claim -> pack_skip": 92,
+        "blind_reroll -> blind_reroll": 21,
+        "shop_sell_joker -> play_subset": 17,
+        "shop_reroll -> shop_leave": 135,
+        "shop_buy -> shop_reroll": 46,
+        "shop_buy -> use_consumable_no_target": 2,
+        "shop_leave -> use_consumable_no_target": 4,
+        "blind_reroll -> blind_play": 6,
+        "pack_skip -> shop_sell_joker": 4,
+        "use_consumable_hand_subset -> use_consumable_no_target": 11,
+        "shop_leave -> shop_sell_joker": 7,
+        "shop_buy -> shop_sell_joker": 12,
+        "discard_subset -> shop_sell_joker": 4,
+        "discard_subset -> use_consumable_hand_subset": 3,
+        "shop_sell_joker -> discard_subset": 6,
+        "use_consumable_joker -> use_consumable_joker": 21,
+        "use_consumable_hand_subset -> discard_subset": 16,
+        "play_subset -> use_consumable_no_target": 8,
+        "discard_subset -> use_consumable_joker": 1,
+        "blind_play -> blind_reroll": 2,
+        "play_subset -> use_consumable_hand_subset": 1,
+        "use_consumable_hand_subset -> shop_sell_joker": 1,
+        "play_subset -> shop_sell_joker": 3,
+        "discard_subset -> use_consumable_no_target": 5,
+        "use_consumable_no_target -> play_subset": 3,
+        "shop_reroll -> shop_sell_joker": 2,
+        "shop_sell_joker -> use_consumable_hand_subset": 1
+      },
+      "interpretation": "Training-data diagnostics, not held-out accuracy; candidate coverage only for play/discard"
+    },
+    "student_states": {
+      "strata": {
+        "overall": {
+          "decisions": 9284,
+          "games": 100,
+          "decision_weighted": {
+            "accuracy": 0.6654459284791039,
+            "nll": 1.2756633286394086,
+            "teacher_probability": 0.5717075367103716,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4863883847549909
+          },
+          "game_weighted": {
+            "accuracy": 0.6759451895533699,
+            "nll": 1.3314107424278643,
+            "teacher_probability": 0.5545056906224534,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5113555011984654
+          }
+        },
+        "phase/0": {
+          "decisions": 1052,
+          "games": 100,
+          "decision_weighted": {
+            "accuracy": 0.9980988593155894,
+            "nll": 0.0033539853758092213,
+            "teacher_probability": 0.9980613574294056,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9988857142857143,
+            "nll": 0.002105458348758289,
+            "teacher_probability": 0.9987948469689907,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/1": {
+          "decisions": 1851,
+          "games": 100,
+          "decision_weighted": {
+            "accuracy": 0.7644516477579687,
+            "nll": 1.0814428233536033,
+            "teacher_probability": 0.5959312971574399,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5893854748603352
+          },
+          "game_weighted": {
+            "accuracy": 0.7726951323874548,
+            "nll": 1.0524087922881413,
+            "teacher_probability": 0.6028817187053283,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5971270456839342
+          }
+        },
+        "family/blind_play": {
+          "decisions": 1052,
+          "games": 100,
+          "decision_weighted": {
+            "accuracy": 0.9980988593155894,
+            "nll": 0.0033539853758092213,
+            "teacher_probability": 0.9980613574294056,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9988857142857143,
+            "nll": 0.002105458348758289,
+            "teacher_probability": 0.9987948469689907,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "outcome/False": {
+          "decisions": 9059,
+          "games": 99,
+          "decision_weighted": {
+            "accuracy": 0.6650844464068881,
+            "nll": 1.2796239621384229,
+            "teacher_probability": 0.5702480186250817,
+            "unreachable": 0.0,
+            "candidate_covered": 0.49074074074074076
+          },
+          "game_weighted": {
+            "accuracy": 0.6759042318720908,
+            "nll": 1.3335845941436877,
+            "teacher_probability": 0.55373836448533,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5137658873446391
+          }
+        },
+        "phase/1": {
+          "decisions": 3918,
+          "games": 100,
+          "decision_weighted": {
+            "accuracy": 0.4711587544665646,
+            "nll": 2.117096724342537,
+            "teacher_probability": 0.29365284165634803,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4863883847549909
+          },
+          "game_weighted": {
+            "accuracy": 0.5051667811520902,
+            "nll": 2.1075418710359712,
+            "teacher_probability": 0.3059949683484214,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5113555011984654
+          }
+        },
+        "family/play_subset": {
+          "decisions": 2961,
+          "games": 100,
+          "decision_weighted": {
+            "accuracy": 0.5302262749071259,
+            "nll": 1.6029637239270533,
+            "teacher_probability": 0.33727733420613143,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5089496791624452
+          },
+          "game_weighted": {
+            "accuracy": 0.6001133378676421,
+            "nll": 1.4330467854327784,
+            "teacher_probability": 0.3661982848803327,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5621447777633446
+          }
+        },
+        "family/discard_subset": {
+          "decisions": 896,
+          "games": 99,
+          "decision_weighted": {
+            "accuracy": 0.2734375,
+            "nll": 3.791757465814174,
+            "teacher_probability": 0.14218909589701753,
+            "unreachable": 0.0,
+            "candidate_covered": 0.41183035714285715
+          },
+          "game_weighted": {
+            "accuracy": 0.22148906969088744,
+            "nll": 4.220611986290993,
+            "teacher_probability": 0.1174978908257789,
+            "unreachable": 0.0,
+            "candidate_covered": 0.38537930361460193
+          }
+        },
+        "phase/2": {
+          "decisions": 3376,
+          "games": 96,
+          "decision_weighted": {
+            "accuracy": 0.7494075829383886,
+            "nll": 0.9140248540550324,
+            "teacher_probability": 0.7122790127548391,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.7874273097039355,
+            "nll": 0.693610460961306,
+            "teacher_probability": 0.746719332506968,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/shop_buy": {
+          "decisions": 1541,
+          "games": 96,
+          "decision_weighted": {
+            "accuracy": 0.8831927319922128,
+            "nll": 0.3613330195762303,
+            "teacher_probability": 0.825314474787905,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.8740563910939002,
+            "nll": 0.3558332338994723,
+            "teacher_probability": 0.8168634322575556,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/shop_leave": {
+          "decisions": 796,
+          "games": 95,
+          "decision_weighted": {
+            "accuracy": 0.9384422110552764,
+            "nll": 0.19433535080726536,
+            "teacher_probability": 0.8874815277625516,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9507021854903557,
+            "nll": 0.16711721325615705,
+            "teacher_probability": 0.8967793138313493,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "phase/3": {
+          "decisions": 938,
+          "games": 83,
+          "decision_weighted": {
+            "accuracy": 0.8017057569296375,
+            "nll": 0.4895491228241664,
+            "teacher_probability": 0.749026057711563,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.807385269605071,
+            "nll": 0.4380707405374439,
+            "teacher_probability": 0.7603565451330978,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/pack_claim": {
+          "decisions": 688,
+          "games": 81,
+          "decision_weighted": {
+            "accuracy": 0.8125,
+            "nll": 0.4384508869122677,
+            "teacher_probability": 0.7711055216018824,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.8030451773973157,
+            "nll": 0.42673038004149755,
+            "teacher_probability": 0.7684183557651149,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/use_consumable_no_target": {
+          "decisions": 145,
+          "games": 57,
+          "decision_weighted": {
+            "accuracy": 1.0,
+            "nll": 0.014735679750564768,
+            "teacher_probability": 0.989599832334183,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 1.0,
+            "nll": 0.006760015355318197,
+            "teacher_probability": 0.9947160768740657,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/2": {
+          "decisions": 1576,
+          "games": 81,
+          "decision_weighted": {
+            "accuracy": 0.7062182741116751,
+            "nll": 1.1038687971897327,
+            "teacher_probability": 0.5882573427737088,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5290055248618785
+          },
+          "game_weighted": {
+            "accuracy": 0.705182774375105,
+            "nll": 1.1242067159763987,
+            "teacher_probability": 0.5873468968109501,
+            "unreachable": 0.0,
+            "candidate_covered": 0.5272012966457411
+          }
+        },
+        "family/shop_sell_joker": {
+          "decisions": 635,
+          "games": 59,
+          "decision_weighted": {
+            "accuracy": 0.04251968503937008,
+            "nll": 3.687847832807406,
+            "teacher_probability": 0.0678558365510688,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.055943264042353856,
+            "nll": 3.2027863031392263,
+            "teacher_probability": 0.08704477124789867,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/shop_reroll": {
+          "decisions": 316,
+          "games": 63,
+          "decision_weighted": {
+            "accuracy": 0.8386075949367089,
+            "nll": 0.5033769087950313,
+            "teacher_probability": 0.8104434447527242,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.664235147568481,
+            "nll": 0.8220580892763291,
+            "teacher_probability": 0.6738483349845675,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/pack_skip": {
+          "decisions": 209,
+          "games": 60,
+          "decision_weighted": {
+            "accuracy": 0.9090909090909091,
+            "nll": 0.30298773898563736,
+            "teacher_probability": 0.7978718662368638,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.9184259259259258,
+            "nll": 0.28088125540596803,
+            "teacher_probability": 0.8001420283584246,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/3": {
+          "decisions": 1807,
+          "games": 66,
+          "decision_weighted": {
+            "accuracy": 0.673491975650249,
+            "nll": 1.1995984332002976,
+            "teacher_probability": 0.5936060223424087,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4810126582278481
+          },
+          "game_weighted": {
+            "accuracy": 0.6848981595500127,
+            "nll": 1.1606040096168133,
+            "teacher_probability": 0.599502894640373,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4844846911357607
+          }
+        },
+        "ante/4": {
+          "decisions": 1761,
+          "games": 55,
+          "decision_weighted": {
+            "accuracy": 0.5996592844974447,
+            "nll": 1.3898014713394287,
+            "teacher_probability": 0.5495201124696216,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4214046822742475
+          },
+          "game_weighted": {
+            "accuracy": 0.6033353050923462,
+            "nll": 1.3617331219429563,
+            "teacher_probability": 0.5551752656635153,
+            "unreachable": 0.0,
+            "candidate_covered": 0.41759521321159376
+          }
+        },
+        "family/use_consumable_hand_subset": {
+          "decisions": 43,
+          "games": 14,
+          "decision_weighted": {
+            "accuracy": 0.3953488372093023,
+            "nll": 2.7054064875078754,
+            "teacher_probability": 0.2702163278155279,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 0.5359977324263039,
+            "nll": 1.8637334211368342,
+            "teacher_probability": 0.36055009215205597,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "family/use_consumable_joker": {
+          "decisions": 2,
+          "games": 2,
+          "decision_weighted": {
+            "accuracy": 1.0,
+            "nll": 0.06813748180866241,
+            "teacher_probability": 0.9360115531027863,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          },
+          "game_weighted": {
+            "accuracy": 1.0,
+            "nll": 0.06813748180866241,
+            "teacher_probability": 0.9360115531027863,
+            "unreachable": 0.0,
+            "candidate_covered": null
+          }
+        },
+        "ante/5": {
+          "decisions": 1175,
+          "games": 35,
+          "decision_weighted": {
+            "accuracy": 0.6017021276595744,
+            "nll": 1.4893566473749467,
+            "teacher_probability": 0.5383167545267277,
+            "unreachable": 0.0,
+            "candidate_covered": 0.4043062200956938
+          },
+          "game_weighted": {
+            "accuracy": 0.6023448811018626,
+            "nll": 1.4985250308204565,
+            "teacher_probability": 0.5373597314581602,
+            "unreachable": 0.0,
+            "candidate_covered": 0.41477504509348834
+          }
+        },
+        "ante/6": {
+          "decisions": 575,
+          "games": 17,
+          "decision_weighted": {
+            "accuracy": 0.5878260869565217,
+            "nll": 1.5695525690297598,
+            "teacher_probability": 0.5394486581870264,
+            "unreachable": 0.0,
+            "candidate_covered": 0.2761904761904762
+          },
+          "game_weighted": {
+            "accuracy": 0.5935332524237537,
+            "nll": 1.527181334712851,
+            "teacher_probability": 0.5448887758369283,
+            "unreachable": 0.0,
+            "candidate_covered": 0.2909470575560541
+          }
+        },
+        "ante/7": {
+          "decisions": 327,
+          "games": 9,
+          "decision_weighted": {
+            "accuracy": 0.636085626911315,
+            "nll": 1.4313832314820565,
+            "teacher_probability": 0.5615397639098524,
+            "unreachable": 0.0,
+            "candidate_covered": 0.42857142857142855
+          },
+          "game_weighted": {
+            "accuracy": 0.6254844262823889,
+            "nll": 1.4540601022401713,
+            "teacher_probability": 0.5479642545976505,
+            "unreachable": 0.0,
+            "candidate_covered": 0.40592432259098926
+          }
+        },
+        "outcome/True": {
+          "decisions": 225,
+          "games": 1,
+          "decision_weighted": {
+            "accuracy": 0.68,
+            "nll": 1.1161994225613205,
+            "teacher_probability": 0.6304709781976667,
+            "unreachable": 0.0,
+            "candidate_covered": 0.2727272727272727
+          },
+          "game_weighted": {
+            "accuracy": 0.68,
+            "nll": 1.1161994225613205,
+            "teacher_probability": 0.6304709781976667,
+            "unreachable": 0.0,
+            "candidate_covered": 0.2727272727272727
+          }
+        },
+        "ante/8": {
+          "decisions": 212,
+          "games": 7,
+          "decision_weighted": {
+            "accuracy": 0.5849056603773585,
+            "nll": 1.72710654865921,
+            "teacher_probability": 0.5230693363801882,
+            "unreachable": 0.0,
+            "candidate_covered": 0.3170731707317073
+          },
+          "game_weighted": {
+            "accuracy": 0.5866315628815629,
+            "nll": 1.7647548343897443,
+            "teacher_probability": 0.5246357553009408,
+            "unreachable": 0.0,
+            "candidate_covered": 0.2919274376417234
+          }
+        }
+      },
+      "family_confusion_counts": {
+        "blind_play -> blind_play": 1050,
+        "play_subset -> play_subset": 2784,
+        "discard_subset -> discard_subset": 657,
+        "play_subset -> discard_subset": 174,
+        "discard_subset -> play_subset": 239,
+        "shop_buy -> shop_buy": 1469,
+        "shop_buy -> shop_leave": 56,
+        "shop_leave -> shop_leave": 747,
+        "pack_claim -> pack_claim": 670,
+        "use_consumable_no_target -> use_consumable_no_target": 145,
+        "shop_leave -> shop_buy": 29,
+        "shop_sell_joker -> shop_leave": 154,
+        "shop_reroll -> shop_buy": 6,
+        "shop_reroll -> shop_leave": 45,
+        "pack_skip -> pack_skip": 190,
+        "shop_reroll -> shop_reroll": 265,
+        "shop_sell_joker -> shop_buy": 255,
+        "shop_sell_joker -> shop_sell_joker": 89,
+        "pack_claim -> pack_skip": 18,
+        "pack_skip -> pack_claim": 18,
+        "shop_leave -> shop_reroll": 18,
+        "shop_buy -> shop_reroll": 14,
+        "shop_sell_joker -> shop_reroll": 108,
+        "shop_sell_joker -> pack_skip": 24,
+        "use_consumable_hand_subset -> use_consumable_hand_subset": 26,
+        "use_consumable_joker -> use_consumable_joker": 2,
+        "shop_buy -> shop_sell_joker": 2,
+        "blind_play -> blind_reroll": 2,
+        "use_consumable_hand_subset -> play_subset": 17,
+        "pack_skip -> shop_sell_joker": 1,
+        "shop_leave -> shop_sell_joker": 1,
+        "play_subset -> use_consumable_hand_subset": 1,
+        "shop_leave -> use_consumable_no_target": 1,
+        "shop_sell_joker -> use_consumable_no_target": 1,
+        "play_subset -> use_consumable_no_target": 2,
+        "shop_sell_joker -> play_subset": 4
+      },
+      "interpretation": "Student-visited-state diagnostics; outcomes are not teacher-label targets"
+    }
+  },
+  "agreement_family_standardization": {
+    "weighting": "HF teacher-action-family frequencies, restricted to families observed in both panels",
+    "teacher_decision_coverage": 0.9993911788581221,
+    "student_decision_coverage": 1.0,
+    "teacher_accuracy": 0.7864894745154667,
+    "student_accuracy": 0.757937430688104
+  },
+  "budget": {
+    "diagnostic_accelerator_seconds": 7867.661086209584,
+    "improvement_hours": 6.714538587164005,
+    "confirmation_hours": 3.0,
+    "overhead_reserve_hours": 0.1,
+    "limit_hours": 12.0
+  },
+  "compute": {
+    "training_runs": [
+      {
+        "arm": "control",
+        "seed": 0,
+        "elapsed_seconds": 1927.8457424169756
+      },
+      {
+        "arm": "actor_only",
+        "seed": 0,
+        "elapsed_seconds": 1900.3718520409893
+      },
+      {
+        "arm": "correction",
+        "seed": 0,
+        "elapsed_seconds": 1886.8446154589765
+      },
+      {
+        "arm": "control",
+        "seed": 1,
+        "elapsed_seconds": 1900.4224935839884
+      },
+      {
+        "arm": "actor_only",
+        "seed": 1,
+        "elapsed_seconds": 1898.0412639169954
+      },
+      {
+        "arm": "correction",
+        "seed": 1,
+        "elapsed_seconds": 1875.398440375051
+      }
+    ],
+    "confirmation_elapsed_seconds": 6884.66681991698,
+    "total_elapsed_seconds": 25534.671796665993
+  },
+  "verification": {
+    "status": "passed",
+    "confirmation": {
+      "status": "inconclusive",
+      "criteria_met": false,
+      "paired": {
+        "sampled": {
+          "game_seeds": 400,
+          "games_per_arm": 2400,
+          "sampled_or_greedy_delta": -0.004583333333333333,
+          "paired_ci95": [
+            -0.01375,
+            0.004583333333333
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.0175,
+          "paired_ci95": [
+            -0.0025,
+            0.0375
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "sampled_training_replicate_deltas": [
+        -0.0075,
+        -0.0016666666666666668
+      ],
+      "criteria": {
+        "sampled_minimum_gain": 0.05,
+        "sampled_ci_lower_positive": true,
+        "both_training_replicates_positive": true,
+        "greedy_ci_lower_minimum": -0.05
+      }
+    },
+    "original_checkpoints_unchanged": 10,
+    "original_hf_shards_unchanged": 20,
+    "verified_correction_rows": 9284,
+    "training_runs": 6,
+    "examples_processed": 1920000,
+    "confirmation_games": 6400,
+    "accounted_accelerator_seconds_including_overhead_reserve": 33762.33288287558
+  },
+  "execution_notes": [
+    {
+      "stage": "historical diagnostic orchestration",
+      "status": "resolved",
+      "detail": "The initial 1200-second wrapper timeout fired. Its live greedy evaluator continued and completed all 100 games. Measurement resume validated all completed panels before starting continuations; no historical games were discarded or rerun. Future wrapper limit is 2400 seconds.",
+      "error_log": "pipeline_mps_v3.log",
+      "resume_log": "pipeline_mps_v4.log",
+      "occurred_before_continuations": true
+    },
+    {
+      "stage": "reward-prefix diagnostic before training",
+      "status": "resolved",
+      "detail": "Held the training controller while the intervention child completed. A second reward audit found nine mismatched game prefixes. Added shop-event reward inputs, preserved the pre-sale Joker replacement baseline, and moved action diagnostics before the action. All 476 legal prefix steps now match; 146 tests pass. Original HF targets remain unchanged.",
+      "before": "current_prefix_reward_equivalence.json",
+      "after": "current_prefix_reward_equivalence_v3_events.json",
+      "occurred_before_continuations": true
+    }
+  ],
+  "replay": {
+    "current": [
+      {
+        "seed": 2035106,
+        "recorded_won": false,
+        "recorded_steps": 150,
+        "first_saved_fast": {
+          "step": 5,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 16,
+          "max_abs_difference": 49.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 5,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 5
+      },
+      {
+        "seed": 2045118,
+        "recorded_won": false,
+        "recorded_steps": 74,
+        "first_saved_fast": {
+          "step": 40,
+          "field": "tokens",
+          "index": [
+            10,
+            0
+          ],
+          "left": 11,
+          "right": 8,
+          "different_elements": 114,
+          "max_abs_difference": 12.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 41,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 41
+      },
+      {
+        "seed": 2035067,
+        "recorded_won": false,
+        "recorded_steps": 92,
+        "first_saved_fast": {
+          "step": 19,
+          "field": "scalars",
+          "index": [
+            8
+          ],
+          "left": 5.1984968185424805,
+          "right": 5.420535087585449,
+          "different_elements": 5,
+          "max_abs_difference": 0.22203826904296875
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 22,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 3884,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 2,
+        "env_won": false,
+        "env_final_ante": 2,
+        "env_terminal": false,
+        "replayed_steps": 22
+      },
+      {
+        "seed": 2080212,
+        "recorded_won": false,
+        "recorded_steps": 87,
+        "first_saved_fast": {
+          "step": 5,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 16,
+          "max_abs_difference": 112.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 5,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 5
+      },
+      {
+        "seed": 2080130,
+        "recorded_won": false,
+        "recorded_steps": 92,
+        "first_saved_fast": {
+          "step": 8,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 112.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 8,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 8
+      },
+      {
+        "seed": 2015075,
+        "recorded_won": false,
+        "recorded_steps": 230,
+        "first_saved_fast": {
+          "step": 18,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 16,
+          "max_abs_difference": 91.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 18,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 2,
+        "env_won": false,
+        "env_final_ante": 2,
+        "env_terminal": false,
+        "replayed_steps": 18
+      },
+      {
+        "seed": 2045036,
+        "recorded_won": false,
+        "recorded_steps": 271,
+        "first_saved_fast": {
+          "step": 34,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 14.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 34,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 34
+      },
+      {
+        "seed": 2075092,
+        "recorded_won": false,
+        "recorded_steps": 172,
+        "first_saved_fast": {
+          "step": 6,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 16,
+          "max_abs_difference": 55.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 6,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 6
+      },
+      {
+        "seed": 2020077,
+        "recorded_won": false,
+        "recorded_steps": 203,
+        "first_saved_fast": {
+          "step": 27,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 45.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 27,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 2,
+        "env_won": false,
+        "env_final_ante": 2,
+        "env_terminal": false,
+        "replayed_steps": 27
+      },
+      {
+        "seed": 2015143,
+        "recorded_won": false,
+        "recorded_steps": 256,
+        "first_saved_fast": {
+          "step": 47,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 8,
+          "max_abs_difference": 30.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 47,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 47
+      },
+      {
+        "seed": 2015086,
+        "recorded_won": true,
+        "recorded_steps": 214,
+        "first_saved_fast": {
+          "step": 29,
+          "field": "tokens",
+          "index": [
+            10,
+            0
+          ],
+          "left": 12,
+          "right": 8,
+          "different_elements": 99,
+          "max_abs_difference": 11.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 35,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17296,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 2,
+        "env_won": false,
+        "env_final_ante": 2,
+        "env_terminal": false,
+        "replayed_steps": 35
+      },
+      {
+        "seed": 2025279,
+        "recorded_won": true,
+        "recorded_steps": 259,
+        "first_saved_fast": {
+          "step": 36,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 16,
+          "max_abs_difference": 104.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 36,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 36
+      },
+      {
+        "seed": 2030040,
+        "recorded_won": true,
+        "recorded_steps": 220,
+        "first_saved_fast": {
+          "step": 5,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 147.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 5,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 5
+      },
+      {
+        "seed": 2015073,
+        "recorded_won": true,
+        "recorded_steps": 171,
+        "first_saved_fast": {
+          "step": 29,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 66.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 29,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 2,
+        "env_won": false,
+        "env_final_ante": 2,
+        "env_terminal": false,
+        "replayed_steps": 29
+      },
+      {
+        "seed": 2025019,
+        "recorded_won": true,
+        "recorded_steps": 213,
+        "first_saved_fast": {
+          "step": 8,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 35.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 8,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 8
+      },
+      {
+        "seed": 2025274,
+        "recorded_won": true,
+        "recorded_steps": 259,
+        "first_saved_fast": {
+          "step": 52,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 53.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 52,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 52
+      },
+      {
+        "seed": 2060199,
+        "recorded_won": true,
+        "recorded_steps": 258,
+        "first_saved_fast": {
+          "step": 48,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 8,
+          "max_abs_difference": 13.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 48,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 48
+      },
+      {
+        "seed": 2045230,
+        "recorded_won": true,
+        "recorded_steps": 255,
+        "first_saved_fast": {
+          "step": 7,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 16,
+          "max_abs_difference": 130.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 7,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 7
+      },
+      {
+        "seed": 2075077,
+        "recorded_won": true,
+        "recorded_steps": 200,
+        "first_saved_fast": {
+          "step": 29,
+          "field": "history_event_features",
+          "index": [
+            2,
+            0,
+            4
+          ],
+          "left": 0.029195226728916168,
+          "right": 0.025302529335021973,
+          "different_elements": 6,
+          "max_abs_difference": 0.5049998760223389
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 36,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": false,
+        "replayed_steps": 36
+      },
+      {
+        "seed": 2065075,
+        "recorded_won": true,
+        "recorded_steps": 233,
+        "first_saved_fast": {
+          "step": 7,
+          "field": "tokens",
+          "index": [
+            9,
+            0
+          ],
+          "left": 3,
+          "right": 2,
+          "different_elements": 12,
+          "max_abs_difference": 30.0
+        },
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "replay_error": {
+          "step": 7,
+          "fast_terminal": false,
+          "env_terminal": false,
+          "action": 17326,
+          "fast_legal": false,
+          "env_legal": false
+        },
+        "fast_won": false,
+        "fast_final_ante": 1,
+        "env_won": false,
+        "env_final_ante": 1,
+        "env_terminal": false,
+        "replayed_steps": 7
+      }
+    ],
+    "historical": [
+      {
+        "seed": 2035106,
+        "recorded_won": false,
+        "recorded_steps": 150,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 11,
+          "left": -0.295818924938816,
+          "right": -0.30223490764875716
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 6,
+        "env_won": false,
+        "env_final_ante": 6,
+        "env_terminal": true,
+        "replayed_steps": 150
+      },
+      {
+        "seed": 2045118,
+        "recorded_won": false,
+        "recorded_steps": 74,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 13,
+          "left": 0.09170608051217685,
+          "right": 0.08499870814736185
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 3,
+        "env_won": false,
+        "env_final_ante": 3,
+        "env_terminal": true,
+        "replayed_steps": 74
+      },
+      {
+        "seed": 2035067,
+        "recorded_won": false,
+        "recorded_steps": 92,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": null,
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 4,
+        "env_won": false,
+        "env_final_ante": 4,
+        "env_terminal": true,
+        "replayed_steps": 92
+      },
+      {
+        "seed": 2080212,
+        "recorded_won": false,
+        "recorded_steps": 87,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 13,
+          "left": 1.1087146817140183,
+          "right": 1.5087146817140185
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 4,
+        "env_won": false,
+        "env_final_ante": 4,
+        "env_terminal": true,
+        "replayed_steps": 87
+      },
+      {
+        "seed": 2080130,
+        "recorded_won": false,
+        "recorded_steps": 92,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 48,
+          "left": 0.5292892641502303,
+          "right": 0.5193811011889189
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 4,
+        "env_won": false,
+        "env_final_ante": 4,
+        "env_terminal": true,
+        "replayed_steps": 92
+      },
+      {
+        "seed": 2015075,
+        "recorded_won": false,
+        "recorded_steps": 230,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 4,
+          "left": 0.8169297259420079,
+          "right": 1.216929725942008
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 8,
+        "env_won": false,
+        "env_final_ante": 8,
+        "env_terminal": true,
+        "replayed_steps": 230
+      },
+      {
+        "seed": 2045036,
+        "recorded_won": false,
+        "recorded_steps": 271,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 5,
+          "left": 0.7684530096943942,
+          "right": 1.1684530096943941
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 8,
+        "env_won": false,
+        "env_final_ante": 8,
+        "env_terminal": true,
+        "replayed_steps": 271
+      },
+      {
+        "seed": 2075092,
+        "recorded_won": false,
+        "recorded_steps": 172,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 35,
+          "left": 0.78573068948942,
+          "right": 1.1857306894894202
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 6,
+        "env_won": false,
+        "env_final_ante": 6,
+        "env_terminal": true,
+        "replayed_steps": 172
+      },
+      {
+        "seed": 2020077,
+        "recorded_won": false,
+        "recorded_steps": 203,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 9,
+          "left": 0.05563942691303586,
+          "right": 0.04277090491340979
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 7,
+        "env_won": false,
+        "env_final_ante": 7,
+        "env_terminal": true,
+        "replayed_steps": 203
+      },
+      {
+        "seed": 2015143,
+        "recorded_won": false,
+        "recorded_steps": 256,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 46,
+          "left": 0.6495877299409814,
+          "right": 0.6366246553323835
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": false,
+        "fast_final_ante": 8,
+        "env_won": false,
+        "env_final_ante": 8,
+        "env_terminal": true,
+        "replayed_steps": 256
+      },
+      {
+        "seed": 2015086,
+        "recorded_won": true,
+        "recorded_steps": 214,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 12,
+          "left": -0.16972580782632818,
+          "right": -0.178048374232338
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 214
+      },
+      {
+        "seed": 2025279,
+        "recorded_won": true,
+        "recorded_steps": 259,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 4,
+          "left": 1.0960626292888678,
+          "right": 1.496062629288868
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 259
+      },
+      {
+        "seed": 2030040,
+        "recorded_won": true,
+        "recorded_steps": 220,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 8,
+          "left": 0.15630173263213315,
+          "right": 0.14724982386903646
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 220
+      },
+      {
+        "seed": 2015073,
+        "recorded_won": true,
+        "recorded_steps": 171,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 8,
+          "left": -0.2806294707203546,
+          "right": -0.28861471282221707
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 171
+      },
+      {
+        "seed": 2025019,
+        "recorded_won": true,
+        "recorded_steps": 213,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 19,
+          "left": 0.06074831960537608,
+          "right": 0.08479398734918131
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 213
+      },
+      {
+        "seed": 2025274,
+        "recorded_won": true,
+        "recorded_steps": 259,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 49,
+          "left": 0.8309065123402568,
+          "right": 1.230906512340257
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 259
+      },
+      {
+        "seed": 2060199,
+        "recorded_won": true,
+        "recorded_steps": 258,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 5,
+          "left": 0.684944265060234,
+          "right": 1.0849442650602341
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 258
+      },
+      {
+        "seed": 2045230,
+        "recorded_won": true,
+        "recorded_steps": 255,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 12,
+          "left": 0.10263332538612013,
+          "right": 0.12529567857815652
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 255
+      },
+      {
+        "seed": 2075077,
+        "recorded_won": true,
+        "recorded_steps": 200,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 42,
+          "left": 0.8870324775838632,
+          "right": 1.2870324775838633
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 200
+      },
+      {
+        "seed": 2065075,
+        "recorded_won": true,
+        "recorded_steps": 233,
+        "first_saved_fast": null,
+        "first_fast_env": null,
+        "first_reward_difference": {
+          "step": 128,
+          "left": -0.28226029567734445,
+          "right": -0.31670427912674987
+        },
+        "first_saved_reward": null,
+        "first_state_difference": null,
+        "fast_won": true,
+        "fast_final_ante": 9,
+        "env_won": true,
+        "env_final_ante": 9,
+        "env_terminal": true,
+        "replayed_steps": 233
+      }
+    ]
+  },
+  "current_reward_prefixes": {
+    "results": [
+      {
+        "seed": 2035106,
+        "steps": 5,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2045118,
+        "steps": 41,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 13,
+          "saved": 0.09170608051217685,
+          "current": 0.08499870814736185
+        }
+      },
+      {
+        "seed": 2035067,
+        "steps": 22,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 18,
+          "saved": 0.46213557819858125,
+          "current": 0.5236306384288406
+        }
+      },
+      {
+        "seed": 2080212,
+        "steps": 5,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2080130,
+        "steps": 8,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2015075,
+        "steps": 18,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 4,
+          "saved": 0.8169297259420079,
+          "current": 1.216929725942008
+        }
+      },
+      {
+        "seed": 2045036,
+        "steps": 34,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 5,
+          "saved": 0.7684530096943942,
+          "current": 1.1684530096943941
+        }
+      },
+      {
+        "seed": 2075092,
+        "steps": 6,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2020077,
+        "steps": 27,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 9,
+          "saved": 0.05563942691303586,
+          "current": 0.04277090491340979
+        }
+      },
+      {
+        "seed": 2015143,
+        "steps": 47,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 46,
+          "saved": 0.6495877299409814,
+          "current": 0.6366246553323835
+        }
+      },
+      {
+        "seed": 2015086,
+        "steps": 35,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 12,
+          "saved": -0.16972580782632818,
+          "current": -0.178048374232338
+        }
+      },
+      {
+        "seed": 2025279,
+        "steps": 36,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 4,
+          "saved": 1.0960626292888678,
+          "current": 1.496062629288868
+        }
+      },
+      {
+        "seed": 2030040,
+        "steps": 5,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2015073,
+        "steps": 29,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 8,
+          "saved": -0.2806294707203546,
+          "current": -0.28861471282221707
+        }
+      },
+      {
+        "seed": 2025019,
+        "steps": 8,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2025274,
+        "steps": 52,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 49,
+          "saved": 0.8309065123402568,
+          "current": 1.230906512340257
+        }
+      },
+      {
+        "seed": 2060199,
+        "steps": 48,
+        "first_fast_env": null,
+        "first_saved_current": {
+          "step": 5,
+          "saved": 0.684944265060234,
+          "current": 1.0849442650602341
+        }
+      },
+      {
+        "seed": 2045230,
+        "steps": 7,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2075077,
+        "steps": 36,
+        "first_fast_env": null,
+        "first_saved_current": null
+      },
+      {
+        "seed": 2065075,
+        "steps": 7,
+        "first_fast_env": null,
+        "first_saved_current": null
+      }
+    ],
+    "source_hashes": {
+      "src/pylatro/__init__.py": "a9f681b5a2182816d0d0353a196fac5974c681c91c3d68a8b77b234766a5ef6b",
+      "src/pylatro/_cyshadow.py": "f8bed82c2a5d563f453df94ea37facb95af6b4404a27ddca7f71793f254ca666",
+      "src/pylatro/_helpers.cpython-312-darwin.so": "f5f3449ded02e057aa1ddc932bb8fae971195aec338e8d1897c0f6781b2b058d",
+      "src/pylatro/_helpers.py": "3244ce09d4bc8b3e25daca289e35c22b5a37c96a4e64b2887751a813f330259e",
+      "src/pylatro/_state_copy.cpython-312-darwin.so": "45443a7a95217e6bd0814c21afd2b3783217c5f34c7bddcbb5f08ba6421dade3",
+      "src/pylatro/_state_copy.py": "4b7782e3939c5dec43c7a58e93d903148190c52f3812c49572dba553e5ded7c1",
+      "src/pylatro/blind.cpython-312-darwin.so": "2bd95a3363d362a8a1c292bc2d6d1ed357a394e5b58cf1340e31835494f77204",
+      "src/pylatro/blind.py": "e8df681dd530e8fb6b0577e879f96893026737678decdc23740b84b4ad748e04",
+      "src/pylatro/consumables.cpython-312-darwin.so": "db826b00551b596e93cdedc30ea45a71a0cbab676c7a8632ab4e50e38896bec4",
+      "src/pylatro/consumables.py": "21d80e10b87ffc725653ef4fab09c4ba95a191ad4f7144c19f704b40a8f118e2",
+      "src/pylatro/data.py": "757d6890364822240f0f3851450f3f5a7dc6e9a96873bd8009a9f141e16195ad",
+      "src/pylatro/flow.cpython-312-darwin.so": "a3e32a5f5158913400b7abf638b29c91154b8bd290db10bdd0e6d5a5070620d0",
+      "src/pylatro/flow.py": "66bea55c4532d791d0a89b5370c56aab73f3af0f70002450fe2fbc7b2b892c64",
+      "src/pylatro/game_data.json": "8f127b03787d3861d48dca2d03f8751be74e189ee2d8b6cdaeec59b915b9709d",
+      "src/pylatro/instances.cpython-312-darwin.so": "2dae6db0315cc7edcacb461b55df9fb3ff1c5a9617e3a79a2fea8592520fa40a",
+      "src/pylatro/instances.py": "a24cae4b9714fc262d785bfb09f27fdf36aa8262a96775996bee7908311ac401",
+      "src/pylatro/models.py": "b6cc577ca3aa25c44cac75a4210a99df425e6409f5929e15063f17d7100782e3",
+      "src/pylatro/pool.cpython-312-darwin.so": "4fb0e2f79f5b97603227d54572afee455878139a9dd057e099bdb00e4e3c6347",
+      "src/pylatro/pool.py": "13053b1b5d179547f2f575a617f4f00abaa74ecc99e305f759930416fe2aa144",
+      "src/pylatro/rng.cpython-312-darwin.so": "2ebde4a4d0b01baf9a9cf00296ce63c90d2453bc7cc5a4c3c2983735e7b1c867",
+      "src/pylatro/rng.py": "a2a19bd6ae866be39a20884a7fda0cb523ae0fdbe812b13af10e57c5bf2217d1",
+      "src/pylatro/run.py": "8bd7d0733b3871abd2dc6518a154d8860b94622f7d4267b39a1ebe707c1c404f",
+      "src/pylatro/runtime.cpython-312-darwin.so": "96499131b3f564d0e1feaaadfeaf036468766dbef0a4f544262e075aa97838e2",
+      "src/pylatro/runtime.py": "46cf3f44d6e6093657ae1a1f0b1f24322cdd3668a31a8695ed1ef39347e9c88e",
+      "src/pylatro/scoring.cpython-312-darwin.so": "e460ff427c4bbed0222e1c1bfcaddb670171b877ad57cb1d6fd5c36d03cd75c1",
+      "src/pylatro/scoring.py": "a1fcc424482bfd946d9554964bd0d4746545760ccd5bf28937972966af19ebde",
+      "src/pylatro/seedsearch.py": "848c2d9d615574aba8190dacc30f75f02d0ada1c89da500e6767db6c067305d1",
+      "src/pylatro/seedwalk.py": "4e76fcbfc8238f2323d9d1a0a27fba23cc6644a1d9848dea28feae8492020b40",
+      "src/pylatro/shop.cpython-312-darwin.so": "5b8351591bedef56437f547d48024f471c385582a73460840f192c314d2d6772",
+      "src/pylatro/shop.py": "861f5168192b9be14e82ba2a7e85a0b051c174c4cf1a5c8d6c4bdfb7c1bb90be",
+      "src/pylatro/upstream/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "src/pylatro_agent/__init__.py": "e86c10c59ef7d18fba67fb15d75903a679c81f06bb9d99279825dfd0091af207",
+      "src/pylatro_agent/_cython_check.py": "3efaf0b181d4cd4fea508cfc6ac895ebfaf15c05e7a36fc808e3b583fa2c1d0d",
+      "src/pylatro_agent/action.py": "e39b1c8f59572004ab46b0f3e7754fd5d8a5068c387a42a14e9602e47cb66d01",
+      "src/pylatro_agent/action_grammar.py": "38b00fc0a42b6d444bdb58d4f535b7561cdfd56d778200ae115971d5371df825",
+      "src/pylatro_agent/agent.py": "594d3ac72afee56004e76a879ac25fe9865132668b5aef6329d8d9a11a25fbef",
+      "src/pylatro_agent/archive.py": "8d345530c6c2351ebbe5085de0d35fa66bbab6690bd8817bc04fe7ed7be08134",
+      "src/pylatro_agent/backbone.py": "e9437d070825e41eb6d8a323b1b8a33b3f228a3b60378c9af6616c0decf6193f",
+      "src/pylatro_agent/build_value.py": "f9392d18bee2162ac02e22178f089c908937b633cf4fdf5b6ca51222746b453c",
+      "src/pylatro_agent/checkpoint.py": "e15e77d90d991d28dbb4873f7395e0180d9363bbb55b4db0a49ad4eb031ac83a",
+      "src/pylatro_agent/constants.py": "1373094c8e23b866b6910a527a5a796027b2d4d39c04db47989d3f6db02d6d39",
+      "src/pylatro_agent/diagnostics.py": "b189f4fa7887df748016234cfde617985e587f62ca31791c296ba9b7a76ea629",
+      "src/pylatro_agent/embeddings.py": "3b3a25bb4d19a53623796171847921d72b4f7798f14d29eeda5cd512a49f08b5",
+      "src/pylatro_agent/env.py": "3696255cc21aaea2609a6f0c518e1d345d2959d0069a8c02d4f21a1fb21243b2",
+      "src/pylatro_agent/eval.py": "fe34dd43d9453e28eda1a3c0b68cd78b84058100440ddaa17d26fd8700792199",
+      "src/pylatro_agent/hand_candidates.cpython-312-darwin.so": "fcc06aa7a6f08013d9766715e6e682a10392212dafa3ca80193ff7a7b102bc3c",
+      "src/pylatro_agent/hand_candidates.py": "461547b4077f614c7a8ce321cc474f87819d331274bdb7af7c6246d6c56e57ac",
+      "src/pylatro_agent/hand_plan.py": "936388dd6f68710a63a18c273a93b10aa1fe7c8bc7afdcfed19e39cab576ade8",
+      "src/pylatro_agent/heuristic.cpython-312-darwin.so": "4cf7573d791acaf0919e39cc990f35bcd7f107dba0f061e43c3e8f1d031c0105",
+      "src/pylatro_agent/heuristic.py": "f4c11f67a5294f308b99e7ccd0876f103eb81a44a9c44ef98cc7bf5cb30da371",
+      "src/pylatro_agent/heuristic_blind_rollout.py": "08df0d5dba46811bef1582d2bde0e27a144bc3096fb683ee8ba91f1497c79a89",
+      "src/pylatro_agent/heuristic_consumable_rescue.py": "c5f8865341d773803a0fcbffe04c617fbe7c3e15442a4214c7058c3eb6fcdffe",
+      "src/pylatro_agent/heuristic_continuation.py": "24a74c8bc5449d9e6777b153d45f4fb385395cec4c2f46d093d003b9255d9eab",
+      "src/pylatro_agent/heuristic_draw.py": "1ad16188444e66e573cb7ade076fc7598fc4f057e8d02f8e6dfc12a670945cfd",
+      "src/pylatro_agent/heuristic_economy.py": "b9b4fa1e51a37527eae027e0ca27cea29f10c4eb8c9e03a9aaa6a44cdd84798d",
+      "src/pylatro_agent/heuristic_growth.py": "2e32522cd6c32b33e634886b03fe1ae521f82e53eb404794987d346807e229c2",
+      "src/pylatro_agent/heuristic_income.py": "8d46c7b0f111f25ec2e7b3af721658cf89ae6f16c6320cc3f89884b194004ab2",
+      "src/pylatro_agent/heuristic_investment.py": "5b6ae837c0c88c1e8bb401fa63c9a4c50de3488846af411199abe170c9e2a1a8",
+      "src/pylatro_agent/heuristic_pack.py": "9d110d636be30667a066104ab46b8dcad621d8b31814d162af69acc3c882e20e",
+      "src/pylatro_agent/heuristic_shop_capacity_choice.py": "19d8a3e37b59710a998d43590fe94d1e64f553bcc9efd3656a1095d199961d02",
+      "src/pylatro_agent/heuristic_shop_choice_rollout.py": "77737b1b99a6afc7de3daa2da20191ffa7d007787194297feae9994199bd3c84",
+      "src/pylatro_agent/heuristic_shop_rollout.py": "33a63ebb4de00c83ea35943ad95ebbbf526fbfc49df8c0afd4850252a9e6aa12",
+      "src/pylatro_agent/heuristic_shop_search.py": "c980e46bdd1bec7e72222a60da786351fc2682702a96cc74a9e61c5479c0b6c1",
+      "src/pylatro_agent/heuristic_simulation.py": "77cafa4eb26b2a05c690ebcf3f765b5424aa374764922dbfddd6651db658d42f",
+      "src/pylatro_agent/heuristic_stencil.py": "2c5beda612f87b5c3c6a6581c8e4436686889c55b3296f3b28687374533ffac0",
+      "src/pylatro_agent/heuristic_trading.py": "f93f1047a0b50902709fce518e0fb9497faa580bdb4efbeada517496cbba6ad1",
+      "src/pylatro_agent/heuristic_vagabond.py": "b1179cf1d6dbd872570e830e5e791afdcb44499ebc7805f87da4882240c33132",
+      "src/pylatro_agent/history.py": "88f3e4b77e317c84e41cef4bddb1257fa2834b25997c304ff80e26becb7873db",
+      "src/pylatro_agent/joker_features.py": "050de4422f3d5c458aad88ea361900bf16e956c33dfa74deced765048ab68dbb",
+      "src/pylatro_agent/joker_layout.py": "141c536e5727c1a7ceb25c5543ff5484ed2c993e92f2cac23495e31180b7d22e",
+      "src/pylatro_agent/live/__init__.py": "230a6a27c764c8082ca2c607ad7081e52de4d2bbb3d366b84a6f111b94fb7cda",
+      "src/pylatro_agent/live/actions.py": "54faaa814987b4c4b3906d845f1172d40d30ed745f18e906d4457e527eb02f01",
+      "src/pylatro_agent/live/adapter.py": "1de2fad51d2b6d11d11e0af0b549a2e27f7d9cb6ab5b27b16394a2f529af5a48",
+      "src/pylatro_agent/live/legality.py": "82a2ae2e792480bd40fc1f70a1b3f6a8bb7a36deae354bd6063e6be664f6a11b",
+      "src/pylatro_agent/live/policy.py": "cae5bd7b8f3d7a81d1ddcbcd245ffa637ce0435bad3d29ed8fd8a35ec269fd10",
+      "src/pylatro_agent/live/protocol.py": "17067ea3d3437ff26af711ed5f366e8e14b7979de47681ad458b4e81af47895b",
+      "src/pylatro_agent/live/server.py": "f5f65f965304ffac2e974789d7e454992c49ff2e3a359fc01e0bae557bdde75f",
+      "src/pylatro_agent/masks.py": "5841635a53f48cc2f43b55ef4472cb53901b9e8324496ae5a331a06ecdec59b4",
+      "src/pylatro_agent/precision.py": "b621680b00c6831043fed0073ef9e42d226d5fb504ef939f3571b54d18fe2aaf",
+      "src/pylatro_agent/reward.py": "fe51d4182011bf28028b928b1094275ba25b071ca7ede94be3213e3a7347646b",
+      "src/pylatro_agent/risk.py": "0df2604bf9eda24134fb9dd88cf8240b945ff7824fe53e1c81a7ce96ef18859c",
+      "src/pylatro_agent/schema.py": "c9578d9bc9e4ba1f9669e213b553e77c26645c00de892ec11c5d946a62ad8319",
+      "src/pylatro_agent/shop_eval.py": "3b679c681db85576b4dc3bb6a75bbc5880319efb82c93c6d4b4c49e5fd0dbf61",
+      "src/pylatro_agent/strategic_events.py": "4bce99afad6ff4ac7b8ff672dad3d429097e3f602e1af7993a1765f3f6b70bf2",
+      "src/pylatro_agent/strategy_context.py": "9df903cf9dc8cde7eb38cf4a280e4b980303d410ce520f43631d9347ab7a8bd4",
+      "src/pylatro_agent/strategy_value.py": "640bf1a4a2dcdc8f8fbaa7af53ee7153e61a618051114ab02ad5c581679172b3",
+      "src/pylatro_agent/subset_actions.py": "910a7377d2f8c63eb3207ea9353fbd4a2b82ff503557267eabbef39a9cff6260",
+      "src/pylatro_agent/survival.py": "bde1ff1aeac1767c2aef70b2a0565f33e20bd73e1a1b01d9553cb2ba886778a3",
+      "src/pylatro_agent/tokenizer.cpython-312-darwin.so": "ca274d39be66da06990412a94f55933232c79563f31e014ee061550cdb263441",
+      "src/pylatro_agent/tokenizer.py": "bd512b2eb8173b11922b79e65c9d2ab4bea5bdfa1a023447f97e40fe3c6fea28",
+      "src/pylatro_agent/training/__init__.py": "60884a00d175f3dcd6103199380803f449983d278b2fba54925d2286b9e5ab64",
+      "src/pylatro_agent/training/evaluation_envs.py": "4b6e1eba45744a1e304cf93e0d232899bf0785f7992a5b948304d177f6cf040f",
+      "src/pylatro_agent/training/fast_generate.py": "067f7b7ccb1be4571874be7d87ab6b96ef511a62af06b18cbeafc3db294f2d6b",
+      "src/pylatro_agent/training/fast_runner.cpython-312-darwin.so": "6378dd601b2b2d8fff8a5fba94fa894be674dde80552f6a9fc42ed98e6c46744",
+      "src/pylatro_agent/training/fast_runner.py": "6a00364c65d24590cee3f89c483449654a1e18d598902fd29f9d926ecbb12acd",
+      "src/pylatro_agent/training/model_generate.py": "54319a83165898ca0d98d6e6ce92d00e6b2bca497c2a872160ca1420b8bf0054",
+      "src/pylatro_agent/training/parquet_records.py": "14382c15d052aa7350e8bf2f0284fc2693050844087d603cb29463f64d38a1ff",
+      "src/pylatro_agent/training/ppo.py": "b0918cc2f1b08168de6bc8642f679c8a365a1c9043b2c66648e9915380dfd7ac",
+      "src/pylatro_agent/training/ppo_checkpoint.py": "486bfd6ebdd936e783046cf6f78325d120aa989ddebdb53e60c498501195b4f2",
+      "src/pylatro_agent/training/ppo_config.py": "ede9161df1f1ab918199186c340d9445f9644ed26363e8f62fc09addd2f9e1fe",
+      "src/pylatro_agent/training/ppo_evaluation.py": "96024d5f8d8ef98ed1b862887668d93097c21e772337398e5d0e9c9e04a2cc7b",
+      "src/pylatro_agent/training/ppo_metrics.py": "7c40386423d0cfe3a8eee5b5db4e3e59a8e7305f00a34968d83755a2413b76f5",
+      "src/pylatro_agent/training/ppo_observations.py": "4a0e088b06c9f4e3cbe3a011e7e7d87e43e62031b802a5c5b6f9e8a119543895",
+      "src/pylatro_agent/training/ppo_optimization.py": "de300061201e5d6476f6892d04afb3c956a4740cfe32da16c127fcc85da43ea9",
+      "src/pylatro_agent/training/ppo_policy.py": "aa47b4f202ec99dbb2392b654be7c46e7952f7dd76e4bca60fdbf08c2d5ab615",
+      "src/pylatro_agent/training/ppo_rollout.py": "16d1df3fc3d6dc4756ac04b11bbe03288018effe5ca46b6c0aaa6e88dc97c7c5",
+      "src/pylatro_agent/training/pt_ppo_run.py": "ff2cd962cc9d85f2fa3957759e5180a47791ba9dd8af2a691cbc5dfbb9f75c39",
+      "src/pylatro_agent/training/return_paths.py": "13e691191b2a8d0140933f76f6bb35e1518d11f2b20c3bbf6d77ba2062c7f3cd",
+      "src/pylatro_agent/training/rollout_buffer.py": "b029a829742b69d3be2fd0ebc8c7d7c0cd5ed7d987f0146ef428569dea4a0361",
+      "src/pylatro_agent/training/run_monitor.py": "41d4a9a3a87ac3cb7e72deb8de5ffc13c763dcbaa17b5a11c2d7da50cc5c4b80",
+      "src/pylatro_agent/training/self_play.py": "b07cef16d8f5e122f238d632f3d508016cf3b9975546c354e6c4ac56a8d25932",
+      "src/pylatro_agent/training/sil.py": "92b253873aa9c10cbe1884c83990251367f31be58e48b168d883ab5e025c37b5",
+      "src/pylatro_agent/training/supervised.py": "4bf9f27d3260fb3058879f74fcd3c2a2ee10718ebcc8f8264e5a0bbb3be75604",
+      "src/pylatro_agent/transfer.py": "c86e3246b42f6531de2a0bdd68c2b0c03b0a9e1b33a071b785f5f49b79dfc186",
+      "src/pylatro_agent/transfer_collection.py": "4f137d718f86900ff0ba8f51fc2fc3f6c602ba5f8086d697be4680b74626d209",
+      "src/pylatro_agent/transfer_diagnostics.py": "bb3c0d27d065d63599a3ea4645b1f6ed2c6dc467cb13a2ec928e0f715e0953e4",
+      "src/pylatro_agent/transfer_training.py": "10ecd3bfa6f6d5564cc22f41cceea7af8b371d2fd003f8a5b89eedc8613230f4",
+      "src/pylatro_agent/value_head.py": "5179cd5f2d71eeb4d5c0c408d1f449f479789b91530a1dc90d700d94bea0910a",
+      "src/pylatro_agent/vocab.py": "bab9f186fd8d9794d9589ab748349f0e698755876bc73f35eb19ed1c44b847eb",
+      "src/pylatro_agent/watch.py": "ecbf3b4deba0532d04877bbcb80aca0230b6101097c809be619f7b0e2e803aea",
+      "src/pylatro_cli/__init__.py": "d3437e7152e82274b0cf5832942d1483de3c6c4688e9d141a32efe4ebbd5e463",
+      "src/pylatro_cli/__main__.py": "2ba9d799ae313f4903ed3c65d5156d701f6c23524dd0e2b73948120088e16fa5",
+      "src/pylatro_cli/app.py": "7846ca1f6ea70fd16ccf46b3032339aedec02d0eca803cc93da33ada74c4bf25",
+      "src/pylatro_cli/controller.py": "1199a0ee12c43fe0023cf754931fef32183018005b0bc2f08c45db124b7780bb",
+      "src/pylatro_cli/joker_order.py": "1c513df5e4f13dad7245ae0de508c6b7093d4c998614d33d5983ec18c4eb05d9",
+      "src/pylatro_cli/screens/__init__.py": "e6a0a986a35d0a4d527dd4eacec6b6890dde0425c3c51cb3234c44bbac2a0b43",
+      "src/pylatro_cli/screens/blind_select.py": "6c4e307753943ed3b5fad054d7f1886416a718df4ea406a09407faae505332ee",
+      "src/pylatro_cli/screens/booster_pack.py": "a95a75b31d162483ba6110e77e62b542eab52ef9af4927a4e98ef38bd0440c1e",
+      "src/pylatro_cli/screens/consumable_target.py": "e3f527a236396df05cf7b83f491bf275de11dc966edbe0cfddff32c3e770d7a4",
+      "src/pylatro_cli/screens/game_over.py": "c8c83d2c5eee257ca253023cb69e17ca92315ac70db099b84f664a32cab41257",
+      "src/pylatro_cli/screens/hand_play.py": "76c8a161576ba9a7ab66b365ed651ae7f5431ef19347abcbcd7637b5e542c1de",
+      "src/pylatro_cli/screens/main_menu.py": "b93537179220ec0cfefaa777bd38c45000ed858cd4edd150eec2e4d083b0c07f",
+      "src/pylatro_cli/screens/run_info.py": "230569322f9bfbc8ea9d0f533ed91a4ef5c79568595dadcabc9da228046c2860",
+      "src/pylatro_cli/screens/seedwalk.py": "6f272951704479ba64be50b0ad0e0b51a450f2de50f8a1ee0bb2b9fa14299364",
+      "src/pylatro_cli/screens/settings_screen.py": "c33beaf082268228baf738571aef4f744b8c491928f9560b2f207ed22d3a239e",
+      "src/pylatro_cli/screens/shop.py": "364f8fb7b8facbd9ba674bead58a7b0a66b6ae44f4b0ec502ad3ca04fc9f8745",
+      "src/pylatro_cli/seedsearch.py": "bf35ab2dacf9e849835410063d889611d5414a860eb503a27da880d75652eaaf",
+      "src/pylatro_cli/settings.py": "8d4857d827cd563f1b94f2792212ed275bdb748a50fd7b6ff9f447e0c4421555",
+      "src/pylatro_cli/theme.py": "7697e1d9c4c3934fa88d95f38b4e9da30b9f5f24b4ddc3e5c61f341d8ef9fc3d",
+      "src/pylatro_cli/widgets/__init__.py": "8d2cd0cf308199efe28b1bab9f50b36b400a4548c38ae464f07a811fb650ad4b",
+      "src/pylatro_cli/widgets/action_buttons.py": "eddbfd3faa75eb388052784c1b3a8e300e9e0a606eab719b6c410761f9337982",
+      "src/pylatro_cli/widgets/blind_panel.py": "dfedb1b37e239fd6750334f15894e487e799e8a95dc3d8e7b549466d5a14fa9d",
+      "src/pylatro_cli/widgets/card.py": "dafde3991306c64451d51e552ebd9cd1d12044b5b02f30c267bbfc4e006212f6",
+      "src/pylatro_cli/widgets/card_row.py": "23ef35b8c3a981e297b1a704610304b207d64e49d44a0caf77f2b95b60137942",
+      "src/pylatro_cli/widgets/consumable_bar.py": "8ddc5231b5611c15fd2285b75756de11aae120c4f74a57bb0db9d40b63a3e8dc",
+      "src/pylatro_cli/widgets/joker_bar.py": "dd3691fbb694f717d0d924bcf3e588788d25c056911bc9efe195f5165304dae7",
+      "src/pylatro_cli/widgets/sidebar.py": "4d365be5fa51953ea64b9cef1eef9d2d696d0af4dd16ddca98b5c252d8369808",
+      "tools/continue_transfer.py": "2482869c0043d6a05c2600516a271e0d1c6c07855e557e5bf6396db57b58b0bd",
+      "tools/diagnose_reward_transfer.py": "d26834f4a880e0242a5875b5963baef963960432651a17de1ab203e018bb7996",
+      "tools/diagnose_transfer.py": "c77a17624747eb78ccd4d2b63ebe7a70ce5b9bec0999c0ea7e2c8ea84d031d8e",
+      "tools/evaluate_checkpoint.py": "12edb46e90e4e799d7659ebcd3281d0d145ec1652c979d60db7ce2983973c72d",
+      "tools/fit_risk_calibration.py": "285781d9a5f5caf3f5f5e3dc15970887f0700268fae99c9098eda388818437c6",
+      "tools/historical_transfer_evaluation.py": "04040116d0eb7b56ddebe60429caa81c24554cf0bbebd439b81e14a23ec94dda",
+      "tools/intervene_transfer.py": "e031303169f6146ef2a638d3b57bd5c49c38cf5d210e74de3a41ee87674f4253",
+      "tools/offline_critic_probe.py": "fc13e2b0bba54e000d790250949a69147a9d7eec657129ab580db32a50c34fd5",
+      "tools/ppo_health.py": "1f4084cde1e506c818700e6f8cb68cfcd6c15afedeb9f2a3f5aa8024af8d3b44",
+      "tools/reconstruct_generation.py": "a29faa6f2ea7aa42a2aaa263b9c657a04945ce2ef7ed158a7d4ab871716b9e35",
+      "tools/replay_reward_prefixes.py": "804e07eefc4bbc2251c30f0a02107a061d6a26a088fe318942b98c3d99eedf6d",
+      "tools/report_transfer.py": "2147d779d743c94b76dff3fb0e3d4df7eaaefefa9015c0a383de27ddb977a31d",
+      "tools/run_transfer_pipeline.py": "5a46b217bbd541851c7c0ab144685551684476ee5c60742a52ef545ec138bff9",
+      "tools/transfer_experiments.py": "1e760fb7a6d4764cb427e6fdd9396c5cc202085ff721c81d38c5fd64c78fff36",
+      "tools/verify_transfer.py": "081408580045aa6052b4cab4ab1134ef21aced56e3cf498cc6cd34b1268ea421"
+    },
+    "checkpoint_sha256": "08c6bbeaca80d8495fe3b73bf9a6730a11259dc378bd13cc5f459af9434443f0",
+    "diagnostic_manifest_sha256": "abf570f3983dc14bdf870a9b009a63c1583ae3adda1588b2d9b98f4c8ce5efe5",
+    "scope": "Legal current-rule prefixes only; original HF targets are untouched"
+  },
+  "provenance": {
+    "epoch10_checkpoint_sha256": "08c6bbeaca80d8495fe3b73bf9a6730a11259dc378bd13cc5f459af9434443f0",
+    "data_hashes": {
+      "cache/datasets/5k-balatro-games/.gitattributes": "9e75dd981de037ec3769f24f790e126bc5a160b6871f510214e68dc70649aeeb",
+      "cache/datasets/5k-balatro-games/README.md": "f4d827f3faadebd9a078e55fb36f22c0c1c99e0e9af0f1a50dd808179dc445d4",
+      "cache/datasets/5k-balatro-games/data/train-00000-of-00020.parquet": "0f566375c224c54370470e70d10918c4e2d40ff8a9a97d3c96e59ce81a8bc9d6",
+      "cache/datasets/5k-balatro-games/data/train-00001-of-00020.parquet": "69ccec96c08ebdeecc930b8094400129309679d63b4c4e4246feba853354181c",
+      "cache/datasets/5k-balatro-games/data/train-00002-of-00020.parquet": "ba0890caee3a9349714bddb3cf1fff086cb09876974d0251d0af4a0eb2d68909",
+      "cache/datasets/5k-balatro-games/data/train-00003-of-00020.parquet": "f3f6aa22619e50cf6be5acdef37b0908d64f098210c36b3db092c78d675acb21",
+      "cache/datasets/5k-balatro-games/data/train-00004-of-00020.parquet": "d7ac4a02e60b8d3bb68386f458e6a5344adf7ffa537fe47ca0ce17601f4c589f",
+      "cache/datasets/5k-balatro-games/data/train-00005-of-00020.parquet": "01a1596c8343790b0ad652ffc2c606197e0d69eb6ad371708ca52513ee3ab49e",
+      "cache/datasets/5k-balatro-games/data/train-00006-of-00020.parquet": "f143c0d2868476c26b21d6f3e14b86b8f64063ca2eb6ad12262395f575349378",
+      "cache/datasets/5k-balatro-games/data/train-00007-of-00020.parquet": "e1dc19a20270cfb176cc88674119d24ef52fb9bd9a7b98858c0774f2309f7b55",
+      "cache/datasets/5k-balatro-games/data/train-00008-of-00020.parquet": "695eff48ce89224c1c1866abc3ab1cc22600ea067a51daaddaebd315e3beb16e",
+      "cache/datasets/5k-balatro-games/data/train-00009-of-00020.parquet": "b8889aa59e0b0f91d20372acac877c4f13f7c910b70cc54829150d1649f76691",
+      "cache/datasets/5k-balatro-games/data/train-00010-of-00020.parquet": "77f3d9563b0203b3c3a4f30209c2700497ae0cc1e0fbdc55424366d9c4f5eb3a",
+      "cache/datasets/5k-balatro-games/data/train-00011-of-00020.parquet": "0a8296233cf493bc140964c01f595b25703cafbb0e6984e148373fb157a27298",
+      "cache/datasets/5k-balatro-games/data/train-00012-of-00020.parquet": "cb4763a43ab7bf60c6def6831e63431731fde39701a22613a3a37bb5919bd06a",
+      "cache/datasets/5k-balatro-games/data/train-00013-of-00020.parquet": "252b53122498b77f1f032a7e813c225510fb9b90924b1f2586cede7accefb5e1",
+      "cache/datasets/5k-balatro-games/data/train-00014-of-00020.parquet": "2159c20dae7bfa6ab0eaf68ae82b42aa9e2a2a4dca2665ce701a5c9703a3d03e",
+      "cache/datasets/5k-balatro-games/data/train-00015-of-00020.parquet": "3872f975d657d56da63223eeb51b8b29fb2ee3a7814ead1290b1416d6db413c2",
+      "cache/datasets/5k-balatro-games/data/train-00016-of-00020.parquet": "736e8c75611c0a73473911a04733b42fd951158200b6ee81b1d9dee641702ef9",
+      "cache/datasets/5k-balatro-games/data/train-00017-of-00020.parquet": "70d498d330971efda858a34bfb5b50a784aac1c95abda68c71d825257b03e570",
+      "cache/datasets/5k-balatro-games/data/train-00018-of-00020.parquet": "c86235cc4c66446fc316dc5a878b68275ba8e7040d411367eecd2e9efefa7e90",
+      "cache/datasets/5k-balatro-games/data/train-00019-of-00020.parquet": "db52791b031fe624a7e9af1210230572f2d32e3458b47b99ebba4cd8a3f2f81f",
+      "cache/datasets/5k-balatro-games/download_manifest.json": "51caa298076c9ce3dfca08f30942b002ebb05a5f980c1461c21b7517f8a0c145",
+      "cache/datasets/5k-balatro-games/metadata/actions.json": "61ed4296430e4e8a6ec727030519aaa34cc5fba72c9fddf0f96b0ea521202d4f",
+      "cache/datasets/5k-balatro-games/metadata/constants.json": "1ad16ea624f6b032cf9fc623f05d73451c4eb45e6b172716233afa3421a80bb3",
+      "cache/datasets/5k-balatro-games/metadata/games.jsonl": "fd0713cff697b40e855754456253b219f6c6a57666eb5207ce6505e627e584bf",
+      "cache/datasets/5k-balatro-games/metadata/generation.json": "1f50b9b42b9c07dd842d63bf3635db2a03732b42fe62eb3f07e708733672fb03",
+      "cache/datasets/5k-balatro-games/metadata/schema.json": "473a95565e6bc149dd1113ae9d1d644195e3bd6c671687a04f139b64954ab212",
+      "cache/datasets/5k-balatro-games/metadata/summary.json": "69f9935bb1f82f26a7431df16bfa338c895edf0208c7aefaa08a54ab97643bdf",
+      "cache/datasets/5k-balatro-games/metadata/vocabulary.json": "469a3be0677c39d1f530f2456a949dc554f80e71a6120cccbe17228792b8651c"
+    },
+    "source_drift": {
+      "scripts/generate_heuristic_dataset.py": {
+        "generation": "d28ecc1a0a59cb73d12d97ed27372b0bf8f7ac9aa0d78fed74568d11f2319ea2",
+        "current": null
+      },
+      "src/pylatro_agent/hand_candidates.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "7d330681fb8f0c9ec785d7f46d3d73cc6ac25488c38c193fe2d27c20b27cfd70",
+        "current": null
+      },
+      "src/pylatro_agent/env.py": {
+        "generation": "7b573b91c3bc683bf1f6c0ecd778afc2686d7c9f26db71991ccbc1a31409c1bc",
+        "current": "3696255cc21aaea2609a6f0c518e1d345d2959d0069a8c02d4f21a1fb21243b2"
+      },
+      "src/pylatro_agent/agent.py": {
+        "generation": "e6b98bfde12ceea2ece0a49a9aacf3295e4f2028fc429820d0835627c199eb51",
+        "current": "594d3ac72afee56004e76a879ac25fe9865132668b5aef6329d8d9a11a25fbef"
+      },
+      "src/pylatro_agent/eval.py": {
+        "generation": "da17fa87cad96013ebf6415edea98c973b95939d1c7dfb87247204e73f706171",
+        "current": "44c992064eee26fe0f2e9884bc5c68e0e8944e3e7d2cb639a674a6525250e760"
+      },
+      "src/pylatro_agent/tokenizer.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "5e5898f1e5eef497a7330949c3d71d9da42d88257186214a5f90f7135ab2260a",
+        "current": null
+      },
+      "src/pylatro_agent/heuristic.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "19e0adcb76f2953521a325316dd292cadb09d03dafc44a66495353d766112204",
+        "current": null
+      },
+      "src/pylatro_agent/build_value.py": {
+        "generation": "53cc4c8acf03de83fbb2f1a0360c1b7e86659e637133ed64fb201e8fb025975e",
+        "current": "f9392d18bee2162ac02e22178f089c908937b633cf4fdf5b6ca51222746b453c"
+      },
+      "src/pylatro/runtime.py": {
+        "generation": "5e2eec9420066a5b2f44d002b80657e594e74c8661eb8ffbdbc8e19dcc10f0fb",
+        "current": "46cf3f44d6e6093657ae1a1f0b1f24322cdd3668a31a8695ed1ef39347e9c88e"
+      },
+      "src/pylatro/shop.py": {
+        "generation": "c72606074aa9b8cf5d5747029aad186c5350a8a57339f05e3cf7ac95993d5bec",
+        "current": "861f5168192b9be14e82ba2a7e85a0b051c174c4cf1a5c8d6c4bdfb7c1bb90be"
+      },
+      "src/pylatro/rng.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "be42cc408105bccdf103525b9f0713ed7469244fe8fa329adc7446b9f24d2245",
+        "current": null
+      },
+      "src/pylatro/shop.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "6d8acf357d29fee6ca9c377e3a1f116887fc801975bf501e9175b5bdaff5526f",
+        "current": null
+      },
+      "src/pylatro/_state_copy.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "91aca91c17da682d239c2bf769b600ae63a5ec7dcc57651612bdd0c330ddb443",
+        "current": null
+      },
+      "src/pylatro/consumables.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "c0cbc6c6345a98acd37d1ba11787312652ef9c04f82f960a83523371ac8e60fa",
+        "current": null
+      },
+      "src/pylatro/instances.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "2399b1555f9fb89d89aad7178a8939a202615ef8f8a46c1cadb3060988f8e829",
+        "current": null
+      },
+      "src/pylatro/pool.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "6ae7b7f57e90d20d0219fd6458660334458dd593ea66c6fc4e3aae3715d02220",
+        "current": null
+      },
+      "src/pylatro/scoring.py": {
+        "generation": "91d6c4a0b1af1a9417b551e956fcf4f7d38c84940dc1ae2a3ab328c936715275",
+        "current": "a1fcc424482bfd946d9554964bd0d4746545760ccd5bf28937972966af19ebde"
+      },
+      "src/pylatro/blind.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "8c51a1ece835821ae4d5f6c2af9389ce9224bf6ddf7f6e2a5f76c11ad4a4c10e",
+        "current": null
+      },
+      "src/pylatro/models.py": {
+        "generation": "74a896364984feb4090018d5e4f390dd9ec0368565bb5587a498f5b937a032a8",
+        "current": "b6cc577ca3aa25c44cac75a4210a99df425e6409f5929e15063f17d7100782e3"
+      },
+      "src/pylatro/_helpers.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "f9dbf38a355dffa1c14a2bc810a06e15d2adb10ef75a73467ef7a3fad5a15537",
+        "current": null
+      },
+      "src/pylatro/instances.py": {
+        "generation": "d077300ee24364456712e5e5e00933ef6b8897a79593864608b04da9c9d90158",
+        "current": "a24cae4b9714fc262d785bfb09f27fdf36aa8262a96775996bee7908311ac401"
+      },
+      "src/pylatro/scoring.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "78a47a549577373f632b48bab3da87468be920b3eed1db62de645c0e8bf31a53",
+        "current": null
+      },
+      "src/pylatro/blind.py": {
+        "generation": "12f585344e6df319da721229c19210bdde18ef702acd6c00a875b369c7e24d4e",
+        "current": "e8df681dd530e8fb6b0577e879f96893026737678decdc23740b84b4ad748e04"
+      },
+      "src/pylatro/consumables.py": {
+        "generation": "6dd927e8b556894f71d9cb71c9ebdd3eca57a98e7878cb43828eeb65742f4e7d",
+        "current": "21d80e10b87ffc725653ef4fab09c4ba95a191ad4f7144c19f704b40a8f118e2"
+      },
+      "src/pylatro/flow.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "c48f0f6816ce745aed4bcb4b675482dbe6aad97648dcdacf55e9e32c68a32cf0",
+        "current": null
+      },
+      "src/pylatro/runtime.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "7eaa2cfbdcc4212cd5f18ceaa42e688a14c289f76cbbd4b594130f9871b69a8d",
+        "current": null
+      },
+      "src/pylatro/flow.py": {
+        "generation": "72d77859f6ed266a8e9c09c4fcfb37f47999ba11744fbbe69367b30d33a02111",
+        "current": "66bea55c4532d791d0a89b5370c56aab73f3af0f70002450fe2fbc7b2b892c64"
+      },
+      "src/pylatro_cli/balatro.tcss": {
+        "generation": "19b09d644abe84c0835d09d44274535c5b0e4763b2693cec89aa84f882ba0802",
+        "current": null
+      },
+      "src/pylatro_cli/controller.py": {
+        "generation": "b56878bd334a3eb7e0def0ce82683d29f7acfba68f924371401bed879e5a3c94",
+        "current": "1199a0ee12c43fe0023cf754931fef32183018005b0bc2f08c45db124b7780bb"
+      },
+      "src/pylatro_agent/live/adapter.py": {
+        "generation": "817640a47513631b1f4db39b55e0e7c32b2613795ea47d315f8a4962446a29e5",
+        "current": "1de2fad51d2b6d11d11e0af0b549a2e27f7d9cb6ab5b27b16394a2f529af5a48"
+      },
+      "src/pylatro_agent/training/model_generate.py": {
+        "generation": "fb8119d3d3fd5e60164f2af293942ba46b10be76093132bf38433cdf1e1fde2f",
+        "current": "54319a83165898ca0d98d6e6ce92d00e6b2bca497c2a872160ca1420b8bf0054"
+      },
+      "src/pylatro_agent/training/ppo_checkpoint.py": {
+        "generation": "a1423ebf0798437f5c30a144bdda9f1017ad29cc80a43d86a8ba3eeec2de248e",
+        "current": "486bfd6ebdd936e783046cf6f78325d120aa989ddebdb53e60c498501195b4f2"
+      },
+      "src/pylatro_agent/training/fast_runner.cpython-312-x86_64-linux-gnu.so": {
+        "generation": "d5915bca47ba5c532a4cd63958635170111aae1f11f78c52f57e7cdefb885f3c",
+        "current": null
+      },
+      "src/pylatro_agent/training/sil.py": {
+        "generation": "7b537eab01f9f804ecacc3eea83f70e7f29f055012102efd85f59fa1945e08bd",
+        "current": "92b253873aa9c10cbe1884c83990251367f31be58e48b168d883ab5e025c37b5"
+      },
+      "src/pylatro_agent/training/ppo_rollout.py": {
+        "generation": "9fdebe8e131ca6f0394c624065bd6501bdc0eea3ca72f9bb1da28117931c1a52",
+        "current": "16d1df3fc3d6dc4756ac04b11bbe03288018effe5ca46b6c0aaa6e88dc97c7c5"
+      },
+      "src/pylatro_agent/training/ppo_config.py": {
+        "generation": "9977487733b956ef2833ed94b38fb7d3dbca0ba875c5a1cdb8884b72a3554e7d",
+        "current": "ede9161df1f1ab918199186c340d9445f9644ed26363e8f62fc09addd2f9e1fe"
+      },
+      "src/pylatro_agent/training/ppo_policy.py": {
+        "generation": "b6e86fa439bb92f02e41dc02296c47f95d6a6855192171f6a03f02f7d9fd4bac",
+        "current": "aa47b4f202ec99dbb2392b654be7c46e7952f7dd76e4bca60fdbf08c2d5ab615"
+      },
+      "src/pylatro_agent/training/pt_ppo_run.py": {
+        "generation": "122539b9cac0b03c53985dd8f5860014b7b5dabceacf91d1db555b3562ed1f35",
+        "current": "ff2cd962cc9d85f2fa3957759e5180a47791ba9dd8af2a691cbc5dfbb9f75c39"
+      },
+      "src/pylatro_agent/training/supervised.py": {
+        "generation": "9b17ed128aabe33e04456712d8c226761a5c65a760ed24a88ee8b61ff2179cc0",
+        "current": "a6c1bce5ba02599f50ecd78fdef6525a5c17842da804aa729b2a6c3c9db8be31"
+      },
+      "src/pylatro_agent/training/ppo_optimization.py": {
+        "generation": "f26e41f7bdb0b9af6af61c31d865caf2035b8a1913994608e7ce257c384aba30",
+        "current": "de300061201e5d6476f6892d04afb3c956a4740cfe32da16c127fcc85da43ea9"
+      },
+      "src/pylatro_agent/training/fast_runner.py": {
+        "generation": "b57ff46527b0c598f5581d2147e28f66e38cd3c840f1f9f678a14cbb20d0a118",
+        "current": "6a00364c65d24590cee3f89c483449654a1e18d598902fd29f9d926ecbb12acd"
+      },
+      "src/pylatro_agent/training/ppo.py": {
+        "generation": "6864e916ede71e30daaf58e08536189d4f24c0356fee6e8d196c9694864ab859",
+        "current": "b0918cc2f1b08168de6bc8642f679c8a365a1c9043b2c66648e9915380dfd7ac"
+      },
+      "src/pylatro_agent/training/ppo_evaluation.py": {
+        "generation": "3ae3df805eea406369ee160b9ac5636e435f804a034d74f488d9de10257b80fc",
+        "current": "189ab666b04252f32a74cdca15f22de0a97e5af23e4771e43613647af02ebb6c"
+      },
+      "src/pylatro_cli/screens/consumable_target.py": {
+        "generation": "a56e1cdb270685f0f1e0cc8943cedd13eb3f24fe2429b9cc22f623bcf6055bdf",
+        "current": "e3f527a236396df05cf7b83f491bf275de11dc966edbe0cfddff32c3e770d7a4"
+      },
+      "src/pylatro_cli/screens/booster_pack.py": {
+        "generation": "6e476a5ebddc344f4c0efe8cb076ae18376c4aff8d7877fe746102b2b882c9e9",
+        "current": "a95a75b31d162483ba6110e77e62b542eab52ef9af4927a4e98ef38bd0440c1e"
+      }
+    },
+    "historical_reconstruction": {
+      "matching_commits": {
+        "src/pylatro_agent/env.py": "921936aa54ead7b73ebd61a4dca78025e7c4a492",
+        "src/pylatro_agent/build_value.py": "100fbf0546c6122a67b4ddab1edc8e2efad44107",
+        "src/pylatro/runtime.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/shop.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/run.py": "74368c25b5ac66799df595be4d78ef15dc228106",
+        "src/pylatro/_helpers.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/scoring.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/rng.py": "7936e45a9ef1e4259db58a2d0e881f4b0cb5bc6b",
+        "src/pylatro/models.py": "921936aa54ead7b73ebd61a4dca78025e7c4a492",
+        "src/pylatro/data.py": "74368c25b5ac66799df595be4d78ef15dc228106",
+        "src/pylatro/__init__.py": "3bf2683a42c448557c52c45a3a3b8ec28fac17c6",
+        "src/pylatro/seedsearch.py": "d9043e4125be7876aa9aac48230b1ec2ebcd8943",
+        "src/pylatro/_state_copy.py": "921936aa54ead7b73ebd61a4dca78025e7c4a492",
+        "src/pylatro/_cyshadow.py": "7801c4bf8e030e8c78fedd9c77efa6554baf8433",
+        "src/pylatro/instances.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/blind.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/seedwalk.py": "75a91c307c68869de4c6a47f774134d7675bb309",
+        "src/pylatro/consumables.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/pool.py": "3782a2bc357e850a93a14658d5bbeb370617e5ca",
+        "src/pylatro/flow.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro_cli/controller.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro_agent/training/fast_runner.py": "7ad81df1c8ddcdd035e8bac7d7f587921372af4c",
+        "src/pylatro/upstream/__init__.py": "b4ea9a8a391cf9a2c65d345d32600966ff18c3e6"
+      },
+      "restored_sources": {
+        "src/pylatro_agent/env.py": "7b573b91c3bc683bf1f6c0ecd778afc2686d7c9f26db71991ccbc1a31409c1bc",
+        "src/pylatro_agent/build_value.py": "53cc4c8acf03de83fbb2f1a0360c1b7e86659e637133ed64fb201e8fb025975e",
+        "src/pylatro/runtime.py": "5e2eec9420066a5b2f44d002b80657e594e74c8661eb8ffbdbc8e19dcc10f0fb",
+        "src/pylatro/shop.py": "c72606074aa9b8cf5d5747029aad186c5350a8a57339f05e3cf7ac95993d5bec",
+        "src/pylatro/run.py": "8bd7d0733b3871abd2dc6518a154d8860b94622f7d4267b39a1ebe707c1c404f",
+        "src/pylatro/_helpers.py": "3244ce09d4bc8b3e25daca289e35c22b5a37c96a4e64b2887751a813f330259e",
+        "src/pylatro/scoring.py": "91d6c4a0b1af1a9417b551e956fcf4f7d38c84940dc1ae2a3ab328c936715275",
+        "src/pylatro/rng.py": "a2a19bd6ae866be39a20884a7fda0cb523ae0fdbe812b13af10e57c5bf2217d1",
+        "src/pylatro/models.py": "74a896364984feb4090018d5e4f390dd9ec0368565bb5587a498f5b937a032a8",
+        "src/pylatro/data.py": "757d6890364822240f0f3851450f3f5a7dc6e9a96873bd8009a9f141e16195ad",
+        "src/pylatro/__init__.py": "a9f681b5a2182816d0d0353a196fac5974c681c91c3d68a8b77b234766a5ef6b",
+        "src/pylatro/seedsearch.py": "848c2d9d615574aba8190dacc30f75f02d0ada1c89da500e6767db6c067305d1",
+        "src/pylatro/_state_copy.py": "4b7782e3939c5dec43c7a58e93d903148190c52f3812c49572dba553e5ded7c1",
+        "src/pylatro/_cyshadow.py": "f8bed82c2a5d563f453df94ea37facb95af6b4404a27ddca7f71793f254ca666",
+        "src/pylatro/instances.py": "d077300ee24364456712e5e5e00933ef6b8897a79593864608b04da9c9d90158",
+        "src/pylatro/blind.py": "12f585344e6df319da721229c19210bdde18ef702acd6c00a875b369c7e24d4e",
+        "src/pylatro/seedwalk.py": "4e76fcbfc8238f2323d9d1a0a27fba23cc6644a1d9848dea28feae8492020b40",
+        "src/pylatro/consumables.py": "6dd927e8b556894f71d9cb71c9ebdd3eca57a98e7878cb43828eeb65742f4e7d",
+        "src/pylatro/pool.py": "13053b1b5d179547f2f575a617f4f00abaa74ecc99e305f759930416fe2aa144",
+        "src/pylatro/flow.py": "72d77859f6ed266a8e9c09c4fcfb37f47999ba11744fbbe69367b30d33a02111",
+        "src/pylatro_cli/controller.py": "b56878bd334a3eb7e0def0ce82683d29f7acfba68f924371401bed879e5a3c94",
+        "src/pylatro_agent/training/fast_runner.py": "b57ff46527b0c598f5581d2147e28f66e38cd3c840f1f9f678a14cbb20d0a118",
+        "src/pylatro/upstream/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+      },
+      "note": "Per-file matches supersede the initial source_commit search hint in the reconstruction manifest."
+    },
+    "runtime": {
+      "python": "3.12.7 (main, Oct  1 2024, 02:05:46) [Clang 16.0.6 ]",
+      "os": "macOS-26.6.2-arm64-arm-64bit",
+      "architecture": "arm64",
+      "packages": {
+        "torch": "2.11.0",
+        "numpy": "2.3.1",
+        "pyarrow": "25.0.1",
+        "tensorboard": "2.20.0"
+      },
+      "accelerator": "MPS",
+      "reference_physical_evaluation_batch": 32,
+      "reference_engine_workers": 4
+    }
+  }
+}

@@ -24,6 +24,7 @@ check_cython_freshness()
 def main():
     # Imported here rather than at module scope so `--help` stays cheap while
     # still letting flag defaults track the reward model's own defaults.
+    from pylatro_agent.entity_heads import ACTION_HEAD_VARIANTS
     from pylatro_agent.reward import RewardConfig
 
     parser = argparse.ArgumentParser(description="Train the Balatro agent")
@@ -33,6 +34,13 @@ def main():
     )
     parser.add_argument("--games", type=int, default=1000, help="Heuristic games for supervised (default: 1000)")
     parser.add_argument("--epochs", type=int, default=5, help="Supervised epochs (default: 5)")
+    parser.add_argument(
+        "--action-head-variant", choices=ACTION_HEAD_VARIANTS, default="legacy_v1",
+        help=(
+            "Action architecture; must match pretrained/resume checkpoint metadata. "
+            "Subset variants require a positive AR mixture."
+        ),
+    )
     parser.add_argument(
         "--supervised-entropy-coeff",
         type=float,
@@ -72,6 +80,9 @@ def main():
     )
     parser.add_argument("--steps", type=int, default=1_000_000, help="PPO total timesteps (default: 1000000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
+    parser.add_argument("--stake", type=int, default=1, help="Supervised data-generation stake")
+    parser.add_argument("--deck", dest="deck_key", default="b_red",
+                        help="Training/evaluation deck key (use b_blue for the 5k HF dataset)")
     parser.add_argument("--archive-return", action="store_true",
                         help="Train from a mix of fresh runs and archived states")
     parser.add_argument("--archive-return-probability", type=float, default=0.5)
@@ -789,6 +800,10 @@ def main():
         d_ff=args.d_ff,
         danger_shop_leave_logit_penalty=args.danger_shop_leave_logit_penalty,
         precision=args.precision or "fp32",
+        action_head_variant=args.action_head_variant,
+        hand_ar_mixture_eps=(
+            args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else (0.5 if supervised_phase else 0.1)
+        ),
     )
 
     checkpoint_dir = args.checkpoint_dir
@@ -801,6 +816,8 @@ def main():
         sup_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.5
         train_supervised(
             SupervisedConfig(
+                deck_key=args.deck_key,
+                stake=args.stake,
                 num_games=args.games,
                 data_path=args.data_path,
                 batch_size=args.batch,
@@ -870,6 +887,7 @@ def main():
                 milestone_decay_fraction=args.milestone_decay_fraction,
                 seed=args.seed,
                 num_envs=args.envs,
+                deck_key=args.deck_key,
                 rollout_length=args.rollout_length,
                 total_timesteps=args.steps,
                 total_updates=args.updates,
@@ -1043,6 +1061,8 @@ def main():
 
         train_supervised(
             SupervisedConfig(
+                deck_key=args.deck_key,
+                stake=args.stake,
                 num_games=args.games,
                 batch_size=args.batch,
                 lr=args.lr,

@@ -34,6 +34,7 @@ class PPOConfig:
     milestone_final_scale: float = 0.0
     milestone_decay_fraction: float = 0.8
     num_envs: int = 32
+    deck_key: str = "b_red"
     seed: int = 0
     rollout_length: int = 256
     total_timesteps: int = 1_000_000

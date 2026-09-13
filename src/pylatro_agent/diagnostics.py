@@ -1,8 +1,8 @@
 """Action, build, and joker diagnostics for agent rollouts.
 
-The action-quality fields are shared by BalatroEnv and fast_generate because
-reward shaping reads them on both paths. Build, shop-event, Hologram, and exact
-counterfactual diagnostics are emitted by BalatroEnv for PPO metrics only.
+Action-quality and shop-event fields are shared by BalatroEnv and fast_generate
+because reward shaping reads them on both paths. Detailed build, Hologram, and
+exact counterfactual diagnostics are emitted by BalatroEnv for PPO metrics.
 """
 
 from __future__ import annotations

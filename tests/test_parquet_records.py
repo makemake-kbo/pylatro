@@ -86,6 +86,8 @@ def test_published_layout_with_sidecar_and_step(tmp_path):
     table = pq.read_table(path)
     metadata = json.loads(table.schema.metadata[b'pylatro'])
     table = table.append_column('step', pa.array(range(len(table))))
+    for step, row in enumerate(original):
+        row["step"] = step
     pq.write_table(table.replace_schema_metadata(None), path)
     with pytest.raises(ValueError, match='require embedded metadata'):
         load_records(path, reward_config=DEFAULT_REWARD_CONFIG)

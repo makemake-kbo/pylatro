@@ -24,11 +24,13 @@ from typing import TYPE_CHECKING, Any
 from pylatro import GameData, load_game_data
 from pylatro_cli.controller import GamePhase
 
-from ..action import decode_action
+from ..action import ActionType, decode_action
 from ..constants import SubPhase
+from ..diagnostics import step_event_diagnostics
 from ..heuristic import HeuristicAgent
 from ..joker_layout import OrderObjective
 from ..reward import RewardConfig, default_reward
+from ..risk import estimate_clear_risk
 from ..shop_eval import capture_build_features
 from ..strategic_events import derive_strategic_event
 from ..survival import terminal_outcome_class, validate_critic_win_ante
@@ -74,6 +76,7 @@ def _capture_info(runner: FastRunner, *, stalled: bool = False) -> dict[str, Any
         "ante": state.round_resets.ante,
         "round_score": runner.round_score,
         "blind_on_deck": state.blind_on_deck or "",
+        "boss_key": state.round_resets.blind_choices.get("Boss", "") or "",
         "blind_target": _blind_target(state),
         "hands_left": state.current_round.hands_left,
         "discards_left": state.current_round.discards_left,
@@ -150,7 +153,9 @@ def _build_obs(runner: FastRunner, tokenizer: Tokenizer) -> dict[str, np.ndarray
     }
 
 
-def _fast_action_diagnostics(state, decoded) -> dict[str, Any]:
+def _fast_action_diagnostics(
+    state, decoded, *, action_mask=None, round_score: float = 0.0, blind_target: float = 0.0,
+) -> dict[str, Any]:
     """Compute per-step diagnostics for default_reward shaping.
 
     Delegates to the shared diagnostics module so PPO (BalatroEnv) and
@@ -161,7 +166,9 @@ def _fast_action_diagnostics(state, decoded) -> dict[str, Any]:
     """
     from ..diagnostics import action_diagnostics
 
-    return action_diagnostics(state, decoded)
+    return action_diagnostics(
+        state, decoded, action_mask=action_mask, round_score=round_score, blind_target=blind_target,
+    )
 
 
 def _make_blind_search(mode, confirm_early=False):
@@ -200,6 +207,7 @@ def _run_game_single_pass(
     won = False
     episode_stalled = False
     rewarded_gold_card_ids: set[int] = set()
+    joker_replacement_clear_baseline: float | None = None
 
     prev_info = _capture_info(runner)
     prev_sig = _info_signature(prev_info)
@@ -218,6 +226,15 @@ def _run_game_single_pass(
 
         current_obs = obs
         current_prev_info = prev_info
+
+        # These fields describe the chosen action in the state it was selected
+        # from. A purchase/play can remove or reorder those cards immediately.
+        decoded = decode_action(action)
+        action_diagnostics = _fast_action_diagnostics(
+            runner.state, decoded, action_mask=mask,
+            round_score=float(runner.round_score),
+            blind_target=float(current_prev_info["blind_target"]),
+        )
 
         action_result = runner.step(action)
 
@@ -246,12 +263,26 @@ def _run_game_single_pass(
         curr_info["stalled"] = stalled
         curr_info["progress_made"] = progress_made
         curr_info["steps_since_progress"] = steps_since_progress
-        decoded = decode_action(action)
         curr_info["action_type"] = decoded.action_type
         curr_info["action_index"] = decoded.index
         curr_info["action_detail"] = decoded.detail
 
-        action_diagnostics = _fast_action_diagnostics(state, decoded)
+        # Shop events supply reward inputs, including the identity of a bought
+        # Joker. Omitting them silently disables the upgrade reward.
+        action_diagnostics.update(step_event_diagnostics(
+            current_prev_info, curr_info, decoded,
+            next_action_mask=None if terminated else runner.compute_mask(),
+        ))
+        if (decoded.action_type == ActionType.SHOP_SELL_JOKER
+                and action_diagnostics.get("shop_sold_joker_id")
+                and joker_replacement_clear_baseline is None):
+            joker_replacement_clear_baseline = estimate_clear_risk(current_prev_info).clear_probability
+        elif decoded.action_type == ActionType.SHOP_BUY and action_diagnostics.get("shop_bought_joker_id"):
+            if joker_replacement_clear_baseline is not None:
+                curr_info["joker_upgrade_baseline_clear_probability"] = joker_replacement_clear_baseline
+            joker_replacement_clear_baseline = None
+        elif decoded.action_type == ActionType.SHOP_LEAVE:
+            joker_replacement_clear_baseline = None
         action_diagnostics.update(
             derive_strategic_event(
                 current_prev_info,
@@ -279,7 +310,8 @@ def _run_game_single_pass(
         rewards.append(float(reward))
 
         records.append({"obs": current_obs, "action": action, "reward": float(reward),
-                        "seed": seed, "tokenizer_version": TOKENIZER_VERSION})
+                        "seed": seed, "tokenizer_version": TOKENIZER_VERSION,
+                        "reward_snapshot_version": 3})
 
         if terminated:
             break

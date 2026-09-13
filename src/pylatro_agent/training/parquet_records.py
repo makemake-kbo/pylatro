@@ -28,7 +28,7 @@ class ParquetRecords(Sequence):
     """Read a file or dataset directory, caching at most two decoded row groups.
 
     Returned observations have their original NumPy shapes/dtypes. The published
-    dataset's additional ``step`` column is omitted. Metadata is embedded in new
+    dataset's ``step`` column is retained for replay provenance. Metadata is embedded in new
     files, or read from metadata/schema.json in a downloaded dataset snapshot.
     """
 
@@ -85,7 +85,7 @@ class ParquetRecords(Sequence):
         pa, _ = _arrow()
         file_index, group = self._groups[index]
         table = self._files[file_index].read_row_group(group).combine_chunks()
-        columns = {name: table[name].to_pylist() for name in table.column_names if name not in {"obs", "step"}}
+        columns = {name: table[name].to_pylist() for name in table.column_names if name != "obs"}
         observations = table["obs"].chunk(0)
         if observations.null_count:
             raise ValueError("Null observations are not valid training records")

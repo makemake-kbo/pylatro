@@ -88,6 +88,8 @@ class SupervisedConfig:
     excluded_seeds: tuple[int, ...] = ()
     data_path: str | None = None
     seed: int = 0
+    deck_key: str = "b_red"
+    stake: int = 1
 
 
 def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
@@ -216,6 +218,8 @@ def train_supervised(
             win_ante=config.win_ante,
             reward_config=active_reward_config,
             excluded_seeds=config.excluded_seeds,
+            deck_key=config.deck_key,
+            stake=config.stake,
         )
         t_gen_elapsed = time.monotonic() - t_gen_start
         logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)

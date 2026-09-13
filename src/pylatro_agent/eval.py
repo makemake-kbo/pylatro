@@ -98,6 +98,9 @@ def evaluate_on_seeds(
     batch_size: int = 32,
     eval_workers: int = 0,
     eval_cpu_threads: int | None = None,
+    deck_key: str = "b_red",
+    reward_config=None,
+    sampling_seed: int = 0,
 ) -> list[SeedOutcome]:
     """Evaluate ``model`` on a fixed list of seeds, returning per-seed outcomes.
 
@@ -109,22 +112,16 @@ def evaluate_on_seeds(
     Games are advanced in lockstep batches of ``batch_size`` sharing one policy
     forward pass; see :func:`pylatro_agent.training.ppo.run_seed_evaluation`.
     """
-    from .training.ppo import run_seed_evaluation
+    from .training.ppo_evaluation import evaluate_model
 
-    results = run_seed_evaluation(
-        model,
-        data,
-        vocab,
-        list(seeds),
-        device,
-        max_no_progress_steps=max_no_progress_steps,
-        win_ante=win_ante,
-        temperature=temperature,
-        stake=stake,
-        greedy=greedy,
-        batch_size=batch_size,
-        eval_workers=eval_workers,
-        eval_cpu_threads=eval_cpu_threads,
+    results = []
+    evaluate_model(
+        model, data, vocab, len(seeds), device, seeds=list(seeds),
+        max_no_progress_steps=max_no_progress_steps, win_ante=win_ante,
+        temperature=temperature, stake=stake, deck_key=deck_key, greedy=greedy,
+        eval_batch_size=batch_size, eval_workers=eval_workers,
+        eval_cpu_threads=eval_cpu_threads, reward_config=reward_config,
+        sampling_seed=sampling_seed, outcomes_out=results,
     )
     return [
         SeedOutcome(
@@ -145,6 +142,10 @@ def evaluate_heuristic_on_seeds(
     max_no_progress_steps: int = 256,
     win_ante: int | None = None,
     stake: int = 1,
+    deck_key: str = "b_red",
+    shop_policy: str = "legacy",
+    grow_scalers: bool = False,
+    reward_config=None,
 ) -> list[SeedOutcome]:
     """Evaluate the heuristic teacher on the same fixed seeds.
 
@@ -153,6 +154,7 @@ def evaluate_heuristic_on_seeds(
     paired baseline against any learned policy on identical seeds.
     """
     from .env import BalatroEnv
+    from .heuristic import HeuristicAgent
 
     outcomes: list[SeedOutcome] = []
     for seed in seeds:
@@ -161,10 +163,14 @@ def evaluate_heuristic_on_seeds(
             data=data,
             vocab=vocab,
             stake=stake,
+            deck_key=deck_key,
+            reward_config=reward_config,
+            enable_teacher=False,
             max_steps=max_no_progress_steps,
             win_ante=win_ante,
         )
         env.reset()
+        env._teacher = HeuristicAgent(shop_policy=shop_policy, grow_scalers=grow_scalers)
         done = False
         info: dict = {}
         while not done:
@@ -176,6 +182,7 @@ def evaluate_heuristic_on_seeds(
         max_ante = int(info.get("ante", 1))
         round_score = int(info.get("round_score", 0))
         outcomes.append(SeedOutcome(seed=seed, won=won, max_ante=max_ante, round_score=round_score))
+        env.close()
 
     return outcomes
 
@@ -254,8 +261,8 @@ def paired_win_rate_delta(
     """Win-rate delta with McNemar test + paired bootstrap CI.
 
     Both outcome lists must cover the *same* set of seeds. Seeds are aligned by
-    value; a missing seed in either list is dropped from the comparison (with a
-    warning) so a partial re-run cannot silently bias the delta.
+    value; missing or duplicate seeds are rejected so a partial re-run cannot
+    silently bias the delta.
 
     The bootstrap resamples the per-seed win-indicator *differences* (paired),
     which captures the variance reduction from identical deck orders. The McNemar
@@ -267,13 +274,12 @@ def paired_win_rate_delta(
     by_a = {o.seed: o.won_int for o in outcomes_a}
     by_b = {o.seed: o.won_int for o in outcomes_b}
     common = sorted(set(by_a) & set(by_b))
-    dropped = (set(by_a) ^ set(by_b))
-    if dropped:
-        logger.warning(
-            "Paired comparison: %d seeds not shared between the two outcome sets; "
-            "dropped from the comparison.",
-            len(dropped),
-        )
+    if len(by_a) != len(outcomes_a) or len(by_b) != len(outcomes_b):
+        raise ValueError("Paired comparison requires distinct seeds; duplicate outcomes found")
+    if set(by_a) != set(by_b):
+        raise ValueError("Paired comparison requires the same seeds; missing outcomes found")
+    if bootstrap_resamples < 1 or not 0 < confidence < 1:
+        raise ValueError("Invalid bootstrap resamples or confidence")
 
     n = len(common)
     if n == 0:

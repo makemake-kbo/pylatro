@@ -66,6 +66,7 @@ def _make_env(
     archive_config: ArchiveConfig | None = None,
     archive_index: int = 0,
     excluded_seeds: tuple[int, ...] = (),
+    deck_key: str = "b_red",
 ):
     """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
 
@@ -73,6 +74,7 @@ def _make_env(
         return BalatroEnv(
             seed=seed,
             stake=stake,
+            deck_key=deck_key,
             data=data,
             vocab=vocab,
             max_steps=max_no_progress_steps,
@@ -101,6 +103,7 @@ def _make_vectorized_envs(
     counterfactual_diagnostic_interval: int = 0,
     archive_config: ArchiveConfig | None = None,
     excluded_seeds: tuple[int, ...] = (),
+    deck_key: str = "b_red",
 ):
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
@@ -118,6 +121,7 @@ def _make_vectorized_envs(
             archive_config=archive_config,
             archive_index=i,
             excluded_seeds=excluded_seeds,
+            deck_key=deck_key,
         )
         for i in range(num_envs)
     ]

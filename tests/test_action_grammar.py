@@ -58,6 +58,8 @@ def test_exact_entropy_and_gradients_match_enumerated_atomic_policy(eps):
     # families, duplicated candidate slots, and deterministic decisions.
     for name in output.__dataclass_fields__:
         tensor = getattr(output, name)
+        if tensor is None:
+            continue
         if not name.startswith("candidate"):
             tensor.copy_(torch.randn_like(tensor))
         tensor.requires_grad_(True)
@@ -80,7 +82,7 @@ def test_exact_entropy_and_gradients_match_enumerated_atomic_policy(eps):
     torch.testing.assert_close(probs.sum(), torch.tensor(1.0))
     torch.testing.assert_close(actual, exact, atol=2e-6, rtol=2e-6)
     assert 0 <= actual.item() <= math.log(len(actions)) + 1e-6
-    parameters = [getattr(output, name) for name in output.__dataclass_fields__]
+    parameters = [getattr(output, name) for name in output.__dataclass_fields__ if getattr(output, name) is not None]
     reference_grad = torch.autograd.grad(exact, parameters, retain_graph=True, allow_unused=True)
     actual_grad = torch.autograd.grad(actual, parameters, allow_unused=True)
     for tensor, reference, observed in zip(parameters, reference_grad, actual_grad, strict=True):

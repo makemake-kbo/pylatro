@@ -116,6 +116,7 @@ def train_ppo(
     if data is None:
         data = load_game_data()
     vocab = build_vocab(data)
+    logger.info("PPO training and evaluation deck: %s", config.deck_key)
     if agent_config is None:
         agent_config = AgentConfig()
     # Apply the PPO-phase mixture weight so the AR head provides targeted
@@ -286,6 +287,7 @@ def train_ppo(
         counterfactual_diagnostic_interval=config.counterfactual_diagnostic_interval,
         archive_config=config.archive_config,
         excluded_seeds=tuple(evaluation_seed_list(config.eval_games, config.eval_seeds)),
+        deck_key=config.deck_key,
     )
     if resume_state is not None and config.archive_config is not None:
         archive_states = resume_state.get("archive_states")
@@ -498,6 +500,7 @@ def train_ppo(
                     model.to(baseline_device), data, vocab, config.eval_games, baseline_device,
                     max_no_progress_steps=config.max_no_progress_steps, win_ante=config.win_ante,
                     temperature=config.rollout_temperature, stake=config.stake, seeds=config.eval_seeds,
+                    deck_key=config.deck_key,
                     eval_batch_size=config.eval_batch_size, eval_workers=config.eval_workers,
                     eval_cpu_threads=config.eval_cpu_threads, reward_config=config.reward_config,
                     results_path=Path(config.log_dir) / "eval_outcomes.jsonl", writer=writer, update_count=0,
@@ -854,6 +857,7 @@ def train_ppo(
                         eval_workers=config.eval_workers,
                         eval_cpu_threads=config.eval_cpu_threads,
                         stake=config.stake,
+                        deck_key=config.deck_key,
                         reward_config=config.reward_config,
                         results_path=Path(config.log_dir) / "eval_outcomes.jsonl",
                         writer=writer,

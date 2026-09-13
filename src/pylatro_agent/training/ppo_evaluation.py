@@ -75,7 +75,9 @@ def evaluation_seed_list(num_games: int, seeds: list[int] | None = None) -> list
 
 
 def validate_resume_evaluation_seeds(config, saved_config: dict) -> None:
-    """Do not silently turn possibly trained seeds into a new validation panel."""
+    """Keep the evaluation task and reserved seed panel stable on resume."""
+    if saved_config.get("deck_key", "b_red") != config.deck_key:
+        raise ValueError("Deck changed on resume; use --pretrained for a new deck run")
     if "eval_games" not in saved_config:
         raise ValueError("Resume lacks evaluation seed reservation metadata; use explicit actor transfer")
     saved = evaluation_seed_list(saved_config["eval_games"], saved_config.get("eval_seeds"))
@@ -170,6 +172,8 @@ def evaluate_model(
     summary_out: dict | None = None,
     eval_workers: int = 0,
     eval_cpu_threads: int | None = None,
+    deck_key: str = "b_red",
+    outcomes_out: list[dict] | None = None,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games.
 
@@ -217,6 +221,7 @@ def evaluate_model(
                             "policy": "fresh_greedy" if greedy else "fresh_sampled",
                             "sampling_seed": None if greedy else sampling_seed,
                             "stake": stake,
+                            "deck_key": deck_key,
                             "source_training_seed_disjoint": (
                                 str(outcome["seed"]) in {str(seed) for seed in reserved}
                                 if reserved is not None
@@ -239,6 +244,7 @@ def evaluate_model(
             win_ante=win_ante,
             temperature=temperature,
             stake=stake,
+            deck_key=deck_key,
             greedy=greedy,
             batch_size=eval_batch_size,
             eval_workers=eval_workers,
@@ -248,6 +254,8 @@ def evaluate_model(
             on_result=record,
             policy_config=policy_config,
         )
+    if outcomes_out is not None:
+        outcomes_out.extend(outcomes)
     metrics = summarize_evaluation(outcomes)
     if summary_out is not None:
         summary_out.update(metrics)
@@ -274,6 +282,7 @@ def evaluate_model(
             win_ante=win_ante,
             temperature=temperature,
             stake=stake,
+            deck_key=deck_key,
             seeds=seed_list,
             eval_batch_size=eval_batch_size,
             eval_workers=eval_workers,
@@ -319,6 +328,7 @@ def run_seed_evaluation(
     policy_config=None,
     eval_workers: int = 0,
     eval_cpu_threads: int | None = None,
+    deck_key: str = "b_red",
 ) -> list[dict]:
     """Play every seed and return its outcome, batching the policy forward pass.
 
@@ -372,6 +382,7 @@ def run_seed_evaluation(
         model.eval()
         envs = EvaluationEnvs(
             min(eval_workers, slot_count), data=data, vocab=vocab, stake=stake,
+            deck_key=deck_key,
             max_steps=max_no_progress_steps, win_ante=win_ante, enable_teacher=False,
             reward_config=reward_config or (
                 RewardConfig(objective="milestone") if (win_ante or 8) == 8
@@ -393,7 +404,16 @@ def run_seed_evaluation(
                 else temperature
             )
             dist, _value = _grammar_distribution(model, batch, temperature=policy_temperature)
-            actions = (dist.mode() if greedy else dist.sample()).cpu().numpy()
+            chosen_actions = dist.mode() if greedy else dist.sample()
+            from ..action_grammar import ActionGrammarDistribution
+            if isinstance(dist, ActionGrammarDistribution):
+                selected_logp = dist.log_prob(chosen_actions)
+                if (not torch.isfinite(selected_logp).all()
+                        or not torch.isfinite(_value["outcome_probabilities"]).all()):
+                    raise RuntimeError("Evaluation policy produced non-finite probabilities")
+                if not batch["action_mask"].gather(1, chosen_actions[:, None]).bool().all():
+                    raise RuntimeError("Evaluation policy selected an illegal action")
+            actions = chosen_actions.cpu().numpy()
             critic_probs = _value["outcome_probabilities"].cpu().tolist() if record_critic else None
             policy_seconds = (time.perf_counter() - policy_started) / len(slots)
             # Drop per-step inference tensors immediately; otherwise they sit on

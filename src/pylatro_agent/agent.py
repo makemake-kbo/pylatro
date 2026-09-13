@@ -18,6 +18,7 @@ from .constants import (
     WIN_ANTE_SCALAR_INDEX,
 )
 from .embeddings import ContentEmbeddingLayer
+from .entity_heads import ACTION_HEAD_VARIANTS
 from .precision import backbone_autocast
 from .value_head import ValueHead
 
@@ -47,10 +48,18 @@ class AgentConfig:
     # CUDA transformer autocast only. Weights, embeddings, grammar/value heads,
     # probability arithmetic, and optimizer state remain FP32. CPU/MPS use FP32.
     precision: str = "fp32"
+    action_head_variant: str = "legacy_v1"
 
     def __post_init__(self) -> None:
         if self.precision not in ("fp32", "bf16"):
             raise ValueError("precision must be 'fp32' or 'bf16'")
+        if self.action_head_variant not in ACTION_HEAD_VARIANTS:
+            raise ValueError(f"Unknown action head variant: {self.action_head_variant}")
+        if (
+            self.action_head_variant in ("subset_residual_v1", "entity_sale_subset_residual_v1")
+            and self.hand_ar_mixture_eps <= 0
+        ):
+            raise ValueError("Subset residual requires a positive AR mixture for full support")
 
 
 class BalatroAgent(nn.Module):
@@ -71,6 +80,7 @@ class BalatroAgent(nn.Module):
         self.action_grammar_head = ActionGrammarHead(
             d,
             danger_shop_leave_logit_penalty=config.danger_shop_leave_logit_penalty,
+            action_head_variant=config.action_head_variant,
         )
 
         # Value head
@@ -142,7 +152,7 @@ class BalatroAgent(nn.Module):
             # DataParallel can gather nested tensor containers, but not an
             # ActionGrammarDistribution (which also closes over the unsharded
             # action mask/tokens). Reconstruct the distribution after gather.
-            return {
+            raw = {
                 "macro_logits": grammar_output.macro_logits,
                 "hand_count_logits": grammar_output.hand_count_logits,
                 "hand_card_logits": grammar_output.hand_card_logits,
@@ -156,7 +166,10 @@ class BalatroAgent(nn.Module):
                 "shop_sell_joker_logits": grammar_output.shop_sell_joker_logits,
                 "shop_sell_consumable_logits": grammar_output.shop_sell_consumable_logits,
                 "pack_claim_logits": grammar_output.pack_claim_logits,
-            }, value_dict
+            }
+            if grammar_output.hand_subset_energies is not None:
+                raw["hand_subset_energies"] = grammar_output.hand_subset_energies
+            return raw, value_dict
         return (
             ActionGrammarDistribution(
                 grammar_output,

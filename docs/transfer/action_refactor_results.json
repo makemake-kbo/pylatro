@@ -1,0 +1,2195 @@
+{
+  "status": "validated",
+  "selected_family": "combined",
+  "representative_checkpoint": "eval/action_refactor_20260913/entity_sale_subset_residual_v1_seed0/checkpoint.pt",
+  "representative_checkpoint_sha256": "de7a11861d415739af044405ac9114537382dc475d8569a144005a6e6d249186",
+  "representative_rule": {
+    "representative_training_seed": 0,
+    "rule": "Report training seed 0 as the representative checkpoint for the selected family; evaluate and disclose both replicas; do not choose a replica using confirmation results.",
+    "recorded_before_confirmation": true,
+    "recorded_unix": 1789294678.86866
+  },
+  "selection": {
+    "family": "combined",
+    "checkpoint_hashes": {
+      "control": "f2b5d3168c37c19099270d9f3f94981b4a62f54760b54b27c635b84c8bfdbe39",
+      "seed0": "de7a11861d415739af044405ac9114537382dc475d8569a144005a6e6d249186",
+      "seed1": "405e726531862d57f9e0fa18ec21a818a2014813bc8cbe3016ec13ed2b083851"
+    },
+    "selection_rule_sha256": "a39446eb69566645d7a054319229749861154148339c377e1e19724ec661e094",
+    "development_comparison_hashes": {
+      "sale": "e3f76cebd3d96ffc95c07ee91b5c9bd296cf10b27f38e39f4473f23d738e776d",
+      "combined": "63f582cc5709f1a9f956d61ebb36733475132651f92400673c4a729556327ad1"
+    },
+    "source_panels": {
+      "sale": "eval/action_refactor_20260913/cpu_development_sale_200_comparisons.json",
+      "combined": "eval/action_refactor_20260913/combined_cpu_expansion/cpu_development_combined_200_comparisons.json"
+    },
+    "status": "frozen_before_confirmation"
+  },
+  "development": {
+    "sale": {
+      "protocol": {
+        "stage": "development",
+        "family": "sale",
+        "device": "cpu",
+        "seeds": [
+          160000,
+          160001,
+          160002,
+          160003,
+          160004,
+          160005,
+          160006,
+          160007,
+          160008,
+          160009,
+          160010,
+          160011,
+          160012,
+          160013,
+          160014,
+          160015,
+          160016,
+          160017,
+          160018,
+          160019,
+          160020,
+          160021,
+          160022,
+          160023,
+          160024,
+          160025,
+          160026,
+          160027,
+          160028,
+          160029,
+          160030,
+          160031,
+          160032,
+          160033,
+          160034,
+          160035,
+          160036,
+          160037,
+          160038,
+          160039,
+          160040,
+          160041,
+          160042,
+          160043,
+          160044,
+          160045,
+          160046,
+          160047,
+          160048,
+          160049,
+          160050,
+          160051,
+          160052,
+          160053,
+          160054,
+          160055,
+          160056,
+          160057,
+          160058,
+          160059,
+          160060,
+          160061,
+          160062,
+          160063,
+          160064,
+          160065,
+          160066,
+          160067,
+          160068,
+          160069,
+          160070,
+          160071,
+          160072,
+          160073,
+          160074,
+          160075,
+          160076,
+          160077,
+          160078,
+          160079,
+          160080,
+          160081,
+          160082,
+          160083,
+          160084,
+          160085,
+          160086,
+          160087,
+          160088,
+          160089,
+          160090,
+          160091,
+          160092,
+          160093,
+          160094,
+          160095,
+          160096,
+          160097,
+          160098,
+          160099,
+          160100,
+          160101,
+          160102,
+          160103,
+          160104,
+          160105,
+          160106,
+          160107,
+          160108,
+          160109,
+          160110,
+          160111,
+          160112,
+          160113,
+          160114,
+          160115,
+          160116,
+          160117,
+          160118,
+          160119,
+          160120,
+          160121,
+          160122,
+          160123,
+          160124,
+          160125,
+          160126,
+          160127,
+          160128,
+          160129,
+          160130,
+          160131,
+          160132,
+          160133,
+          160134,
+          160135,
+          160136,
+          160137,
+          160138,
+          160139,
+          160140,
+          160141,
+          160142,
+          160143,
+          160144,
+          160145,
+          160146,
+          160147,
+          160148,
+          160149,
+          160150,
+          160151,
+          160152,
+          160153,
+          160154,
+          160155,
+          160156,
+          160157,
+          160158,
+          160159,
+          160160,
+          160161,
+          160162,
+          160163,
+          160164,
+          160165,
+          160166,
+          160167,
+          160168,
+          160169,
+          160170,
+          160171,
+          160172,
+          160173,
+          160174,
+          160175,
+          160176,
+          160177,
+          160178,
+          160179,
+          160180,
+          160181,
+          160182,
+          160183,
+          160184,
+          160185,
+          160186,
+          160187,
+          160188,
+          160189,
+          160190,
+          160191,
+          160192,
+          160193,
+          160194,
+          160195,
+          160196,
+          160197,
+          160198,
+          160199
+        ],
+        "checkpoint_hashes": {
+          "control": "b5daa6e4b5dadf0ffd0b6395a46e8f50dbafafc5906ac59532bb88cb3d8d4009",
+          "seed0": "6d08c5476aabd2ff4ee87f7016bca104c65e85e0351e2672839883a371fd9d0e",
+          "seed1": "a1bbaed706db5e934bc9439e7c7786e0ed5530d5e2a5851abc08a5fc4484c669"
+        },
+        "sampling_seeds": [
+          0,
+          1,
+          2
+        ],
+        "greedy": true,
+        "seed_panel_manifest_sha256": "a6bb1c55a89acd910dbd721cb8aeed7685f291fb96a21f5be3278090b5c35f6f",
+        "baseline_shared_across_training_replicates": true,
+        "bootstrap_unit": "game seed"
+      },
+      "results": {
+        "per_replicate": {
+          "0": {
+            "sampled": {
+              "game_seeds": 200,
+              "games_per_arm": 600,
+              "sampled_or_greedy_delta": 0.085,
+              "paired_ci95": [
+                0.056666666666667,
+                0.115
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "greedy": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.14,
+              "paired_ci95": [
+                0.09,
+                0.19
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "1": {
+            "sampled": {
+              "game_seeds": 200,
+              "games_per_arm": 600,
+              "sampled_or_greedy_delta": 0.08666666666666667,
+              "paired_ci95": [
+                0.058333333333333,
+                0.118333333333333
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "greedy": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.135,
+              "paired_ci95": [
+                0.08,
+                0.19
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          }
+        },
+        "sampled": {
+          "paired": {
+            "game_seeds": 200,
+            "games_per_arm": 1200,
+            "sampled_or_greedy_delta": 0.08583333333333333,
+            "paired_ci95": [
+              0.06,
+              0.114166666666667
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "candidate": {
+            "game_seeds": 200,
+            "games": 1200,
+            "wins": 137,
+            "win_rate": 0.11416666666666667,
+            "win_rate_cluster_ci95": [
+              0.086666666666667,
+              0.144166666666667
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 4.41,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.835,
+              "2": 0.71,
+              "3": 0.5741666666666667,
+              "4": 0.4691666666666667,
+              "5": 0.3275,
+              "6": 0.22416666666666665,
+              "7": 0.15583333333333332,
+              "8": 0.11416666666666667
+            }
+          },
+          "control": {
+            "game_seeds": 200,
+            "games": 1200,
+            "wins": 34,
+            "win_rate": 0.028333333333333332,
+            "win_rate_cluster_ci95": [
+              0.015,
+              0.045
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 3.79,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.8216666666666667,
+              "2": 0.7,
+              "3": 0.54,
+              "4": 0.365,
+              "5": 0.17,
+              "6": 0.105,
+              "7": 0.06,
+              "8": 0.028333333333333332
+            }
+          }
+        },
+        "greedy": {
+          "paired": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.1375,
+            "paired_ci95": [
+              0.085,
+              0.19
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "candidate": {
+            "game_seeds": 200,
+            "games": 400,
+            "wins": 103,
+            "win_rate": 0.2575,
+            "win_rate_cluster_ci95": [
+              0.2,
+              0.3175
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 5.725,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.89,
+              "3": 0.775,
+              "4": 0.6225,
+              "5": 0.4825,
+              "6": 0.395,
+              "7": 0.3425,
+              "8": 0.2575
+            }
+          },
+          "control": {
+            "game_seeds": 200,
+            "games": 400,
+            "wins": 48,
+            "win_rate": 0.12,
+            "win_rate_cluster_ci95": [
+              0.075,
+              0.165
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 4.995,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.885,
+              "3": 0.74,
+              "4": 0.535,
+              "5": 0.335,
+              "6": 0.24,
+              "7": 0.18,
+              "8": 0.12
+            }
+          }
+        }
+      },
+      "acceptance": {
+        "confirmation": false,
+        "sampled_gain_at_least_five_points": true,
+        "sampled_paired_ci_excludes_zero": true,
+        "both_replicates_positive": true,
+        "greedy_rules_out_five_point_regression": true,
+        "no_stalled_or_censored_games": true
+      },
+      "validated": false,
+      "physical_arms": {
+        "control": {
+          "sampled": {
+            "game_seeds": 200,
+            "games": 600,
+            "wins": 17,
+            "win_rate": 0.028333333333333332,
+            "win_rate_cluster_ci95": [
+              0.015,
+              0.045
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 3.79,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.8216666666666667,
+              "2": 0.7,
+              "3": 0.54,
+              "4": 0.365,
+              "5": 0.17,
+              "6": 0.105,
+              "7": 0.06,
+              "8": 0.028333333333333332
+            }
+          },
+          "greedy": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 24,
+            "win_rate": 0.12,
+            "win_rate_cluster_ci95": [
+              0.075,
+              0.165
+            ],
+            "win_rate_wilson_ci95": [
+              0.08197992706375512,
+              0.17234252098296743
+            ],
+            "mean_final_ante": 4.995,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.885,
+              "3": 0.74,
+              "4": 0.535,
+              "5": 0.335,
+              "6": 0.24,
+              "7": 0.18,
+              "8": 0.12
+            }
+          }
+        },
+        "seed0": {
+          "sampled": {
+            "game_seeds": 200,
+            "games": 600,
+            "wins": 68,
+            "win_rate": 0.11333333333333333,
+            "win_rate_cluster_ci95": [
+              0.083333333333333,
+              0.146666666666667
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 4.376666666666667,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.84,
+              "2": 0.7083333333333334,
+              "3": 0.5683333333333334,
+              "4": 0.465,
+              "5": 0.31666666666666665,
+              "6": 0.21166666666666667,
+              "7": 0.15333333333333332,
+              "8": 0.11333333333333333
+            }
+          },
+          "greedy": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 52,
+            "win_rate": 0.26,
+            "win_rate_cluster_ci95": [
+              0.2,
+              0.32
+            ],
+            "win_rate_wilson_ci95": [
+              0.20413830063574687,
+              0.32490745602534116
+            ],
+            "mean_final_ante": 5.715,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.89,
+              "3": 0.775,
+              "4": 0.62,
+              "5": 0.475,
+              "6": 0.395,
+              "7": 0.34,
+              "8": 0.26
+            }
+          }
+        },
+        "seed1": {
+          "sampled": {
+            "game_seeds": 200,
+            "games": 600,
+            "wins": 69,
+            "win_rate": 0.11499999999999998,
+            "win_rate_cluster_ci95": [
+              0.085,
+              0.148333333333333
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 4.443333333333333,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.83,
+              "2": 0.7116666666666667,
+              "3": 0.58,
+              "4": 0.47333333333333333,
+              "5": 0.3383333333333333,
+              "6": 0.23666666666666666,
+              "7": 0.15833333333333333,
+              "8": 0.115
+            }
+          },
+          "greedy": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 51,
+            "win_rate": 0.255,
+            "win_rate_cluster_ci95": [
+              0.195,
+              0.315
+            ],
+            "win_rate_wilson_ci95": [
+              0.1996049517203135,
+              0.3196292582045472
+            ],
+            "mean_final_ante": 5.735,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.89,
+              "3": 0.775,
+              "4": 0.625,
+              "5": 0.49,
+              "6": 0.395,
+              "7": 0.345,
+              "8": 0.255
+            }
+          }
+        }
+      },
+      "evaluation_files": [
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_control/sample0",
+          "manifest_sha256": "0bf251db00b37b1ce96254bd585ca6894dfbe503ed80e04a2874d46ba6244188",
+          "outcomes_sha256": "8fa991db8764891e3c96df3ab27e01d9aa5b895556dab95bd1896c2fbf3a01e0",
+          "games": 200,
+          "elapsed_seconds": 361.2908011249965
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_control/sample1",
+          "manifest_sha256": "d2cf437bbda9f60c2f2c743d8405d4230bd9b7851da95bed453e4fe039baf9e1",
+          "outcomes_sha256": "5a5200df3162aea58efbe910c31053cd22622150825a23a8f78f0800d87e5f1a",
+          "games": 200,
+          "elapsed_seconds": 304.59999658400193
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_control/sample2",
+          "manifest_sha256": "2450854707e14ee0d902eb7e95355626cd709fc1a8027492257486a60993d44f",
+          "outcomes_sha256": "4b0acee552f78f413bfdc9606ae4757e43e4f3c6c6f8df58ff41114dff3d9ff1",
+          "games": 200,
+          "elapsed_seconds": 327.4054195419885
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_control/greedy",
+          "manifest_sha256": "edec8a36fef223916f3f899390f808b3204c74b121e1d2fd7a1e4ed1971f71db",
+          "outcomes_sha256": "9ffbc2181671616ce0fef695c3d2c301433e3a292bcaf155b68f87edf1851ad0",
+          "games": 200,
+          "elapsed_seconds": 495.2212887079804
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed0/sample0",
+          "manifest_sha256": "194733d4a1c6cd31e3f6186286d4133ebb79c6ac6c563506ae4e2960605804b1",
+          "outcomes_sha256": "7fbe54d58baf05dbe8d0437bf4a541cdc06c03502749acd4c518550848dd27fb",
+          "games": 200,
+          "elapsed_seconds": 404.54088754201075
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed0/sample1",
+          "manifest_sha256": "f2b13e035335f2ded75cb8e962bd5d61ee7c808454130cc2cf24ad96e4341a7e",
+          "outcomes_sha256": "6a5ffec03f9daae39b21089589d411ce004aa1949a2a4b3f4fe691d9be225ab7",
+          "games": 200,
+          "elapsed_seconds": 433.36282966600265
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed0/sample2",
+          "manifest_sha256": "07c04c4ddcc3e356882958fa19d84c65ca8818e9b78065ac084b037e95b5dcf3",
+          "outcomes_sha256": "e1e636adbd2aead98393a43c0da39215d974477834c49a2ee10a9a449cb42578",
+          "games": 200,
+          "elapsed_seconds": 431.17797679197975
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed0/greedy",
+          "manifest_sha256": "272a0c51d187dbc170e4ec8a6117d878e566d407c714dc72ef6cd2aac8c14a7c",
+          "outcomes_sha256": "6f3e75acb38844c5ba97050403ef62e5bad79e42be08d06d14414b21ddc79859",
+          "games": 200,
+          "elapsed_seconds": 557.4216947080567
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed1/sample0",
+          "manifest_sha256": "6bcfaea9125f7195237f7a49e146b7a584e4278721404050a239d8c667166b6e",
+          "outcomes_sha256": "9e895cb8beeeae7be87949522f2dc9f6833b72556adf2b20c97164180abe087a",
+          "games": 200,
+          "elapsed_seconds": 414.17110729200067
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed1/sample1",
+          "manifest_sha256": "ee71ecf872b2ad8fcabee4ee364e07d4127fbc85ffeabb3d73ffa91afd8eef72",
+          "outcomes_sha256": "af820f3b0b0e5b03b562c9e7eba972fa6bd6eb9e99e687ac2828997d64057441",
+          "games": 200,
+          "elapsed_seconds": 460.31263170798775
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed1/sample2",
+          "manifest_sha256": "9a2ac3a500e1c954b77529372b293203765785a3dc3d8ffefacd8abf24892615",
+          "outcomes_sha256": "27958685991de3a0d98d2fd61553f5df7f0c864359f296cefaff2dbfe798cbf3",
+          "games": 200,
+          "elapsed_seconds": 438.1708169169724
+        },
+        {
+          "path": "eval/action_refactor_20260913/evaluations/cpu_development_sale_200_seed1/greedy",
+          "manifest_sha256": "3a357ac4c905fae41fbe6a79568387af885ba1dec751a06d7c2e6bad49c7ba3b",
+          "outcomes_sha256": "a48a63b9c96bd5d4453ce1a97e31b36ecb8d254e027ebf4404a04969c86fed2f",
+          "games": 200,
+          "elapsed_seconds": 564.3206109169987
+        }
+      ],
+      "comparison_path": "eval/action_refactor_20260913/cpu_development_sale_200_comparisons.json",
+      "comparison_sha256": "e3f76cebd3d96ffc95c07ee91b5c9bd296cf10b27f38e39f4473f23d738e776d",
+      "physical_games": 2400,
+      "evaluation_job_seconds": 5191.996061500977
+    },
+    "combined": {
+      "protocol": {
+        "stage": "development",
+        "family": "combined",
+        "device": "cpu",
+        "seeds": [
+          160000,
+          160001,
+          160002,
+          160003,
+          160004,
+          160005,
+          160006,
+          160007,
+          160008,
+          160009,
+          160010,
+          160011,
+          160012,
+          160013,
+          160014,
+          160015,
+          160016,
+          160017,
+          160018,
+          160019,
+          160020,
+          160021,
+          160022,
+          160023,
+          160024,
+          160025,
+          160026,
+          160027,
+          160028,
+          160029,
+          160030,
+          160031,
+          160032,
+          160033,
+          160034,
+          160035,
+          160036,
+          160037,
+          160038,
+          160039,
+          160040,
+          160041,
+          160042,
+          160043,
+          160044,
+          160045,
+          160046,
+          160047,
+          160048,
+          160049,
+          160050,
+          160051,
+          160052,
+          160053,
+          160054,
+          160055,
+          160056,
+          160057,
+          160058,
+          160059,
+          160060,
+          160061,
+          160062,
+          160063,
+          160064,
+          160065,
+          160066,
+          160067,
+          160068,
+          160069,
+          160070,
+          160071,
+          160072,
+          160073,
+          160074,
+          160075,
+          160076,
+          160077,
+          160078,
+          160079,
+          160080,
+          160081,
+          160082,
+          160083,
+          160084,
+          160085,
+          160086,
+          160087,
+          160088,
+          160089,
+          160090,
+          160091,
+          160092,
+          160093,
+          160094,
+          160095,
+          160096,
+          160097,
+          160098,
+          160099,
+          160100,
+          160101,
+          160102,
+          160103,
+          160104,
+          160105,
+          160106,
+          160107,
+          160108,
+          160109,
+          160110,
+          160111,
+          160112,
+          160113,
+          160114,
+          160115,
+          160116,
+          160117,
+          160118,
+          160119,
+          160120,
+          160121,
+          160122,
+          160123,
+          160124,
+          160125,
+          160126,
+          160127,
+          160128,
+          160129,
+          160130,
+          160131,
+          160132,
+          160133,
+          160134,
+          160135,
+          160136,
+          160137,
+          160138,
+          160139,
+          160140,
+          160141,
+          160142,
+          160143,
+          160144,
+          160145,
+          160146,
+          160147,
+          160148,
+          160149,
+          160150,
+          160151,
+          160152,
+          160153,
+          160154,
+          160155,
+          160156,
+          160157,
+          160158,
+          160159,
+          160160,
+          160161,
+          160162,
+          160163,
+          160164,
+          160165,
+          160166,
+          160167,
+          160168,
+          160169,
+          160170,
+          160171,
+          160172,
+          160173,
+          160174,
+          160175,
+          160176,
+          160177,
+          160178,
+          160179,
+          160180,
+          160181,
+          160182,
+          160183,
+          160184,
+          160185,
+          160186,
+          160187,
+          160188,
+          160189,
+          160190,
+          160191,
+          160192,
+          160193,
+          160194,
+          160195,
+          160196,
+          160197,
+          160198,
+          160199
+        ],
+        "checkpoint_hashes": {
+          "control": "f2b5d3168c37c19099270d9f3f94981b4a62f54760b54b27c635b84c8bfdbe39",
+          "seed0": "de7a11861d415739af044405ac9114537382dc475d8569a144005a6e6d249186",
+          "seed1": "405e726531862d57f9e0fa18ec21a818a2014813bc8cbe3016ec13ed2b083851"
+        },
+        "sampling_seeds": [
+          0,
+          1,
+          2
+        ],
+        "greedy": true,
+        "seed_panel_manifest_sha256": "a6bb1c55a89acd910dbd721cb8aeed7685f291fb96a21f5be3278090b5c35f6f",
+        "baseline_shared_across_training_replicates": true,
+        "bootstrap_unit": "game seed"
+      },
+      "results": {
+        "per_replicate": {
+          "0": {
+            "sampled": {
+              "game_seeds": 200,
+              "games_per_arm": 600,
+              "sampled_or_greedy_delta": 0.20166666666666666,
+              "paired_ci95": [
+                0.161666666666667,
+                0.241666666666667
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "greedy": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.29,
+              "paired_ci95": [
+                0.22,
+                0.36
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "1": {
+            "sampled": {
+              "game_seeds": 200,
+              "games_per_arm": 600,
+              "sampled_or_greedy_delta": 0.17166666666666666,
+              "paired_ci95": [
+                0.135,
+                0.21
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "greedy": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.27,
+              "paired_ci95": [
+                0.2,
+                0.34
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          }
+        },
+        "sampled": {
+          "paired": {
+            "game_seeds": 200,
+            "games_per_arm": 1200,
+            "sampled_or_greedy_delta": 0.18666666666666668,
+            "paired_ci95": [
+              0.154166666666667,
+              0.220833333333333
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "candidate": {
+            "game_seeds": 200,
+            "games": 1200,
+            "wins": 260,
+            "win_rate": 0.21666666666666665,
+            "win_rate_cluster_ci95": [
+              0.178333333333333,
+              0.255
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 5.6033333333333335,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.9516666666666667,
+              "2": 0.8608333333333333,
+              "3": 0.7608333333333334,
+              "4": 0.6341666666666667,
+              "5": 0.49666666666666665,
+              "6": 0.3908333333333333,
+              "7": 0.2916666666666667,
+              "8": 0.21666666666666667
+            }
+          },
+          "control": {
+            "game_seeds": 200,
+            "games": 1200,
+            "wins": 36,
+            "win_rate": 0.03,
+            "win_rate_cluster_ci95": [
+              0.015,
+              0.046666666666667
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 3.8216666666666668,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.83,
+              "2": 0.705,
+              "3": 0.56,
+              "4": 0.38,
+              "5": 0.17666666666666667,
+              "6": 0.08833333333333333,
+              "7": 0.051666666666666666,
+              "8": 0.03
+            }
+          }
+        },
+        "greedy": {
+          "paired": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.28,
+            "paired_ci95": [
+              0.2175,
+              0.345
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "candidate": {
+            "game_seeds": 200,
+            "games": 400,
+            "wins": 160,
+            "win_rate": 0.4,
+            "win_rate_cluster_ci95": [
+              0.3375,
+              0.462562499999999
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 6.545,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.9675,
+              "2": 0.92,
+              "3": 0.8525,
+              "4": 0.7625,
+              "5": 0.6225,
+              "6": 0.5525,
+              "7": 0.4675,
+              "8": 0.4
+            }
+          },
+          "control": {
+            "game_seeds": 200,
+            "games": 400,
+            "wins": 48,
+            "win_rate": 0.12,
+            "win_rate_cluster_ci95": [
+              0.075,
+              0.165
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 4.995,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.885,
+              "3": 0.74,
+              "4": 0.535,
+              "5": 0.335,
+              "6": 0.24,
+              "7": 0.18,
+              "8": 0.12
+            }
+          }
+        }
+      },
+      "acceptance": {
+        "confirmation": false,
+        "sampled_gain_at_least_five_points": true,
+        "sampled_paired_ci_excludes_zero": true,
+        "both_replicates_positive": true,
+        "greedy_rules_out_five_point_regression": true,
+        "no_stalled_or_censored_games": true
+      },
+      "validated": false,
+      "physical_arms": {
+        "control": {
+          "sampled": {
+            "game_seeds": 200,
+            "games": 600,
+            "wins": 18,
+            "win_rate": 0.03,
+            "win_rate_cluster_ci95": [
+              0.015,
+              0.046666666666667
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 3.8216666666666668,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.83,
+              "2": 0.705,
+              "3": 0.56,
+              "4": 0.38,
+              "5": 0.17666666666666667,
+              "6": 0.08833333333333333,
+              "7": 0.051666666666666666,
+              "8": 0.03
+            }
+          },
+          "greedy": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 24,
+            "win_rate": 0.12,
+            "win_rate_cluster_ci95": [
+              0.075,
+              0.165
+            ],
+            "win_rate_wilson_ci95": [
+              0.08197992706375512,
+              0.17234252098296743
+            ],
+            "mean_final_ante": 4.995,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.885,
+              "3": 0.74,
+              "4": 0.535,
+              "5": 0.335,
+              "6": 0.24,
+              "7": 0.18,
+              "8": 0.12
+            }
+          }
+        },
+        "seed0": {
+          "sampled": {
+            "game_seeds": 200,
+            "games": 600,
+            "wins": 139,
+            "win_rate": 0.23166666666666663,
+            "win_rate_cluster_ci95": [
+              0.188333333333333,
+              0.276666666666667
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 5.638333333333334,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.9533333333333334,
+              "2": 0.86,
+              "3": 0.7566666666666667,
+              "4": 0.63,
+              "5": 0.505,
+              "6": 0.3983333333333333,
+              "7": 0.30333333333333334,
+              "8": 0.23166666666666666
+            }
+          },
+          "greedy": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 82,
+            "win_rate": 0.41,
+            "win_rate_cluster_ci95": [
+              0.345,
+              0.48
+            ],
+            "win_rate_wilson_ci95": [
+              0.34415674908482885,
+              0.4792354096630791
+            ],
+            "mean_final_ante": 6.605,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.97,
+              "2": 0.93,
+              "3": 0.865,
+              "4": 0.77,
+              "5": 0.625,
+              "6": 0.56,
+              "7": 0.475,
+              "8": 0.41
+            }
+          }
+        },
+        "seed1": {
+          "sampled": {
+            "game_seeds": 200,
+            "games": 600,
+            "wins": 121,
+            "win_rate": 0.20166666666666663,
+            "win_rate_cluster_ci95": [
+              0.161666666666667,
+              0.243333333333333
+            ],
+            "win_rate_wilson_ci95": null,
+            "mean_final_ante": 5.568333333333333,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.95,
+              "2": 0.8616666666666667,
+              "3": 0.765,
+              "4": 0.6383333333333333,
+              "5": 0.48833333333333334,
+              "6": 0.38333333333333336,
+              "7": 0.28,
+              "8": 0.20166666666666666
+            }
+          },
+          "greedy": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 78,
+            "win_rate": 0.39,
+            "win_rate_cluster_ci95": [
+              0.32,
+              0.455
+            ],
+            "win_rate_wilson_ci95": [
+              0.3250834313746962,
+              0.4590625404283025
+            ],
+            "mean_final_ante": 6.485,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.965,
+              "2": 0.91,
+              "3": 0.84,
+              "4": 0.755,
+              "5": 0.62,
+              "6": 0.545,
+              "7": 0.46,
+              "8": 0.39
+            }
+          }
+        }
+      },
+      "evaluation_files": [
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_control/sample0",
+          "manifest_sha256": "ef930ca30d7227422485ccdc9678aa9966faad547a21aa818581fa293512eb3c",
+          "outcomes_sha256": "a88b8622f8928b093bd5ba196a2ad2017d457c2aa3b292b755ad30bf8e5a362b",
+          "games": 200,
+          "elapsed_seconds": 351.60205137502635
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_control/sample1",
+          "manifest_sha256": "277575d78d762fdbeac9344df8afe21b7d0977e841a0a9fde9a29c48cd5f43a3",
+          "outcomes_sha256": "f8d83b320d6ae7076275db0e7abfcddaa560eb2e263743a5c47c4732d33c1df7",
+          "games": 200,
+          "elapsed_seconds": 363.31529783300357
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_control/sample2",
+          "manifest_sha256": "ac36384492382f4d3b5dd199161869034767ce274f16112e2b8e7b7af1b5b352",
+          "outcomes_sha256": "b3d916b95b0fdaf22289745865004f04a16951e6666b88264b51622b1fe14a4c",
+          "games": 200,
+          "elapsed_seconds": 351.2921218329575
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_control/greedy",
+          "manifest_sha256": "56cd8cca4463dfbe3ae4d78b8db9599dc422a723527ffd8525c93a43ca7a1b09",
+          "outcomes_sha256": "4002443276f41d4872a662ae275879ccd8b32f5938d74d09813b49e0202fe95f",
+          "games": 200,
+          "elapsed_seconds": 471.4019442499848
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed0/sample0",
+          "manifest_sha256": "b4bcc91de15e6cd98b5326e2b3e71064cbb77c068477918ef806e7bd56a0e259",
+          "outcomes_sha256": "8f27437ba1e80801d0a007210ade496bd5ddcdd0e794901a5d58d4b9f5e73c87",
+          "games": 200,
+          "elapsed_seconds": 556.5600443750154
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed0/sample1",
+          "manifest_sha256": "2abb40b27fc602fe816809754e719e29b8201caba474fc008ebd669403842012",
+          "outcomes_sha256": "b0f321e83eedc0e297931ef60e33c4ad730ed9932da8b27fa9253fd68aba0572",
+          "games": 200,
+          "elapsed_seconds": 581.9772499580286
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed0/sample2",
+          "manifest_sha256": "5a77a09ba4a784f90e4c0f660db64657b28aec505b99aa11cdc39aa7aa1d208d",
+          "outcomes_sha256": "82fba4f3ffd546c42243ae2ac3c4af7d714f60667638a5f401a116fcdcdfbf71",
+          "games": 200,
+          "elapsed_seconds": 579.2665562909679
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed0/greedy",
+          "manifest_sha256": "d27b42ab8679b7dc54fc137948591075c76f8e67c4eb36a31b573acc32d4c17a",
+          "outcomes_sha256": "996823913c3c5554733f3c2fc1f808f74e722911ef0b18ab852834cb0f70cd42",
+          "games": 200,
+          "elapsed_seconds": 655.8583694579429
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed1/sample0",
+          "manifest_sha256": "19ec6357df3928ba3ca4ddb4802c9e5aec0c32922ee236a2e4dc744692fa7e24",
+          "outcomes_sha256": "296d53bfe42c1a46143fab761a5bba83a46c2034b70587450ce8ed54f6bb7fd2",
+          "games": 200,
+          "elapsed_seconds": 505.27672204200644
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed1/sample1",
+          "manifest_sha256": "f146d4976dd671ea86f86a622c422addd4c1938f37e647b6d25c378820321ef9",
+          "outcomes_sha256": "61493716601b233379fc06f245f34ca993918cb2ea928b6a4be2195c2f4efa67",
+          "games": 200,
+          "elapsed_seconds": 492.79054533399176
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed1/sample2",
+          "manifest_sha256": "b3926456cfcc5f31032d2e3fd9250f6abf3c07d6c466f48e5125f414b8eb636d",
+          "outcomes_sha256": "d1e736eb282611dcc84c10c7f1590e31b9277ce600eb17629349295ad24eaa7a",
+          "games": 200,
+          "elapsed_seconds": 528.3501273749862
+        },
+        {
+          "path": "eval/action_refactor_20260913/combined_cpu_expansion/evaluations/cpu_development_combined_200_seed1/greedy",
+          "manifest_sha256": "cc6656e5d3f3ca532df8a3e43fcb01b6cd82d40f62833cc8bbff18a693db21ec",
+          "outcomes_sha256": "0c4b77cc13e0cccaa2dd5971047aa1aceb026d9c60f105dac0d9beba9978f99e",
+          "games": 200,
+          "elapsed_seconds": 579.1041364590055
+        }
+      ],
+      "comparison_path": "eval/action_refactor_20260913/combined_cpu_expansion/cpu_development_combined_200_comparisons.json",
+      "comparison_sha256": "63f582cc5709f1a9f956d61ebb36733475132651f92400673c4a729556327ad1",
+      "physical_games": 2400,
+      "evaluation_job_seconds": 6016.795166582917
+    }
+  },
+  "confirmation": {
+    "protocol": {
+      "stage": "confirmation",
+      "family": "combined",
+      "device": "cpu",
+      "seeds": [
+        170000,
+        170001,
+        170002,
+        170003,
+        170004,
+        170005,
+        170006,
+        170007,
+        170008,
+        170009,
+        170010,
+        170011,
+        170012,
+        170013,
+        170014,
+        170015,
+        170016,
+        170017,
+        170018,
+        170019,
+        170020,
+        170021,
+        170022,
+        170023,
+        170024,
+        170025,
+        170026,
+        170027,
+        170028,
+        170029,
+        170030,
+        170031,
+        170032,
+        170033,
+        170034,
+        170035,
+        170036,
+        170037,
+        170038,
+        170039,
+        170040,
+        170041,
+        170042,
+        170043,
+        170044,
+        170045,
+        170046,
+        170047,
+        170048,
+        170049,
+        170050,
+        170051,
+        170052,
+        170053,
+        170054,
+        170055,
+        170056,
+        170057,
+        170058,
+        170059,
+        170060,
+        170061,
+        170062,
+        170063,
+        170064,
+        170065,
+        170066,
+        170067,
+        170068,
+        170069,
+        170070,
+        170071,
+        170072,
+        170073,
+        170074,
+        170075,
+        170076,
+        170077,
+        170078,
+        170079,
+        170080,
+        170081,
+        170082,
+        170083,
+        170084,
+        170085,
+        170086,
+        170087,
+        170088,
+        170089,
+        170090,
+        170091,
+        170092,
+        170093,
+        170094,
+        170095,
+        170096,
+        170097,
+        170098,
+        170099,
+        170100,
+        170101,
+        170102,
+        170103,
+        170104,
+        170105,
+        170106,
+        170107,
+        170108,
+        170109,
+        170110,
+        170111,
+        170112,
+        170113,
+        170114,
+        170115,
+        170116,
+        170117,
+        170118,
+        170119,
+        170120,
+        170121,
+        170122,
+        170123,
+        170124,
+        170125,
+        170126,
+        170127,
+        170128,
+        170129,
+        170130,
+        170131,
+        170132,
+        170133,
+        170134,
+        170135,
+        170136,
+        170137,
+        170138,
+        170139,
+        170140,
+        170141,
+        170142,
+        170143,
+        170144,
+        170145,
+        170146,
+        170147,
+        170148,
+        170149,
+        170150,
+        170151,
+        170152,
+        170153,
+        170154,
+        170155,
+        170156,
+        170157,
+        170158,
+        170159,
+        170160,
+        170161,
+        170162,
+        170163,
+        170164,
+        170165,
+        170166,
+        170167,
+        170168,
+        170169,
+        170170,
+        170171,
+        170172,
+        170173,
+        170174,
+        170175,
+        170176,
+        170177,
+        170178,
+        170179,
+        170180,
+        170181,
+        170182,
+        170183,
+        170184,
+        170185,
+        170186,
+        170187,
+        170188,
+        170189,
+        170190,
+        170191,
+        170192,
+        170193,
+        170194,
+        170195,
+        170196,
+        170197,
+        170198,
+        170199,
+        170200,
+        170201,
+        170202,
+        170203,
+        170204,
+        170205,
+        170206,
+        170207,
+        170208,
+        170209,
+        170210,
+        170211,
+        170212,
+        170213,
+        170214,
+        170215,
+        170216,
+        170217,
+        170218,
+        170219,
+        170220,
+        170221,
+        170222,
+        170223,
+        170224,
+        170225,
+        170226,
+        170227,
+        170228,
+        170229,
+        170230,
+        170231,
+        170232,
+        170233,
+        170234,
+        170235,
+        170236,
+        170237,
+        170238,
+        170239,
+        170240,
+        170241,
+        170242,
+        170243,
+        170244,
+        170245,
+        170246,
+        170247,
+        170248,
+        170249,
+        170250,
+        170251,
+        170252,
+        170253,
+        170254,
+        170255,
+        170256,
+        170257,
+        170258,
+        170259,
+        170260,
+        170261,
+        170262,
+        170263,
+        170264,
+        170265,
+        170266,
+        170267,
+        170268,
+        170269,
+        170270,
+        170271,
+        170272,
+        170273,
+        170274,
+        170275,
+        170276,
+        170277,
+        170278,
+        170279,
+        170280,
+        170281,
+        170282,
+        170283,
+        170284,
+        170285,
+        170286,
+        170287,
+        170288,
+        170289,
+        170290,
+        170291,
+        170292,
+        170293,
+        170294,
+        170295,
+        170296,
+        170297,
+        170298,
+        170299,
+        170300,
+        170301,
+        170302,
+        170303,
+        170304,
+        170305,
+        170306,
+        170307,
+        170308,
+        170309,
+        170310,
+        170311,
+        170312,
+        170313,
+        170314,
+        170315,
+        170316,
+        170317,
+        170318,
+        170319,
+        170320,
+        170321,
+        170322,
+        170323,
+        170324,
+        170325,
+        170326,
+        170327,
+        170328,
+        170329,
+        170330,
+        170331,
+        170332,
+        170333,
+        170334,
+        170335,
+        170336,
+        170337,
+        170338,
+        170339,
+        170340,
+        170341,
+        170342,
+        170343,
+        170344,
+        170345,
+        170346,
+        170347,
+        170348,
+        170349,
+        170350,
+        170351,
+        170352,
+        170353,
+        170354,
+        170355,
+        170356,
+        170357,
+        170358,
+        170359,
+        170360,
+        170361,
+        170362,
+        170363,
+        170364,
+        170365,
+        170366,
+        170367,
+        170368,
+        170369,
+        170370,
+        170371,
+        170372,
+        170373,
+        170374,
+        170375,
+        170376,
+        170377,
+        170378,
+        170379,
+        170380,
+        170381,
+        170382,
+        170383,
+        170384,
+        170385,
+        170386,
+        170387,
+        170388,
+        170389,
+        170390,
+        170391,
+        170392,
+        170393,
+        170394,
+        170395,
+        170396,
+        170397,
+        170398,
+        170399
+      ],
+      "checkpoint_hashes": {
+        "control": "f2b5d3168c37c19099270d9f3f94981b4a62f54760b54b27c635b84c8bfdbe39",
+        "seed0": "de7a11861d415739af044405ac9114537382dc475d8569a144005a6e6d249186",
+        "seed1": "405e726531862d57f9e0fa18ec21a818a2014813bc8cbe3016ec13ed2b083851"
+      },
+      "sampling_seeds": [
+        0,
+        1,
+        2
+      ],
+      "greedy": true,
+      "seed_panel_manifest_sha256": "a6bb1c55a89acd910dbd721cb8aeed7685f291fb96a21f5be3278090b5c35f6f",
+      "baseline_shared_across_training_replicates": true,
+      "bootstrap_unit": "game seed"
+    },
+    "results": {
+      "per_replicate": {
+        "0": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 1200,
+            "sampled_or_greedy_delta": 0.16166666666666665,
+            "paired_ci95": [
+              0.136645833333333,
+              0.188333333333333
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.2275,
+            "paired_ci95": [
+              0.1825,
+              0.2725
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        },
+        "1": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 1200,
+            "sampled_or_greedy_delta": 0.15333333333333332,
+            "paired_ci95": [
+              0.1275,
+              0.18
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.26,
+            "paired_ci95": [
+              0.215,
+              0.305
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        }
+      },
+      "sampled": {
+        "paired": {
+          "game_seeds": 400,
+          "games_per_arm": 2400,
+          "sampled_or_greedy_delta": 0.1575,
+          "paired_ci95": [
+            0.135416666666667,
+            0.180416666666667
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "candidate": {
+          "game_seeds": 400,
+          "games": 2400,
+          "wins": 464,
+          "win_rate": 0.19333333333333333,
+          "win_rate_cluster_ci95": [
+            0.169583333333333,
+            0.217916666666667
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 5.32375,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.92125,
+            "2": 0.8191666666666667,
+            "3": 0.7291666666666666,
+            "4": 0.59,
+            "5": 0.45916666666666667,
+            "6": 0.35333333333333333,
+            "7": 0.25833333333333336,
+            "8": 0.19333333333333333
+          }
+        },
+        "control": {
+          "game_seeds": 400,
+          "games": 2400,
+          "wins": 86,
+          "win_rate": 0.03583333333333333,
+          "win_rate_cluster_ci95": [
+            0.025,
+            0.0475
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 3.8633333333333333,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.82,
+            "2": 0.6791666666666667,
+            "3": 0.5741666666666667,
+            "4": 0.37,
+            "5": 0.19833333333333333,
+            "6": 0.1175,
+            "7": 0.06833333333333333,
+            "8": 0.035833333333333335
+          }
+        }
+      },
+      "greedy": {
+        "paired": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.24375,
+          "paired_ci95": [
+            0.2025,
+            0.285
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "candidate": {
+          "game_seeds": 400,
+          "games": 800,
+          "wins": 257,
+          "win_rate": 0.32125,
+          "win_rate_cluster_ci95": [
+            0.28125,
+            0.3625
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 6.285,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.97,
+            "2": 0.89625,
+            "3": 0.83375,
+            "4": 0.72375,
+            "5": 0.61375,
+            "6": 0.5125,
+            "7": 0.41375,
+            "8": 0.32125
+          }
+        },
+        "control": {
+          "game_seeds": 400,
+          "games": 800,
+          "wins": 62,
+          "win_rate": 0.0775,
+          "win_rate_cluster_ci95": [
+            0.0525,
+            0.105
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 4.885,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9525,
+            "2": 0.865,
+            "3": 0.77,
+            "4": 0.535,
+            "5": 0.34,
+            "6": 0.2075,
+            "7": 0.1375,
+            "8": 0.0775
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "confirmation": true,
+      "sampled_gain_at_least_five_points": true,
+      "sampled_paired_ci_excludes_zero": true,
+      "both_replicates_positive": true,
+      "greedy_rules_out_five_point_regression": true,
+      "no_stalled_or_censored_games": true
+    },
+    "validated": true,
+    "physical_arms": {
+      "control": {
+        "sampled": {
+          "game_seeds": 400,
+          "games": 1200,
+          "wins": 43,
+          "win_rate": 0.03583333333333333,
+          "win_rate_cluster_ci95": [
+            0.025,
+            0.0475
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 3.8633333333333333,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.82,
+            "2": 0.6791666666666667,
+            "3": 0.5741666666666667,
+            "4": 0.37,
+            "5": 0.19833333333333333,
+            "6": 0.1175,
+            "7": 0.06833333333333333,
+            "8": 0.035833333333333335
+          }
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games": 400,
+          "wins": 31,
+          "win_rate": 0.0775,
+          "win_rate_cluster_ci95": [
+            0.0525,
+            0.105
+          ],
+          "win_rate_wilson_ci95": [
+            0.05513293467684451,
+            0.10790495403563602
+          ],
+          "mean_final_ante": 4.885,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9525,
+            "2": 0.865,
+            "3": 0.77,
+            "4": 0.535,
+            "5": 0.34,
+            "6": 0.2075,
+            "7": 0.1375,
+            "8": 0.0775
+          }
+        }
+      },
+      "seed0": {
+        "sampled": {
+          "game_seeds": 400,
+          "games": 1200,
+          "wins": 237,
+          "win_rate": 0.1975,
+          "win_rate_cluster_ci95": [
+            0.17,
+            0.225833333333333
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 5.314166666666667,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9191666666666667,
+            "2": 0.8133333333333334,
+            "3": 0.7225,
+            "4": 0.5816666666666667,
+            "5": 0.4575,
+            "6": 0.355,
+            "7": 0.2675,
+            "8": 0.1975
+          }
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games": 400,
+          "wins": 122,
+          "win_rate": 0.305,
+          "win_rate_cluster_ci95": [
+            0.26,
+            0.35
+          ],
+          "win_rate_wilson_ci95": [
+            0.2619126095600189,
+            0.3517971852303568
+          ],
+          "mean_final_ante": 6.235,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9725,
+            "2": 0.9,
+            "3": 0.84,
+            "4": 0.72,
+            "5": 0.6075,
+            "6": 0.495,
+            "7": 0.395,
+            "8": 0.305
+          }
+        }
+      },
+      "seed1": {
+        "sampled": {
+          "game_seeds": 400,
+          "games": 1200,
+          "wins": 227,
+          "win_rate": 0.18916666666666665,
+          "win_rate_cluster_ci95": [
+            0.1625,
+            0.2175
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 5.333333333333333,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9233333333333333,
+            "2": 0.825,
+            "3": 0.7358333333333333,
+            "4": 0.5983333333333334,
+            "5": 0.4608333333333333,
+            "6": 0.3516666666666667,
+            "7": 0.24916666666666668,
+            "8": 0.18916666666666668
+          }
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games": 400,
+          "wins": 135,
+          "win_rate": 0.3375,
+          "win_rate_cluster_ci95": [
+            0.2925,
+            0.3825
+          ],
+          "win_rate_wilson_ci95": [
+            0.2929016377213044,
+            0.38518985793734206
+          ],
+          "mean_final_ante": 6.335,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9675,
+            "2": 0.8925,
+            "3": 0.8275,
+            "4": 0.7275,
+            "5": 0.62,
+            "6": 0.53,
+            "7": 0.4325,
+            "8": 0.3375
+          }
+        }
+      }
+    },
+    "evaluation_files": [
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_control/sample0",
+        "manifest_sha256": "9c8bacb515196926aae9906a59c5269afd83d6340a3abe3615bd3b6c1185e8f8",
+        "outcomes_sha256": "8bfdd1bf11ce30fee8af278cbc86b7bffda2c85c39b644f33d084105e83374a0",
+        "games": 400,
+        "elapsed_seconds": 843.8504107499612
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_control/sample1",
+        "manifest_sha256": "004afd850192c650019c4869a4400a25bf4ea6d14d8f8f3c1cb3b9f0dd220648",
+        "outcomes_sha256": "93f849f8dc87280eca603c7a5d019214684fe8fc135f24d9d92864d6dfc0eee1",
+        "games": 400,
+        "elapsed_seconds": 747.5160775839468
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_control/sample2",
+        "manifest_sha256": "99a2adb1409b5192826ce3cf1a1fb238be1f7651413087e0eddcaed7dbaf22b5",
+        "outcomes_sha256": "36c7488bd48834858b2005e7ac585220844bceae03a6a27572916ed24995595d",
+        "games": 400,
+        "elapsed_seconds": 799.0567244169652
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_control/greedy",
+        "manifest_sha256": "79f1232a5042c9d235791fb19c57e2bde5e663b8efa7388b4aecb28fea7c40ae",
+        "outcomes_sha256": "0d48375baf55916aa1252fb7cab463b8edd4b01e797d57ca2f92224b7d353cf3",
+        "games": 400,
+        "elapsed_seconds": 1033.6286464580335
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed0/sample0",
+        "manifest_sha256": "e525ff0d8c4115c7968870b8bf33a580d091b64fb6bcd29133d7ffc2d2b5c6c7",
+        "outcomes_sha256": "d787b130dfa942bbf1e631c0673571817c5ceb721a4fbef82b3c950258af95e5",
+        "games": 400,
+        "elapsed_seconds": 1216.4976574170287
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed0/sample1",
+        "manifest_sha256": "6ba336fe78bc80c7e9325ce7f06b43f30584604fc576668b49b680a90e12867a",
+        "outcomes_sha256": "4c23196d0d3e64a5d45c2c4051359c6543d18db50c8ddf011e59e9600441a9fe",
+        "games": 400,
+        "elapsed_seconds": 1198.3883900420042
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed0/sample2",
+        "manifest_sha256": "43b86cbcdf68070d38210371dd3729ef789f892e780c0ee7f97913e33d961db6",
+        "outcomes_sha256": "f57ff57f56521d0190ab1ab0d0a01d9d8c600f13e7fada7b660963e43b1e9223",
+        "games": 400,
+        "elapsed_seconds": 1141.1714790419792
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed0/greedy",
+        "manifest_sha256": "df10cc8c7f77faaf873452a648ec8233d80b05330b6b2512dc42bf035d0fb3bf",
+        "outcomes_sha256": "ae48b1a2f4dc761a021d1bb8e3456c9331678755cc0134e47f0b0bee089d99a2",
+        "games": 400,
+        "elapsed_seconds": 1254.8355806670152
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed1/sample0",
+        "manifest_sha256": "7dbabb1ec2c23596008180126b8d87e738fcf13574f2fb332d322173c7f5b99c",
+        "outcomes_sha256": "37f2f364449b5e33134f92da090be9e3446d64babc360b1b175e15fe4064951c",
+        "games": 400,
+        "elapsed_seconds": 1146.421911500045
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed1/sample1",
+        "manifest_sha256": "7ae75adef973497a4e89c8ce8613dad928fa5a5f38646ca84120323b951b7495",
+        "outcomes_sha256": "6659bf5cb89a24db9c4e54bcbadd136afd00806dda95bfcc1df0ac64d0d89d9e",
+        "games": 400,
+        "elapsed_seconds": 1274.505362291995
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed1/sample2",
+        "manifest_sha256": "94a352107f0b58c723620150293f39d4d1a4e766a05930651cd9de84365885db",
+        "outcomes_sha256": "99a4dcacaf0451a2dea8e3bed09a32797638275e41cc99edbf7abb633b0e068a",
+        "games": 400,
+        "elapsed_seconds": 1154.8895012089633
+      },
+      {
+        "path": "eval/action_refactor_20260913/confirmation_cpu/evaluations/cpu_confirmation_combined_400_seed1/greedy",
+        "manifest_sha256": "e268bd6279c532d364e6666fd758223fd468ea01a4344ea2a6ee5a05bfb549d6",
+        "outcomes_sha256": "5a67e361cd072b4b9b7cb3906ea6f29f8f44d997e43249ea692c2012d68cc944",
+        "games": 400,
+        "elapsed_seconds": 1270.771521375049
+      }
+    ],
+    "comparison_path": "eval/action_refactor_20260913/confirmation_cpu/cpu_confirmation_combined_400_comparisons.json",
+    "comparison_sha256": "3f87e990f62d45858caab57485cf198197a2c70cace1b7dba4200d369144627c",
+    "physical_games": 4800,
+    "evaluation_job_seconds": 13081.533262752986
+  },
+  "verification_sha256": "c5b7e48a054bffeb20fb90e20da101f122b663d694bc4244f442bdac0c28a0cb",
+  "original_artifacts_verified": 40,
+  "training_examples_processed": 3840000,
+  "post_hoc_control_examples_processed": 1280000,
+  "accelerator_seconds_this_work": 2389.6678429149906,
+  "accelerator_seconds_latest_allowance": 32275.704671707877,
+  "accelerator_seconds_remaining": 124.29532829212258,
+  "source_hashes": {
+    "tools/report_action_refactor.py": "15d57b8919478f01a9a614fe6a4d3901697623d3b4b8b8be4c761dfb8e790fa1"
+  }
+}

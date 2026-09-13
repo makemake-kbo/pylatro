@@ -45,6 +45,7 @@ from .constants import (
     ActionRange,
     TokenType,
 )
+from .entity_heads import ACTION_HEAD_VARIANTS, SaleResidualHead
 from .subset_actions import (
     CONSUMABLE_HAND_SUBSET_BITS,
     CONSUMABLE_HAND_SUBSET_SIZES,
@@ -53,6 +54,7 @@ from .subset_actions import (
     HAND_SUBSET_SIZES,
     HAND_SUBSETS,
 )
+from .subset_residual import SubsetResidualHead, corrected_subset_log_probs, reference_hand_log_probs
 
 GRAMMAR_ACTION_TYPES: tuple[ActionType, ...] = tuple(ActionType)
 NUM_GRAMMAR_ACTIONS = len(GRAMMAR_ACTION_TYPES)
@@ -212,13 +214,19 @@ class ActionGrammarOutput:
     shop_sell_joker_logits: torch.Tensor  # (B, MAX_JOKER_SLOTS)
     shop_sell_consumable_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS)
     pack_claim_logits: torch.Tensor  # (B, MAX_PACK_CARDS)
+    hand_subset_energies: torch.Tensor | None = None  # (B, 2, atomic hand subsets), versioned variants only
 
 
 class ActionGrammarHead(nn.Module):
     """Produces component logits for the structured action grammar."""
 
-    def __init__(self, d_model: int, *, danger_shop_leave_logit_penalty: float = 0.0):
+    def __init__(
+        self, d_model: int, *, danger_shop_leave_logit_penalty: float = 0.0,
+        action_head_variant: str = "legacy_v1",
+    ):
         super().__init__()
+        if action_head_variant not in ACTION_HEAD_VARIANTS:
+            raise ValueError(f"Unknown action head variant: {action_head_variant}")
         state_dim = 128
         hidden = 128
         ctx = 64
@@ -268,6 +276,14 @@ class ActionGrammarHead(nn.Module):
         self.pack_claim_head = nn.Linear(d_model, 1)
         self.candidate_play_head = nn.Linear(d_model, 1)
         self.candidate_discard_head = nn.Linear(d_model, 1)
+        if action_head_variant in (
+            "pooled_sale_residual_v1", "entity_sale_residual_v1", "entity_sale_subset_residual_v1",
+        ):
+            self.sale_residual = SaleResidualHead(
+                d_model, entity_conditioned=action_head_variant != "pooled_sale_residual_v1", state_dim=state_dim,
+            )
+        if action_head_variant in ("subset_residual_v1", "entity_sale_subset_residual_v1"):
+            self.subset_residual = SubsetResidualHead(d_model, state_dim=state_dim)
 
     def forward(
         self,
@@ -320,6 +336,9 @@ class ActionGrammarHead(nn.Module):
 
         shop_tokens = backbone_out[:, SHOP_START : SHOP_START + MAX_SHOP_ITEMS]
         shop_global = self.shop_global_head(state)
+        sale_logits = shop_global[:, :MAX_JOKER_SLOTS]
+        if hasattr(self, "sale_residual"):
+            sale_logits = sale_logits + self.sale_residual(state, joker_tokens)
         pack_tokens = backbone_out[:, SHOP_START : SHOP_START + MAX_PACK_CARDS]
 
         candidate_tokens = backbone_out[:, HAND_CANDIDATE_START : HAND_CANDIDATE_START + HAND_CANDIDATE_MAX]
@@ -355,12 +374,16 @@ class ActionGrammarHead(nn.Module):
             consumable_card_logits=consumable_card_logits,
             consumable_joker_logits=consumable_joker_logits,
             shop_buy_logits=self.shop_buy_head(shop_tokens).squeeze(-1),
-            shop_sell_joker_logits=shop_global[:, :MAX_JOKER_SLOTS],
+            shop_sell_joker_logits=sale_logits,
             shop_sell_consumable_logits=shop_global[
                 :,
                 MAX_JOKER_SLOTS : MAX_JOKER_SLOTS + MAX_CONSUMABLE_SLOTS,
             ],
             pack_claim_logits=self.pack_claim_head(pack_tokens).squeeze(-1),
+            hand_subset_energies=(
+                self.subset_residual.score_available(state, hand_ctx, hand_present)
+                if hasattr(self, "subset_residual") else None
+            ),
         )
 
     @staticmethod
@@ -427,6 +450,11 @@ class ActionGrammarDistribution:
         # candidate generator never proposed. eps = 0 selects the candidate-only
         # ablation.
         self.hand_ar_mixture_eps = min(max(float(hand_ar_mixture_eps), 0.0), 1.0)
+        if output.hand_subset_energies is not None:
+            if self.hand_ar_mixture_eps <= 0:
+                raise ValueError("Subset residual requires a positive AR mixture for full support")
+            if output.hand_subset_energies.shape != (self.batch_size, 2, len(HAND_SUBSETS)):
+                raise ValueError("Incompatible hand subset energy shape")
         self.macro_mask = _macro_valid_mask(self.action_mask)
         has_any = self.macro_mask.any(dim=-1, keepdim=True)
         fallback = torch.zeros_like(self.macro_mask)
@@ -800,6 +828,10 @@ class ActionGrammarDistribution:
         *,
         is_play: bool,
     ) -> torch.Tensor:
+        if self.output.hand_subset_energies is not None:
+            return self._corrected_hand_log_probs(is_play=is_play).gather(
+                1, action_index.clamp(0, len(HAND_SUBSETS) - 1)[:, None],
+            )[:, 0]
         cand_logits, cand_valid, cand_actions = self._candidate_distribution(is_play=is_play)
         has_candidates = cand_valid.any(dim=-1)
 
@@ -871,8 +903,23 @@ class ActionGrammarDistribution:
     def _hand_entropy(self, *, is_play: bool) -> torch.Tensor:
         return _probability_entropy(self._hand_probabilities(is_play=is_play))
 
+    def _corrected_hand_log_probs(self, *, is_play: bool) -> torch.Tensor:
+        cache = getattr(self, "_corrected_hand_logp_cache", None)
+        if cache is None:
+            self._corrected_hand_logp_cache = cache = {}
+        if is_play not in cache:
+            family = 0 if is_play else 1
+            cache[is_play] = corrected_subset_log_probs(
+                reference_hand_log_probs(self, is_play=is_play),
+                self._t(self.output.hand_subset_energies[:, family]),
+                self._hand_valid_subset_mask(is_play),
+            )
+        return cache[is_play]
+
     def _hand_probabilities(self, *, is_play: bool) -> torch.Tensor:
         """Exact candidate/AR mixture over atomic subsets, not proposal slots."""
+        if self.output.hand_subset_energies is not None:
+            return self._corrected_hand_log_probs(is_play=is_play).exp() * self._hand_valid_subset_mask(is_play)
         cache = getattr(self, "_hand_probability_cache", None)
         if cache is None:
             self._hand_probability_cache = cache = {}
@@ -912,6 +959,11 @@ class ActionGrammarDistribution:
         return _probability_entropy(logp.exp() * valid_subsets)
 
     def _sample_hand_actions(self, *, is_play: bool) -> torch.Tensor:
+        if self.output.hand_subset_energies is not None:
+            base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
+            return base + _sample_masked(
+                self._corrected_hand_log_probs(is_play=is_play), self._hand_valid_subset_mask(is_play),
+            )
         eps = self.hand_ar_mixture_eps
         cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=False)
         has_candidates = cand_actions >= 0
@@ -927,6 +979,11 @@ class ActionGrammarDistribution:
         return torch.where(use_ar, ar_actions, cand_actions.clamp_min(0))
 
     def _greedy_hand_actions(self, *, is_play: bool) -> torch.Tensor:
+        if self.output.hand_subset_energies is not None:
+            base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
+            return base + _masked_argmax(
+                self._corrected_hand_log_probs(is_play=is_play), self._hand_valid_subset_mask(is_play),
+            )
         cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=True)
         has_candidates = cand_actions >= 0
         fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=True)

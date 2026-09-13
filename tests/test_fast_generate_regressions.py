@@ -204,6 +204,61 @@ def test_cached_best_hand_updates_after_in_place_mutation() -> None:
     assert cached != initial
 
 
+def test_generated_reward_preserves_pre_action_and_purchase_diagnostics(monkeypatch) -> None:
+    import pytest
+
+    from pylatro_agent.env import BalatroEnv
+    from pylatro_agent.reward import DEFAULT_REWARD_CONFIG
+    from pylatro_agent.tokenizer import Tokenizer
+    from pylatro_agent.training import fast_generate
+
+    # HF seed 2015075: clear Small, then buy the Joker in shop slot 1.
+    # The purchase event must reach reward shaping; its upgrade is worth 0.4.
+    actions = [0, 9406, 2618, 5600, 17297]
+    data = load_game_data()
+    vocab = build_vocab(data)
+    env = BalatroEnv(seed=2015075, data=data, vocab=vocab, deck_key="b_blue", enable_teacher=False)
+    env.reset()
+    transitions = [env.step(action) for action in actions]
+    expected = [transition[1] for transition in transitions]
+    env.close()
+
+    class PrefixDone(Exception):
+        pass
+
+    class Replay:
+        step = 0
+
+        def select_action(self, state, phase, mask, **kwargs):
+            if self.step == len(actions):
+                raise PrefixDone
+            action = actions[self.step]
+            self.step += 1
+            assert mask[action]
+            return action
+
+    actual = []
+    diagnostic_fields = ("hand_play_chosen_hand", "hand_play_top1", "hand_play_candidate_value_ratio")
+    actual_diagnostics = []
+    original = fast_generate.default_reward
+
+    def capture(*args, **kwargs):
+        value = original(*args, **kwargs)
+        actual.append(value)
+        actual_diagnostics.append({key: args[2].get(key) for key in diagnostic_fields})
+        return value
+
+    monkeypatch.setattr(fast_generate, "default_reward", capture)
+    with pytest.raises(PrefixDone):
+        fast_generate._run_game_single_pass(
+            2015075, data, Tokenizer(vocab=vocab), Replay(), DEFAULT_REWARD_CONFIG.gamma,
+            reward_config=DEFAULT_REWARD_CONFIG, deck_key="b_blue",
+        )
+    assert actual == pytest.approx(expected, abs=1e-10)
+    assert actual_diagnostics == [{key: transition[4].get(key) for key in diagnostic_fields}
+                                  for transition in transitions]
+
+
 def test_high_card_candidate_search_checks_effect_kickers(monkeypatch) -> None:
     data = load_game_data()
     state = create_run_state("high_card_kicker", data=data)

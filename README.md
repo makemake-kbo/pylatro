@@ -119,6 +119,17 @@ The fixed-Ante-8 archive-and-return experiment is documented in
 practice, explicit mutable Joker features, bounded boss-clear rewards, and an
 actor-transfer path for compatible checkpoints.
 
+The [pretraining transfer investigation](docs/transfer/README.md) provides strict
+checkpoint evaluation, replay diagnostics, controlled continuations, and a
+[gameplay evidence report](docs/transfer/report.md).
+The [follow-up learning study](docs/transfer/learning_bottleneck.md) tests policy
+memorization, current-rule continuation, and controlled hand/shop interventions.
+The [action architecture study](docs/transfer/action_refactor.md) adds entity-based
+Joker selection and complete card-subset scoring using the existing observations.
+Its [400-seed confirmation](docs/transfer/action_refactor_results.md) validated a
+sampled win-rate improvement from 3.58% to 19.33% and a greedy improvement from
+7.75% to 32.12%, averaged across two training replicas.
+
 #### Phase 1: Supervised Pretraining
 
 Generates games from a rule-based heuristic agent and trains the model to imitate it.
@@ -149,6 +160,11 @@ configuration. Seeding does not guarantee bitwise equality across devices.
 #### Phase 2: PPO Fine-Tuning
 
 Reinforcement learning from self-play, starting from the pretrained checkpoint.
+
+Use `--deck b_blue` when fine-tuning checkpoints trained on the
+`makemake/5k-balatro-games` dataset. This selects Blue Deck for both training
+and evaluation; the default remains Red Deck (`b_red`). The deck is saved in
+PPO checkpoints and cannot change during strict resume.
 
 ```bash
 # From pretrained checkpoint

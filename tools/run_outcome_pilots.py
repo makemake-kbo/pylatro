@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import math
 import subprocess
 import sys
 import time
@@ -65,9 +66,16 @@ def main():
     parser.add_argument("--branch-update", type=int, default=20)
     parser.add_argument("--stage-name", required=True)
     parser.add_argument("--resource-plan", type=Path)
+    parser.add_argument("--leg-hours-file", type=Path,
+                        help="Explicit per-recipe/replica wall limits for a resource-bounded continuation")
     args = parser.parse_args()
     if args.updates < 1 or args.hours_per_leg <= 0 or len(set(args.recipes)) != len(args.recipes):
         parser.error("Positive update and time limits, and distinct recipes, are required")
+    leg_hours = read_json(args.leg_hours_file) if args.leg_hours_file else None
+    if leg_hours is not None and (
+            set(leg_hours) != {f"{recipe}_seed{seed}" for recipe in args.recipes for seed in (0, 1)}
+            or any(not math.isfinite(value) or value <= 0 for value in leg_hours.values())):
+        parser.error("Per-leg limits must cover exactly both replicas of each recipe with positive finite hours")
     directory = args.root / args.stage_name
     directory.mkdir(exist_ok=False)
     metadata = dict(
@@ -82,6 +90,8 @@ def main():
         jobs=[],
         resource_allocation=(dict(path=str(args.resource_plan), sha256=sha256(args.resource_plan))
                              if args.resource_plan else None),
+        leg_hours=(dict(path=str(args.leg_hours_file), sha256=sha256(args.leg_hours_file), values=leg_hours)
+                   if args.leg_hours_file else None),
     )
     atomic_json(directory / "manifest.json", metadata)
     executable = [sys.executable, "-u"]
@@ -118,8 +128,11 @@ def main():
                     command = [*executable,
                         "tools/train_outcome_ppo.py", "--root", str(args.root),
                         "--recipe", recipe, "--seed", str(seed),
-                        "--updates", str(args.updates - update), "--hours", str(args.hours_per_leg),
+                        "--updates", str(args.updates - update), "--hours",
+                        str(leg_hours[f"{recipe}_seed{seed}"] if leg_hours else args.hours_per_leg),
                     ]
+                    if args.leg_hours_file and sha256(args.leg_hours_file) != metadata["leg_hours"]["sha256"]:
+                        raise ValueError("The declared per-leg wall limits changed")
                     if checkpoint:
                         command += ["--resume", str(checkpoint)]
                     elif branch:

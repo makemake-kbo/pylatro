@@ -125,14 +125,57 @@ def confirmation(root, pyplot):
                 "The initial control's physical count is not doubled. Full acceptance also requires the "
                 "greedy guardrail and no infrastructure failures; see the paired report.\n"
                 "The teacher has privileged simulator access. Intervals condition on the fixed trained replicas.",
-                fontsize=9)
+                fontsize=9, va="top")
     return figure, sources
+
+
+def selected_phases(root, pyplot):
+    path = root / "selected_phase_diagnostic/comparison.json"
+    result = read_json(path)
+    if not result["passed"]:
+        raise ValueError("Verify the selected phase diagnostic before plotting")
+    summaries = result["summaries"]["selected_ppo"]
+    names = ("student", "hand", "shop", "hand_shop", "teacher_all")
+    labels = ["PPO student", "Teacher: hand phase", "Teacher: shop phase",
+              "Teacher: hands and shops", "Teacher: all phases"]
+    figure, (left, right) = pyplot.subplots(1, 2, figsize=(14, 4.6), layout="constrained")
+    for row, name in enumerate(names):
+        value = summaries[name]
+        point_interval(left, row, value["win_rate"], value["win_rate_cluster_ci95"],
+                       color="#235789" if name == "student" else "#80589c")
+        left.text(98, row, f"{value['wins']}/{value['games']}", ha="right", va="center", fontsize=9)
+    left.set_yticks(range(5), labels)
+    left.invert_yaxis()
+    left.set_xlim(0, 100)
+    left.axvline(50, color="#c9cdd2", linestyle=":", zorder=0)
+    left.set_xlabel("Wins (%) with 95% game-seed intervals")
+    left.set_title("Win rate on 25 diagnostic seeds", loc="left", fontsize=12, pad=23)
+    left.text(.98, 1.025, "wins / games", transform=left.transAxes, ha="right", fontsize=9)
+    for row, name in enumerate(names[1:]):
+        value = result["phase_effects"][name]
+        point_interval(right, row, value["sampled_or_greedy_delta"], value["paired_ci95"], color="#80589c")
+    right.set_yticks(range(4), labels[1:])
+    right.invert_yaxis()
+    right.axvline(0, color="#60656c", linewidth=1, zorder=0)
+    right.set_xlim(-3, 80)
+    right.set_xlabel("Paired change from the local student (percentage points)")
+    right.set_title("Effect of teacher replacements", loc="left", fontsize=12, pad=23)
+    figure.suptitle("Exploratory phase diagnosis: PPO update 42, training seed 0",
+                   fontsize=15, fontweight="bold")
+    figure.text(.02, -.045,
+                "CPU, temperature 1: 25 seeds with three sampling repeats; full teacher once per seed. "
+                "The teacher has full simulator state and scoring probes.\n"
+                "This small diagnostic panel uses different game/RNG seeds from confirmation. "
+                f"Compare interventions with its own {100 * summaries['student']['win_rate']:.1f}% student baseline.\n"
+                "Phase replacements change later visited states. They never train PPO or change candidate "
+                "selection; they do not validate a learned improvement.", fontsize=9, va="top")
+    return figure, [path]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--kind", choices=("diagnostics", "confirmation"), default="diagnostics")
+    parser.add_argument("--kind", choices=("diagnostics", "confirmation", "selected_phases"), default="diagnostics")
     parser.add_argument("--output-directory", type=Path, default=Path("docs/transfer/assets"))
     args = parser.parse_args()
     os.environ.setdefault("MPLCONFIGDIR", str(args.root.resolve() / "plotting_cache"))
@@ -144,7 +187,8 @@ def main():
     pyplot.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
                             "axes.spines.top": False, "axes.spines.right": False,
                             "svg.hashsalt": "outcome_ppo_20260913"})
-    figure, sources = (diagnostics if args.kind == "diagnostics" else confirmation)(args.root, pyplot)
+    renderers = dict(diagnostics=diagnostics, confirmation=confirmation, selected_phases=selected_phases)
+    figure, sources = renderers[args.kind](args.root, pyplot)
     args.output_directory.mkdir(parents=True, exist_ok=True)
     files = []
     for suffix in ("png", "svg"):

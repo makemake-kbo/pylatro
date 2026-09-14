@@ -42,6 +42,7 @@ def main():
                 read_json(args.reference_source / "manifest.json")["source_hashes"])
     results = {}
     records = {}
+    historical_source_differences = {}
     evidence = {str(directory / "manifest.json"): sha256(directory / "manifest.json")}
     for name, location, seeds in (("before_ppo", root, study["diagnostic_seeds"]),
                                     ("selected_ppo", directory, plan["seeds"])):
@@ -49,9 +50,18 @@ def main():
         if result is None:
             raise ValueError("Complete both phase-diagnostic panels before reporting")
         manifest = result["manifest"]
-        if {path: digest for path, digest in manifest["source_hashes"].items()
-                if path.startswith("src/")} != expected:
-            raise ValueError("Phase-diagnostic core source differs from the verified reference")
+        core = {path: digest for path, digest in manifest["source_hashes"].items() if path.startswith("src/")}
+        if name == "selected_ppo" and core != expected:
+            raise ValueError("Selected phase-diagnostic core source differs from the verified reference")
+        if name == "before_ppo":
+            historical_source_differences = {
+                path: dict(before=core.get(path), selected=expected.get(path))
+                for path in sorted(set(core) | set(expected)) if core.get(path) != expected.get(path)
+            }
+            for path in ("src/pylatro_agent/phase_oracle.py", "src/pylatro_agent/constants.py",
+                         "src/pylatro_agent/transfer.py"):
+                if core.get(path) != expected[path]:
+                    raise ValueError("Historical trace interpretation or statistics source changed")
         if name == "selected_ppo" and manifest["checkpoint_sha256"] != plan["checkpoint_sha256"]:
             raise ValueError("The selected diagnostic used a different checkpoint")
         folder = location / "phase_oracle_cpu"
@@ -80,20 +90,22 @@ def main():
     result = dict(
         passed=True, game_seeds=len(plan["seeds"]), selected_physical_games=plan["expected_physical_games"],
         summaries=results, phase_effects=comparisons,
-        student_before_after=paired_statistics(after["student"], before["student"]),
         matched_teacher_actions_identical=True, source_verification=gate, source_sha256=sha256(__file__),
+        historical_source_differences=historical_source_differences,
         evidence_sha256=evidence, accelerator_seconds=0,
         interpretation="Exploratory diagnosis on the first25 reserved diagnostic seeds and the fixed seed-zero "
                        "representative. Sampling repeats are averaged within game seed. No confirmation selection "
                        "or acceptance changes, and no PPO training uses these actions. The teacher receives full "
                        "simulator state and probes; phase interventions change subsequent visited states. "
-                       "Earlier and current teacher actions/outcomes match exactly. Original reward configurations "
-                       "are preserved in their manifests. These small-panel results do not validate a learned change.",
+                       "Earlier and current teacher actions/outcomes match exactly. The earlier diagnostic predates "
+                       "four PPO training/resume source changes and uses its original reward configuration. "
+                       "Its student is not used as a before/after control here; the independent400seed confirmation "
+                       "provides that comparison. These small-panel results do not validate a learned change.",
     )
     path = directory / "comparison.json"
     if path.exists():
         previous = read_json(path)
-        for key in ("summaries", "phase_effects", "student_before_after", "evidence_sha256"):
+        for key in ("summaries", "phase_effects", "historical_source_differences", "evidence_sha256"):
             if previous[key] != json.loads(json.dumps(result[key])):
                 raise ValueError("Existing selected phase-diagnostic evidence changed")
     else:

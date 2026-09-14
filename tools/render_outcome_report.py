@@ -107,6 +107,23 @@ def render(root, output):
                          + paired(critic["sampled"]["paired"]) + " points and greedy wins by "
                          + paired(critic["greedy"]["paired"]) + " points in matched development play. "
                          "The bundle does not isolate its individual components.")
+    phase_cause = ["Remaining hand and shop errors",
+                   link(root / "phase_oracle_cpu/results.json", "Starting-actor phase interventions"),
+                   "With the starting actor, replacing either phase helps; replacing both reaches 69.3% on "
+                   "50 diagnostic seeds. Teacher access is privileged, so this does not prove "
+                   "student-input sufficiency."]
+    current_phase_path = root / "selected_phase_diagnostic/comparison.json"
+    if current_phase_path.exists():
+        current_phase = read_json(current_phase_path)["summaries"]["selected_ppo"]
+        phase_cause = [
+            "Remaining hand and shop errors", link(current_phase_path, "Selected-policy phase interventions"),
+            f"On 25 diagnostic seeds, the selected replica wins {percentage(current_phase['student']['win_rate'])}. "
+            f"Teacher hand, shop and combined replacements reach {percentage(current_phase['hand']['win_rate'])}, "
+            f"{percentage(current_phase['shop']['win_rate'])} and "
+            f"{percentage(current_phase['hand_shop']['win_rate'])}. "
+            "Both phases leave policy headroom. Teacher information and later state changes remain part of these "
+            "interventions; these are not trained-policy gains.",
+        ]
     table(["Finding", "Evidence", "What it establishes"], [
         ["Original action readouts underused available information",
          link(Path("docs/transfer/action_refactor.md"), "Architecture controls and confirmation"),
@@ -124,9 +141,7 @@ def render(root, output):
         ["Return-loss objective mismatch", link(root / "return_loss_audit.json", "Production Huber-loss probe"),
          "For binary 0/10 returns with 20% wins, the Huber optimum is .25 rather than the mean 2.0. "
          "Live residuals are smaller; this alone does not establish a large gameplay effect."],
-        ["Remaining hand and shop errors", link(root / "phase_oracle_cpu/results.json", "Matched phase interventions"),
-         "With the starting actor, replacing either phase helps; replacing both reaches 69.3% on 50 diagnostic seeds. "
-         "The teacher has full simulator access, so this does not prove current student inputs are sufficient."],
+        phase_cause,
         ["Shared critic interference", link(root / "gradient_audit_initial/result.json", "Frozen gradient audit"),
          "Weighted critic/actor backbone gradient ratio .145, cosine -.070 on the probe. "
          "This does not support a claim that the critic overwhelms the shared encoder."],
@@ -247,14 +262,16 @@ def render(root, output):
              paired(phase["phase_effects"][name]) if name != "student" else "Reference"]
             for name, item in phase["summaries"]["selected_ppo"].items()
         ])
-        before = phase["summaries"]["before_ppo"]["student"]
-        paragraph(f"The pre-PPO actor won {before['wins']}/{before['games']} on these same 25 diagnostic seeds. "
-                  "The selected student's paired difference is " + paired(phase["student_before_after"])
-                  + " points. Every repeated full-teacher action and outcome matches the earlier diagnostic "
-                  "exactly. The original reward configurations remain recorded in both manifests. "
+        paragraph("Every repeated full-teacher action and outcome matches the earlier diagnostic exactly. "
+                  "The earlier diagnostic predates four PPO training/resume source changes and retains its "
+                  "original reward configuration; its student is not treated as a before/after control here. "
+                  "All arms in the new phase comparison use the frozen PPO reference source. "
                   "The teacher has privileged simulator access, and phase replacements change later visited states; "
                   "these effects neither identify a missing input nor validate a trained intervention. "
                   "No replacement actions enter PPO training or alter the frozen confirmation selection.")
+        selected_phase_figure = Path("docs/transfer/assets/outcome_selected_phases.png")
+        if selected_phase_figure.exists():
+            paragraph("!" + link(selected_phase_figure, "Exploratory phase replacements for the selected PPO policy"))
 
     if confirmation:
         paragraph(f"Independent confirmation uses {confirmation['device'].upper()} for every arm, "
@@ -446,7 +463,7 @@ def render(root, output):
                   "or full logs: `.venv/bin/python tools/export_outcome_confirmation.py --verify-only`. "
                   "Each physical initial-control and teacher game appears once.")
     paragraph("Standalone PNG and SVG figures use `.venv/bin/python tools/plot_outcome_study.py "
-              "--kind diagnostics` or `--kind confirmation`. "
+              "--kind diagnostics`, `--kind confirmation` or `--kind selected_phases`. "
               "Runtime and plotting package versions are recorded in "
               + link(root / "environment.json", "environment.json") + " and "
               + link(root / "plotting_environment.json", "plotting_environment.json") + ".")

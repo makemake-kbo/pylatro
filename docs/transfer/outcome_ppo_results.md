@@ -20,7 +20,7 @@ Established mechanisms and the limits of the evidence:
 | Completion-selected critic labels | [Exact rollout reconstruction](../../eval/outcome_ppo_20260913/labels_gae100_seed0_u20.json); [two-replica CPU control](../../eval/outcome_ppo_20260913/label_selection_cpu_control/manifest.json) | Winning initial states receive fewer labels. Holding representations and optimizer ordering fixed, this selection makes initial forecasts too pessimistic. The complete-critic bundle changes sampled wins by -0.42 [-3.67, +2.75] points and greedy wins by -4.25 [-8.25, -0.25] points in matched development play. The bundle does not isolate its individual components. |
 | Critic calibration at transfer | [Complete student trajectories](../../eval/outcome_ppo_20260913/critic_seed0/manifest.json) | The original head forecasts about 83% wins against 16% observed on critic-validation games. Private-head fitting corrects calibration; both PPO pilots use it, so its gameplay effect is not isolated. |
 | Return-loss objective mismatch | [Production Huber-loss probe](../../eval/outcome_ppo_20260913/return_loss_audit.json) | For binary 0/10 returns with 20% wins, the Huber optimum is .25 rather than the mean 2.0. Live residuals are smaller; this alone does not establish a large gameplay effect. |
-| Remaining hand and shop errors | [Matched phase interventions](../../eval/outcome_ppo_20260913/phase_oracle_cpu/results.json) | With the starting actor, replacing either phase helps; replacing both reaches 69.3% on 50 diagnostic seeds. The teacher has full simulator access, so this does not prove current student inputs are sufficient. |
+| Remaining hand and shop errors | [Selected-policy phase interventions](../../eval/outcome_ppo_20260913/selected_phase_diagnostic/comparison.json) | On 25 diagnostic seeds, the selected replica wins 14.67%. Teacher hand, shop and combined replacements reach 49.33%, 44.00% and 68.00%. Both phases leave policy headroom. Teacher information and later state changes remain part of these interventions; these are not trained-policy gains. |
 | Shared critic interference | [Frozen gradient audit](../../eval/outcome_ppo_20260913/gradient_audit_initial/result.json) | Weighted critic/actor backbone gradient ratio .145, cosine -.070 on the probe. This does not support a claim that the critic overwhelms the shared encoder. |
 | Long-term credit | [Complete-game trace audit](../../eval/outcome_ppo_20260913/credit_audit.json) | Lambda .97 and 1 disagree in sign on 27.7% of decisions. Actual PPO bootstraps fragments; a realized outcome does not establish whether each preceding action was good. |
 | Mixture is a reference distribution | [Production normalizer probe](../../eval/outcome_ppo_20260913/mixture_capacity_audit.json) | Learned hand scores reweight the mixture before final normalization. An action absent from candidates can rise from .1 to .9 probability at mixture .5. The distribution layer has no fixed .5 cap; learned representations and finite exploration remain separate questions. |
@@ -94,6 +94,20 @@ Teacher phase replacements are a separate CPU diagnosis on 50 reserved seeds. Th
 | hand_shop | 104/150 | 69.33% | 8.200 |
 | teacher_all | 31/50 | 62.00% | 8.040 |
 
+A post-confirmation CPU diagnosis repeats phase replacements on the first 25 reserved diagnostic seeds using the preselected seed-zero PPO representative. It reuses three sampling repeats and the same per-game diagnostic RNG. Hand replacement covers CHOOSE_ACTION, including consumables or reordering in that phase; shop replacement covers SHOP, leaving packs with the student. These are exploratory effects on one trained replica, separate from the 400-seed confirmation. [Verified selected-policy phase comparisons](../../eval/outcome_ppo_20260913/selected_phase_diagnostic/comparison.json).
+
+| Selected-policy diagnostic arm | Wins/games | Win rate | Change from student [95% CI], pp |
+| --- | --- | --- | --- |
+| student | 11/75 | 14.67% | Reference |
+| hand | 37/75 | 49.33% | +34.67 [+24.00, +46.67] |
+| shop | 33/75 | 44.00% | +29.33 [+16.00, +41.37] |
+| hand_shop | 51/75 | 68.00% | +53.33 [+34.67, +70.67] |
+| teacher_all | 16/25 | 64.00% | +49.33 [+29.33, +68.00] |
+
+Every repeated full-teacher action and outcome matches the earlier diagnostic exactly. The earlier diagnostic predates four PPO training/resume source changes and retains its original reward configuration; its student is not treated as a before/after control here. All arms in the new phase comparison use the frozen PPO reference source. The teacher has privileged simulator access, and phase replacements change later visited states; these effects neither identify a missing input nor validate a trained intervention. No replacement actions enter PPO training or alter the frozen confirmation selection.
+
+![Exploratory phase replacements for the selected PPO policy](assets/outcome_selected_phases.png)
+
 Independent confirmation uses CPU for every arm, batch 32 and four engine workers. All 400 seeds and all four modes are evaluated:
 
 | Arm | Mode | Wins/games | Win rate | 95% seed interval | Mean final ante | Stalls | Censored |
@@ -148,4 +162,4 @@ Uncertainty remains about learning beyond this update budget, variability across
 
 Recreate the numeric tables with `.venv/bin/python tools/render_outcome_report.py`. The strict evaluation and paired-report commands, frozen checkpoint hashes, immutable game rows, TensorBoard curves and exact reference source are retained under [eval/outcome_ppo_20260913](../../eval/outcome_ppo_20260913). The source archive contains compiled simulator artifacts as well as Python code; environment and replay resets across PPO legs remain explicit limitations to whole-process exact replay.
 
-Standalone PNG and SVG figures use `.venv/bin/python tools/plot_outcome_study.py --kind diagnostics` or `--kind confirmation`. Runtime and plotting package versions are recorded in [environment.json](../../eval/outcome_ppo_20260913/environment.json) and [plotting_environment.json](../../eval/outcome_ppo_20260913/plotting_environment.json).
+Standalone PNG and SVG figures use `.venv/bin/python tools/plot_outcome_study.py --kind diagnostics`, `--kind confirmation` or `--kind selected_phases`. Runtime and plotting package versions are recorded in [environment.json](../../eval/outcome_ppo_20260913/environment.json) and [plotting_environment.json](../../eval/outcome_ppo_20260913/plotting_environment.json).

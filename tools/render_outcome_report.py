@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pylatro_agent.learning_bottleneck import read_json
 from pylatro_agent.outcome_study import ROOT
+from pylatro_agent.transfer import sha256
 
 
 def percentage(value):
@@ -92,12 +93,21 @@ def render(root, output):
               + link(Path("docs/transfer/outcome_ppo.md"), "Methods, decision history and limitations") + ".")
 
     paragraph("Established mechanisms and the limits of the evidence:")
+    critic_effect = "Gameplay benefit requires the matched PPO contrast."
+    intervention_path = root / "intervention_comparison_u30.json"
+    if intervention_path.exists():
+        intervention = read_json(intervention_path)
+        critic = intervention["comparisons"][intervention["base"] + "_complete"]
+        critic_effect = ("The complete-critic bundle changes sampled wins by "
+                         + paired(critic["sampled"]["paired"]) + " points and greedy wins by "
+                         + paired(critic["greedy"]["paired"]) + " points in matched development play. "
+                         "The bundle does not isolate its individual components.")
     table(["Finding", "Evidence", "What it establishes"], [
         ["Completion-selected critic labels",
          link(root / "labels_gae100_seed0_u20.json", "Exact rollout reconstruction")
          + "; " + link(root / "label_selection_cpu_control/manifest.json", "two-replica CPU control"),
          "Winning initial states receive fewer labels. Holding representations and optimizer ordering fixed, "
-         "this selection makes initial forecasts too pessimistic. Gameplay benefit requires the matched PPO contrast."],
+         "this selection makes initial forecasts too pessimistic. " + critic_effect],
         ["Critic calibration at transfer", link(root / "critic_seed0/manifest.json", "Complete student trajectories"),
          "The original head forecasts about 83% wins against 16% observed on critic-validation games. "
          "Private-head fitting corrects calibration; both PPO pilots use it, so its gameplay effect is not isolated."],
@@ -301,6 +311,14 @@ def render(root, output):
         paragraph(f"The final study audit passes, including {audit['original_artifacts_verified']} preserved original "
                   "artifacts, completed training trajectories, learning curves, source hashes and compute accounting. "
                   + link(verification_path, "Final artifact audit") + ".")
+    conclusion_path = root / "conclusion.json"
+    if conclusion_path.exists():
+        conclusion = read_json(conclusion_path)
+        for path, digest in conclusion["evidence_sha256"].items():
+            if sha256(path) != digest:
+                raise ValueError("The final recommendation's supporting evidence changed")
+        for text in conclusion["next_training_recommendation"]:
+            paragraph(text)
     paragraph("Uncertainty remains about learning beyond this update budget, variability across additional training "
               "seeds, the separate contributions inside the complete-critic treatment, and information available to "
               "the teacher that the student cannot observe. Two training replicas and one confirmation seed panel "

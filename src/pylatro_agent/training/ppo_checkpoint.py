@@ -174,6 +174,9 @@ def _save_checkpoint(
     # scalar scheduling fields, not the full dataclass).
     config_fields: dict[str, object] = {}
     if config is not None:
+        from .cohort_config import COHORT_FIELDS
+
+        config_fields.update({key: getattr(config, key) for key in COHORT_FIELDS})
         for key in (
             "seed",
             "ppo_epochs",

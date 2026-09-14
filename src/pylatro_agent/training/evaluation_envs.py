@@ -37,11 +37,18 @@ class _Environments:
         return (_pack_observation(obs) if self.compact_observations else obs), str(env._sub_phase)
 
     def step(self, actions):
+        return self._step(actions, training=False)
+
+    def step_training(self, actions):
+        """Return the full training result, including the pre-reset final obs."""
+        return self._step(actions, training=True)
+
+    def _step(self, actions, *, training):
         results = []
         for seed, action in actions:
             env = self.envs[seed]
             started = time.perf_counter()
-            obs, _, terminated, truncated, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             seconds = time.perf_counter() - started
             # Avoid sending reward diagnostics and other training-only payloads
             # through pipes. These are all the fields evaluation consumes.
@@ -68,7 +75,10 @@ class _Environments:
                 del self.envs[seed]
             if self.compact_observations:
                 obs = _pack_observation(obs)
-            results.append((seed, (obs, terminated, truncated, compact, seconds)))
+            if training:
+                results.append((seed, (obs, reward, terminated, truncated, {**info, **compact}, seconds)))
+            else:
+                results.append((seed, (obs, terminated, truncated, compact, seconds)))
         return results
 
     def close(self):
@@ -165,22 +175,29 @@ class EvaluationEnvs:
         return _unpack_observation(obs), phase
 
     def step(self, actions):
+        return self._step(actions, training=False)
+
+    def step_training(self, actions):
+        return self._step(actions, training=True)
+
+    def _step(self, actions, *, training):
+        command = "step_training" if training else "step"
         if self.local is not None:
-            return dict(self.local.step(actions))
+            return dict(getattr(self.local, command)(actions))
         shards = [[] for _ in self.processes]
         for seed, action in actions:
             shards[self.owners[seed]].append((seed, action))
         # Dispatch every shard before receiving, so engines actually overlap.
         for index, shard in enumerate(shards):
             if shard:
-                self.connections[index].send(("step", shard))
+                self.connections[index].send((command, shard))
         results = {}
         for index, shard in enumerate(shards):
             if shard:
                 for seed, result in self._receive(index):
-                    obs, terminated, truncated, info, seconds = result
-                    results[seed] = (_unpack_observation(obs), terminated, truncated, info, seconds)
-                    if result[1] or result[2]:
+                    results[seed] = (_unpack_observation(result[0]), *result[1:])
+                    terminal_index = 2 if training else 1
+                    if result[terminal_index] or result[terminal_index + 1]:
                         del self.owners[seed]
                         self.loads[index] -= 1
         return results

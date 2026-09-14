@@ -194,6 +194,7 @@ def evaluate_model(
     eval_cpu_threads: int | None = None,
     deck_key: str = "b_red",
     outcomes_out: list[dict] | None = None,
+    record_return_forecasts: bool = False,
 ) -> float:
     """Evaluate model win rate with greedy action selection over num_games.
 
@@ -273,6 +274,7 @@ def evaluate_model(
             record_critic=True,
             on_result=record,
             policy_config=policy_config,
+            **({"record_return_forecasts": True} if record_return_forecasts else {}),
         )
     if outcomes_out is not None:
         outcomes_out.extend(outcomes)
@@ -314,6 +316,7 @@ def evaluate_model(
             greedy=False,
             policy_config=policy_config,
             sampling_seed=sampling_seed,
+            **({"record_return_forecasts": True} if record_return_forecasts else {}),
         )
     wins = sum(1 for outcome in outcomes if outcome["won"])
     return wins / max(len(outcomes), 1)
@@ -349,6 +352,7 @@ def run_seed_evaluation(
     eval_workers: int = 0,
     eval_cpu_threads: int | None = None,
     deck_key: str = "b_red",
+    record_return_forecasts: bool = False,
 ) -> list[dict]:
     """Play every seed and return its outcome, batching the policy forward pass.
 
@@ -435,6 +439,13 @@ def run_seed_evaluation(
                     raise RuntimeError("Evaluation policy selected an illegal action")
             actions = chosen_actions.cpu().numpy()
             critic_probs = _value["outcome_probabilities"].cpu().tolist() if record_critic else None
+            return_forecasts = None
+            if record_return_forecasts:
+                if not all(torch.isfinite(_value[key]).all() for key in
+                           ("expected_return", "terminal_value", "return_residual")):
+                    raise RuntimeError("Evaluation critic produced non-finite return forecasts")
+                return_forecasts = {key: _value[key].cpu().tolist() for key in
+                                    ("expected_return", "terminal_value", "return_residual")}
             policy_seconds = (time.perf_counter() - policy_started) / len(slots)
             # Drop per-step inference tensors immediately; otherwise they sit on
             # the MPS allocator until the whole eval finishes.
@@ -457,6 +468,8 @@ def run_seed_evaluation(
                             "ante": int(_obs["scalars"][2]),
                             "phase": phase,
                             "outcome_probabilities": critic_probs[slot_index],
+                            **({key: values[slot_index] for key, values in return_forecasts.items()}
+                               if return_forecasts is not None else {}),
                         }
                     )
                 obs, terminated, truncated, info, env_seconds = step_results[seed]

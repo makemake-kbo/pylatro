@@ -109,6 +109,13 @@ def train_ppo(
       many more updates *after* the checkpoint's saved update count.
     """
     _validate_ppo_config(config)
+    if config.collection_mode == "complete_cohort":
+        from .cohort_training import train_complete_cohort
+
+        return train_complete_cohort(
+            config, agent_config, pretrained_path=pretrained_path, resume_path=resume_path,
+            additional_updates=additional_updates, data=data, actor_transfer_path=actor_transfer_path,
+        )
     # Work with a private RewardConfig copy and pin its potential discount to
     # the PPO return discount before resume validation or environment creation.
     config.reward_config = _effective_reward_config(config)
@@ -152,6 +159,9 @@ def train_ppo(
         if resume_state.get("actor_transfer"):
             model._actor_transfer_metadata = resume_state["actor_transfer"]
         saved_config = resume_state.get("ppo_config_fields") or {}
+        from .cohort_config import validate_cohort_resume
+
+        validate_cohort_resume(config, resume_state)
         validate_resume_evaluation_seeds(config, saved_config)
         model._training_reserved_seeds = resume_state.get("training_reserved_seeds")
         archive_config = asdict(config.archive_config) if config.archive_config else None

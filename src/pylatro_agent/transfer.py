@@ -211,6 +211,7 @@ def evaluate_artifact(
     max_idle_steps=256,
     metadata=None,
     kind="fresh_start",
+    record_return_forecasts=False,
 ):
     import time
 
@@ -239,6 +240,7 @@ def evaluate_artifact(
         "agent_config": asdict(model.config),
         "reward_config": asdict(reward),
         "status": "running",
+        **({"record_return_forecasts": True} if record_return_forecasts else {}),
     }
     write_json(output / "manifest.json", manifest)
     try:
@@ -263,6 +265,7 @@ def evaluate_artifact(
                 max_no_progress_steps=max_idle_steps,
                 results_path=output / "outcomes.jsonl",
                 writer=writer,
+                **({"record_return_forecasts": True} if record_return_forecasts else {}),
             )
         rows = [json.loads(line) for line in (output / "outcomes.jsonl").read_text().splitlines()]
         if len(rows) != len(seeds) or {r["seed"] for r in rows} != set(seeds):

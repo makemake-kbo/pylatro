@@ -37,6 +37,14 @@ class PPOConfig:
     deck_key: str = "b_red"
     seed: int = 0
     rollout_length: int = 256
+    # Experimental whole-game collection; fixed_steps remains the legacy path.
+    collection_mode: str = "fixed_steps"
+    cohort_games: int = 64
+    cohort_training_rows: int = 8192
+    cohort_max_episode_steps: int = 2048
+    cohort_workers: int = 4
+    cohort_seeds: list[int] | None = None
+    outcome_label_mode: str = "completion_window"
     total_timesteps: int = 1_000_000
     # When set, overrides total_timesteps: the run trains for exactly this many
     # PPO updates and total_timesteps is derived as total_updates * steps_per_update.
@@ -335,6 +343,9 @@ def _seed_training_rngs(seed: int) -> None:
 
 def _validate_ppo_config(config: PPOConfig) -> None:
     """Raise ValueError for invalid combinations; warn on risky ones."""
+    from .cohort_config import validate_cohort_config
+
+    validate_cohort_config(config)
     if config.precision not in (None, "fp32", "bf16"):
         raise ValueError("precision must be 'fp32', 'bf16', or None")
     validate_critic_win_ante(config.win_ante if config.win_ante is not None else 8)

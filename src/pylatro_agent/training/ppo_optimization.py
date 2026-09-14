@@ -98,6 +98,7 @@ class _UpdateStats:
     valid_action_counts: list[float]
     valid_action_type_counts: list[float]
     sample_counts: list[int] = field(default_factory=list)
+    grad_norms: list[float] = field(default_factory=list)
     on_policy_fractions: list[float] = field(default_factory=list)
     on_policy_advantage_means: list[float] = field(default_factory=list)
     on_policy_advantage_stds: list[float] = field(default_factory=list)
@@ -205,6 +206,10 @@ def _logical_mask_weights(
     logical group's valid labels. All-zero groups receive zero weights,
     avoiding both divide-by-zero and accidental auxiliary gradients.
     """
+    # Cohort batches expose a CPU index plan. Reading their mask metadata must
+    # not materialize the entire cohort on the accelerator.
+    if hasattr(batches, "logical_mask_weights"):
+        return batches.logical_mask_weights(mask_key)
     valid_counts = [float(batch[mask_key].detach().sum().item()) for batch in batches]
     weights = [0.0] * len(batches)
     group_start = 0
@@ -578,6 +583,8 @@ def _run_ppo_update(
                 normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy
             )
             total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
+            if config.collection_mode == "complete_cohort" and not torch.isfinite(total_loss):
+                raise RuntimeError("Non-finite complete-cohort PPO loss")
             total_loss.backward()
 
             # Step every accum_steps micro-batches (or on last batch). This is
@@ -596,9 +603,12 @@ def _run_ppo_update(
                     stats.sil_grad_ppo_actor_grad_cosine = diag["ppo_actor_grad_cosine"]
                     stats.sil_grad_diagnostic_valid = bool(diag["grad_diagnostic_valid"])
                     sil_grad_snapshot = None
-                nn.utils.clip_grad_norm_(
-                    model.parameters(), config.max_grad_norm, error_if_nonfinite=config.precision == "bf16"
+                grad_norm = nn.utils.clip_grad_norm_(
+                    model.parameters(), config.max_grad_norm,
+                    error_if_nonfinite=config.precision == "bf16" or config.collection_mode == "complete_cohort",
                 )
+                if config.collection_mode == "complete_cohort":
+                    stats.grad_norms.append(float(grad_norm.detach().cpu()))
                 optimizer.step()
                 optimizer.zero_grad()
 

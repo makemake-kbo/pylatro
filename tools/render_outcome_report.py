@@ -153,6 +153,25 @@ def render(root, output):
                   + paired(item["sampled"]["paired"]) + " points. This does not establish a superior GAE setting. "
                   + link(gae_contrast, "Matched initial recipe comparison") + ".")
 
+    continuation = []
+    for path in sorted(root.glob("continuation_gae*_u*_to*.json")):
+        data = read_json(path)
+        if "updates_from" not in data:
+            continue
+        item = data["results"]
+        continuation.append([
+            link(path, data["recipe"]), f"{data['updates_from']} to {data['updates_to']}",
+            paired(item["sampled"]["paired"]), paired(item["greedy"]["paired"]),
+            ", ".join(f"{seed}: {100 * replica['sampled']['sampled_or_greedy_delta']:+.2f}"
+                      for seed, replica in item["per_replicate"].items()),
+        ])
+    if continuation:
+        paragraph("Additional PPO is compared with the same recipe's earlier checkpoints on the same development "
+                  "games. Later checkpoints include the declared process restarts. These paired changes describe "
+                  "learning within the measured budget; they do not establish an asymptotic plateau.")
+        table(["Recipe", "Updates", "Sampled change [95% CI], pp", "Greedy change [95% CI], pp",
+               "Sampled changes by training seed, pp"], continuation)
+
     for path in sorted(root.glob("intervention_comparison_u*.json")):
         data = read_json(path)
         paragraph(f"The update-{data['updates']} interventions are paired against equally trained `{data['base']}` "

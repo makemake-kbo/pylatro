@@ -139,6 +139,25 @@ def compare_interventions(root, base, updates, critic_suffix="complete"):
     )
 
 
+def compare_continuation(root, recipe, updates_from, updates_to):
+    if not 0 < updates_from < updates_to:
+        raise ValueError("Continuation requires increasing positive update counts")
+    seeds = read_json(root / "manifest.json")["development_seeds"]
+    panels, evidence = {}, {}
+    for updates in (updates_from, updates_to):
+        panels[updates], evidence[updates] = {}, {}
+        for seed in (0, 1):
+            path = root / "evaluations" / f"{recipe}_seed{seed}_u{updates}_dev200"
+            panels[updates][seed], evidence[updates][seed] = verified_panel(path, seeds)
+    return dict(
+        recipe=recipe, updates_from=updates_from, updates_to=updates_to, stage="development",
+        results=compare_matched_training(panels[updates_to], panels[updates_from]), evidence=evidence,
+        interpretation="Exploratory paired continuation comparison, both training replicas and all three sampling "
+                       "repeats grouped by game seed. Later checkpoints include declared process restarts; this is "
+                       "not an uninterrupted-training comparison. No confirmation games used.",
+    )
+
+
 def verified_panel(path, seeds, device="cpu"):
     modes, evidence = {}, []
     checkpoint_hash = None
@@ -215,6 +234,8 @@ def main():
                                              "gae100_terminal_lr3e5", "gae097_terminal_lr3e5",
                                              "gae100_complete", "gae097_complete"), required=True)
     parser.add_argument("--updates", type=int, required=True)
+    parser.add_argument("--from-updates", type=int,
+                        help="Compare this recipe's later development checkpoint with both earlier replicas")
     parser.add_argument("--stage", choices=("development", "confirmation"), default="development")
     parser.add_argument("--freeze", action="store_true")
     parser.add_argument("--selection-reason")
@@ -225,6 +246,22 @@ def main():
                         help="Compare the critic and LR arms with their matched trained controls")
     parser.add_argument("--critic-suffix", choices=("complete", "terminal"), default="complete")
     args = parser.parse_args()
+    if args.from_updates is not None:
+        if args.stage != "development" or args.freeze or args.interventions or args.matched_control_recipe:
+            parser.error("Continuation comparisons use development games and cannot freeze a candidate")
+        result = compare_continuation(args.root, args.recipe, args.from_updates, args.updates)
+        path = args.root / f"continuation_{args.recipe}_u{args.from_updates}_to{args.updates}.json"
+        if path.exists():
+            previous = read_json(path)
+            # Preserve older diagnostic wording and artifact hashes while
+            # requiring the measurements and their raw provenance to agree.
+            for key in ("results", "evidence"):
+                if previous[key] != json.loads(json.dumps(result[key])):
+                    raise ValueError("Existing continuation evidence differs from the raw panels")
+        else:
+            atomic_json(path, result)
+        print(json.dumps(result["results"], indent=2))
+        return
     if args.interventions:
         if args.stage != "development" or args.freeze:
             parser.error("Intervention diagnostics use development games and cannot freeze a candidate")

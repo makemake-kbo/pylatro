@@ -122,9 +122,12 @@ def compare_frozen_training_control(root):
 def compare_interventions(root, base, updates, critic_suffix="complete"):
     if base not in ("gae100", "gae097"):
         raise ValueError("Interventions require the selected original-critic GAE base")
+    if critic_suffix not in ("complete", "terminal", "none"):
+        raise ValueError("Unknown critic comparison")
+    interventions = ([f"{base}_{critic_suffix}"] if critic_suffix != "none" else []) + [f"{base}_lr3e5"]
     seeds = read_json(root / "manifest.json")["development_seeds"]
     panels, evidence = {}, {}
-    for recipe in (base, f"{base}_{critic_suffix}", f"{base}_lr3e5"):
+    for recipe in (base, *interventions):
         panels[recipe], evidence[recipe] = {}, {}
         for seed in (0, 1):
             name = f"{recipe}_seed{seed}_u{updates}_dev200"
@@ -132,7 +135,7 @@ def compare_interventions(root, base, updates, critic_suffix="complete"):
     return dict(
         stage="development", base=base, updates=updates, evidence=evidence,
         comparisons={recipe: compare_matched_training(panels[recipe], panels[base])
-                     for recipe in (f"{base}_{critic_suffix}", f"{base}_lr3e5")},
+                     for recipe in interventions},
         interpretation="Each intervention is paired with the original-critic continuation at the same update "
                        "and training seed. Average both training replicas and sampling repeats within game seed "
                        "before bootstrapping. These development comparisons are exploratory, not confirmation.",
@@ -244,7 +247,8 @@ def main():
                         help="Also freeze both equally trained original-critic controls for confirmation")
     parser.add_argument("--interventions", action="store_true",
                         help="Compare the critic and LR arms with their matched trained controls")
-    parser.add_argument("--critic-suffix", choices=("complete", "terminal"), default="complete")
+    parser.add_argument("--critic-suffix", choices=("complete", "terminal", "none"), default="complete",
+                        help="Use none for a longer comparison containing only LR and ordinary PPO arms")
     args = parser.parse_args()
     if args.from_updates is not None:
         if args.stage != "development" or args.freeze or args.interventions or args.matched_control_recipe:
@@ -266,7 +270,12 @@ def main():
         if args.stage != "development" or args.freeze:
             parser.error("Intervention diagnostics use development games and cannot freeze a candidate")
         result = compare_interventions(args.root, args.recipe, args.updates, args.critic_suffix)
-        atomic_json(args.root / f"intervention_comparison_u{args.updates}.json", result)
+        path = args.root / f"intervention_comparison_u{args.updates}.json"
+        if path.exists():
+            if read_json(path) != json.loads(json.dumps(result, allow_nan=False)):
+                raise ValueError("An existing intervention report has different evidence or comparison arms")
+        else:
+            atomic_json(path, result)
         print(json.dumps(result["comparisons"], indent=2))
         return
     if args.freeze and (args.stage != "development" or not args.selection_reason):

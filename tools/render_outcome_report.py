@@ -115,7 +115,7 @@ def render(root, output):
          "For binary 0/10 returns with 20% wins, the Huber optimum is .25 rather than the mean 2.0. "
          "Live residuals are smaller; this alone does not establish a large gameplay effect."],
         ["Remaining hand and shop errors", link(root / "phase_oracle_cpu/results.json", "Matched phase interventions"),
-         "Replacing either phase helps; replacing both reaches 69.3% on 50 diagnostic seeds. "
+         "With the starting actor, replacing either phase helps; replacing both reaches 69.3% on 50 diagnostic seeds. "
          "The teacher has full simulator access, so this does not prove current student inputs are sufficient."],
         ["Shared critic interference", link(root / "gradient_audit_initial/result.json", "Frozen gradient audit"),
          "Weighted critic/actor backbone gradient ratio .145, cosine -.070 on the probe. "
@@ -140,6 +140,7 @@ def render(root, output):
 
     paragraph("Development uses CPU, 200 game seeds, three sampling repeats and two training replicas. "
               "Intervals resample game seeds after averaging repeats and replicas. "
+              "They condition on these two trained replicas and do not include variability from new training seeds. "
               "The initial control has 600 physical sampled games and is not counted twice.")
     rows = []
     for path in sorted(root.glob("development_*_u*_comparison.json")):
@@ -213,7 +214,7 @@ def render(root, output):
     if phase_path.exists():
         phase = read_json(phase_path)
         paragraph("Teacher phase replacements are a separate CPU diagnosis on 50 reserved seeds. "
-                  "They never supply PPO labels or select the candidate. "
+                  "They measure the actor before PPO and never supply PPO labels or select the candidate. "
                   "Student and partial-replacement arms have three repeats; the full teacher is deterministic.")
         table(["Diagnostic arm", "Wins/games", "Win rate", "Mean final ante"], [
             [name, f"{item['wins']}/{item['games']}", percentage(item["win_rate"]), f"{item['mean_final_ante']:.3f}"]

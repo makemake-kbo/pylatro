@@ -328,6 +328,13 @@ def render(root, output):
               "TensorBoard curves and exact reference source are retained under " + link(root, str(root)) + ". "
               "The source archive contains compiled simulator artifacts as well as Python code; environment and "
               "replay resets across PPO legs remain explicit limitations to whole-process exact replay.")
+    portable = Path("docs/transfer/data/outcome_confirmation_manifest.json")
+    if portable.exists():
+        paragraph("The committed " + link(portable.parent / "outcome_confirmation_games.jsonl", "portable game rows")
+                  + " and " + link(portable, "configuration, hashes and results")
+                  + " also reproduce every confirmation and teacher statistic without the original checkpoints "
+                  "or full logs: `.venv/bin/python tools/export_outcome_confirmation.py --verify-only`. "
+                  "Each physical initial-control and teacher game appears once.")
     paragraph("Standalone PNG and SVG figures use `.venv/bin/python tools/plot_outcome_study.py "
               "--kind diagnostics` or `--kind confirmation`. "
               "Runtime and plotting package versions are recorded in "

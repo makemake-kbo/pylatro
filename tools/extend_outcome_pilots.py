@@ -49,6 +49,15 @@ def fitting_extension(seconds_per_update, remaining, reserve, maximum_updates):
     return 0, {}
 
 
+def verify_predecessor_reports(paths, comparisons):
+    # Replicate identifiers are integer keys in memory and string keys in
+    # persisted JSON. Compare the same representation without rewriting the
+    # predecessor's immutable evidence.
+    if any(read_json(path) != json.loads(json.dumps(item, allow_nan=False))
+           for path, item in zip(paths, comparisons, strict=True)):
+        raise ValueError("The prior controller's report differs from verified raw outcomes")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
@@ -104,8 +113,7 @@ def main():
         time.sleep(5)
     comparisons = [compare_panel(root, recipe, 30, "development")
                    for recipe in (base, f"{base}_complete", f"{base}_lr3e5")]
-    if any(read_json(path) != item for path, item in zip(report_paths, comparisons, strict=True)):
-        raise ValueError("The prior controller's report differs from verified raw outcomes")
+    verify_predecessor_reports(report_paths, comparisons)
     atomic_json(root / "intervention_comparison_u30.json", compare_interventions(root, base, 30))
     chosen, guardrail = select_development(comparisons)
     recipe = chosen["recipe"]

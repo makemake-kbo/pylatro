@@ -61,6 +61,20 @@ def render(root, output):
                   f"{percentage(results['sampled']['candidate']['win_rate'])} sampled wins on 400 confirmation seeds, "
                   f"versus {percentage(results['sampled']['control']['win_rate'])} for the initial actor. "
                   f"The paired change is {paired(delta)} percentage points (95% interval).")
+        table(["Mode", "Initial actor", "Selected PPO, two replicas", "Paired change [95% CI], pp"], [
+            [mode, percentage(results[mode]["control"]["win_rate"]),
+             percentage(results[mode]["candidate"]["win_rate"]), paired(results[mode]["paired"])]
+            for mode in ("sampled", "greedy")
+        ])
+        if all(replica["sampled"]["sampled_or_greedy_delta"] > 0
+               for replica in results["per_replicate"].values()):
+            paragraph("Both training replicas improve in sampled play.")
+        paragraph("Sampling repeats and fixed training replicas are averaged within each game seed before "
+                  "bootstrapping; the shared initial control is evaluated once. The physical denominators are "
+                  f"{results['sampled']['candidate']['games']:,} selected and "
+                  f"{results['sampled']['control']['games']:,} control sampled games, plus "
+                  f"{results['greedy']['candidate']['games']:,} selected and "
+                  f"{results['greedy']['control']['games']:,} control greedy games.")
         if results["sampled"]["candidate"]["win_rate"] < .5:
             paragraph("The selected model still loses most sampled games. This is an intermediate result, "
                       "not evidence that the task is solved or that its current win rate is a ceiling.")
@@ -291,7 +305,7 @@ def render(root, output):
             [f"{name}/{mode}", *[percentage(item["ante_clear_rates"][str(ante)]) for ante in range(1, 9)]]
             for name, arm in confirmation["physical_arms"].items() for mode, item in arm.items()
         ])
-        table(["Acceptance condition against initial actor", "Passed"], [
+        table(["Confirmation acceptance condition against initial actor", "Passed"], [
             [key.replace("_", " "), str(value)] for key, value in confirmation["acceptance"].items()
         ])
         matched_path = root / "confirmation_matched_control_comparison.json"
@@ -310,9 +324,11 @@ def render(root, output):
         if teacher_path.exists():
             teacher = read_json(teacher_path)
             reference = teacher["teacher"]
+            interval = reference["win_rate_cluster_ci95"]
             paragraph("After candidate confirmation, the separately evaluated V68 teacher wins "
                       f"{reference['wins']}/{reference['games']} games "
-                      f"({percentage(reference['win_rate'])}) on the same 400 seeds. "
+                      f"({percentage(reference['win_rate'])}, 95% seed interval "
+                      f"[{percentage(interval[0])}, {percentage(interval[1])}]) on the same 400 seeds. "
                       "Its search/scaler settings come from the original dataset's generation metadata. "
                       "The selected student's sampled difference from this teacher is "
                       + paired(teacher["paired"]) + " percentage points. The teacher receives full simulator "

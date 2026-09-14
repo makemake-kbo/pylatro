@@ -1,5 +1,14 @@
 The selected outcome-only PPO recipe `gae097` at update 42 has a **validated improvement**. Its two replicas average 29.54% sampled wins on 400 confirmation seeds, versus 18.17% for the initial actor. The paired change is +11.38 [+8.87, +13.96] percentage points (95% interval).
 
+| Mode | Initial actor | Selected PPO, two replicas | Paired change [95% CI], pp |
+| --- | --- | --- | --- |
+| sampled | 18.17% | 29.54% | +11.38 [+8.87, +13.96] |
+| greedy | 34.50% | 46.38% | +11.88 [+7.25, +16.38] |
+
+Both training replicas improve in sampled play.
+
+Sampling repeats and fixed training replicas are averaged within each game seed before bootstrapping; the shared initial control is evaluated once. The physical denominators are 2,400 selected and 1,200 control sampled games, plus 800 selected and 400 control greedy games.
+
 The selected model still loses most sampled games. This is an intermediate result, not evidence that the task is solved or that its current win rate is a ceiling.
 
 **Final artifact and compute verification is still pending.**
@@ -130,7 +139,7 @@ Final ante preserves the simulator's terminal convention: a win can advance the 
 | control/sampled | 92.58% | 82.17% | 72.25% | 58.00% | 44.25% | 33.83% | 25.00% | 18.17% |
 | control/greedy | 97.25% | 88.50% | 81.50% | 72.25% | 62.50% | 53.25% | 43.00% | 34.50% |
 
-| Acceptance condition against initial actor | Passed |
+| Confirmation acceptance condition against initial actor | Passed |
 | --- | --- |
 | independent confirmation | True |
 | sampled gain at least five points | True |

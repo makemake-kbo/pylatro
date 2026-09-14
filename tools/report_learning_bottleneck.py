@@ -35,11 +35,12 @@ def delta(result):
     return f"{100 * result['sampled_or_greedy_delta']:+.2f} pp [{100 * low:+.2f}, {100 * high:+.2f}]"
 
 
-def phase_oracle_results(root, *, verify_traces=False):
+def phase_oracle_results(root, *, verify_traces=False, expected_seeds=None, write_analysis=True):
     from pylatro_agent.constants import SubPhase
     from pylatro_agent.phase_oracle import ORACLE_ARMS, ORACLE_SEEDS, teacher_controls_phase
 
     folder = root / "phase_oracle_cpu"
+    seeds = list(ORACLE_SEEDS if expected_seeds is None else expected_seeds)
     if not (folder / "manifest.json").exists():
         return None
     manifest = read_json(folder / "manifest.json")
@@ -47,15 +48,15 @@ def phase_oracle_results(root, *, verify_traces=False):
         return None
     if manifest["device"] != "cpu" or manifest["accelerator_seconds"] != 0:
         raise ValueError("Phase replacement was not recorded as CPU-only")
-    if manifest["seeds"] != list(ORACLE_SEEDS) or not manifest["never_train_on_seeds"]:
+    if manifest["seeds"] != seeds or not manifest["never_train_on_seeds"]:
         raise ValueError("Phase-oracle seed reservation changed")
-    check_seed_separation(ORACLE_SEEDS, [entry["path"] for entry in manifest["seed_separation"]])
+    check_seed_separation(seeds, [entry["path"] for entry in manifest["seed_separation"]])
     if sha256(manifest["checkpoint"]) != manifest["checkpoint_sha256"]:
         raise ValueError("Phase-oracle source checkpoint changed")
     rows = [read_json(path) for path in sorted((folder / "games").glob("*.json"))]
     expected = {
         (arm, seed, sampling)
-        for seed in ORACLE_SEEDS
+        for seed in seeds
         for arm in ORACLE_ARMS
         for sampling in ((None,) if arm == "teacher_all" else (0, 1, 2))
     }
@@ -115,7 +116,8 @@ def phase_oracle_results(root, *, verify_traces=False):
         secondary_conditional_comparisons=conditional,
         ordering="Canonical game-seed order for absolute bootstrap intervals; original summary retained",
     )
-    write_json(folder / "analysis_canonical.json", result)
+    if write_analysis:
+        write_json(folder / "analysis_canonical.json", result)
     return result
 
 

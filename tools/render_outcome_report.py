@@ -231,6 +231,31 @@ def render(root, output):
             for name, item in phase["summaries"].items()
         ])
 
+    selected_phase_path = root / "selected_phase_diagnostic/comparison.json"
+    if selected_phase_path.exists():
+        phase = read_json(selected_phase_path)
+        if not phase["passed"]:
+            raise ValueError("Selected-policy phase diagnosis has not passed verification")
+        paragraph("A post-confirmation CPU diagnosis repeats phase replacements on the first 25 reserved diagnostic "
+                  "seeds using the preselected seed-zero PPO representative. It reuses three sampling repeats and "
+                  "the same per-game diagnostic RNG. Hand replacement covers CHOOSE_ACTION, including consumables "
+                  "or reordering in that phase; shop replacement covers SHOP, leaving packs with the student. "
+                  "These are exploratory effects on one trained replica, separate from the 400-seed confirmation. "
+                  + link(selected_phase_path, "Verified selected-policy phase comparisons") + ".")
+        table(["Selected-policy diagnostic arm", "Wins/games", "Win rate", "Change from student [95% CI], pp"], [
+            [name, f"{item['wins']}/{item['games']}", percentage(item["win_rate"]),
+             paired(phase["phase_effects"][name]) if name != "student" else "Reference"]
+            for name, item in phase["summaries"]["selected_ppo"].items()
+        ])
+        before = phase["summaries"]["before_ppo"]["student"]
+        paragraph(f"The pre-PPO actor won {before['wins']}/{before['games']} on these same 25 diagnostic seeds. "
+                  "The selected student's paired difference is " + paired(phase["student_before_after"])
+                  + " points. Every repeated full-teacher action and outcome matches the earlier diagnostic "
+                  "exactly. The original reward configurations remain recorded in both manifests. "
+                  "The teacher has privileged simulator access, and phase replacements change later visited states; "
+                  "these effects neither identify a missing input nor validate a trained intervention. "
+                  "No replacement actions enter PPO training or alter the frozen confirmation selection.")
+
     if confirmation:
         paragraph(f"Independent confirmation uses {confirmation['device'].upper()} for every arm, "
                   "batch 32 and four engine workers. All 400 seeds and all four modes are evaluated:")

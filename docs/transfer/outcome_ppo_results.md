@@ -1,4 +1,8 @@
-**Study in progress. No candidate has completed independent confirmation.** The tables below contain completed measurements only; development gains are exploratory.
+The selected outcome-only PPO recipe `gae097` at update 42 has a **validated improvement**. Its two replicas average 29.54% sampled wins on 400 confirmation seeds, versus 18.17% for the initial actor. The paired change is +11.38 [+8.87, +13.96] percentage points (95% interval).
+
+The selected model still loses most sampled games. This is an intermediate result, not evidence that the task is solved or that its current win rate is a ceiling.
+
+**Final artifact and compute verification is still pending.**
 
 The study has charged 11.160 of the 12 additional MPS hours. The ledger includes failed jobs and CPU work inside an exclusive accelerator job. Separate CPU diagnostics and evaluations do not consume that allowance. [Compute ledger](../../eval/outcome_ppo_20260913/compute.json).
 
@@ -89,6 +93,37 @@ Teacher phase replacements are a separate CPU diagnosis on 50 reserved seeds. Th
 | shop | 54/150 | 36.00% | 6.327 |
 | hand_shop | 104/150 | 69.33% | 8.200 |
 | teacher_all | 31/50 | 62.00% | 8.040 |
+
+Independent confirmation uses CPU for every arm, batch 32 and four engine workers. All 400 seeds and all four modes are evaluated:
+
+| Arm | Mode | Wins/games | Win rate | 95% seed interval | Mean final ante | Stalls | Censored |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| seed0 | sampled | 350/1200 | 29.17% | [25.92%, 32.58%] | 6.011 | 0 | 0 |
+| seed0 | greedy | 182/400 | 45.50% | [40.50%, 50.25%] | 6.843 | 0 | 0 |
+| seed1 | sampled | 359/1200 | 29.92% | [26.67%, 33.33%] | 5.923 | 0 | 0 |
+| seed1 | greedy | 189/400 | 47.25% | [42.25%, 52.25%] | 6.822 | 0 | 0 |
+| control | sampled | 218/1200 | 18.17% | [15.42%, 21.00%] | 5.263 | 0 | 0 |
+| control | greedy | 138/400 | 34.50% | [30.00%, 39.25%] | 6.327 | 0 | 0 |
+
+Final ante preserves the simulator's terminal convention: a win can advance the state to ante nine. Ante-clear rates are reported separately.
+
+| Arm/mode | Clear 1 | Clear 2 | Clear 3 | Clear 4 | Clear 5 | Clear 6 | Clear 7 | Clear 8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| seed0/sampled | 95.58% | 87.08% | 79.00% | 68.58% | 56.67% | 47.08% | 37.92% | 29.17% |
+| seed0/greedy | 97.50% | 91.25% | 84.00% | 78.00% | 69.75% | 63.75% | 54.50% | 45.50% |
+| seed1/sampled | 95.25% | 86.75% | 78.83% | 66.08% | 54.08% | 45.00% | 36.33% | 29.92% |
+| seed1/greedy | 97.75% | 91.25% | 84.00% | 77.25% | 69.75% | 61.00% | 54.00% | 47.25% |
+| control/sampled | 92.58% | 82.17% | 72.25% | 58.00% | 44.25% | 33.83% | 25.00% | 18.17% |
+| control/greedy | 97.25% | 88.50% | 81.50% | 72.25% | 62.50% | 53.25% | 43.00% | 34.50% |
+
+| Acceptance condition against initial actor | Passed |
+| --- | --- |
+| independent confirmation | True |
+| sampled gain at least five points | True |
+| sampled paired ci excludes zero | True |
+| both replicates positive | True |
+| greedy rules out five point regression | True |
+| no infrastructure failures | True |
 
 Pilots use Blue Deck, White Stake, ante eight, v13 observations, FP32, mixture .5, temperature one, 32 environments and 256 steps per rollout (8,192 transitions). PPO makes two passes with logical batch 640 and physical batch 320, clip .1, entropy coefficient .001, and Adam LR 1e-5 unless explicitly testing 3e-5. The complete-episode treatment uses a zero return residual, freezes critic parameters during actor updates, and applies 30 private outcome-tower replay updates of 256 rows instead of the reference's masked PPO outcome updates plus four replay updates. This is a declared bundle of value definition, label source, gradient scope and replay exposure.
 

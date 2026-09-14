@@ -9,9 +9,11 @@ Both training replicas improve in sampled play.
 
 Sampling repeats and fixed training replicas are averaged within each game seed before bootstrapping; the shared initial control is evaluated once. The physical denominators are 2,400 selected and 1,200 control sampled games, plus 800 selected and 400 control greedy games.
 
+Frozen checkpoints: [training replica 0](../../eval/outcome_ppo_20260913/trials/gae097_seed0/leg_from30_to42/checkpoint.pt); [training replica 1](../../eval/outcome_ppo_20260913/trials/gae097_seed1/leg_from30_to42/checkpoint.pt); [initial actor control](../../eval/outcome_ppo_20260913/critic_seed0/checkpoint.pt). Their hashes and configuration are recorded in [the frozen selection](../../eval/outcome_ppo_20260913/candidate_selection.json). Training replica zero was fixed as the representative for follow-up probes before confirmation.
+
 The selected model still loses most sampled games. This is an intermediate result, not evidence that the task is solved or that its current win rate is a ceiling.
 
-**Final artifact and compute verification is still pending.**
+![Sampled confirmation rates and paired confidence intervals](assets/outcome_confirmation.png)
 
 The study has charged 11.160 of the 12 additional MPS hours. The ledger includes failed jobs and CPU work inside an exclusive accelerator job. Separate CPU diagnostics and evaluations do not consume that allowance. [Compute ledger](../../eval/outcome_ppo_20260913/compute.json).
 
@@ -148,6 +150,21 @@ Final ante preserves the simulator's terminal convention: a win can advance the 
 | greedy rules out five point regression | True |
 | no infrastructure failures | True |
 
+After candidate confirmation, the separately evaluated V68 teacher wins 299/400 games (74.75%, 95% seed interval [70.50%, 79.00%]) on the same 400 seeds. Its search/scaler settings come from the original dataset's generation metadata. The selected student's sampled difference from this teacher is -45.21 [-49.38, -40.88] percentage points. The teacher receives full simulator state and scoring probes; this measures a remaining policy gap without proving that student inputs are sufficient. These games supply no PPO labels and do not change candidate selection or acceptance. [Matched teacher benchmark](../../eval/outcome_ppo_20260913/teacher_confirmation400/comparison.json).
+
+The selected replicas lose all six sampled attempts on 139 of 400 confirmation seeds. The teacher wins 79 of those seeds; at least one selected replica wins greedily on 40 of them. Six losses do not establish that a seed is impossible for the policy, and success in any of six attempts is not a per-game win rate. These post-confirmation counts describe remaining failures without changing selection or acceptance. [Seed-level failure profile](../../eval/outcome_ppo_20260913/confirmation_failure_profile.json).
+
+| Number of selected sampled wins on a seed | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Confirmation seeds | 139 | 82 | 53 | 43 | 40 | 26 | 17 |
+
+| Selected policy mode | Lost games | Highest ante reached on losses (ante: count) |
+| --- | --- | --- |
+| sampled | 1691 | 1: 110, 2: 204, 3: 192, 4: 278, 5: 287, 6: 224, 7: 214, 8: 182 |
+| greedy | 429 | 1: 19, 2: 51, 3: 58, 4: 51, 5: 63, 6: 59, 7: 65, 8: 63 |
+
+The terminal ante localizes where the run ended, not the earlier decisions that caused failure. The teacher's privileged information and scoring probes remain a separate possible contributor.
+
 Pilots use Blue Deck, White Stake, ante eight, v13 observations, FP32, mixture .5, temperature one, 32 environments and 256 steps per rollout (8,192 transitions). PPO makes two passes with logical batch 640 and physical batch 320, clip .1, entropy coefficient .001, and Adam LR 1e-5 unless explicitly testing 3e-5. The complete-episode treatment uses a zero return residual, freezes critic parameters during actor updates, and applies 30 private outcome-tower replay updates of 256 rows instead of the reference's masked PPO outcome updates plus four replay updates. This is a declared bundle of value definition, label source, gradient scope and replay exposure.
 
 Physical training below counts only updates executed within each trial directory. Inherited parent updates are not charged again to branches. Complete episode rates during training are descriptive because the policy changes while collecting them.
@@ -163,12 +180,47 @@ Physical training below counts only updates executed within each trial directory
 | gae100_seed0 | 20 | 163840 | 1.233 | 0-2, 2-20 |
 | gae100_seed1 | 20 | 163840 | 1.057 | 0-20 |
 
+Recorded optimizer metrics cover every completed PPO update. The last two columns average the final ten updates in each trial directory. These distinguish learning-rate changes or skipped optimization from limited gameplay progress; they do not by themselves establish the best step size or a cause of failure.
+
+| Trial | Logged updates | Actual LR values | Minimum minibatch fraction | KL rollbacks | Last-ten mean KL | Last-ten clip fraction |
+| --- | --- | --- | --- | --- | --- | --- |
+| gae097_complete_seed0 | 10 | 1e-05 | 1.000 | 0 | 0.00069 | 0.0217 |
+| gae097_complete_seed1 | 10 | 1e-05 | 1.000 | 0 | 0.00062 | 0.0227 |
+| gae097_lr3e5_seed0 | 22 | 3e-05 | 1.000 | 0 | 0.00355 | 0.0771 |
+| gae097_lr3e5_seed1 | 22 | 3e-05 | 1.000 | 0 | 0.00289 | 0.0706 |
+| gae097_seed0 | 42 | 1e-05 | 1.000 | 0 | 0.00059 | 0.0198 |
+| gae097_seed1 | 42 | 1e-05 | 1.000 | 0 | 0.00051 | 0.0187 |
+| gae100_seed0 | 20 | 1e-05 | 1.000 | 0 | 0.00052 | 0.0172 |
+| gae100_seed1 | 20 | 1e-05 | 1.000 | 0 | 0.00053 | 0.0191 |
+
 Regression tests cover deck propagation, strict configuration restoration, complete seed exclusion, pure-outcome rewards, legal policy paths, paired seed statistics, branch optimizer preservation, critic isolation, teacher-free PPO execution, confirmation freezing and source archives. The source archive cannot bypass active-study pinning: it is accepted only after a final audit of the still-pinned workspace, with unchanged compute and training artifacts. [Critic intervention tests](../../tests/test_complete_episode_critic.py); [confirmation regression](../../tests/test_outcome_confirmation.py); [source archive regression](../../tests/test_outcome_source_archive.py).
 
 The selected checkpoint's CPU/MPS probe passes on 16 observations and a separate 16-game sampled smoke. The supplemental states cover play, discard and multi-Joker sales; supervised and PPO likelihoods are also compared. These bounded checks establish implementation agreement, not gameplay strength. [Backend probabilities, gradients and provenance](../../eval/outcome_ppo_20260913/subset_backend_verification.json).
 
+The final study audit passes, including 40 preserved original artifacts, completed training trajectories, learning curves, source hashes and compute accounting. [Final artifact audit](../../eval/outcome_ppo_20260913/verification_final.json).
+
+After all study evaluations finished, checkpoint and logging maintenance was integrated. The archived reference was then verified again with unchanged training artifacts and compute. Future training uses a new source identity; the old study's source checks remain strict. [Verification after maintenance](../../eval/outcome_ppo_20260913/verification_after_maintenance.json).
+
+The post-maintenance checkpoint/resume/pipeline/archive regression suite and changed-file lint pass. The accompanying audit verifies learning curves, episode provenance and immutable artifacts. [Final check commands and logs](../../eval/outcome_ppo_20260913/final_checks/manifest.json).
+
+A host Python upgrade after all study games broke the workspace virtualenv's system-path link, preventing two final-check commands from starting. The workspace link now targets the original immutable Python 3.12.7 interpreter; its build and every recorded package version match. Subsequent checks pass, with no additional MPS usage. [Preserved environment and repair provenance](../../eval/outcome_ppo_20260913/environment_link_repair.json).
+
+A separate 8-game CPU check runs two diagnostic seeds in sampled and greedy modes under both current and archived source. Every gameplay and critic field matches exactly after excluding timing. This verifies the archive runs on this host and checks the maintenance on bounded trajectories; it does not establish full PPO-process resume determinism. [Archive runtime comparison](../../eval/outcome_ppo_20260913/archive_runtime_check/manifest.json).
+
+The next training recommendation is to continue ordinary outcome-only PPO from both selected update-42 checkpoints, with Adam LR 1e-5, gamma 1, lambda .97 and the same architecture, observations, reward and batch settings. A concrete next block is 58 further updates per replica, reaching 100 total, with gameplay evaluations at updates 50, 60, 80 and 100. Freeze this schedule before starting, retain the update-42 checkpoints as controls, and reserve a new 400-seed confirmation panel checked against every training manifest. The current confirmation panel is now exposed and cannot serve as untouched evidence for another adaptively chosen improvement.
+
+Use a new study directory and source identity for that continuation, preserving model and optimizer state while explicitly recording the unavoidable restart of environments, replay state and the legacy MPS sampling stream. Future checkpoints now preserve MPS RNG state. Keep teacher actions and labels out of PPO. A full pretraining restart has less support as the next use of compute: the action-head refactor already produced a validated gain with unchanged observations, and this outcome-only PPO study adds another replicated gain.
+
+Do not promote the complete-critic bundle or LR 3e-5 as established improvements. The bundle corrects measured calibration but shows no sampled advantage over equally trained ordinary PPO and lowers development greedy wins. The larger LR produces larger KL and clipping fractions but no established sampled advantage at update 42. Every configured PPO minibatch ran, with no KL rollbacks or unexpected learning-rate reductions, so those mechanisms do not explain the remaining weak play.
+
+The remaining gap is substantial: sampled PPO wins 29.54% against the matched teacher's 74.75%, and it loses all six sampled attempts on 139 of 400 seeds; the teacher wins 79 of those. Selected-policy phase replacements expose headroom in both hand and shop decisions. They are exploratory interventions with privileged teacher information and changed later states, so they do not isolate a single missing input or establish that v13 already contains everything needed. If longer PPO fails to improve, the next diagnosis should isolate hand/shop decisions, credit assignment and information use under matched states before proposing an observation migration.
+
+The last ordinary continuation, from update 30 to 42, changes development sampled wins by +2.83 percentage points with a paired interval of [-0.25, +6.00]. That interval leaves the recent learning rate uncertain; these short pilots do not establish a 24% or 30% ceiling. Majority-winning sampled play remains unvalidated. This study ends after 11.160 of its 12 additional MPS hours, with no further training scheduled under the frozen confirmation result.
+
 Uncertainty remains about learning beyond this update budget, variability across additional training seeds, the separate contributions inside the complete-critic treatment, and information available to the teacher that the student cannot observe. Two training replicas and one confirmation seed panel do not settle these questions. No new observation features are inserted into v13.
 
 Recreate the numeric tables with `.venv/bin/python tools/render_outcome_report.py`. The strict evaluation and paired-report commands, frozen checkpoint hashes, immutable game rows, TensorBoard curves and exact reference source are retained under [eval/outcome_ppo_20260913](../../eval/outcome_ppo_20260913). The source archive contains compiled simulator artifacts as well as Python code; environment and replay resets across PPO legs remain explicit limitations to whole-process exact replay.
+
+The committed [portable game rows](data/outcome_confirmation_games.jsonl) and [configuration, hashes and results](data/outcome_confirmation_manifest.json) also reproduce every confirmation and teacher statistic without the original checkpoints or full logs: `.venv/bin/python tools/export_outcome_confirmation.py --verify-only`. Each physical initial-control and teacher game appears once.
 
 Standalone PNG and SVG figures use `.venv/bin/python tools/plot_outcome_study.py --kind diagnostics`, `--kind confirmation` or `--kind selected_phases`. Runtime and plotting package versions are recorded in [environment.json](../../eval/outcome_ppo_20260913/environment.json) and [plotting_environment.json](../../eval/outcome_ppo_20260913/plotting_environment.json).

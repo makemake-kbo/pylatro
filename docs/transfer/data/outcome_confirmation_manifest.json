@@ -1,0 +1,401 @@
+{
+  "physical_games": 5200,
+  "games_sha256": "89accc0b31dc32c2c6c42a56a5feeef43b4a8cac56af7ee8f5ec466b279ebfbe",
+  "results": {
+    "primary": {
+      "per_replicate": {
+        "0": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 1200,
+            "sampled_or_greedy_delta": 0.11,
+            "paired_ci95": [
+              0.080833333333333,
+              0.138333333333333
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.11,
+            "paired_ci95": [
+              0.0575,
+              0.165
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        },
+        "1": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 1200,
+            "sampled_or_greedy_delta": 0.1175,
+            "paired_ci95": [
+              0.0875,
+              0.148333333333333
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.1275,
+            "paired_ci95": [
+              0.075,
+              0.18
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        }
+      },
+      "sampled": {
+        "candidate": {
+          "game_seeds": 400,
+          "games": 2400,
+          "wins": 709,
+          "win_rate": 0.29541666666666666,
+          "win_rate_cluster_ci95": [
+            0.26625,
+            0.325416666666667
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 5.966666666666667,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9541666666666667,
+            "2": 0.8691666666666666,
+            "3": 0.7891666666666667,
+            "4": 0.6733333333333333,
+            "5": 0.55375,
+            "6": 0.46041666666666664,
+            "7": 0.37125,
+            "8": 0.29541666666666666
+          }
+        },
+        "control": {
+          "game_seeds": 400,
+          "games": 1200,
+          "wins": 218,
+          "win_rate": 0.18166666666666664,
+          "win_rate_cluster_ci95": [
+            0.154166666666667,
+            0.21
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 5.2625,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9258333333333333,
+            "2": 0.8216666666666667,
+            "3": 0.7225,
+            "4": 0.58,
+            "5": 0.4425,
+            "6": 0.3383333333333333,
+            "7": 0.25,
+            "8": 0.18166666666666667
+          }
+        },
+        "paired": {
+          "game_seeds": 400,
+          "games_per_arm": 2400,
+          "sampled_or_greedy_delta": 0.11375,
+          "paired_ci95": [
+            0.088739583333333,
+            0.139583333333333
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "greedy": {
+        "candidate": {
+          "game_seeds": 400,
+          "games": 800,
+          "wins": 371,
+          "win_rate": 0.46375,
+          "win_rate_cluster_ci95": [
+            0.4225,
+            0.50625
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 6.8325,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.97625,
+            "2": 0.9125,
+            "3": 0.84,
+            "4": 0.77625,
+            "5": 0.6975,
+            "6": 0.62375,
+            "7": 0.5425,
+            "8": 0.46375
+          }
+        },
+        "control": {
+          "game_seeds": 400,
+          "games": 400,
+          "wins": 138,
+          "win_rate": 0.345,
+          "win_rate_cluster_ci95": [
+            0.3,
+            0.3925
+          ],
+          "win_rate_wilson_ci95": [
+            0.30008782799282613,
+            0.3928609832508057
+          ],
+          "mean_final_ante": 6.3275,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9725,
+            "2": 0.885,
+            "3": 0.815,
+            "4": 0.7225,
+            "5": 0.625,
+            "6": 0.5325,
+            "7": 0.43,
+            "8": 0.345
+          }
+        },
+        "paired": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.11875,
+          "paired_ci95": [
+            0.0725,
+            0.16378125
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      }
+    },
+    "teacher": {
+      "candidate": {
+        "game_seeds": 400,
+        "games": 2400,
+        "wins": 709,
+        "win_rate": 0.29541666666666666,
+        "win_rate_cluster_ci95": [
+          0.26625,
+          0.325416666666667
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 5.966666666666667,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.9541666666666667,
+          "2": 0.8691666666666666,
+          "3": 0.7891666666666667,
+          "4": 0.6733333333333333,
+          "5": 0.55375,
+          "6": 0.46041666666666664,
+          "7": 0.37125,
+          "8": 0.29541666666666666
+        }
+      },
+      "teacher": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 299,
+        "win_rate": 0.7475,
+        "win_rate_cluster_ci95": [
+          0.705,
+          0.79
+        ],
+        "win_rate_wilson_ci95": [
+          0.7027083556965948,
+          0.7875830586079285
+        ],
+        "mean_final_ante": 8.32,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.995,
+          "2": 0.99,
+          "3": 0.985,
+          "4": 0.97,
+          "5": 0.93,
+          "6": 0.875,
+          "7": 0.8275,
+          "8": 0.7475
+        }
+      },
+      "paired": {
+        "game_seeds": 400,
+        "sampled_or_greedy_delta": -0.45208333333333334,
+        "paired_ci95": [
+          -0.49375,
+          -0.40875
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling",
+        "aligned_rows_per_arm": 2400,
+        "physical_candidate_games": 2400,
+        "physical_teacher_games": 400
+      },
+      "interpretation": "Descriptive frozen-candidate benchmark, not an acceptance or selection rule. The deterministic teacher is repeated only to align labels for pairing. Average all six student repeats within game seed before bootstrapping."
+    }
+  },
+  "selection": {
+    "resource_allocation": {
+      "path": "eval/outcome_ppo_20260913/resource_allocation_v2.json",
+      "sha256": "d04371624d7047e4addf4502daff989d6955a6dad89c614e2f1b0e72bb66a86d"
+    },
+    "confirmation_parallel_modes": 4,
+    "recipe": "gae097",
+    "updates": 42,
+    "checkpoint_hashes": {
+      "control": "e869c77f1ec3a614fc1ef1b4d93a362c485e01358a34c94ce8f6ce8dc261a032",
+      "seed0": "ae57cc28f7f319fe94acf28095741914a96901cf4e990e85262362da106fc724",
+      "seed1": "1fc4a1ec0ed6d810c6b6b032d8f89cac559c07f1dc99b192355a58977215b7bf"
+    },
+    "checkpoints": {
+      "control": "eval/outcome_ppo_20260913/critic_seed0/checkpoint.pt",
+      "seed0": "eval/outcome_ppo_20260913/trials/gae097_seed0/leg_from30_to42/checkpoint.pt",
+      "seed1": "eval/outcome_ppo_20260913/trials/gae097_seed1/leg_from30_to42/checkpoint.pt"
+    },
+    "development_comparison": "eval/outcome_ppo_20260913/development_gae097_u42_comparison.json",
+    "development_comparison_sha256": "359791c4900f241945ff7ceb0865771dc7e2be40cb96071f3c6250653aad2cf9",
+    "reason": "Highest mean sampled development win rate across both replicas among completed checkpoints passing the prespecified greedy guardrail, with greedy rate as tie-break. All declared longer comparisons are complete; no confirmation outcomes were inspected.",
+    "frozen_utc": "2026-09-14T05:55:31.870695+00:00",
+    "representative_training_seed": 0,
+    "baseline_shared_across_replicates": true,
+    "confirmation_device": "cpu",
+    "study_manifest_sha256": "69f5dc1d9b856bf62a17b80fb04ae1166ada26a50dfddd4bf0110ef4259d6f5f"
+  },
+  "source_panels": {
+    "control": {
+      "checkpoint": "eval/outcome_ppo_20260913/critic_seed0/checkpoint.pt",
+      "checkpoint_sha256": "e869c77f1ec3a614fc1ef1b4d93a362c485e01358a34c94ce8f6ce8dc261a032",
+      "files": [
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/baseline_confirmation400/sample0",
+          "manifest_sha256": "181ce108820a9d4601cdb7604ef30f85760c30c52a6100b6cf3e3f11deda939b",
+          "outcomes_sha256": "28cbff8434bef4033857e8659747a1a79ec5e84d4753cd18de8635824e555800",
+          "games": 400,
+          "elapsed_seconds": 1242.6319880420342
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/baseline_confirmation400/sample1",
+          "manifest_sha256": "5d6edf3e4c0445b705b320e929ce234bd256cf18ee935f131424de6df2b4d678",
+          "outcomes_sha256": "316b27507e92ec5bb23bcc729598cc8cceb5fd72dbfb4f00d1ec9252ecef32c4",
+          "games": 400,
+          "elapsed_seconds": 1239.9410967499716
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/baseline_confirmation400/sample2",
+          "manifest_sha256": "2852846c2c3715d5e8747d67f3517bfb6b1e7f2b9a2fe70a8814de210cd1c19d",
+          "outcomes_sha256": "82ee41e0eb3a4330dac3cf54df40ed917f3ef59e4adf44497008dbc2de54e6d9",
+          "games": 400,
+          "elapsed_seconds": 1271.8879196249181
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/baseline_confirmation400/greedy",
+          "manifest_sha256": "b3c68256c7b4b05abeacc824ffbdae72a0766258e7f01349c7a23f4202184c38",
+          "outcomes_sha256": "1b020ebbd65ff66618f55f8f2cc538c5875275f767c89a876913d6246c1260ed",
+          "games": 400,
+          "elapsed_seconds": 1445.6882848750101
+        }
+      ]
+    },
+    "seed0": {
+      "checkpoint": "eval/outcome_ppo_20260913/trials/gae097_seed0/leg_from30_to42/checkpoint.pt",
+      "checkpoint_sha256": "ae57cc28f7f319fe94acf28095741914a96901cf4e990e85262362da106fc724",
+      "files": [
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed0_u42_confirmation400/sample0",
+          "manifest_sha256": "f36fb7a8c074c13f0b90d2d20b788881e66d927d138d0304c45ab3d49f02556d",
+          "outcomes_sha256": "09248d4ad98b4877531200abdc2fc22b17d47649bc865fede2b14962aa12b804",
+          "games": 400,
+          "elapsed_seconds": 1426.7403605419677
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed0_u42_confirmation400/sample1",
+          "manifest_sha256": "fc4fda4d9990dd2ced9a22c22caee641a5cd48981631e743e79416070d0552db",
+          "outcomes_sha256": "8e9c3777b49e4cf4c06b25f04f10495ae6d9dca1bf8d2f70dd9feb04d9014f6e",
+          "games": 400,
+          "elapsed_seconds": 1430.4125203329604
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed0_u42_confirmation400/sample2",
+          "manifest_sha256": "9cdf33360553817a46f8a15fa9669aeeaa1cc2fdb0109a09e5d3814f417a2146",
+          "outcomes_sha256": "696b6bf12a6155c295b7bd67f44ed75076562f5e0cda0c2dd512f04dae45c1db",
+          "games": 400,
+          "elapsed_seconds": 1416.9952256659744
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed0_u42_confirmation400/greedy",
+          "manifest_sha256": "1935c52d9d76fd7d6b9bac7dcb7448267fb639c8c658711ff8fcfe23fbe120fd",
+          "outcomes_sha256": "1159b30b5c820dd90229ee90b8c8269c83988241ad41a3b67d4f0a8f5cef2b8e",
+          "games": 400,
+          "elapsed_seconds": 1544.358086791006
+        }
+      ]
+    },
+    "seed1": {
+      "checkpoint": "eval/outcome_ppo_20260913/trials/gae097_seed1/leg_from30_to42/checkpoint.pt",
+      "checkpoint_sha256": "1fc4a1ec0ed6d810c6b6b032d8f89cac559c07f1dc99b192355a58977215b7bf",
+      "files": [
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed1_u42_confirmation400/sample0",
+          "manifest_sha256": "47d91f1669df29ca2ad09945f1c5bf793f7a8fd75bf18be1318cc55a3dea30de",
+          "outcomes_sha256": "cac56d44650cd5f1890e1c2b675f905b40489f1f88c6b9c1b660a4599d704ba4",
+          "games": 400,
+          "elapsed_seconds": 1432.0004613749916
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed1_u42_confirmation400/sample1",
+          "manifest_sha256": "3e552b4c93ec939cf16bea391565062eab259062ebeb92d3ca8baf9f6461fce5",
+          "outcomes_sha256": "ee2c46a2ab7e8be979bfd6970d41728e9741681330275f1affcf6c7f11a7796e",
+          "games": 400,
+          "elapsed_seconds": 1414.6148749579443
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed1_u42_confirmation400/sample2",
+          "manifest_sha256": "00e0f7e08fd1451f91bf35563846d6bb9f5d0ebae7d07c21422d4fdd9f650234",
+          "outcomes_sha256": "4512ad30a6e0526812f437888e16ebbd34c327d0c2a01834cd6efbbd86fcd84d",
+          "games": 400,
+          "elapsed_seconds": 1384.6568291669246
+        },
+        {
+          "path": "eval/outcome_ppo_20260913/evaluations/gae097_seed1_u42_confirmation400/greedy",
+          "manifest_sha256": "f93e99172ee96007943f56550c035a3a73879e90d3e4b946791e380172301812",
+          "outcomes_sha256": "7110776af97098a01f6fd4cec1dc1c57043eb4d9929595471d8ee88544b3e6d4",
+          "games": 400,
+          "elapsed_seconds": 1543.4162830830319
+        }
+      ]
+    }
+  },
+  "teacher_source": {
+    "path": "eval/outcome_ppo_20260913/teacher_confirmation400/evaluation/outcomes.jsonl",
+    "sha256": "b46cc76de0288748143593d788d14342f16e4811e5912af6e3b2830415a4c66d"
+  },
+  "supporting_sha256": {
+    "eval/outcome_ppo_20260913/confirmation_gae097_u42_comparison.json": "8dfa12b67758caaaf106a83e7d36f42951f23870d530abdbdfa89ff4de4bba86",
+    "eval/outcome_ppo_20260913/teacher_confirmation400/comparison.json": "bd6366c37bf72444d15b0e066c970cc773ee8c41e468ee8cd5fad69ae2881ac3",
+    "eval/outcome_ppo_20260913/candidate_selection.json": "75e9eebf6397a7b0dd8c5baa656ff1dd11caa1f8401d2e3bf10bf0e75d86636f",
+    "eval/outcome_ppo_20260913/verification_final.json": "7fdcabca8b3011962de948e4a865faf9fc8ff44da0b61b3c7d6b4b2afc77e201"
+  },
+  "exporter_sha256": "89d36a7f5c56785bd5140e52e52628f9c85ae143fe506705a9d0b8adf64f0975",
+  "environment": {
+    "python": "3.12.7 (main, Oct  1 2024, 02:05:46) [Clang 16.0.6 ]",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "logical_cpus": 16,
+    "packages": {
+      "torch": "2.11.0",
+      "numpy": "2.3.1",
+      "pyarrow": "25.0.1",
+      "tensorboard": "2.20.0",
+      "pytest": "9.0.2",
+      "ruff": "0.15.7"
+    },
+    "scope": "Runtime versions recorded during the study; actual MPS execution is established by the charged jobs and hardware probe"
+  },
+  "scope": "Portable fields sufficient to reproduce all strength statistics. Full gameplay diagnostics and timings remain in the original immutable logs. Physical control and teacher rows appear once."
+}

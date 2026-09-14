@@ -82,7 +82,7 @@ def confirmation(root, pyplot):
     sources = [selection_path, result_path]
     sampled = result["results"]["sampled"]
     absolute = [("Initial policy", sampled["control"], "#60656c"),
-                ("Selected PPO (two seeds)", sampled["candidate"], "#235789")]
+                ("PPO (two training replicas)", sampled["candidate"], "#235789")]
     differences = [("PPO mean vs initial", sampled["paired"], "#235789")]
     for seed in (0, 1):
         differences.append((f"PPO seed {seed} vs initial",
@@ -106,7 +106,7 @@ def confirmation(root, pyplot):
     left.invert_yaxis()
     left.set_xlim(0, 100)
     left.axvline(50, color="#c9cdd2", linestyle=":", zorder=0)
-    left.set_xlabel("Sampled wins (%)")
+    left.set_xlabel("Win rate (%)")
     left.set_title("Absolute strength", loc="left", fontsize=12, pad=18)
     left.text(.98, 1.025, "wins / physical games", transform=left.transAxes, ha="right", fontsize=9)
     for row, (_, value, color) in enumerate(differences):
@@ -124,7 +124,8 @@ def confirmation(root, pyplot):
                 f"all arms use {result['device'].upper()}. Average repeats within game seed before bootstrapping.\n"
                 "The initial control's physical count is not doubled. Full acceptance also requires the "
                 "greedy guardrail and no infrastructure failures; see the paired report.\n"
-                "The teacher has privileged simulator access. Intervals condition on the fixed trained replicas.",
+                "The teacher runs once per seed with privileged simulator access. "
+                "Intervals condition on the fixed trained replicas.",
                 fontsize=9, va="top")
     return figure, sources
 

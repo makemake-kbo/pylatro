@@ -32,7 +32,7 @@ def render(root, output):
         return f"[{label}]({os.path.relpath(path, output.parent)})"
 
     def table(columns, rows):
-        lines.extend(["| " + " | ".join(columns) + " |", "| " + " | ".join(["---"] * len(columns)) + " |"])
+        lines.extend(["| " + " | ".join(map(str, columns)) + " |", "| " + " | ".join(["---"] * len(columns)) + " |"])
         lines.extend("| " + " | ".join(map(str, row)) + " |" for row in rows)
         lines.append("")
 
@@ -75,6 +75,12 @@ def render(root, output):
                   f"{results['sampled']['control']['games']:,} control sampled games, plus "
                   f"{results['greedy']['candidate']['games']:,} selected and "
                   f"{results['greedy']['control']['games']:,} control greedy games.")
+        paragraph("Frozen checkpoints: "
+                  + "; ".join(link(Path(selection["checkpoints"][name]), label) for name, label in
+                              (("seed0", "training replica 0"), ("seed1", "training replica 1"),
+                               ("control", "initial actor control")))
+                  + ". Their hashes and configuration are recorded in " + link(selection_path, "the frozen selection")
+                  + ". Training replica zero was fixed as the representative for follow-up probes before confirmation.")
         if results["sampled"]["candidate"]["win_rate"] < .5:
             paragraph("The selected model still loses most sampled games. This is an intermediate result, "
                       "not evidence that the task is solved or that its current win rate is a ceiling.")
@@ -445,6 +451,25 @@ def render(root, output):
                   "The archived reference was then verified again with unchanged training artifacts and compute. "
                   "Future training uses a new source identity; the old study's source checks remain strict. "
                   + link(maintenance_path, "Verification after maintenance") + ".")
+    checks_path = root / "final_checks/manifest.json"
+    if checks_path.exists():
+        checks = read_json(checks_path)
+        if (checks["status"] != "complete" or any(job["exit_code"] != 0
+                or sha256(job["log"]) != job["log_sha256"] for job in checks["jobs"])):
+            raise ValueError("Final regression or lint evidence is incomplete or changed")
+        paragraph("The post-maintenance checkpoint/resume/pipeline/archive regression suite and changed-file lint "
+                  "pass. The accompanying audit verifies learning curves, episode provenance and immutable "
+                  "artifacts. " + link(checks_path, "Final check commands and logs") + ".")
+    environment_repair_path = root / "environment_link_repair.json"
+    if environment_repair_path.exists():
+        repair = read_json(environment_repair_path)
+        if repair["status"] != "verified":
+            raise ValueError("The workspace environment repair has not been verified")
+        paragraph("A host Python upgrade after all study games broke the workspace virtualenv's system-path link, "
+                  "preventing two final-check commands from starting. The workspace link now targets the original "
+                  "immutable Python 3.12.7 interpreter; its build and every recorded package version match. "
+                  "Subsequent checks pass, with no additional MPS usage. "
+                  + link(environment_repair_path, "Preserved environment and repair provenance") + ".")
     runtime_path = root / "archive_runtime_check/manifest.json"
     if runtime_path.exists():
         runtime = read_json(runtime_path)

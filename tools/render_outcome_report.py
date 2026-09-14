@@ -224,6 +224,19 @@ def render(root, output):
                  percentage(data["results"][mode]["control"]["win_rate"]), paired(data["results"][mode]["paired"])]
                 for mode in ("sampled", "greedy")
             ])
+        teacher_path = root / "teacher_confirmation400/comparison.json"
+        if teacher_path.exists():
+            teacher = read_json(teacher_path)
+            reference = teacher["teacher"]
+            paragraph("After candidate confirmation, the separately evaluated V68 teacher wins "
+                      f"{reference['wins']}/{reference['games']} games "
+                      f"({percentage(reference['win_rate'])}) on the same 400 seeds. "
+                      "Its search/scaler settings come from the original dataset's generation metadata. "
+                      "The selected student's sampled difference from this teacher is "
+                      + paired(teacher["paired"]) + " percentage points. The teacher receives full simulator "
+                      "state and scoring probes; this measures a remaining policy gap without proving that "
+                      "student inputs are sufficient. These games supply no PPO labels and do not change "
+                      "candidate selection or acceptance. " + link(teacher_path, "Matched teacher benchmark") + ".")
 
     paragraph("Pilots use Blue Deck, White Stake, ante eight, v13 observations, FP32, mixture .5, temperature one, "
               "32 environments and 256 steps per rollout (8,192 transitions). PPO makes two passes with logical "

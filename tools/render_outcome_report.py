@@ -91,6 +91,11 @@ def render(root, output):
               "or strategic reward bonuses. Existing pretrained weights, candidates, risk inputs and automatic "
               "Joker ordering remain part of the reference interface. "
               + link(Path("docs/transfer/outcome_ppo.md"), "Methods, decision history and limitations") + ".")
+    paragraph("This investigation starts after the action-readout refactor. That earlier study's combined "
+              "entity-sale and card-subset heads raised confirmed sampled wins from 3.58% to 19.33%, "
+              "a paired gain of 15.75 points [13.54, 18.04], using existing observations and a frozen encoder. "
+              "It used a different control and seed panel. The present PPO control is the already improved actor. "
+              + link(Path("docs/transfer/action_refactor_results.md"), "Earlier architecture confirmation") + ".")
 
     paragraph("Established mechanisms and the limits of the evidence:")
     critic_effect = "Gameplay benefit requires the matched PPO contrast."
@@ -103,6 +108,11 @@ def render(root, output):
                          + paired(critic["greedy"]["paired"]) + " points in matched development play. "
                          "The bundle does not isolate its individual components.")
     table(["Finding", "Evidence", "What it establishes"], [
+        ["Original action readouts underused available information",
+         link(Path("docs/transfer/action_refactor.md"), "Architecture controls and confirmation"),
+         "The combined entity-sale and complete-subset correction produces a replicated gameplay gain with "
+         "unchanged observations. The hand correction jointly changes probability restrictions, representation "
+         "and training exposure; their individual contributions remain unresolved."],
         ["Completion-selected critic labels",
          link(root / "labels_gae100_seed0_u20.json", "Exact rollout reconstruction")
          + "; " + link(root / "label_selection_cpu_control/manifest.json", "two-replica CPU control"),
@@ -367,6 +377,25 @@ def render(root, output):
         paragraph(f"The final study audit passes, including {audit['original_artifacts_verified']} preserved original "
                   "artifacts, completed training trajectories, learning curves, source hashes and compute accounting. "
                   + link(verification_path, "Final artifact audit") + ".")
+    maintenance_path = root / "verification_after_maintenance.json"
+    if maintenance_path.exists():
+        maintenance = read_json(maintenance_path)
+        if (not maintenance["passed"] or maintenance["source_verification"]["prior_final_audit_sha256"]
+                != sha256(verification_path)):
+            raise ValueError("Post-maintenance verification differs from the final pinned-source audit")
+        paragraph("After all study evaluations finished, checkpoint and logging maintenance was integrated. "
+                  "The archived reference was then verified again with unchanged training artifacts and compute. "
+                  "Future training uses a new source identity; the old study's source checks remain strict. "
+                  + link(maintenance_path, "Verification after maintenance") + ".")
+    runtime_path = root / "archive_runtime_check/manifest.json"
+    if runtime_path.exists():
+        runtime = read_json(runtime_path)
+        if runtime["status"] == "complete" and runtime["passed"]:
+            paragraph(f"A separate {runtime['physical_games']}-game CPU check runs two diagnostic seeds in sampled "
+                      "and greedy modes under both current and archived source. Every gameplay and critic field "
+                      "matches exactly after excluding timing. This verifies the archive runs on this host and "
+                      "checks the maintenance on bounded trajectories; it does not establish full PPO-process "
+                      "resume determinism. " + link(runtime_path, "Archive runtime comparison") + ".")
     conclusion_path = root / "conclusion.json"
     if conclusion_path.exists():
         conclusion = read_json(conclusion_path)

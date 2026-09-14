@@ -1,4 +1,6 @@
-The transfer investigation compares the original ten HF-pretrained checkpoints under matched gameplay conditions. PPO stays stopped. Generated results live in `eval/transfer_20260912`; original checkpoints, HF Parquet files, and prior logs remain unchanged.
+The latest [outcome-only PPO investigation](outcome_ppo.md) has completed training and frozen its candidate for independent confirmation. Its [completed measurements](outcome_ppo_results.md) distinguish gameplay gains from critic calibration and optimizer diagnostics. PPO uses actual student outcomes without teacher labels, action replacements or imitation loss. The new study has its own 12-hour MPS allowance; earlier budgets are closed.
+
+The original transfer investigation compared the ten HF-pretrained checkpoints under matched gameplay conditions and kept PPO stopped. Its generated results live in `eval/transfer_20260912`; original checkpoints, HF Parquet files, and prior logs remain unchanged.
 
 Read the [evidence and gameplay report](report.md) and [structured results](results.json). The report compiler includes only completed evaluation panels.
 

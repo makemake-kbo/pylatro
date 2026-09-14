@@ -268,6 +268,15 @@ def render(root, output):
               + link(Path("tests/test_complete_episode_critic.py"), "Critic intervention tests") + "; "
               + link(Path("tests/test_outcome_confirmation.py"), "confirmation regression") + "; "
               + link(Path("tests/test_outcome_source_archive.py"), "source archive regression") + ".")
+    backend_path = root / "subset_backend_verification.json"
+    if backend_path.exists():
+        backend = read_json(backend_path)
+        paragraph(f"The selected checkpoint's CPU/MPS probe passes on {backend['observation_count']} observations "
+                  f"and a separate {backend['gameplay_games']}-game sampled smoke. "
+                  "The supplemental states cover play, discard and multi-Joker sales; supervised and PPO "
+                  "likelihoods are also compared. These bounded checks establish implementation agreement, "
+                  "not gameplay strength. "
+                  + link(backend_path, "Backend probabilities, gradients and provenance") + ".")
     if verified:
         audit = read_json(verification_path)
         paragraph(f"The final study audit passes, including {audit['original_artifacts_verified']} preserved original "

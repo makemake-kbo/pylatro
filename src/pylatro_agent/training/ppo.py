@@ -1134,7 +1134,8 @@ def train_ppo(
                 if mean_action_type_entropy_update < 0.20:
                     logger.warning(
                         "ppo/action_type_entropy_normalized=%.3f (<0.20) at update %d; "
-                        "the policy has collapsed onto a single action family.",
+                        "action-family choices have low entropy on this rollout. "
+                        "Inspect phase-specific choices and gameplay before diagnosing collapse.",
                         mean_action_type_entropy_update,
                         update_count,
                     )

@@ -268,6 +268,33 @@ def render(root, output):
                       "student inputs are sufficient. These games supply no PPO labels and do not change "
                       "candidate selection or acceptance. " + link(teacher_path, "Matched teacher benchmark") + ".")
 
+    failure_path = root / "confirmation_failure_profile.json"
+    if failure_path.exists():
+        failure = read_json(failure_path)
+        portable_root = Path("docs/transfer/data")
+        if (sha256(portable_root / "outcome_confirmation_games.jsonl") != failure["games_sha256"]
+                or sha256(portable_root / "outcome_confirmation_manifest.json") != failure["export_manifest_sha256"]):
+            raise ValueError("Confirmation failure-profile evidence changed")
+        profile = failure["results"]
+        paragraph(f"The selected replicas lose all six sampled attempts on {profile['no_sampled_wins']['count']} "
+                  f"of {profile['game_seeds']} confirmation seeds. The teacher wins "
+                  f"{profile['teacher_wins_with_no_sampled_wins']['count']} of those seeds; at least one selected "
+                  f"replica wins greedily on {profile['any_greedy_win_with_no_sampled_wins']['count']} of them. "
+                  "Six losses do not establish that a seed is impossible for the policy, and success in any of six "
+                  "attempts is not a per-game win rate. These post-confirmation counts describe remaining failures "
+                  "without changing selection or acceptance. " + link(failure_path, "Seed-level failure profile") + ".")
+        table(["Number of selected sampled wins on a seed", *range(7)], [
+            ["Confirmation seeds", *[profile["sampled_wins_per_seed_histogram"][str(count)] for count in range(7)]]
+        ])
+        table(["Selected policy mode", "Lost games", "Highest ante reached on losses (ante: count)"], [
+            [mode, profile[f"selected_{mode}"]["losses"],
+             ", ".join(f"{ante}: {count}" for ante, count in
+                       profile[f"selected_{mode}"]["highest_ante_reached_on_losses"].items())]
+            for mode in ("sampled", "greedy")
+        ])
+        paragraph("The terminal ante localizes where the run ended, not the earlier decisions that caused failure. "
+                  "The teacher's privileged information and scoring probes remain a separate possible contributor.")
+
     paragraph("Pilots use Blue Deck, White Stake, ante eight, v13 observations, FP32, mixture .5, temperature one, "
               "32 environments and 256 steps per rollout (8,192 transitions). PPO makes two passes with logical "
               "batch 640 and physical batch 320, clip .1, entropy coefficient .001, and Adam LR 1e-5 unless explicitly "
@@ -290,6 +317,34 @@ def render(root, output):
               "Inherited parent updates are not charged again to branches. Complete episode rates during training "
               "are descriptive because the policy changes while collecting them.")
     table(["Trial", "Executed updates", "Collected transitions", "Leg wall hours", "Completed update intervals"], rows)
+    if verified:
+        audit = read_json(verification_path)
+        optimization = []
+        for name, trial in audit["trials"].items():
+            curves = trial["curves"]
+            expected = {step for leg in trial["completed_legs"]
+                        for step in range(leg["start_update"] + 1, leg["update_count"] + 1)}
+            tags = ("ppo/actual_lr", "ppo/minibatch_fraction", "ppo/kl_rollback_event",
+                    "ppo/approx_kl", "ppo/clip_fraction")
+            for tag in tags:
+                if {item["update"] for item in curves.get(tag, [])} != expected:
+                    raise ValueError(f"Optimizer diagnostics do not cover every completed update: {name}/{tag}")
+            values = {tag: [item["value"] for item in sorted(curves[tag], key=lambda item: item["update"])]
+                      for tag in tags}
+            rates = sorted(set(values["ppo/actual_lr"]))
+            optimization.append([
+                name, len(expected), ", ".join(f"{rate:.2g}" for rate in rates),
+                f"{min(values['ppo/minibatch_fraction']):.3f}",
+                sum(value != 0 for value in values["ppo/kl_rollback_event"]),
+                f"{sum(values['ppo/approx_kl'][-10:]) / len(values['ppo/approx_kl'][-10:]):.5f}",
+                f"{sum(values['ppo/clip_fraction'][-10:]) / len(values['ppo/clip_fraction'][-10:]):.4f}",
+            ])
+        paragraph("Recorded optimizer metrics cover every completed PPO update. The last two columns average "
+                  "the final ten updates in each trial directory. These distinguish learning-rate changes or "
+                  "skipped optimization from limited gameplay progress; they do not by themselves establish "
+                  "the best step size or a cause of failure.")
+        table(["Trial", "Logged updates", "Actual LR values", "Minimum minibatch fraction", "KL rollbacks",
+               "Last-ten mean KL", "Last-ten clip fraction"], optimization)
     paragraph("Regression tests cover deck propagation, strict configuration restoration, complete seed exclusion, "
               "pure-outcome rewards, legal policy paths, paired seed statistics, branch optimizer preservation, "
               "critic isolation, teacher-free PPO execution, confirmation freezing and source archives. "

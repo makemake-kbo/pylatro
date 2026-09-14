@@ -93,6 +93,11 @@ def confirmation(root, pyplot):
         sources.append(path)
         absolute.append(("Matched PPO control (two seeds)", matched["results"]["sampled"]["control"], "#b06e1f"))
         differences.append(("PPO mean vs matched control", matched["results"]["sampled"]["paired"], "#b06e1f"))
+    teacher_path = root / "teacher_confirmation400/comparison.json"
+    if teacher_path.exists():
+        teacher = read_json(teacher_path)
+        sources.append(teacher_path)
+        absolute.append(("V68 teacher (full simulator state)", teacher["teacher"], "#80589c"))
     figure, (left, right) = pyplot.subplots(1, 2, figsize=(14, 4.3), layout="constrained")
     for row, (_, value, color) in enumerate(absolute):
         point_interval(left, row, value["win_rate"], value["win_rate_cluster_ci95"], color=color)
@@ -118,7 +123,9 @@ def confirmation(root, pyplot):
                 f"400 fresh seeds, three sampling repeats, two fixed training replicas; "
                 f"all arms use {result['device'].upper()}. Average repeats within game seed before bootstrapping.\n"
                 "The initial control's physical count is not doubled. Full acceptance also requires the "
-                "greedy guardrail and no infrastructure failures; see the paired report.", fontsize=9)
+                "greedy guardrail and no infrastructure failures; see the paired report.\n"
+                "The teacher has privileged simulator access. Intervals condition on the fixed trained replicas.",
+                fontsize=9)
     return figure, sources
 
 

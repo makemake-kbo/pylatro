@@ -4,7 +4,7 @@ import numpy as np
 
 from pylatro import load_game_data
 from pylatro_agent.training.model_generate import (
-    _make_env_thunk,
+    _make_vectorized_envs,
     _snapshot_vector_observations,
 )
 from pylatro_agent.vocab import build_vocab
@@ -29,15 +29,15 @@ def test_snapshot_vector_observations_preserves_compact_dtypes() -> None:
 
 def test_model_generation_env_disables_unused_teacher() -> None:
     data = load_game_data()
-    env = _make_env_thunk(
-        0,
+    env = _make_vectorized_envs(
+        1,
         data,
         build_vocab(data),
-        100,
-        8,
-        None,
-    )()
+        max_no_progress_steps=100,
+        win_ante=8,
+        use_async=False,
+    )
     try:
-        assert env._teacher is None
+        assert env.envs[0]._teacher is None
     finally:
         env.close()

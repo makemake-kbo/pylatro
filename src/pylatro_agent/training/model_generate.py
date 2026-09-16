@@ -22,13 +22,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-from gymnasium.vector.vector_env import AutoresetMode
 
 from pylatro import GameData, load_game_data
 
 from ..agent import AgentConfig, BalatroAgent
 from ..constants import TOKENIZER_SEMANTICS, TOKENIZER_VERSION
-from ..env import BalatroEnv
 from ..reward import (
     DEFAULT_REWARD_CONFIG,
     REWARD_MODEL_VERSION,
@@ -39,7 +37,8 @@ from ..reward import (
 from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..vocab import Vocab, build_vocab
 from .ppo_checkpoint import _load_checkpoint_strict
-from .ppo_observations import _extract_step_info_value, _ObsBuffer
+from .ppo_observations import _extract_step_info_value, _ObsBuffer, _observation_buffer_batch
+from .ppo_rollout import _make_vectorized_envs
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -75,52 +74,12 @@ def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
     return returns
 
 
-def _make_env_thunk(
-    seed: int,
-    data: GameData,
-    vocab: Vocab,
-    max_no_progress_steps: int,
-    win_ante: int,
-    reward_config: RewardConfig | None,
-):
-    def _thunk():
-        return BalatroEnv(
-            seed=seed,
-            data=data,
-            vocab=vocab,
-            max_steps=max_no_progress_steps,
-            win_ante=win_ante,
-            reward_config=reward_config,
-        )
-
-    return _thunk
-
-
-def _make_vectorized_envs(
-    num_envs: int,
-    data: GameData,
-    vocab: Vocab,
-    max_no_progress_steps: int,
-    use_async: bool,
-    win_ante: int,
-    reward_config: RewardConfig | None,
-):
-    import gymnasium
-
-    env_fns = [
-        _make_env_thunk(
-            i,
-            data,
-            vocab,
-            max_no_progress_steps,
-            win_ante,
-            reward_config,
-        )
-        for i in range(num_envs)
+def _snapshot_vector_observations(obs: dict[str, np.ndarray]) -> list[dict[str, np.ndarray]]:
+    """Copy each environment's observation without changing its storage dtype."""
+    return [
+        {key: values[index].copy() for key, values in obs.items()}
+        for index in range(len(obs["tokens"]))
     ]
-    if use_async and num_envs > 1:
-        return gymnasium.vector.AsyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
-    return gymnasium.vector.SyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
 
 
 def _format_eta(seconds: float) -> str:
@@ -177,10 +136,10 @@ def generate_training_data_from_model(
         config.num_envs,
         data,
         vocab,
-        config.max_no_progress_steps,
-        config.async_envs,
-        win_ante,
-        active_reward_config,
+        max_no_progress_steps=config.max_no_progress_steps,
+        use_async=config.async_envs,
+        win_ante=win_ante,
+        reward_config=active_reward_config,
     )
     obs_dict, _ = vec_env.reset()
 
@@ -216,36 +175,11 @@ def generate_training_data_from_model(
 
     try:
         while kept < config.num_games:
-            # Snapshot pre-step obs per env (obs_buf is overwritten on update).
-            pre_tokens = obs_buf._np_tokens
-            pre_token_types = obs_buf._np_token_types
-            pre_scalars = obs_buf._np_scalars
-            pre_attention = obs_buf._np_attention_mask
-            pre_action_mask = obs_buf._np_action_mask
-            pre_history_events = obs_buf._np_history_events
-            pre_history_event_features = obs_buf._np_history_event_features
-            pre_history_cards = obs_buf._np_history_cards
-            pre_history_card_mask = obs_buf._np_history_card_mask
-            pre_history_jokers = obs_buf._np_history_jokers
-            pre_history_joker_mask = obs_buf._np_history_joker_mask
-            pre_history_event_mask = obs_buf._np_history_event_mask
-            pre_history_round_mask = obs_buf._np_history_round_mask
-            pre_history_omitted = obs_buf._np_history_omitted
-
+            # The staging buffer is reused after each step; records own their arrays.
+            pre_obs = obs_buf.as_numpy_dict()
             with torch.no_grad():
                 dist, _ = model.action_distribution(
-                    obs_buf.tokens, obs_buf.token_types, obs_buf.scalars,
-                    obs_buf.attention_mask, obs_buf.action_mask,
-                    history_events=obs_buf.history_events,
-                    history_event_features=obs_buf.history_event_features,
-                    history_cards=obs_buf.history_cards,
-                    history_card_mask=obs_buf.history_card_mask,
-                    history_jokers=obs_buf.history_jokers,
-                    history_joker_mask=obs_buf.history_joker_mask,
-                    history_event_mask=obs_buf.history_event_mask,
-                    history_round_mask=obs_buf.history_round_mask,
-                    history_omitted=obs_buf.history_omitted,
-                    temperature=temperature,
+                    **_observation_buffer_batch(obs_buf), temperature=temperature,
                 )
                 actions = dist.sample()
 
@@ -254,23 +188,8 @@ def generate_training_data_from_model(
             dones = terminated | truncated
             total_steps += config.num_envs
 
-            for i in range(config.num_envs):
-                ep_obs[i].append({
-                    "tokens": pre_tokens[i].copy(),
-                    "token_types": pre_token_types[i].copy(),
-                    "scalars": pre_scalars[i].copy(),
-                    "attention_mask": pre_attention[i].copy(),
-                    "action_mask": pre_action_mask[i].copy(),
-                    "history_events": pre_history_events[i].copy(),
-                    "history_event_features": pre_history_event_features[i].copy(),
-                    "history_cards": pre_history_cards[i].copy(),
-                    "history_card_mask": pre_history_card_mask[i].copy(),
-                    "history_jokers": pre_history_jokers[i].copy(),
-                    "history_joker_mask": pre_history_joker_mask[i].copy(),
-                    "history_event_mask": pre_history_event_mask[i].copy(),
-                    "history_round_mask": pre_history_round_mask[i].copy(),
-                    "history_omitted": pre_history_omitted[i].copy(),
-                })
+            for i, snapshot in enumerate(_snapshot_vector_observations(pre_obs)):
+                ep_obs[i].append(snapshot)
                 ep_actions[i].append(int(actions_np[i]))
                 ep_rewards[i].append(float(step_rewards[i]))
 

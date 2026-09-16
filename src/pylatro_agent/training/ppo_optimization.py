@@ -81,22 +81,22 @@ def _restore_policy_optimizer_state(
 
 @dataclass
 class _UpdateStats:
-    policy_losses: list[float]
-    return_hubers: list[float]
-    outcome_nlls: list[float]
-    outcome_briers: list[float]
-    derived_win_briers: list[float]
-    outcome_valid_counts: list[float]
-    terminal_value_means: list[float]
-    return_residual_means: list[float]
-    expected_return_means: list[float]
-    entropies: list[float]
-    normalized_entropies: list[float]
-    action_type_entropies: list[float]
-    clip_fracs: list[float]
-    approx_kls: list[float]
-    valid_action_counts: list[float]
-    valid_action_type_counts: list[float]
+    policy_losses: list[float] = field(default_factory=list)
+    return_hubers: list[float] = field(default_factory=list)
+    outcome_nlls: list[float] = field(default_factory=list)
+    outcome_briers: list[float] = field(default_factory=list)
+    derived_win_briers: list[float] = field(default_factory=list)
+    outcome_valid_counts: list[float] = field(default_factory=list)
+    terminal_value_means: list[float] = field(default_factory=list)
+    return_residual_means: list[float] = field(default_factory=list)
+    expected_return_means: list[float] = field(default_factory=list)
+    entropies: list[float] = field(default_factory=list)
+    normalized_entropies: list[float] = field(default_factory=list)
+    action_type_entropies: list[float] = field(default_factory=list)
+    clip_fracs: list[float] = field(default_factory=list)
+    approx_kls: list[float] = field(default_factory=list)
+    valid_action_counts: list[float] = field(default_factory=list)
+    valid_action_type_counts: list[float] = field(default_factory=list)
     sample_counts: list[int] = field(default_factory=list)
     # A disabled objective must not be mistaken for a perfectly fitted loss.
     return_loss_enabled: bool = True
@@ -115,22 +115,7 @@ class _UpdateStats:
     actual_lr: float = 0.0
     sil_losses: list[float] = field(default_factory=list)
     sil_losses_weighted: list[float] = field(default_factory=list)
-    sil_advantage_means: list[float] = field(default_factory=list)
     sil_gate_means: list[float] = field(default_factory=list)
-    sil_gate_saturation_fractions: list[float] = field(default_factory=list)
-    sil_advantage_p50s: list[float] = field(default_factory=list)
-    sil_advantage_p95s: list[float] = field(default_factory=list)
-    sil_advantage_p99s: list[float] = field(default_factory=list)
-    sil_advantage_p80s: list[float] = field(default_factory=list)
-    sil_gate_open_thresholds: list[float] = field(default_factory=list)
-    sil_gate_saturation_thresholds: list[float] = field(default_factory=list)
-    sil_gate_positive_fractions: list[float] = field(default_factory=list)
-    sil_noise_floor_rejected_fractions: list[float] = field(default_factory=list)
-    sil_gate_weight_from_wins_fractions: list[float] = field(default_factory=list)
-    sil_samples_counts: list[int] = field(default_factory=list)
-    sil_unique_episodes_sampleds: list[int] = field(default_factory=list)
-    sil_max_samples_from_one_episodes: list[int] = field(default_factory=list)
-    sil_sample_win_fractions: list[float] = field(default_factory=list)
     sil_logical_minibatches_attempted: int = 0
     sil_logical_minibatches_applied: int = 0
     sil_grad_actor_norm_weighted: float | None = None
@@ -216,11 +201,7 @@ def _logical_mask_weights(
     weights = [0.0] * len(batches)
     group_start = 0
     for index, batch in enumerate(batches):
-        if "_logical_group_end" in batch:
-            group_end = bool(batch["_logical_group_end"].item())
-        else:
-            group_end = ((index + 1) % max(accum_steps, 1) == 0) or index + 1 == len(batches)
-        if not group_end:
+        if not batch["_logical_group_end"].item():
             continue
         group_total = sum(valid_counts[group_start : index + 1])
         if group_total > 0.0:
@@ -241,14 +222,6 @@ def _physical_minibatch_count(total_samples: int, logical_batch_size: int, micro
     if remainder:
         count += math.ceil(remainder / micro)
     return count
-
-
-def _value_head_parameters(model: nn.Module) -> list[nn.Parameter]:
-    """Return PPO critic parameters whose losses should not update the shared trunk."""
-    value_head = getattr(_unwrap_model(model), "value_head", None)
-    if value_head is None:
-        return []
-    return [param for param in value_head.parameters() if param.requires_grad]
 
 
 def _accumulate_critic_grads_into_value_head(critic_loss: torch.Tensor, value_params: list[nn.Parameter]) -> None:
@@ -368,44 +341,17 @@ def _run_ppo_update(
     if not use_return_loss and config.value_loss_coeff != 0:
         raise ValueError("terminal_only critic cannot optimize a residual return loss")
     effective_clip_epsilon = float(config.clip_epsilon)
-    stats = _UpdateStats(
-        return_loss_enabled=use_return_loss,
-        policy_losses=[],
-        return_hubers=[],
-        outcome_nlls=[],
-        outcome_briers=[],
-        derived_win_briers=[],
-        outcome_valid_counts=[],
-        terminal_value_means=[],
-        return_residual_means=[],
-        expected_return_means=[],
-        entropies=[],
-        normalized_entropies=[],
-        action_type_entropies=[],
-        clip_fracs=[],
-        approx_kls=[],
-        valid_action_counts=[],
-        valid_action_type_counts=[],
-        on_policy_fractions=[],
-    )
-    stats.actual_lr = float(optimizer.param_groups[0]["lr"])
+    stats = _UpdateStats(return_loss_enabled=use_return_loss, actual_lr=float(optimizer.param_groups[0]["lr"]))
 
     # A hard KL limit is a rejection criterion, not a warning. Snapshot before
     # the first gradient is computed so a rejected update restores both weights
     # and Adam's moments/step counters.
     rollback_snapshot = _snapshot_ppo_update(model, optimizer) if config.target_kl_max is not None else None
     n_rollout_samples = len(buffer._flat_returns)
-    if accum_steps > 1:
-        minibatches_per_epoch = max(
-            1,
-            _physical_minibatch_count(
-                n_rollout_samples,
-                config.mini_batch_size,
-                effective_batch_size,
-            ),
-        )
-    else:
-        minibatches_per_epoch = max(1, math.ceil(n_rollout_samples / effective_batch_size))
+    logical_batch_size = config.mini_batch_size if accum_steps > 1 else effective_batch_size
+    minibatches_per_epoch = max(
+        1, _physical_minibatch_count(n_rollout_samples, logical_batch_size, effective_batch_size)
+    )
     expected_minibatches = minibatches_per_epoch * config.ppo_epochs
     min_soft_stop_fraction = config.min_minibatch_fraction if config.min_minibatch_fraction is not None else 0.0
     min_soft_stop_minibatches = math.ceil(expected_minibatches * min_soft_stop_fraction)
@@ -415,12 +361,9 @@ def _run_ppo_update(
     # count even when their gate is empty, so training does not keep resampling
     # until it finds a favorable replay batch.
     sil_budget = config.sil_logical_minibatches_per_update if sil_coeff_now > 0.0 else 0
-    sil_attempted_groups = 0
-    sil_applied_groups = 0
     # Gradient diagnostics: captured once, on the first group where SIL is
     # applied, by snapshotting actor .grad right after the SIL backward and
     # again before the group's global clip. PPO actor grad = total - SIL.
-    grad_diag_attempted = False
     sil_grad_snapshot: list[torch.Tensor | None] | None = None
 
     minibatches_processed = 0
@@ -429,7 +372,7 @@ def _run_ppo_update(
     grad_diagnostics_due = grad_diagnostics_due and return_path_replay is None
     for _ppo_epoch in range(config.ppo_epochs):
         batches = buffer.get_batches(
-            config.mini_batch_size if accum_steps > 1 else effective_batch_size,
+            logical_batch_size,
             device,
             pin_memory=use_pin_memory,
             micro_batch_size=effective_batch_size if accum_steps > 1 else None,
@@ -441,15 +384,9 @@ def _run_ppo_update(
         )
         optimizer.zero_grad()
         for i, batch in enumerate(batches):
-            if "_logical_group_start" in batch:
-                is_group_start = bool(batch["_logical_group_start"].item())
-                is_step_boundary = bool(batch["_logical_group_end"].item())
-                loss_weight = batch["_loss_weight"]
-            else:
-                # Backward-compatible path for lightweight test buffers.
-                is_group_start = i % accum_steps == 0
-                is_step_boundary = ((i + 1) % accum_steps == 0) or ((i + 1) == len(batches))
-                loss_weight = torch.as_tensor(1.0 / accum_steps, device=device)
+            is_group_start = bool(batch["_logical_group_start"].item())
+            is_step_boundary = bool(batch["_logical_group_end"].item())
+            loss_weight = batch["_loss_weight"]
             outcome_loss_weight = torch.as_tensor(outcome_loss_weights[i], device=device)
 
             if is_group_start and not return_path_attempted and return_path_replay is not None:
@@ -475,40 +412,17 @@ def _run_ppo_update(
             # Sampled and backwarded at the group start so the whole group
             # receives exactly one aggregate SIL contribution; the coefficient
             # is the runtime decayed value, not the static config field.
-            if is_group_start and sil_attempted_groups < sil_budget and sil_buffer is not None:
-                sil_attempted_groups += 1
+            if is_group_start and stats.sil_logical_minibatches_attempted < sil_budget and sil_buffer is not None:
+                stats.sil_logical_minibatches_attempted += 1
                 sil_result = _compute_sil_group_loss(model, sil_buffer, config, device)
-                stats.sil_logical_minibatches_attempted = sil_attempted_groups
                 if sil_result.loss is not None:
-                    capture_grads = grad_diagnostics_due and not grad_diag_attempted and sil_applied_groups == 0
-                    grad_diag_attempted = capture_grads or grad_diag_attempted
+                    capture_grads = grad_diagnostics_due and stats.sil_logical_minibatches_applied == 0
                     (sil_coeff_now * sil_result.loss).backward()
-                    sil_applied_groups += 1
-                    stats.sil_logical_minibatches_applied = sil_applied_groups
-                    stats.sil_losses.append(sil_result.loss.item())
-                    stats.sil_losses_weighted.append(sil_coeff_now * sil_result.loss.item())
-                    for key, stat_list in (
-                        ("advantage_mean", stats.sil_advantage_means),
-                        ("gate_mean", stats.sil_gate_means),
-                        ("gate_saturation_fraction", stats.sil_gate_saturation_fractions),
-                        ("advantage_p50", stats.sil_advantage_p50s),
-                        ("advantage_p80", stats.sil_advantage_p80s),
-                        ("advantage_p95", stats.sil_advantage_p95s),
-                        ("gate_open_threshold", stats.sil_gate_open_thresholds),
-                        ("gate_saturation_threshold", stats.sil_gate_saturation_thresholds),
-                        ("gate_positive_fraction", stats.sil_gate_positive_fractions),
-                        ("noise_floor_rejected_fraction", stats.sil_noise_floor_rejected_fractions),
-                        ("gate_weight_from_wins_fraction", stats.sil_gate_weight_from_wins_fractions),
-                        ("samples", stats.sil_samples_counts),
-                        ("unique_episodes_sampled", stats.sil_unique_episodes_sampleds),
-                        ("max_samples_from_one_episode", stats.sil_max_samples_from_one_episodes),
-                        ("sample_win_fraction", stats.sil_sample_win_fractions),
-                    ):
-                        if key in sil_result.diagnostics:
-                            value = sil_result.diagnostics[key]
-                            stat_list.append(value if isinstance(value, int) else float(value))
-                    if "advantage_p99" in sil_result.diagnostics:
-                        stats.sil_advantage_p99s.append(sil_result.diagnostics["advantage_p99"])
+                    stats.sil_logical_minibatches_applied += 1
+                    sil_loss = sil_result.loss.item()
+                    stats.sil_losses.append(sil_loss)
+                    stats.sil_losses_weighted.append(sil_coeff_now * sil_loss)
+                    stats.sil_gate_means.append(sil_result.gate_mean)
                     if capture_grads:
                         sil_grad_snapshot = _snapshot_actor_grads(model)
 
@@ -727,7 +641,7 @@ class _SILGroupResult:
     """Outcome of one SIL logical-group loss computation."""
 
     loss: torch.Tensor | None
-    diagnostics: dict[str, float]
+    gate_mean: float = 0.0
 
 
 @dataclass
@@ -901,57 +815,43 @@ def _run_terminal_replay_updates(
     metric_sums: defaultdict[str, float] = defaultdict(float)
     metric_counts: defaultdict[str, int] = defaultdict(int)
 
-    def record_metric(
-        key: str,
-        values: torch.Tensor,
-        mask: torch.Tensor | None = None,
-    ) -> None:
-        detached = values.detach()
-        if mask is not None:
-            detached = detached[mask]
-        if detached.numel() == 0:
-            return
-        metric_sums[key] += float(detached.float().sum().item())
-        metric_counts[key] += int(detached.numel())
+    @torch.no_grad()
+    def record_metrics(value_dict, sampled, prefix="") -> None:
+        for key, (values, mask) in _outcome_metric_rows(value_dict, sampled).items():
+            values = values if mask is None else values[mask]
+            if values.numel():
+                metric_sums[prefix + key] += float(values.float().sum().item())
+                metric_counts[prefix + key] += int(values.numel())
+
+    def sample_replay(batch_size, *, holdout=False):
+        return episode_buffer.sample(
+            batch_size, device,
+            samples_per_episode=config.terminal_replay_samples_per_episode,
+            include_teacher_forced=True,
+            holdout=holdout,
+            row_uniform=config.terminal_replay_row_uniform,
+            include_action_mask=not isinstance(_unwrap_model(model), BalatroAgent),
+        )
 
     def forward_outcomes(sampled: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        value_dict = _critic_predictions(
+        return _critic_predictions(
             model,
             sampled,
             temperature=_policy_temperature_for_scalars(sampled["scalars"], config),
         )
-        return value_dict
 
     updates_applied = 0
     samples_seen = 0
     model.eval()
     for _ in range(config.terminal_replay_updates_per_ppo_update):
-        sampled = episode_buffer.sample(
-            config.terminal_replay_batch_size,
-            device,
-            samples_per_episode=config.terminal_replay_samples_per_episode,
-            include_teacher_forced=True,
-            row_uniform=config.terminal_replay_row_uniform,
-            include_action_mask=not isinstance(_unwrap_model(model), BalatroAgent),
-        )
+        sampled = sample_replay(config.terminal_replay_batch_size)
         if sampled is None:
             break
 
         optimizer.zero_grad()
         value_dict = forward_outcomes(sampled)
-        if value_dict.get("outcome_probabilities") is None:
-            optimizer.zero_grad()
-            break
         outcome_targets = sampled["terminal_outcome_target"]
-        selected_outcome_probability = (
-            value_dict["outcome_probabilities"]
-            .gather(
-                1,
-                outcome_targets.unsqueeze(1),
-            )
-            .squeeze(1)
-        )
-        outcome_loss = -selected_outcome_probability.clamp_min(1e-7).log().mean()
+        outcome_loss = outcome_nll(value_dict["outcome_probabilities"], outcome_targets)
 
         loss = config.outcome_loss_coeff * outcome_loss
         _accumulate_critic_grads_into_value_head(loss, terminal_params)
@@ -961,27 +861,15 @@ def _run_terminal_replay_updates(
         updates_applied += 1
         samples_seen += int(outcome_targets.numel())
 
-        with torch.no_grad():
-            for key, (values, mask) in _outcome_metric_rows(value_dict, sampled).items():
-                record_metric(key, values, mask)
+        record_metrics(value_dict, sampled)
 
     if updates_applied and episode_buffer.num_holdout_episodes > 0:
-        holdout = episode_buffer.sample(
-            config.terminal_replay_holdout_batch_size,
-            device,
-            samples_per_episode=config.terminal_replay_samples_per_episode,
-            include_teacher_forced=True,
-            holdout=True,
-            row_uniform=config.terminal_replay_row_uniform,
-            include_action_mask=not isinstance(_unwrap_model(model), BalatroAgent),
-        )
+        holdout = sample_replay(config.terminal_replay_holdout_batch_size, holdout=True)
         if holdout is not None:
             with torch.no_grad():
                 holdout_values = forward_outcomes(holdout)
-                if holdout_values.get("outcome_probabilities") is not None:
-                    diagnostics["replay_holdout/samples"] = float(holdout["terminal_outcome_target"].numel())
-                    for key, (values, mask) in _outcome_metric_rows(holdout_values, holdout).items():
-                        record_metric("replay_holdout/" + key, values, mask)
+                diagnostics["replay_holdout/samples"] = float(holdout["terminal_outcome_target"].numel())
+                record_metrics(holdout_values, holdout, "replay_holdout/")
 
     for key, total in metric_sums.items():
         diagnostics[key] = total / metric_counts[key]
@@ -1016,24 +904,13 @@ def _compute_sil_group_loss(
 
     Returns a result whose ``loss`` is None when SIL is disabled, the buffer is
     short of ``sil_min_episodes``, sampling yields no eligible row, or no row is
-    reachable. ``diagnostics`` always carries buffer counters for logging.
+    reachable.
     """
-    diagnostics: dict[str, float] = {
-        "buffer_episodes": float(sil_buffer.num_episodes if sil_buffer else 0),
-        "buffer_transitions": float(sil_buffer.num_transitions if sil_buffer else 0),
-        "buffer_win_fraction": float(sil_buffer.win_fraction if sil_buffer else 0.0),
-        "episodes_added_total": float(sil_buffer.episodes_added_total if sil_buffer else 0),
-        "stalled_episodes_dropped_total": float(sil_buffer.stalled_episodes_dropped_total if sil_buffer else 0),
-        "overflow_episodes_dropped_total": float(sil_buffer.overflow_episodes_dropped_total if sil_buffer else 0),
-    }
-    empty = _SILGroupResult(loss=None, diagnostics=diagnostics)
     # The caller (_run_ppo_update) gates on the runtime decayed coefficient
     # (sil_coeff_now) before attempting SIL; this helper never reads the static
     # initial coefficient so the runtime value is the sole authority.
-    if sil_buffer is None:
-        return empty
-    if sil_buffer.num_episodes < config.sil_min_episodes:
-        return empty
+    if sil_buffer is None or sil_buffer.num_episodes < config.sil_min_episodes:
+        return _SILGroupResult(loss=None)
 
     winning_bc = config.sil_objective == "winning_bc"
     sampled = sil_buffer.sample(
@@ -1043,18 +920,7 @@ def _compute_sil_group_loss(
         only_wins=winning_bc,
     )
     if sampled is None:
-        return empty
-
-    n_sampled = int(sampled["actions"].shape[0])
-    diagnostics["samples"] = float(n_sampled)
-    if "episode_ids" in sampled:
-        episode_ids_np = sampled["episode_ids"].detach().cpu().numpy()
-        unique_ids, counts = np.unique(episode_ids_np, return_counts=True)
-        diagnostics["unique_episodes_sampled"] = float(len(unique_ids))
-        diagnostics["max_samples_from_one_episode"] = float(int(counts.max()) if counts.size else 0)
-    outcomes = sampled.get("episode_outcomes")
-    if outcomes is not None:
-        diagnostics["sample_win_fraction"] = float(outcomes.mean().item())
+        return _SILGroupResult(loss=None)
 
     dist, value_dict = _grammar_distribution(
         model,
@@ -1063,58 +929,28 @@ def _compute_sil_group_loss(
     )
     log_probs = dist.log_prob(sampled["actions"])
     finite = (log_probs > -1e7).float()
-
-    # Both stored returns and the composed critic prediction are in raw reward
-    # units, so the SIL gate has one stable interpretation.
-    v_raw = value_dict["expected_return"].detach()
-    raw_advantage = sampled["returns"] - v_raw
+    denom = finite.sum()
+    if denom.item() <= 0:
+        return _SILGroupResult(loss=None)
+    finite_mask = finite.bool()
 
     if winning_bc:
         gate = finite.clone()
-        advantage_for_stats = raw_advantage
     else:
-        finite_mask = finite.bool()
-        eligible_adv = raw_advantage[finite_mask].detach().float().cpu().numpy()
-        gate_np, gate_info = sil_percentile_gate(
-            eligible_adv,
+        # Stored returns and the detached critic prediction use raw reward units.
+        raw_advantage = sampled["returns"] - value_dict["expected_return"].detach()
+        gate_np, _ = sil_percentile_gate(
+            raw_advantage[finite_mask].float().cpu().numpy(),
             open_percentile=config.sil_gate_open_percentile,
             saturation_percentile=config.sil_gate_saturation_percentile,
             advantage_floor=config.sil_advantage_floor,
         )
         gate = torch.zeros_like(finite)
         gate[finite_mask] = torch.as_tensor(gate_np, dtype=gate.dtype, device=device)
-        advantage_for_stats = raw_advantage
-        diagnostics["gate_open_threshold"] = float(gate_info["open_threshold"])
-        diagnostics["gate_saturation_threshold"] = float(gate_info["saturation_threshold"])
 
-    denom = finite.sum()
-    if denom.item() <= 0:
-        return empty
     loss = -(log_probs * gate * finite).sum() / denom
-
-    with torch.no_grad():
-        finite_mask = finite.bool()
-        adv_np = advantage_for_stats[finite_mask].detach().float().cpu().numpy()
-        gate_np = gate[finite_mask].detach().float().cpu().numpy()
-        diagnostics["advantage_mean"] = float(np.mean(adv_np)) if adv_np.size else 0.0
-        diagnostics["gate_mean"] = float(np.mean(gate_np)) if gate_np.size else 0.0
-        if adv_np.size:
-            diagnostics["advantage_p50"] = float(np.percentile(adv_np, 50.0))
-            diagnostics["advantage_p80"] = float(np.percentile(adv_np, 80.0))
-            diagnostics["advantage_p95"] = float(np.percentile(adv_np, 95.0))
-        if gate_np.size:
-            diagnostics["gate_positive_fraction"] = float(np.mean(gate_np > 0.0))
-            diagnostics["gate_saturation_fraction"] = float(np.mean(gate_np >= 1.0))
-            diagnostics["noise_floor_rejected_fraction"] = float(np.mean(gate_np == 0.0))
-        if outcomes is not None and gate_np.size:
-            win_flags = outcomes[finite_mask].detach().float().cpu().numpy()
-            gate_mass = float(gate_np.sum())
-            if gate_mass > 0.0:
-                diagnostics["gate_weight_from_wins_fraction"] = float((gate_np * win_flags).sum() / gate_mass)
-            else:
-                diagnostics["gate_weight_from_wins_fraction"] = 0.0
-
-    return _SILGroupResult(loss=loss, diagnostics=diagnostics)
+    gate_mean = float(np.mean(gate[finite_mask].float().cpu().numpy()))
+    return _SILGroupResult(loss=loss, gate_mean=gate_mean)
 
 
 def _snapshot_actor_grads(model: nn.Module) -> list[torch.Tensor | None]:

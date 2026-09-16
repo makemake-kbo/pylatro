@@ -19,7 +19,6 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from pylatro import GameData, load_game_data
 
 from ..action import ActionType, decode_action
-from ..action_grammar import ActionGrammarDistribution, ActionGrammarOutput
 from ..agent import AgentConfig, BalatroAgent
 from ..checkpoint import save_checkpoint
 from ..constants import NUM_ACTIONS, SCALAR_DIM, TOKENIZER_VERSION
@@ -35,6 +34,9 @@ from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..value_head import outcome_nll, return_huber_loss
 from ..vocab import build_vocab
 from .fast_generate import generate_training_data
+from .model_generate import _discounted_returns as _discounted_returns
+from .ppo_observations import _OBSERVATION_SPEC
+from .ppo_policy import _grammar_distribution as _grammar_distribution
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -90,59 +92,6 @@ class SupervisedConfig:
     seed: int = 0
     deck_key: str = "b_red"
     stake: int = 1
-
-
-def _discounted_returns(rewards: list[float], gamma: float) -> list[float]:
-    """Compute discounted reward-to-go targets for value pretraining."""
-    returns = [0.0] * len(rewards)
-    running_return = 0.0
-    for idx in range(len(rewards) - 1, -1, -1):
-        running_return = rewards[idx] + gamma * running_return
-        returns[idx] = running_return
-    return returns
-
-
-def _grammar_distribution(model: nn.Module, batch: dict[str, torch.Tensor]):
-    """Return the policy while keeping DataParallel on the actual forward path."""
-    base_model = model.module if isinstance(model, nn.DataParallel) else model
-    history_kwargs = {
-        "history_events": batch.get("history_events"),
-        "history_event_features": batch.get("history_event_features"),
-        "history_cards": batch.get("history_cards"),
-        "history_card_mask": batch.get("history_card_mask"),
-        "history_jokers": batch.get("history_jokers"),
-        "history_joker_mask": batch.get("history_joker_mask"),
-        "history_event_mask": batch.get("history_event_mask"),
-        "history_round_mask": batch.get("history_round_mask"),
-        "history_omitted": batch.get("history_omitted"),
-    }
-    if isinstance(model, nn.DataParallel) and isinstance(base_model, BalatroAgent):
-        raw_output, value_dict = model(
-            batch["tokens"],
-            batch["token_types"],
-            batch["scalars"],
-            batch["attention_mask"],
-            batch["action_mask"],
-            return_raw_outputs=True,
-            **history_kwargs,
-        )
-        return (
-            ActionGrammarDistribution(
-                ActionGrammarOutput(**raw_output),
-                batch["action_mask"],
-                tokens=batch["tokens"],
-                hand_ar_mixture_eps=base_model.config.hand_ar_mixture_eps,
-            ),
-            value_dict,
-        )
-    return base_model.action_distribution(
-        batch["tokens"],
-        batch["token_types"],
-        batch["scalars"],
-        batch["attention_mask"],
-        batch["action_mask"],
-        **history_kwargs,
-    )
 
 
 def _action_type_dataset_stats(records: Sequence[dict[str, Any]]) -> dict[str, Counter]:
@@ -471,46 +420,16 @@ def _collate_batch(records: list[dict], device: torch.device, config: Supervised
     bc_weights = np.array([_outcome_weight(record, config) for record in records], dtype=np.float32)
     empty_history = HistoryArrays.empty().as_dict()
 
-    def history_values(key: str) -> np.ndarray:
-        return np.array([record["obs"].get(key, empty_history[key]) for record in records])
-
+    observations = {
+        key: torch.tensor(
+            np.array([record["obs"].get(key, empty_history[key]) for record in records])
+            if key in empty_history else np.array([record["obs"][key] for record in records]),
+            dtype=dtype, device=device,
+        )
+        for key, (_, dtype) in _OBSERVATION_SPEC.items()
+    }
     return {
-        "tokens": torch.tensor(
-            np.array([r["obs"]["tokens"] for r in records]),
-            dtype=torch.long,
-            device=device,
-        ),
-        "token_types": torch.tensor(
-            np.array([r["obs"]["token_types"] for r in records]),
-            dtype=torch.long,
-            device=device,
-        ),
-        "scalars": torch.tensor(
-            np.array([r["obs"]["scalars"] for r in records]),
-            dtype=torch.float32,
-            device=device,
-        ),
-        "attention_mask": torch.tensor(
-            np.array([r["obs"]["attention_mask"] for r in records]),
-            dtype=torch.long,
-            device=device,
-        ),
-        "action_mask": torch.tensor(
-            np.array([r["obs"]["action_mask"] for r in records]),
-            dtype=torch.float32,
-            device=device,
-        ),
-        "history_events": torch.tensor(history_values("history_events"), dtype=torch.long, device=device),
-        "history_event_features": torch.tensor(
-            history_values("history_event_features"), dtype=torch.float32, device=device
-        ),
-        "history_cards": torch.tensor(history_values("history_cards"), dtype=torch.long, device=device),
-        "history_card_mask": torch.tensor(history_values("history_card_mask"), dtype=torch.long, device=device),
-        "history_jokers": torch.tensor(history_values("history_jokers"), dtype=torch.long, device=device),
-        "history_joker_mask": torch.tensor(history_values("history_joker_mask"), dtype=torch.long, device=device),
-        "history_event_mask": torch.tensor(history_values("history_event_mask"), dtype=torch.long, device=device),
-        "history_round_mask": torch.tensor(history_values("history_round_mask"), dtype=torch.long, device=device),
-        "history_omitted": torch.tensor(history_values("history_omitted"), dtype=torch.float32, device=device),
+        **observations,
         "actions": torch.tensor(
             [r["action"] for r in records],
             dtype=torch.long,

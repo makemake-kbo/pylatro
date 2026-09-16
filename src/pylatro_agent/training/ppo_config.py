@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PPOConfig:
+    # Collection and archive replay.
     archive_config: ArchiveConfig | None = None
-    # Separate BC of verified early prefixes behind archive wins. Never feeds
-    # PPO ratios/GAE or the terminal critic. Zero is the exact no-return-BC control.
+    # Actor-only BC of verified archive prefixes; zero disables. Never enters PPO ratios or GAE.
     return_path_coeff: float = 0.02
     return_path_capacity: int = 32
     return_path_batch_size: int = 64
@@ -37,7 +37,7 @@ class PPOConfig:
     deck_key: str = "b_red"
     seed: int = 0
     rollout_length: int = 256
-    # Experimental whole-game collection; fixed_steps remains the legacy path.
+    # fixed_steps uses fragment GAE; complete_cohort collects whole games.
     collection_mode: str = "fixed_steps"
     cohort_games: int = 64
     cohort_training_rows: int = 8192
@@ -45,257 +45,131 @@ class PPOConfig:
     cohort_workers: int = 4
     cohort_seeds: list[int] | None = None
     outcome_label_mode: str = "completion_window"
-    # Explicit learning semantics. Archived checkpoints keep the historical
-    # estimator/head; outcome-only complete games can use terminal_outcome
-    # supervision and complete_episode_mc without bootstrapped residuals.
+    # Checkpointed critic/advantage semantics; changing them requires an explicit branch.
     return_value_mode: str = "terminal_plus_residual"
     advantage_estimator: str = "fragment_gae"
+    # Training budget and PPO objective.
     total_timesteps: int = 1_000_000
-    # When set, overrides total_timesteps: the run trains for exactly this many
-    # PPO updates and total_timesteps is derived as total_updates * steps_per_update.
-    # Useful for "N more updates" semantics without doing the timesteps math.
+    # When supplied, sets the absolute update target and derives total_timesteps.
     total_updates: int | None = None
     ppo_epochs: int = 4
     mini_batch_size: int = 64
     gamma: float = 0.997
     gae_lambda: float = 0.97
-    clip_epsilon: float = 0.1  # PPO clip range; tighter than the usual 0.2
-    target_kl: float | None = (
-        0.05  # Phase 4: raised from 0.03; chronic KL-stop means the step size is wrong, not the trust region
-    )
-    # Optional trust-region guards. P95 remains diagnostic; max rejects and
-    # rolls back the complete PPO update. The minimum fraction prevents a soft
-    # target-KL stop until enough minibatches have been processed.
+    clip_epsilon: float = 0.1
+    # Soft stop at logical batch boundaries; target_kl_max rolls back the entire update.
+    target_kl: float | None = 0.05
+    # Diagnostic threshold only. min_minibatch_fraction delays soft KL stopping.
     target_kl_p95: float | None = None
     target_kl_max: float | None = None
     min_minibatch_fraction: float | None = None
-    entropy_coeff: float = (
-        0.01  # Phase 4: fixed at 0.01 (was 0.001); mixture eps is now the primary exploration mechanism
-    )
+    entropy_coeff: float = 0.01
     adaptive_entropy: bool = False
     target_entropy: float = 0.15
-    alpha_lr: float = 1e-2
+    alpha_lr: float = 0.01
     alpha_min: float = 0.001
     alpha_max: float = 0.05
     entropy_ema_beta: float = 0.6
     action_type_entropy_scale: float = 0.0
     value_loss_coeff: float = 0.25
     max_grad_norm: float = 0.5
-    lr: float = 5e-5  # Phase 4: lowered from 1e-4; chronic KL-stop at lr=1e-4 means the step size was too large
+    lr: float = 5e-05
     device: str = "cpu"
-    # None preserves saved model precision on resume (FP32 for older files).
-    # A supplied value is an explicit override, logged by the trainer.
+    # None preserves checkpoint precision on resume; an explicit value overrides it.
     precision: str | None = None
+    # Persistence and evaluation.
     save_dir: str = "checkpoints/ppo"
     log_dir: str = "runs/ppo"
-    # Optional operator/watchdog request, checked only at completed-update
-    # boundaries. Save a full resume checkpoint before honoring the stop.
+    # Checked at update boundaries; save a full checkpoint before stopping.
     stop_request_path: str | None = None
     eval_interval: int = 5
     log_interval: int = 10
     checkpoint_interval: int = 50
-    # Wins are rare even for the heuristic (~1% at ante 8, ~12% at ante 5,
-    # ~39% at ante 4). 10 eval games can't measure rare-event winrate; bump
-    # the default so eval/win_rate has signal to compare against.
     eval_games: int = 50
-    # Reuse a subset of the reserved seeds with sampled policy actions to
-    # evaluate the critic against the policy whose outcomes it predicts.
+    # Reserved seed subset evaluated with sampled actions for on-policy critic metrics.
     eval_sampled_games: int = 25
     eval_before_training: bool = True
-    # Stop cleanly when deterministic evaluation regresses materially from the
-    # best checkpoint for consecutive evals. None disables the guard.
+    # Stop after consecutive material regressions from the best eval; None disables.
     eval_regression_tolerance: float | None = None
     eval_regression_patience: int = 2
-    # Optional override for the device used during eval. When set (e.g. "cpu"),
-    # eval games run on that device instead of the training device. Useful for
-    # long MPS runs where the eval loop's serial forward-pass allocations
-    # otherwise compete with idle AsyncVectorEnv workers for unified memory and
-    # can trip the OS memory-pressure killer. The model is moved to the eval
-    # device for the duration of evaluate_model and moved back afterward.
+    # Temporarily move the model for evaluation, restoring it afterward.
     eval_device: str | None = None
-    # Games advanced in lockstep per eval forward pass. Eval used to run one
-    # game at a time with batch-size-1 forwards and cost more wall clock than
-    # the training between evals; batching amortizes the policy forward over
-    # many games without changing any per-seed result.
+    # Games advanced per inference batch; eval_workers=0 runs engines in-process.
     eval_batch_size: int = 32
-    # CPU engine workers per evaluation; inference stays on the eval device.
-    # Set zero for in-process evaluation of small panels or constrained hosts.
     eval_workers: int = 4
-    # CPU inference only: 0 selects by model width/CPU affinity; positive is explicit.
-    # The training thread count is restored after evaluation, including errors.
+    # 0 selects by model width/CPU affinity; restore training threads after evaluation.
     eval_cpu_threads: int = 0
-    # Curriculum: cap the run's victory threshold below the engine default
-    # (8). Heuristic-teacher win rates by ante are ~39% at 4, ~12% at 5,
-    # ~2% at 6. Set to None for the standard ante-8 victory condition.
+    # Training/evaluation victory target; None means Ante 8.
     win_ante: int | None = None
-    # Stake (difficulty tier, 1-8) the training/eval envs run at. The self-play
-    # curriculum ramps this; on its own PPO trains at the base stake.
     stake: int = 1
-    # Keep self-induced action loops close enough for terminal stall credit to
-    # reach the responsible decisions through GAE. Immediate idle penalties
-    # remain the primary defense; this is the bounded backstop.
     max_no_progress_steps: int = 32
-    # Physical samples per forward/backward pass. Logical ``mini_batch_size``
-    # gradients are accumulated exactly across these chunks on both single-
-    # and multi-GPU runs.
+    # Physical forward/backward size; accumulate into exact logical mini_batch_size groups.
     micro_batch_size: int = 64
-    async_envs: bool = True  # Use multiprocess envs (AsyncVectorEnv)
-    # Sharpens the on-policy distribution for both rollout sampling and PPO loss
-    # computation. The BC-pretrained policy at temperature=1 has chosen_action_prob ≈ 0.5
-    # over ~250 valid actions per state, which means a 30-step sampled episode has ~0.5^30
-    # probability of even matching its own greedy trajectory, sampled rollouts essentially
-    # never win and PPO sees no positive advantage to lock onto. Sharpening the distribution
-    # by a fixed factor at all sites (rollout, train forward, truncation bootstrap) keeps
-    # PPO consistent, old_log_probs and new_log_probs are computed under the same
-    # distribution, while letting the agent take competent actions in rollouts. Set to 1.0
-    # to disable; lower for more deterministic behavior.
-    rollout_temperature: float = (
-        1.0  # Phase 4: was 0.7; the sharpening crutch now only suppresses exploration post-Phase-1 BC
-    )
-    # Optional state-dependent sharpening for active hand decisions. Ante 1 is
-    # always protected; later antes use the explicit immediate-danger signal.
-    # Shop / pack / blind-select states retain rollout_temperature so Joker and
-    # consumable search remain exploratory.
+    async_envs: bool = True
+    # Shared by rollout sampling, PPO loss, and bootstrap to keep likelihood ratios consistent.
+    rollout_temperature: float = 1.0
+    # Optional sharpening for Ante-1/dangerous active hands; other phases keep the base temperature.
     danger_rollout_temperature: float | None = None
     danger_death_probability_threshold: float = 0.35
-    # Complete terminal outcomes supervise the conditional hazard model with
-    # one categorical likelihood. Stalled/censored episodes remain masked.
-    outcome_loss_coeff: float = 0.10
-    # Always-on completed-episode replay for terminal-critic supervision.
-    # Episode assembly is independent of SIL and crosses rollout boundaries.
-    # Replay updates touch only the outcome tower (hazard projection plus its
-    # output layer): the actor, shared trunk, pooling, and return residual are
-    # unchanged.
-    #
-    # Volume matters here. At 32 envs x 256 steps a rollout is ~8k rows, so the
-    # old 1x128 replay contributed under 2% of the outcome gradient while the
-    # buffer turned over every ~15 updates, evicting ~98% of stored transitions
-    # unsampled. 4x256 raises replay to ~1k rows per update against the same
-    # rollout, at the cost of four extra forward passes.
+    # Categorical terminal-outcome supervision; stalled/censored episodes remain masked.
+    outcome_loss_coeff: float = 0.1
+    # Completed-episode replay trains only the outcome tower, independent of SIL.
     terminal_replay_batch_size: int = 256
     terminal_replay_min_episodes: int = 8
     terminal_replay_samples_per_episode: int = 8
     terminal_replay_updates_per_ppo_update: int = 4
-    # Draw replay rows uniformly over transitions rather than over episodes.
-    # Episode-uniform draws weight a 20-step Ante-1 death like a 300-step
-    # Ante-5 win, starving the deep states the critic is worst at.
+    # Sample transitions uniformly instead of giving every episode equal weight.
     terminal_replay_row_uniform: bool = True
-    # Replay-only split: excluded from replay and SIL, but already seen by PPO.
-    # It measures replay fitting, NOT independent critic generalization.
-    # Truly separate critic metrics come from reserved fresh evaluation seeds
-    # under eval/sampled/critic/*. Legacy config names remain load/CLI compatible.
+    # Excluded from replay/SIL but already seen by PPO; this measures replay fitting only.
     terminal_replay_holdout_fraction: float = 0.1
     terminal_replay_holdout_batch_size: int = 512
-    # Optional reward settings threaded through BalatroEnv. None uses the
-    # default potential-based reward configuration.
+    # None uses default potential rewards; PPO pins gamma and victory target.
     reward_config: RewardConfig | None = None
-    # Sampled exact joker-marginal validation. 0 disables. A positive N copies
-    # one pre-play RunState and replays the same selected cards with one focal
-    # joker removed every Nth actual play. Disabled by default because the state
-    # copy is deliberately bounded but still material in many-env training.
+    # Replay every Nth play with one joker removed for marginal diagnostics; 0 disables.
     counterfactual_diagnostic_interval: int = 0
-    # Append every resolved shop-leave risk forecast (predictions + realized
-    # next-blind outcome) to <log_dir>/risk_forecasts.jsonl. These pairs are
-    # the input to tools/fit_risk_calibration.py, which refits the analytic
-    # death-probability Platt constants in pylatro_agent.risk.
+    # Append resolved forecasts to risk_forecasts.jsonl for risk calibration.
     risk_forecast_log: bool = True
-    # Auditable actual training-game seeds and complete outcomes. No state
-    # observations or teacher labels are stored in this optional JSONL log.
+    # Append actual training seeds and complete outcomes to training_episodes.jsonl.
     training_episode_log: bool = False
-    # Fixed, versioned seed list for the in-training eval pass. Passing a
-    # stable list (pylatro_agent.eval.EVAL_SEEDS_V1) makes every checkpoint's
-    # eval reproducible and pairable across runs via the McNemar / paired
-    # bootstrap harness in pylatro_agent.eval. None preserves the historical
-    # 10000 + game_idx seeds.
+    # None uses 10000 + game index. Training excludes the entire list, including unused eval tails.
     eval_seeds: list[int] | None = None
-    # Additional held-out panels (for example final confirmation and critic
-    # validation). Training excludes these and the ENTIRE eval_seeds list,
-    # including seeds beyond the prefix evaluated during training.
+    # Additional panels reserved from training.
     training_excluded_seeds: list[int] | None = None
-    # Mixture weight on the autoregressive hand/discard head. 0.0
-    # selects candidate-only support; 0.1 (default for PPO)
-    # gives the policy full support over every legal hand play while keeping
-    # the candidate head dominant. The AR head is by this point a competent
-    # proposal distribution (trained at eps=0.5 during BC), not noise.
+    # Autoregressive hand/discard mixture weight; 0 selects candidate-only support.
     hand_ar_mixture_eps: float = 0.1
-    # Optional cryptographic run identity. Production launchers provide all
-    # three fields; every checkpoint then persists them and strict resume
-    # requires an exact match before any environment is created.
+    # Optional run identity: all three fields required together and matched on strict resume.
     ppo_run_uuid: str | None = None
     ppo_source_sha256: str | None = None
     ppo_recipe_id: str | None = None
-    # Discard the resumed checkpoint's best_eval_win_rate so ppo_best_eval.pt
-    # selection restarts from scratch. Required when the eval task changes
-    # (e.g. a --win-ante bump), otherwise no best-eval checkpoint is ever
-    # written until the harder task beats the old task's record.
+    # Discard saved best-eval selection state on resume.
     reset_best_eval: bool = False
-    # Re-anchor fraction-of-training anneal schedules to this leg's recomputed
-    # total_timesteps instead of the horizon persisted in the checkpoint.
+    # Re-anchor annealing to this leg instead of the saved horizon.
     reset_schedules: bool = False
-    # Self-imitation (SIL-as-BC) on the agent's own winning episodes. Wins at
-    # high win-ante targets are too sparse for on-policy PPO (a handful per
-    # update); replaying complete winning trajectories as a behavior-cloning
-    # term multiplies the win-signal density without touching the reward
-    # function — only genuine wins enter the buffer, so there is nothing to
-    # farm. The NLL term is added to the PPO minibatch objective (single
-    # backward per minibatch) so the coefficient trades off directly against
-    # the policy/entropy terms; a separate optimizer pass would let
-    # Adam's gradient renormalization largely cancel the coefficient. Riding
-    # inside the PPO loop also puts SIL movement under the target-kl guard.
-    # 0.0 disables. The buffer is in-memory only; it refills over the first
-    # ~buffer/wins-per-update updates after a resume.
+    # Self-imitation shares PPO optimizer steps and KL guards; 0 disables actor replay.
     sil_coeff: float = 0.0
-    # Legacy name retained for CLI/checkpoint compatibility. This is now the
-    # shared completed-episode replay capacity used by the always-on terminal
-    # critic and by SIL when SIL is enabled. Wins + ordinary losses are stored.
+    # Shared completed-episode capacity for terminal replay and SIL (checkpoint/CLI name retained).
     sil_buffer_episodes: int = 256
-    sil_batch_size: int = 64  # transitions sampled per PPO micro-batch
-    # Skip SIL until the replay buffer holds this many completed episodes. Wins
-    # and ordinary (non-stalled) losses both count: the buffer stores both now,
-    # and it is the advantage gate below — not this threshold — that keeps an
-    # early, win-poor buffer from driving the actor. Under "winning_bc" the
-    # win-only sampler simply returns nothing until wins accumulate, so SIL is
-    # still a no-op until then even though this counts all episodes.
+    # Transitions per SIL sample, once per attempted logical optimizer group.
+    sil_batch_size: int = 64
+    # Minimum completed episodes; winning_bc additionally requires sampled wins.
     sil_min_episodes: int = 8
-    # Clamp on globally-normalized advantages, in standard deviations. The
-    # advantage distribution is heavy-tailed (kurtosis ~4.8 measured at
-    # win_ante=5): near-terminal coin-flip states reach 6 sigma and the top 1%
-    # of states carry ~20% of sum(adv^2), so a handful of aleatoric outcomes
-    # dominate each update's policy gradient without registering in mean KL.
-    # 0 disables.
+    # Clamp globally normalized advantages; 0 disables.
     advantage_clip_sigma: float = 4.0
-    # --- SIL redesign ---
-    # SIL objective. "advantage" samples all valid completed episodes (wins and
-    # losses), computes a current-critic MC advantage, and applies the robust
-    # percentile gate below. "winning_bc" samples only winning episodes and
-    # uses a unit gate (plain behavior cloning of wins), serving as a matched
-    # control against advantage SIL. ``--sil-coeff 0`` remains the exact no-SIL
-    # switch regardless of objective.
+    # advantage uses critic-relative percentile gating; winning_bc clones only wins with unit weights.
     sil_objective: str = "advantage"
-    # Absolute advantage floor (raw reward units). Sub-floor positive advantages
-    # receive zero gate weight, and the percentile gate only opens when the
-    # open-percentile exceeds this floor.
+    # Raw-reward advantage floor below which the SIL gate stays closed.
     sil_advantage_floor: float = 0.25
-    # Percentiles of the eligible raw-advantage distribution at which the gate
-    # opens (80th) and saturates (95th).
+    # Percentiles at which the gate opens and saturates.
     sil_gate_open_percentile: float = 80.0
     sil_gate_saturation_percentile: float = 95.0
-    # Maximum transitions one episode may contribute to a SIL / calibration
-    # batch. Episode-uniform sampling plus this cap means a long episode is not
-    # privileged over a short one.
+    # Maximum transitions from one episode in a SIL/calibration sample.
     sil_samples_per_episode: int = 8
-    # Number of logical PPO optimizer minibatches (accumulated optimizer steps)
-    # per update that may attempt SIL. 1 or 2. The budget is per update, not per
-    # PPO epoch, and attempted groups count even when their gate is empty so
-    # training does not keep resampling for a favorable batch.
+    # Attempted groups per update (not epoch); empty gates still consume the budget.
     sil_logical_minibatches_per_update: int = 1
-    # Resume-safe linear decay for the SIL coefficient. Decays monotonically
-    # from ``sil_coeff`` to ``sil_coeff_final`` over ``sil_decay_fraction`` of
-    # the pinned schedule horizon; never rewinds on resume.
+    # Decay to this coefficient over sil_decay_fraction of the pinned schedule horizon.
     sil_coeff_final: float = 0.0
     sil_decay_fraction: float = 1.0
-    # Interval (in updates) at which weighted SIL / PPO actor-gradient ratio and
-    # cosine similarity are logged. Diagnostic only; no adaptive control.
+    # Updates between actor-gradient ratio/cosine diagnostics; no adaptive control.
     sil_grad_diagnostics_interval: int = 10
 
 
@@ -371,12 +245,9 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("Invalid milestone annealing schedule")
     if not 0 <= config.seed <= 2**32 - 1:
         raise ValueError("seed must be between 0 and 2**32 - 1")
-    if config.log_interval <= 0:
-        raise ValueError("log_interval must be positive")
-    if config.checkpoint_interval <= 0:
-        raise ValueError("checkpoint_interval must be positive")
-    if config.eval_interval <= 0:
-        raise ValueError("eval_interval must be positive")
+    for name in ("log_interval", "checkpoint_interval", "eval_interval"):
+        if getattr(config, name) <= 0:
+            raise ValueError(f"{name} must be positive")
     if config.eval_games < 1 or config.eval_sampled_games < 0:
         raise ValueError("eval_games must be positive and eval_sampled_games non-negative")
     if config.eval_cpu_threads < 0:
@@ -400,16 +271,9 @@ def _validate_ppo_config(config: PPOConfig) -> None:
             raise ValueError("ppo_source_sha256 must be a 64-character hexadecimal SHA256")
         if not provenance["recipe_id"].strip():
             raise ValueError("ppo_recipe_id must be non-empty")
-    if config.ppo_epochs <= 0:
-        raise ValueError("ppo_epochs must be positive")
-    if config.mini_batch_size <= 0:
-        raise ValueError("mini_batch_size must be positive")
-    if config.micro_batch_size <= 0:
-        raise ValueError("micro_batch_size must be positive")
-    if config.rollout_length <= 0:
-        raise ValueError("rollout_length must be positive")
-    if config.max_no_progress_steps <= 0:
-        raise ValueError("max_no_progress_steps must be positive")
+    for name in ("ppo_epochs", "mini_batch_size", "micro_batch_size", "rollout_length", "max_no_progress_steps"):
+        if getattr(config, name) <= 0:
+            raise ValueError(f"{name} must be positive")
     if config.counterfactual_diagnostic_interval < 0:
         raise ValueError("counterfactual_diagnostic_interval must be non-negative")
     if not np.isfinite(config.lr) or config.lr <= 0.0:
@@ -424,12 +288,9 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("entropy_coeff must be non-negative")
     if config.outcome_loss_coeff < 0.0:
         raise ValueError("outcome_loss_coeff must be non-negative")
-    if config.terminal_replay_batch_size <= 0:
-        raise ValueError("terminal_replay_batch_size must be positive")
-    if config.terminal_replay_min_episodes <= 0:
-        raise ValueError("terminal_replay_min_episodes must be positive")
-    if config.terminal_replay_samples_per_episode <= 0:
-        raise ValueError("terminal_replay_samples_per_episode must be positive")
+    for name in ("terminal_replay_batch_size", "terminal_replay_min_episodes", "terminal_replay_samples_per_episode"):
+        if getattr(config, name) <= 0:
+            raise ValueError(f"{name} must be positive")
     if config.terminal_replay_updates_per_ppo_update < 0:
         raise ValueError("terminal_replay_updates_per_ppo_update must be non-negative")
     if config.terminal_replay_holdout_batch_size <= 0:
@@ -448,12 +309,9 @@ def _validate_ppo_config(config: PPOConfig) -> None:
         raise ValueError("action_type_entropy_scale must be non-negative")
     if config.sil_coeff < 0.0:
         raise ValueError("sil_coeff must be non-negative")
-    if config.sil_buffer_episodes <= 0:
-        raise ValueError("sil_buffer_episodes must be positive")
-    if config.sil_batch_size <= 0:
-        raise ValueError("sil_batch_size must be positive")
-    if config.sil_min_episodes <= 0:
-        raise ValueError("sil_min_episodes must be positive")
+    for name in ("sil_buffer_episodes", "sil_batch_size", "sil_min_episodes"):
+        if getattr(config, name) <= 0:
+            raise ValueError(f"{name} must be positive")
     if config.sil_objective not in ("advantage", "winning_bc"):
         raise ValueError(f"sil_objective must be 'advantage' or 'winning_bc', got {config.sil_objective!r}")
     if config.sil_advantage_floor < 0.0:

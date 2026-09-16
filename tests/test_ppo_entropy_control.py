@@ -973,24 +973,10 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
         "_hand_play_observed": np.array([True]),
         "hand_play_in_candidates": np.array([True]),
         "_hand_play_in_candidates": np.array([True]),
-        "hand_play_top1": np.array([False]),
-        "_hand_play_top1": np.array([True]),
-        "hand_play_top3": np.array([True]),
-        "_hand_play_top3": np.array([True]),
-        "hand_play_candidate_value_ratio": np.array([0.75], dtype=np.float32),
-        "_hand_play_candidate_value_ratio": np.array([True]),
         "hand_play_chosen_hand": np.array(["Pair"], dtype=object),
         "_hand_play_chosen_hand": np.array([True]),
-        "hand_play_best_hand": np.array(["Flush"], dtype=object),
-        "_hand_play_best_hand": np.array([True]),
         "planet_use_observed": np.array([True]),
         "_planet_use_observed": np.array([True]),
-        "planet_use_played_hand": np.array([True]),
-        "_planet_use_played_hand": np.array([True]),
-        "planet_use_main_hand_match": np.array([False]),
-        "_planet_use_main_hand_match": np.array([True]),
-        "planet_use_key": np.array(["c_pluto"], dtype=object),
-        "_planet_use_key": np.array([True]),
         "planet_use_hand_type": np.array(["High Card"], dtype=object),
         "planet_use_plan_supported": np.array([True]),
         "planet_use_active_plan_match": np.array([True]),
@@ -1020,15 +1006,7 @@ def test_record_action_diagnostics_aggregates_hand_and_planet_signals() -> None:
     assert rm.ante1_clear_hands_used == [2.0]
     assert rm.ante1_clear_hands_unused == [2.0]
     assert rm.ante1_clear_discards_used == [1.0]
-    assert rm.hand_play_in_candidates == [1.0]
-    assert rm.hand_play_top1 == [0.0]
-    assert rm.hand_play_top3 == [1.0]
-    assert rm.hand_play_value_ratios == pytest.approx([0.75])
     assert rm.hand_chosen_counts["Pair"] == 1
-    assert rm.hand_best_counts["Flush"] == 1
-    assert rm.planet_use_played_hand == [1.0]
-    assert rm.planet_use_main_hand_match == [0.0]
-    assert rm.planet_use_key_counts["c_pluto"] == 1
     assert rm.consumable_exact_use_counts["Planet"] == 1
     assert rm.planet_use_alignment_counts["matched"] == 1
     assert rm.planet_use_hand_counts["High Card"] == 1
@@ -1088,7 +1066,7 @@ def test_consumable_strategy_metrics_use_explicit_opportunity_denominators() -> 
     assert writer.scalars["strategy/seals/activated/blue_per_1k_steps"] == (1.0, 17)
 
 
-def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_signals() -> None:
+def test_record_action_diagnostics_aggregates_shop_and_hand_plan_signals() -> None:
     rm = _RolloutMetrics()
     infos = {
         "shop_joker_offer_observed": np.array([True]),
@@ -1097,46 +1075,13 @@ def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_sig
         "shop_bought_joker_id": np.array(["j_hologram"], dtype=object),
         "shop_sold_joker_id": np.array(["j_joker"], dtype=object),
         "joker_roster_changed": np.array([True]),
-        "joker_acquired_count": np.array([1]),
-        "joker_removed_count": np.array([1]),
-        "joker_turnover_count": np.array([2]),
         "joker_churn_count": np.array([1]),
         "joker_replacement_event": np.array([True]),
-        "joker_acquired_emitted_count": np.array([1]),
-        "joker_acquired_0_id": np.array(["j_hologram"], dtype=object),
-        "joker_removed_emitted_count": np.array([1]),
-        "joker_removed_0_id": np.array(["j_joker"], dtype=object),
         "build_diagnostics_observed": np.array([True]),
         "hand_plan_post_type": np.array(["Pair"], dtype=object),
         "hand_plan_post_reliability": np.array([0.9]),
         "hand_plan_post_readiness": np.array([1.1]),
-        "build_pre_estimated_score": np.array([100.0]),
-        "build_post_estimated_score": np.array([150.0]),
-        "build_pre_required_score": np.array([120.0]),
-        "build_post_required_score": np.array([120.0]),
-        "build_pre_readiness": np.array([0.8]),
-        "build_post_readiness": np.array([1.25]),
-        "build_pre_score_gain_ratio": np.array([1.5]),
-        "build_post_score_gain_ratio": np.array([2.0]),
-        "build_pre_modeled_fraction": np.array([1.0]),
-        "build_post_modeled_fraction": np.array([1.0]),
-        "build_estimated_score_delta": np.array([50.0]),
-        "build_post_joker_emitted_count": np.array([1]),
-        "build_post_joker_0_id": np.array(["j_hologram"], dtype=object),
-        "build_post_joker_0_marginal_ratio": np.array([1.5]),
-        "build_post_joker_0_modeled_fraction": np.array([1.0]),
-        "potential_pre_total": np.array([0.4]),
-        "potential_post_total": np.array([0.6]),
-        "potential_delta_total": np.array([0.2]),
         "potential_post_seal_value": np.array([0.5]),
-        "hologram_scaling_count": np.array([1]),
-        "hologram_x_mult_delta": np.array([0.25]),
-        "hologram_build_score_delta": np.array([50.0]),
-        "counterfactual_call": np.array([True]),
-        "counterfactual_failure": np.array([False]),
-        "counterfactual_focal_joker_id": np.array(["j_hologram"], dtype=object),
-        "counterfactual_representative_vs_realized_abs_log_ratio_gap": np.array([0.1]),
-        "counterfactual_representative_vs_realized_log_ratio_gap": np.array([-0.1]),
     }
 
     _record_action_diagnostics(rm, infos, 0, done=False)
@@ -1144,20 +1089,11 @@ def test_record_action_diagnostics_aggregates_joker_build_and_counterfactual_sig
     assert rm.shop_offered_joker_counts["j_hologram"] == 1
     assert rm.shop_bought_joker_counts["j_hologram"] == 1
     assert rm.shop_sold_joker_counts["j_joker"] == 1
-    assert rm.joker_acquired_id_counts["j_hologram"] == 1
-    assert rm.joker_removed_id_counts["j_joker"] == 1
     assert rm.joker_churn_count == 1
-    assert rm.joker_marginal_ratios["j_hologram"] == pytest.approx([1.5])
-    assert rm.build_values["build_post_readiness"] == pytest.approx([1.25])
-    assert rm.potential_values["post_total"] == pytest.approx([0.6])
     assert rm.potential_values["post_seal_value"] == pytest.approx([0.5])
     assert rm.hand_plan_type_counts["Pair"] == 1
     assert rm.hand_plan_reliability == pytest.approx([0.9])
     assert rm.hand_plan_readiness == pytest.approx([1.1])
-    assert rm.hologram_x_mult_deltas == pytest.approx([0.25])
-    assert rm.counterfactual_calls == 1
-    assert rm.counterfactual_failures == 0
-    assert rm.counterfactual_representative_realized_abs_gaps == pytest.approx([0.1])
 
 
 def test_on_policy_advantage_diagnostics_populated() -> None:

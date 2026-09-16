@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import logging
+from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -42,8 +42,6 @@ if TYPE_CHECKING:
     from ..vocab import Vocab
     from .ppo_config import PPOConfig
 
-logger = logging.getLogger(__name__)
-
 
 def _rollout_statistics_numpy(log_probs, values, chosen_probs, macro_max_probs, survival):
     """Copy accelerator statistics together; CPU tensors keep zero-copy views."""
@@ -52,42 +50,6 @@ def _rollout_statistics_numpy(log_probs, values, chosen_probs, macro_max_probs, 
         return tuple(tensor.cpu().numpy() for tensor in tensors)
     packed = torch.cat([*(tensor[:, None] for tensor in tensors[:4]), survival], dim=1).cpu().numpy()
     return packed[:, 0], packed[:, 1], packed[:, 2], packed[:, 3], packed[:, 4:]
-
-
-def _make_env(
-    seed: int,
-    stake: int,
-    data: GameData,
-    vocab: Vocab,
-    max_no_progress_steps: int,
-    win_ante: int | None,
-    reward_config: RewardConfig | None = None,
-    counterfactual_diagnostic_interval: int = 0,
-    archive_config: ArchiveConfig | None = None,
-    archive_index: int = 0,
-    excluded_seeds: tuple[int, ...] = (),
-    deck_key: str = "b_red",
-):
-    """Factory for creating a BalatroEnv (used by vectorized env wrappers)."""
-
-    def _thunk():
-        return BalatroEnv(
-            seed=seed,
-            stake=stake,
-            deck_key=deck_key,
-            data=data,
-            vocab=vocab,
-            max_steps=max_no_progress_steps,
-            win_ante=win_ante,
-            reward_config=reward_config,
-            enable_teacher=False,
-            counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
-            archive_config=archive_config,
-            archive_index=archive_index,
-            excluded_seeds=excluded_seeds,
-        )
-
-    return _thunk
 
 
 def _make_vectorized_envs(
@@ -109,14 +71,16 @@ def _make_vectorized_envs(
     import gymnasium
 
     env_fns = [
-        _make_env(
-            env_seed_base + i,
-            stake,
-            data,
-            vocab,
-            max_no_progress_steps,
-            win_ante,
-            reward_config,
+        partial(
+            BalatroEnv,
+            seed=env_seed_base + i,
+            stake=stake,
+            data=data,
+            vocab=vocab,
+            max_steps=max_no_progress_steps,
+            win_ante=win_ante,
+            reward_config=reward_config,
+            enable_teacher=False,
             counterfactual_diagnostic_interval=counterfactual_diagnostic_interval,
             archive_config=archive_config,
             archive_index=i,
@@ -126,10 +90,8 @@ def _make_vectorized_envs(
         for i in range(num_envs)
     ]
 
-    if use_async and num_envs > 1:
-        return gymnasium.vector.AsyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
-    else:
-        return gymnasium.vector.SyncVectorEnv(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
+    vector_env = gymnasium.vector.AsyncVectorEnv if use_async and num_envs > 1 else gymnasium.vector.SyncVectorEnv
+    return vector_env(env_fns, autoreset_mode=AutoresetMode.SAME_STEP)
 
 
 class RolloutState:
@@ -141,7 +103,6 @@ class RolloutState:
         self.episode_rewards = np.zeros(config.num_envs, dtype=np.float64)
         self.episode_lengths = np.zeros(config.num_envs, dtype=np.int64)
         self.pending_shop_forecasts: list[list[dict]] = [[] for _ in range(config.num_envs)]
-        self.episode_start_step = np.zeros(config.num_envs, dtype=np.int64)
 
 
 _MAX_PENDING_SHOP_FORECASTS = 128
@@ -172,16 +133,14 @@ def collect_rollout(
         from .ppo_evaluation import training_seed_reservations
 
         reserved_seeds = set(training_seed_reservations(config))
-    collected_steps = 0
     buffer = RolloutBuffer(
         num_envs=config.num_envs,
         rollout_length=config.rollout_length,
         gamma=config.gamma,
         gae_lambda=config.gae_lambda,
     )
-    state.episode_start_step[:] = 0
+    episode_start_step = np.zeros(config.num_envs, dtype=np.int64)
     rm = _RolloutMetrics()
-    # === Collect rollouts (vectorized) ===
     model.eval()
     for step in range(config.rollout_length):
         with torch.no_grad():
@@ -203,15 +162,20 @@ def collect_rollout(
         actions_np = actions.cpu().numpy()
         log_probs_np, values_np, chosen_action_probs_np, max_action_type_probs_np, survival_np = (
             _rollout_statistics_numpy(
-                log_probs, values, chosen_action_probs, max_action_type_probs, value_dict["ante_survival"],
+                log_probs,
+                values,
+                chosen_action_probs,
+                max_action_type_probs,
+                value_dict["ante_survival"],
             )
         )
+        action_types = [_action_type_name(int(action)) for action in actions_np]
         pre_scalars = obs_buf._np_scalars
         pre_tokens = obs_buf._np_tokens
         rm.clear_probabilities.extend(pre_scalars[:, 11].astype(np.float64).tolist())
         rm.immediate_death_probabilities.extend(pre_scalars[:, 12].astype(np.float64).tolist())
-        for env_idx, action_id in enumerate(actions_np):
-            if _action_type_name(int(action_id)) != ActionType.SHOP_LEAVE.value:
+        for env_idx, action_type in enumerate(action_types):
+            if action_type != ActionType.SHOP_LEAVE.value:
                 continue
             shop_ante = max(round(float(pre_scalars[env_idx, 2])), 1)
             survival_index = min(shop_ante - 1, survival_np.shape[1] - 1)
@@ -319,83 +283,26 @@ def collect_rollout(
         rm.chosen_action_probs.extend(chosen_action_probs_np.astype(np.float64).tolist())
         rm.max_action_type_probs.extend(max_action_type_probs_np.astype(np.float64).tolist())
         rm.done_flags.extend(dones.astype(np.float64).tolist())
-        rm.terminated_flags.extend(terminated.astype(np.float64).tolist())
-        rm.truncated_flags.extend(truncated.astype(np.float64).tolist())
-        for action_id in actions_np:
-            rm.action_type_counts[_action_type_name(int(action_id))] += 1
-        for env_idx in range(config.num_envs):
+        rm.action_type_counts.update(action_types)
+        for env_idx, action_type_name in enumerate(action_types):
             step_done = bool(dones[env_idx])
-            pre_sub_phase = _extract_step_info_value(
-                infos,
-                "pre_sub_phase",
-                env_idx,
-                done=step_done,
-                default="",
-            )
-            action_type_name = _action_type_name(int(actions_np[env_idx]))
+            step_info = partial(_extract_step_info_value, infos, env_idx=env_idx, done=step_done)
 
-            in_choose_action = pre_sub_phase == "choose_action"
-            rm.pre_choose_action_flags.append(float(in_choose_action))
+            rm.progress_flags.append(float(bool(step_info("progress_made", default=False))))
+            rm.steps_since_progress.append(float(step_info("steps_since_progress", default=0)))
             if action_type_name == ActionType.PLAY_SUBSET.value:
-                rm.play_subset_count += 1
-            elif action_type_name == ActionType.DISCARD_SUBSET.value:
-                rm.discard_subset_count += 1
-
-            rm.progress_flags.append(
-                float(
-                    bool(
-                        _extract_step_info_value(
-                            infos,
-                            "progress_made",
-                            env_idx,
-                            done=step_done,
-                            default=False,
-                        )
-                    )
-                )
-            )
-            rm.steps_since_progress.append(
-                float(_extract_step_info_value(infos, "steps_since_progress", env_idx, done=step_done, default=0))
-            )
-            if action_type_name == ActionType.PLAY_SUBSET.value:
-                objective = _extract_step_info_value(
-                    infos, "joker_order_objective", env_idx, done=step_done, default=""
-                )
+                objective = step_info("joker_order_objective", default="")
                 if objective:
                     rm.joker_order_money_flags.append(float(str(objective) == "money"))
-                    rm.joker_order_clear_flags.append(
-                        float(
-                            bool(
-                                _extract_step_info_value(
-                                    infos, "joker_order_clears", env_idx, done=step_done, default=False
-                                )
-                            )
-                        )
-                    )
+                    rm.joker_order_clear_flags.append(float(bool(step_info("joker_order_clears", default=False))))
                     rm.joker_order_dollars_gained.append(
-                        float(
-                            _extract_step_info_value(
-                                infos, "joker_order_dollars_gained", env_idx, done=step_done, default=0.0
-                            )
-                            or 0.0
-                        )
+                        float(step_info("joker_order_dollars_gained", default=0.0) or 0.0)
                     )
                     rm.joker_order_chips_forgone.append(
-                        float(
-                            _extract_step_info_value(
-                                infos, "joker_order_chips_forgone", env_idx, done=step_done, default=0.0
-                            )
-                            or 0.0
-                        )
+                        float(step_info("joker_order_chips_forgone", default=0.0) or 0.0)
                     )
             for component_name in REWARD_INFO_KEYS:
-                component_value = _extract_step_info_value(
-                    infos,
-                    component_name,
-                    env_idx,
-                    done=step_done,
-                    default=None,
-                )
+                component_value = step_info(component_name, default=None)
                 if component_value is not None:
                     rm.reward_component_values[component_name].append(float(component_value))
 
@@ -403,46 +310,42 @@ def collect_rollout(
 
         # Handle completed episodes (vectorized envs auto-reset)
         for i in np.where(dones)[0]:
+            episode_info = partial(_extract_step_info_value, infos, env_idx=i, done=True)
             ep_reward = float(state.episode_rewards[i])
             ep_length = int(state.episode_lengths[i])
-            ep_won = bool(_extract_step_info_value(infos, "won", i, done=True, default=False))
-            from_archive = bool(_extract_step_info_value(infos, "archive_start", i, done=True, default=False))
-            start_ante = int(_extract_step_info_value(infos, "start_ante", i, done=True, default=1))
+            ep_won = bool(episode_info("won", default=False))
+            from_archive = bool(episode_info("archive_start", default=False))
+            start_ante = int(episode_info("start_ante", default=1))
             state.history.origin_wins["archive" if from_archive else "fresh"].append(float(ep_won))
             ep_stalled = bool(stalled_flags[i])
-            ep_ante = int(_extract_step_info_value(infos, "ante", i, done=True, default=1))
+            ep_ante = int(episode_info("ante", default=1))
             if training_episode_file is not None:
-                origin = _extract_step_info_value(infos, "origin_seed", i, done=True)
+                origin = episode_info("origin_seed")
                 if origin is None or int(origin) in reserved_seeds:
                     raise RuntimeError(f"Missing or reserved training-game seed: {origin}")
-                training_episode_file.write(json.dumps(dict(
-                    seed=int(origin), update=update_count + 1, environment=int(i), won=ep_won,
-                    final_ante=ep_ante, steps=ep_length, reward=ep_reward, stalled=ep_stalled,
-                    censored=bool(truncated[i]), archive_start=from_archive, deck=config.deck_key,
-                )) + "\n")
+                training_episode_file.write(
+                    json.dumps(
+                        dict(
+                            seed=int(origin),
+                            update=update_count + 1,
+                            environment=int(i),
+                            won=ep_won,
+                            final_ante=ep_ante,
+                            steps=ep_length,
+                            reward=ep_reward,
+                            stalled=ep_stalled,
+                            censored=bool(truncated[i]),
+                            archive_start=from_archive,
+                            deck=config.deck_key,
+                        )
+                    )
+                    + "\n"
+                )
             if not ep_stalled:
                 for ante in range(start_ante, min(ep_ante, 8) + 1):
                     state.history.continuation_survival[ante].append(float(ep_won or ep_ante > ante))
-            ep_terminal_blind = str(
-                _extract_step_info_value(
-                    infos,
-                    "blind_on_deck",
-                    i,
-                    done=True,
-                    default="",
-                )
-                or ""
-            ).lower()
-            ep_tarot_uses = int(
-                _extract_step_info_value(
-                    infos,
-                    "tarot_usage_total",
-                    i,
-                    done=True,
-                    default=0,
-                )
-                or 0
-            )
+            ep_terminal_blind = str(episode_info("blind_on_deck", default="") or "").lower()
+            ep_tarot_uses = int(episode_info("tarot_usage_total", default=0) or 0)
             state.history.rewards.append(ep_reward)
             state.history.lengths.append(ep_length)
             state.history.wins.append(ep_won)
@@ -457,123 +360,79 @@ def collect_rollout(
             rm.completed_episode_tarot_uses.append(ep_tarot_uses)
             if not ep_won and not ep_stalled:
                 rm.terminal_loss_antes.append(ep_ante)
-                terminal_dollars = float(_extract_step_info_value(infos, "dollars", i, done=True, default=0.0) or 0.0)
+                terminal_dollars = float(episode_info("dollars", default=0.0) or 0.0)
                 terminal_full_weak = bool(
-                    _extract_step_info_value(
-                        infos,
-                        "joker_full",
-                        i,
-                        done=True,
-                        default=False,
-                    )
-                    and _extract_step_info_value(
-                        infos,
-                        "weak_confident_joker",
-                        i,
-                        done=True,
-                        default=False,
-                    )
+                    episode_info("joker_full", default=False) and episode_info("weak_confident_joker", default=False)
                 )
                 rm.terminal_loss_dollars.append(terminal_dollars)
                 rm.terminal_loss_cash_ge_10.append(float(terminal_dollars >= 10.0))
                 rm.terminal_loss_joker_full_weak.append(float(terminal_full_weak))
-                end_blind = ep_terminal_blind
-                rm.terminal_loss_blind_counts[end_blind] += 1
+                rm.terminal_loss_blind_counts[ep_terminal_blind] += 1
                 if ep_ante == 1:
-                    rm.ante1_death_blind_counts[end_blind] += 1
-                if end_blind == "boss":
-                    boss_key = str(_extract_step_info_value(infos, "boss_key", i, done=True, default="") or "")
+                    rm.ante1_death_blind_counts[ep_terminal_blind] += 1
+                if ep_terminal_blind == "boss":
+                    boss_key = str(episode_info("boss_key", default="") or "")
                     if boss_key:
                         rm.terminal_boss_loss_counts[boss_key] += 1
-                blind_target = float(_extract_step_info_value(infos, "blind_target", i, done=True, default=0.0) or 0.0)
-                round_score = float(_extract_step_info_value(infos, "round_score", i, done=True, default=0.0) or 0.0)
+                blind_target = float(episode_info("blind_target", default=0.0) or 0.0)
+                round_score = float(episode_info("round_score", default=0.0) or 0.0)
                 if blind_target > 0.0:
                     rm.terminal_loss_score_ratios.append(round_score / blind_target)
-                last_play_top1 = _extract_step_info_value(
-                    infos,
-                    "hand_play_legal_top1",
-                    i,
-                    done=True,
-                    default=_extract_step_info_value(
-                        infos,
-                        "hand_play_top1",
-                        i,
-                        done=True,
-                        default=None,
-                    ),
+                last_play_top1 = episode_info(
+                    "hand_play_legal_top1", default=episode_info("hand_play_top1", default=None)
                 )
                 if last_play_top1 is not None:
                     rm.terminal_loss_last_play_top1.append(float(bool(last_play_top1)))
-                last_play_value_ratio = _extract_step_info_value(
-                    infos,
+                last_play_value_ratio = episode_info(
                     "hand_play_legal_candidate_value_ratio",
-                    i,
-                    done=True,
-                    default=_extract_step_info_value(
-                        infos,
-                        "hand_play_candidate_value_ratio",
-                        i,
-                        done=True,
-                        default=None,
-                    ),
+                    default=episode_info("hand_play_candidate_value_ratio", default=None),
                 )
                 if last_play_value_ratio is not None:
                     rm.terminal_loss_last_play_value_ratios.append(float(last_play_value_ratio))
-            if state.pending_shop_forecasts[i]:
-                if not ep_stalled:
-                    terminal_blind = str(
-                        _extract_step_info_value(
-                            infos,
-                            "blind_on_deck",
-                            i,
-                            done=True,
-                            default="",
-                        )
-                        or ""
+            if not ep_stalled:
+                for forecast in state.pending_shop_forecasts[i]:
+                    shop_ante = int(forecast["shop_ante"])
+                    ante_outcome = float(ep_won or ep_ante > shop_ante)
+                    prediction = float(forecast["survival_pred"])
+                    rm.shop_survival_predictions.append(prediction)
+                    rm.shop_survival_outcomes.append(ante_outcome)
+                    rm.shop_survival_briers.append((prediction - ante_outcome) ** 2)
+                    blind_outcome = _next_blind_clear_outcome(
+                        shop_ante=shop_ante,
+                        shop_blind_index=int(forecast["shop_blind_index"]),
+                        final_ante=ep_ante,
+                        won=ep_won,
+                        terminal_blind=ep_terminal_blind,
                     )
-                    for forecast in state.pending_shop_forecasts[i]:
-                        shop_ante = int(forecast["shop_ante"])
-                        ante_outcome = float(ep_won or ep_ante > shop_ante)
-                        prediction = float(forecast["survival_pred"])
-                        rm.shop_survival_predictions.append(prediction)
-                        rm.shop_survival_outcomes.append(ante_outcome)
-                        rm.shop_survival_briers.append((prediction - ante_outcome) ** 2)
-                        blind_outcome = _next_blind_clear_outcome(
-                            shop_ante=shop_ante,
-                            shop_blind_index=int(forecast["shop_blind_index"]),
-                            final_ante=ep_ante,
-                            won=ep_won,
-                            terminal_blind=terminal_blind,
-                        )
-                        predicted_death = 1.0 - float(forecast["analytic_clear_pred"])
-                        death_outcome = 1.0 - blind_outcome
-                        rm.risk_shop_death_predictions.append(predicted_death)
-                        rm.risk_shop_death_outcomes.append(death_outcome)
-                        rm.risk_shop_death_briers.append((predicted_death - death_outcome) ** 2)
-                        raw_predicted_death = 1.0 - float(forecast["raw_analytic_clear_pred"])
-                        rm.risk_shop_raw_death_predictions.append(raw_predicted_death)
-                        rm.risk_shop_raw_death_briers.append((raw_predicted_death - death_outcome) ** 2)
-                        if shop_ante == 1 and death_outcome > 0.5:
-                            rm.risk_ante1_false_safe_deaths.append(float(predicted_death <= 0.35))
-                        if risk_forecast_file is not None:
-                            risk_forecast_file.write(
-                                json.dumps(
-                                    {
-                                        "update": int(update_count),
-                                        "shop_ante": shop_ante,
-                                        "shop_blind_index": int(forecast["shop_blind_index"]),
-                                        "survival_pred": prediction,
-                                        "calibrated_death_pred": predicted_death,
-                                        "raw_death_pred": raw_predicted_death,
-                                        "next_blind_death": death_outcome,
-                                        "ante_survived": ante_outcome,
-                                        "won": bool(ep_won),
-                                        "final_ante": int(ep_ante),
-                                    }
-                                )
-                                + "\n"
+                    predicted_death = 1.0 - float(forecast["analytic_clear_pred"])
+                    death_outcome = 1.0 - blind_outcome
+                    rm.risk_shop_death_predictions.append(predicted_death)
+                    rm.risk_shop_death_outcomes.append(death_outcome)
+                    rm.risk_shop_death_briers.append((predicted_death - death_outcome) ** 2)
+                    raw_predicted_death = 1.0 - float(forecast["raw_analytic_clear_pred"])
+                    rm.risk_shop_raw_death_predictions.append(raw_predicted_death)
+                    rm.risk_shop_raw_death_briers.append((raw_predicted_death - death_outcome) ** 2)
+                    if shop_ante == 1 and death_outcome > 0.5:
+                        rm.risk_ante1_false_safe_deaths.append(float(predicted_death <= 0.35))
+                    if risk_forecast_file is not None:
+                        risk_forecast_file.write(
+                            json.dumps(
+                                {
+                                    "update": int(update_count),
+                                    "shop_ante": shop_ante,
+                                    "shop_blind_index": int(forecast["shop_blind_index"]),
+                                    "survival_pred": prediction,
+                                    "calibrated_death_pred": predicted_death,
+                                    "raw_death_pred": raw_predicted_death,
+                                    "next_blind_death": death_outcome,
+                                    "ante_survived": ante_outcome,
+                                    "won": bool(ep_won),
+                                    "final_ante": int(ep_ante),
+                                }
                             )
-                state.pending_shop_forecasts[i].clear()
+                            + "\n"
+                        )
+            state.pending_shop_forecasts[i].clear()
             # Insert wins and ordinary completed losses for terminal
             # critic replay. Infrastructure/no-progress stalls are
             # deliberately excluded because their final-Ante outcome
@@ -588,7 +447,7 @@ def collect_rollout(
                 buffer=episode_buffer,
             )
             if return_path_replay is not None and ep_won and not ep_stalled:
-                recipe = _extract_step_info_value(infos, "winning_return_path", i, done=True, default=None)
+                recipe = episode_info("winning_return_path", default=None)
                 if recipe is not None:
                     return_path_replay.enqueue(recipe)
             # Stalled episodes are censored, so their outcome mask stays
@@ -596,18 +455,17 @@ def collect_rollout(
             if not ep_stalled:
                 buffer.set_episode_outcome(
                     env_idx=int(i),
-                    start_step=int(state.episode_start_step[i]),
+                    start_step=int(episode_start_step[i]),
                     end_step=step,
                     won=ep_won,
                     final_ante=ep_ante,
                 )
-            state.episode_start_step[i] = step + 1
+            episode_start_step[i] = step + 1
             state.episode_rewards[i] = 0.0
             state.episode_lengths[i] = 0
 
         # Update obs buffer with new observations
         obs_buf.update(next_obs_dict)
-        collected_steps += config.num_envs
 
     # Bootstrap values for GAE
     with torch.no_grad():
@@ -621,4 +479,4 @@ def collect_rollout(
     buffer.compute_returns_and_advantages(last_values=last_values)
     buffer.normalize_advantages(clip_sigma=config.advantage_clip_sigma)
 
-    return buffer, rm, collected_steps
+    return buffer, rm, config.num_envs * config.rollout_length

@@ -809,54 +809,63 @@ def main():
     checkpoint_dir = args.checkpoint_dir
     log_dir = args.log_dir
 
+    def make_reward_config(**overrides):
+        return RewardConfig(
+            gamma=args.gamma,
+            potential_win_ante=args.win_ante or 8,
+            enable_planet_match_rewards=args.planet_match_shaping,
+            planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
+            planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
+            enable_score_build_potential=args.score_build_potential,
+            ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
+            dense_reward_scale=args.dense_reward_scale,
+            consumable_reward_scale=args.consumable_reward_scale,
+            strategic_event_reward_scale=args.strategic_event_reward_scale,
+            **overrides,
+        )
+
+    def make_supervised_config(**overrides):
+        from pylatro_agent.training.supervised import SupervisedConfig
+
+        return SupervisedConfig(
+            deck_key=args.deck_key,
+            stake=args.stake,
+            num_games=args.games,
+            batch_size=args.batch,
+            lr=args.lr,
+            value_loss_coeff=args.value_loss_coeff,
+            seed=args.seed,
+            gamma=args.gamma,
+            max_epochs=args.epochs,
+            num_workers=args.workers,
+            min_ante=args.min_ante,
+            device=device,
+            outcome_loss_coeff=args.outcome_loss_coeff,
+            win_ante=args.win_ante or 8,
+            save_dir=checkpoint_dir or f"checkpoints/{args.phase}",
+            log_dir=log_dir or f"runs/{args.phase}",
+            **overrides,
+        )
+
     if args.phase == "supervised":
-        from pylatro_agent.reward import RewardConfig
-        from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
+        from pylatro_agent.training.supervised import train_supervised
 
         sup_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.5
         train_supervised(
-            SupervisedConfig(
-                deck_key=args.deck_key,
-                stake=args.stake,
-                num_games=args.games,
+            make_supervised_config(
                 data_path=args.data_path,
-                batch_size=args.batch,
-                lr=args.lr,
-                value_loss_coeff=args.value_loss_coeff,
-                seed=args.seed,
-                gamma=args.gamma,
-                max_epochs=args.epochs,
                 action_entropy_coeff=args.supervised_entropy_coeff,
-                num_workers=args.workers,
-                min_ante=args.min_ante,
                 chunk_size=args.chunk_size,
                 log_interval=args.log_interval,
-                device=device,
-                save_dir=checkpoint_dir or "checkpoints/supervised",
-                log_dir=log_dir or "runs/supervised",
                 hand_ar_mixture_eps=sup_eps,
                 outcome_weight_beta=args.outcome_weight_beta,
-                outcome_loss_coeff=args.outcome_loss_coeff,
-                win_ante=args.win_ante or 8,
-                reward_config=RewardConfig(
-                    gamma=args.gamma,
-                    potential_win_ante=args.win_ante or 8,
-                    enable_planet_match_rewards=args.planet_match_shaping,
-                    planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
-                    planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-                    enable_score_build_potential=args.score_build_potential,
-                    ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
-                    dense_reward_scale=args.dense_reward_scale,
-                    consumable_reward_scale=args.consumable_reward_scale,
-                    strategic_event_reward_scale=args.strategic_event_reward_scale,
-                ),
+                reward_config=make_reward_config(),
             ),
             agent_config=agent_config,
         )
 
     elif args.phase == "ppo":
         from pylatro_agent.archive import ArchiveConfig
-        from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.ppo import PPOConfig, train_ppo
 
         if sum(bool(path) for path in (args.resume, args.pretrained, args.actor_transfer)) > 1:
@@ -956,20 +965,10 @@ def main():
                 sil_grad_diagnostics_interval=args.sil_grad_diagnostics_interval,
                 advantage_clip_sigma=args.advantage_clip_sigma,
                 counterfactual_diagnostic_interval=args.counterfactual_diagnostic_interval,
-                reward_config=RewardConfig(
-                    objective=reward_objective,
-                    milestone_reward_budget=args.milestone_reward_budget,
-                    gamma=args.gamma,
-                    potential_win_ante=args.win_ante or 8,
-                    enable_planet_match_rewards=args.planet_match_shaping,
-                    planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
-                    planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-                    enable_score_build_potential=args.score_build_potential,
-                    ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
-                    dense_reward_scale=args.dense_reward_scale,
-                    consumable_reward_scale=args.consumable_reward_scale,
-                    strategic_event_reward_scale=args.strategic_event_reward_scale,
-                ),
+                reward_config=make_reward_config(
+                                  objective=reward_objective,
+                                  milestone_reward_budget=args.milestone_reward_budget,
+                              ),
             ),
             agent_config=agent_config,
             pretrained_path=args.pretrained,
@@ -998,29 +997,17 @@ def main():
         from pathlib import Path
 
         from pylatro import load_game_data
-        from pylatro_agent.reward import RewardConfig
         from pylatro_agent.training.model_generate import (
             ModelGenerateConfig,
             generate_training_data_from_model,
             load_records,
             save_records,
         )
-        from pylatro_agent.training.supervised import SupervisedConfig, train_supervised
+        from pylatro_agent.training.supervised import train_supervised
         from pylatro_agent.vocab import build_vocab
 
         data_path = Path(args.data_path) if args.data_path else None
-        training_reward_config = RewardConfig(
-            gamma=args.gamma,
-            potential_win_ante=args.win_ante or 8,
-            enable_planet_match_rewards=args.planet_match_shaping,
-            planet_unmatched_use_penalty_coeff=args.planet_unmatched_use_penalty_coeff,
-            planet_unmatched_claim_penalty_coeff=args.planet_unmatched_claim_penalty_coeff,
-            enable_score_build_potential=args.score_build_potential,
-            ante1_chip_tempo_bonus=args.ante1_chip_tempo_bonus,
-            dense_reward_scale=args.dense_reward_scale,
-            consumable_reward_scale=args.consumable_reward_scale,
-            strategic_event_reward_scale=args.strategic_event_reward_scale,
-        )
+        training_reward_config = make_reward_config()
         if data_path is not None and data_path.exists():
             records = load_records(
                 data_path,
@@ -1060,23 +1047,7 @@ def main():
                 )
 
         train_supervised(
-            SupervisedConfig(
-                deck_key=args.deck_key,
-                stake=args.stake,
-                num_games=args.games,
-                batch_size=args.batch,
-                lr=args.lr,
-                value_loss_coeff=args.value_loss_coeff,
-                seed=args.seed,
-                gamma=args.gamma,
-                max_epochs=args.epochs,
-                num_workers=args.workers,
-                min_ante=args.min_ante,
-                device=device,
-                save_dir=checkpoint_dir or "checkpoints/pretrain_from_checkpoint",
-                log_dir=log_dir or "runs/pretrain_from_checkpoint",
-                outcome_loss_coeff=args.outcome_loss_coeff,
-                win_ante=args.win_ante or 8,
+            make_supervised_config(
                 reward_config=training_reward_config,
             ),
             agent_config=agent_config,

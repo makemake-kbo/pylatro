@@ -1,4 +1,4 @@
-"""PPO training orchestration and backwards-compatible public entry points."""
+"""PPO training orchestration."""
 
 from __future__ import annotations
 
@@ -58,9 +58,7 @@ from .ppo_metrics import (
     _safe_mean,
     write_rollout_metrics,
 )
-from .ppo_observations import (
-    _ObsBuffer,
-)
+from .ppo_observations import _ObsBuffer
 from .ppo_optimization import (
     _entropy_alpha_loss,
     _make_alpha_optimizer,
@@ -79,9 +77,7 @@ from .ppo_rollout import (
     collect_rollout,
 )
 from .return_paths import ReturnPathReplay
-from .sil import (
-    EpisodeReplayBuffer,
-)
+from .sil import EpisodeReplayBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +122,7 @@ def train_ppo(
     logger.info("PPO training and evaluation deck: %s", config.deck_key)
     if agent_config is None:
         agent_config = AgentConfig()
-    # Apply the PPO-phase mixture weight so the AR head provides targeted
-    # exploration alongside the candidate head (Phase 1.2). The model reads
-    # this from its config at every action_distribution() call.
+    # Use the same action mixture and return semantics throughout training.
     agent_config.hand_ar_mixture_eps = config.hand_ar_mixture_eps
     agent_config.win_only_value = config.reward_config.objective == "milestone"
     if agent_config.return_value_mode != config.return_value_mode:
@@ -236,10 +230,6 @@ def train_ppo(
         "Danger policy conditioning: direct features enabled; unsafe-shop leave logit penalty=%.2f",
         max(float(agent_config.danger_shop_leave_logit_penalty), 0.0),
     )
-    # Discount-horizon diagnostic for explicit low-gamma overrides. At
-    # gamma=0.99 a terminal reward is discounted to ~0.22 at 150 steps and
-    # ~0.05 at 300, making early-game economy decisions nearly invisible.
-    # The default 0.997 retains ~0.41 at 300 steps.
     effective_win_ante = config.win_ante if config.win_ante is not None else 8
     if effective_win_ante >= 6 and config.gamma < 0.995:
         logger.warning(
@@ -278,14 +268,7 @@ def train_ppo(
             active_lr,
         )
 
-    # Create vectorized environments. Each env replays a deterministic
-    # game-seed stream from its constructor seed, so resuming with plain
-    # 0..N-1 seeds replays the same opening game library every leg and the
-    # critic overfits to it (novel seeds then produce systematically noisy
-    # advantages — the env-count-change collapse). Offset the seeds by the
-    # resumed update counter so every leg trains on fresh streams. A large
-    # config-seed stride keeps neighboring experiment seeds from sharing all
-    # but one environment stream. Seed 0 preserves the historical stream.
+    # Resume on fresh deterministic streams instead of replaying each leg's opening games.
     env_seed_base = config.seed * 10_000_019
     if resume_state is not None:
         env_seed_base += int(resume_state.get("update_count", 0)) * 1_000_003
@@ -451,17 +434,10 @@ def train_ppo(
                 update_count,
                 planned_updates,
             )
-    # Anneal horizon for fraction-of-training schedules. Resolved after resume
-    # finalizes
-    # total_timesteps, persisted in every checkpoint so later legs keep the
-    # original horizon regardless of num_envs/update-target changes.
+    # Keep the schedule horizon fixed across resume and environment-count changes.
     schedule_total_steps = _resolve_schedule_total_steps(config, resume_state)
     rollout_state = RolloutState(config)
-    # Phase 4: consecutive-minibatch-fraction tracker for the chronic KL-stop alert.
     _low_minibatch_streak = 0
-    # Phase 6: rolling win_rate/ep_reward history for the correlation acceptance
-    # criterion (corr > 0.5). Currently ~0/negative because dense shaping is
-    # farmable independent of winning.
     # Best-eval tracking for ppo_best_eval.pt selection. On resume, carry the
     # saved best forward so the resumed run keeps the prior best unless it beats it.
     best_eval_win_rate: float | None = None
@@ -478,10 +454,7 @@ def train_ppo(
             resume_state.get("best_eval_win_rate"),
             resume_state.get("best_eval_update"),
         )
-    # Always-on complete-episode assembly. The legacy SIL replay capacity is
-    # reused so terminal critic replay and optional SIL share one compact copy
-    # of recent observations. SIL still sees no buffer when its coefficient is
-    # disabled, preserving its exact actor-loss switch.
+    # Terminal critic replay and optional SIL share complete episodes across rollouts.
     episode_buffer = EpisodeReplayBuffer(
         config.sil_buffer_episodes,
         seed=config.seed,
@@ -492,6 +465,42 @@ def train_ppo(
     risk_forecast_path = Path(config.log_dir) / "risk_forecasts.jsonl"
     risk_forecast_file = None
     training_episode_file = None
+
+    def save_checkpoint(filename: str | None = None, **extra) -> Path:
+        return _save_checkpoint(
+            vector_env=vec_env, model=model, optimizer=optimizer, save_path=save_path,
+            update_count=update_count, total_steps=total_steps, planned_updates=planned_updates,
+            entropy_coeff=entropy_coeff, entropy_signal_ema=entropy_signal_ema,
+            lr=config.lr, log_alpha=log_alpha, alpha_optimizer=alpha_optimizer,
+            agent_config=agent_config, config=config, filename=filename,
+            extra={
+                "best_eval_win_rate": best_eval_win_rate,
+                "best_eval_update": best_eval_update,
+                "schedule_total_steps": schedule_total_steps,
+                **extra,
+            },
+        )
+
+    def evaluate(summary: dict | None = None) -> float:
+        eval_device = torch.device(config.eval_device) if config.eval_device else device
+        try:
+            return evaluate_model(
+                model.to(eval_device), data, vocab, config.eval_games, eval_device,
+                max_no_progress_steps=config.max_no_progress_steps, win_ante=config.win_ante,
+                temperature=config.rollout_temperature, stake=config.stake, seeds=config.eval_seeds,
+                deck_key=config.deck_key, eval_batch_size=config.eval_batch_size,
+                eval_workers=config.eval_workers, eval_cpu_threads=config.eval_cpu_threads,
+                reward_config=config.reward_config,
+                results_path=Path(config.log_dir) / "eval_outcomes.jsonl", writer=writer,
+                update_count=update_count, sampled_games=config.eval_sampled_games,
+                policy_config=config, sampling_seed=config.seed + 31013, summary_out=summary,
+            )
+        finally:
+            if eval_device != device:
+                model.to(device)
+            if eval_device.type == "mps":
+                torch.mps.empty_cache()
+
     try:
         if config.archive_config is not None and config.return_path_coeff > 0:
             return_path_replay = ReturnPathReplay(
@@ -513,23 +522,7 @@ def train_ppo(
 
         initial_stop_pending = bool(config.stop_request_path and Path(config.stop_request_path).is_file())
         if update_count == 0 and config.eval_before_training and not initial_stop_pending:
-            baseline_device = torch.device(config.eval_device) if config.eval_device else device
-            try:
-                evaluate_model(
-                    model.to(baseline_device), data, vocab, config.eval_games, baseline_device,
-                    max_no_progress_steps=config.max_no_progress_steps, win_ante=config.win_ante,
-                    temperature=config.rollout_temperature, stake=config.stake, seeds=config.eval_seeds,
-                    deck_key=config.deck_key,
-                    eval_batch_size=config.eval_batch_size, eval_workers=config.eval_workers,
-                    eval_cpu_threads=config.eval_cpu_threads, reward_config=config.reward_config,
-                    results_path=Path(config.log_dir) / "eval_outcomes.jsonl", writer=writer, update_count=0,
-                    sampled_games=config.eval_sampled_games, policy_config=config, sampling_seed=config.seed + 31013,
-                )
-            finally:
-                if baseline_device != device:
-                    model.to(device)
-                if baseline_device.type == "mps":
-                    torch.mps.empty_cache()
+            evaluate()
             writer.flush()
         while update_count < planned_updates:
             update_started = time.perf_counter()
@@ -605,18 +598,9 @@ def train_ppo(
             )
 
             replay_seconds = time.perf_counter() - replay_started
-            update_policy_losses = update_stats.policy_losses
-            update_entropies = update_stats.entropies
-            update_normalized_entropies = update_stats.normalized_entropies
-            update_action_type_entropies = update_stats.action_type_entropies
-            update_clip_fracs = update_stats.clip_fracs
-            update_approx_kls = update_stats.approx_kls
-            update_valid_action_counts = update_stats.valid_action_counts
-            update_valid_action_type_counts = update_stats.valid_action_type_counts
-
             # Track the normalized entropy signal every update, even with fixed entropy.
             mean_normalized_entropy = _sample_weighted_mean(
-                update_normalized_entropies,
+                update_stats.normalized_entropies,
                 update_stats.sample_counts,
             )
             entropy_signal_ema = _smoothed_entropy_signal(
@@ -642,8 +626,8 @@ def train_ppo(
                 sample_counts=update_stats.sample_counts,
             )
 
-            mean_entropy = weighted_mean(update_entropies)
-            mean_policy_loss = weighted_mean(update_policy_losses)
+            mean_entropy = weighted_mean(update_stats.entropies)
+            mean_policy_loss = weighted_mean(update_stats.policy_losses)
             mean_return_huber = weighted_mean(update_stats.return_hubers)
             mean_outcome_nll = _sample_weighted_mean(
                 update_stats.outcome_nlls,
@@ -657,48 +641,31 @@ def train_ppo(
                 update_stats.derived_win_briers,
                 update_stats.outcome_valid_counts,
             )
-            mean_action_type_entropy = weighted_mean(update_action_type_entropies)
-            mean_clip_fraction = weighted_mean(update_clip_fracs)
+            mean_action_type_entropy = weighted_mean(update_stats.action_type_entropies)
+            mean_clip_fraction = weighted_mean(update_stats.clip_fracs)
             mean_approx_kl = update_stats.running_kl
-            mean_valid_action_count = weighted_mean(update_valid_action_counts)
-            mean_valid_action_type_count = weighted_mean(update_valid_action_type_counts)
-            writer.add_scalar("ppo/policy_loss", mean_policy_loss, update_count)
-            writer.add_scalar("ppo/entropy_raw", mean_entropy, update_count)
-            writer.add_scalar("critic/outcome_nll", mean_outcome_nll, update_count)
-            writer.add_scalar("critic/outcome_brier", mean_outcome_brier, update_count)
-            writer.add_scalar("critic/derived_win_brier", mean_derived_win_brier, update_count)
-            writer.add_scalar("critic/return_huber", mean_return_huber, update_count)
-            writer.add_scalar(
-                "critic/terminal_value_mean",
-                weighted_mean(update_stats.terminal_value_means),
-                update_count,
-            )
-            writer.add_scalar(
-                "critic/return_residual_mean",
-                weighted_mean(update_stats.return_residual_means),
-                update_count,
-            )
-            writer.add_scalar(
-                "critic/expected_return_mean",
-                weighted_mean(update_stats.expected_return_means),
-                update_count,
-            )
-            writer.add_scalar("ppo/entropy_normalized", mean_normalized_entropy, update_count)
-            writer.add_scalar(
-                "ppo/action_type_entropy_normalized",
-                mean_action_type_entropy,
-                update_count,
-            )
-            writer.add_scalar("ppo/clip_fraction", mean_clip_fraction, update_count)
-            writer.add_scalar("ppo/approx_kl", mean_approx_kl, update_count)
-            writer.add_scalar(
-                "ppo/kl_rollback_event",
-                1.0 if update_stats.kl_rollback else 0.0,
-                update_count,
-            )
-            writer.add_scalar("ppo/actual_lr", update_stats.actual_lr, update_count)
-            writer.add_scalar("ppo/effective_lr", config.lr, update_count)
-            writer.add_scalar("ppo/configured_actor_lr", config.lr, update_count)
+            mean_valid_action_count = weighted_mean(update_stats.valid_action_counts)
+            mean_valid_action_type_count = weighted_mean(update_stats.valid_action_type_counts)
+            for name, value in {
+                "ppo/policy_loss": mean_policy_loss,
+                "ppo/entropy_raw": mean_entropy,
+                "critic/outcome_nll": mean_outcome_nll,
+                "critic/outcome_brier": mean_outcome_brier,
+                "critic/derived_win_brier": mean_derived_win_brier,
+                "critic/return_huber": mean_return_huber,
+                "critic/terminal_value_mean": weighted_mean(update_stats.terminal_value_means),
+                "critic/return_residual_mean": weighted_mean(update_stats.return_residual_means),
+                "critic/expected_return_mean": weighted_mean(update_stats.expected_return_means),
+                "ppo/entropy_normalized": mean_normalized_entropy,
+                "ppo/action_type_entropy_normalized": mean_action_type_entropy,
+                "ppo/clip_fraction": mean_clip_fraction,
+                "ppo/approx_kl": mean_approx_kl,
+                "ppo/kl_rollback_event": float(update_stats.kl_rollback),
+                "ppo/actual_lr": update_stats.actual_lr,
+                "ppo/effective_lr": config.lr,
+                "ppo/configured_actor_lr": config.lr,
+            }.items():
+                writer.add_scalar(name, value, update_count)
             for metric_name, metric_value in terminal_replay_result.diagnostics.items():
                 if math.isfinite(metric_value):
                     writer.add_scalar(
@@ -731,45 +698,26 @@ def train_ppo(
             # Target-KL early stopping can halt an update after far fewer minibatches
             # than expected; without this it is invisible. Expected = full passes over
             # the rollout for every PPO epoch.
-            n_samples = len(buffer._flat_returns) if len(buffer._flat_returns) > 0 else 0
+            n_samples = len(buffer._flat_returns)
             minibatches_expected = 0
             minibatch_fraction = 1.0
             if n_samples > 0:
-                if accum_steps > 1:
-                    minibatches_per_epoch = max(
-                        1,
-                        _physical_minibatch_count(
-                            n_samples,
-                            config.mini_batch_size,
-                            effective_batch_size,
-                        ),
-                    )
-                else:
-                    minibatches_per_epoch = max(1, math.ceil(n_samples / effective_batch_size))
-                minibatches_expected = minibatches_per_epoch * config.ppo_epochs
+                minibatches_expected = _physical_minibatch_count(
+                    n_samples, config.mini_batch_size, effective_batch_size,
+                ) * config.ppo_epochs
                 minibatch_fraction = min(1.0, minibatches_processed / minibatches_expected)
                 writer.add_scalar("ppo/minibatch_fraction", minibatch_fraction, update_count)
             # Trust-region extrema feed the console diagnostic warnings below.
-            kl_p95 = float(np.percentile(update_approx_kls, 95)) if update_approx_kls else 0.0
-            kl_max = float(np.max(update_approx_kls)) if update_approx_kls else 0.0
-            clip_frac_max = float(np.max(update_clip_fracs)) if update_clip_fracs else 0.0
+            kl_p95 = float(np.percentile(update_stats.approx_kls, 95)) if update_stats.approx_kls else 0.0
+            kl_max = float(np.max(update_stats.approx_kls)) if update_stats.approx_kls else 0.0
+            clip_frac_max = float(np.max(update_stats.clip_fracs)) if update_stats.clip_fracs else 0.0
             writer.add_scalar(
                 "ppo/valid_action_type_count_mean",
                 mean_valid_action_type_count,
                 update_count,
             )
             writer.add_scalar("ppo/entropy_coeff", entropy_coeff, update_count)
-            # Release the rollout buffer before the eval/checkpoint memory peak.
-            # The buffer holds the full rollout's observation/action_mask arrays
-            # (the largest host allocation in the loop) and is not read again until
-            # the next iteration reallocates it. Holding it alive through eval
-            # (which spins up `eval_games` fresh envs) and the checkpoint save
-            # stacks two large allocations on top of it. On a long MPS run that
-            # peak is enough to trip the OS memory-pressure killer, which SIGKILLs
-            # the main process (largest footprint) with no Python traceback and
-            # leaves every AsyncVectorEnv worker dying on EOFError/BrokenPipe.
-            # Free it here and return cached device memory to the OS so the peak
-            # does not accumulate update over update.
+            # Release rollout storage before the eval/checkpoint memory peak.
             del buffer
             if device.type == "mps":
                 torch.mps.empty_cache()
@@ -808,28 +756,9 @@ def train_ppo(
                 # land on disk before the checkpoint save, which is itself
                 # a long sync that could crash if memory is tight.
                 writer.flush()
-                checkpoint_path = _save_checkpoint(
-                    vector_env=vec_env,
-                    model=model,
-                    optimizer=optimizer,
-                    save_path=save_path,
-                    update_count=update_count,
-                    total_steps=total_steps,
-                    planned_updates=planned_updates,
-                    entropy_coeff=entropy_coeff,
-                    entropy_signal_ema=entropy_signal_ema,
-                    lr=config.lr,
-                    log_alpha=log_alpha,
-                    alpha_optimizer=alpha_optimizer,
-                    agent_config=agent_config,
-                    config=config,
-                    filename="ppo_monitor_stop.pt" if monitor_stop else None,
-                    extra={
-                        "best_eval_win_rate": best_eval_win_rate,
-                        "best_eval_update": best_eval_update,
-                        "schedule_total_steps": schedule_total_steps,
-                        "monitor_stop_requested": monitor_stop,
-                    },
+                checkpoint_path = save_checkpoint(
+                    "ppo_monitor_stop.pt" if monitor_stop else None,
+                    monitor_stop_requested=monitor_stop,
                 )
                 # Always mirror the latest checkpoint so resume/eval always has
                 # a stable path without guessing the highest update number.
@@ -853,52 +782,7 @@ def train_ppo(
                 # Flush before eval so any preceding scalars survive a
                 # parent-process crash during the (potentially long) eval.
                 writer.flush()
-                # Optionally run eval on a different device to keep MPS
-                # memory pressure down. The model is temporarily moved to
-                # the eval device and moved back when eval finishes.
-                eval_device = device
-                if config.eval_device:
-                    eval_device = torch.device(config.eval_device)
-                    model_to_eval = model.to(eval_device)
-                else:
-                    model_to_eval = model
-                try:
-                    win_rate = evaluate_model(
-                        model_to_eval,
-                        data,
-                        vocab,
-                        config.eval_games,
-                        eval_device,
-                        max_no_progress_steps=config.max_no_progress_steps,
-                        win_ante=config.win_ante,
-                        temperature=config.rollout_temperature,
-                        seeds=config.eval_seeds,
-                        eval_batch_size=config.eval_batch_size,
-                        eval_workers=config.eval_workers,
-                        eval_cpu_threads=config.eval_cpu_threads,
-                        stake=config.stake,
-                        deck_key=config.deck_key,
-                        reward_config=config.reward_config,
-                        results_path=Path(config.log_dir) / "eval_outcomes.jsonl",
-                        writer=writer,
-                        update_count=update_count,
-                        sampled_games=config.eval_sampled_games,
-                        policy_config=config,
-                        sampling_seed=config.seed + 31013,
-                        summary_out=eval_summary,
-                    )
-                finally:
-                    if config.eval_device and eval_device != device:
-                        # Move model back to the training device for the next
-                        # rollout. Failure to do this leaves the optimizer's
-                        # param groups pointing at the wrong device.
-                        model.to(device)
-                    # Force-release any large eval-side allocations before the
-                    # next training rollout; this is a no-op on CPU but
-                    # materially reduces MPS high-water-mark usage.
-                    if eval_device.type == "mps":
-                        torch.mps.empty_cache()
-                    del model_to_eval
+                win_rate = evaluate(eval_summary)
                 writer.add_scalar("eval/win_rate", win_rate, update_count)
                 writer.flush()
                 eval_win_rate = win_rate
@@ -916,28 +800,7 @@ def train_ppo(
                     base_model._best_eval_rank = rank
                     best_eval_win_rate = win_rate
                     best_eval_update = update_count
-                    best_path = _save_checkpoint(
-                        vector_env=vec_env,
-                        model=model,
-                        optimizer=optimizer,
-                        save_path=save_path,
-                        update_count=update_count,
-                        total_steps=total_steps,
-                        planned_updates=planned_updates,
-                        entropy_coeff=entropy_coeff,
-                        entropy_signal_ema=entropy_signal_ema,
-                        lr=config.lr,
-                        log_alpha=log_alpha,
-                        alpha_optimizer=alpha_optimizer,
-                        agent_config=agent_config,
-                        config=config,
-                        filename="ppo_best_eval.pt",
-                        extra={
-                            "best_eval_win_rate": best_eval_win_rate,
-                            "best_eval_update": best_eval_update,
-                            "schedule_total_steps": schedule_total_steps,
-                        },
-                    )
+                    best_path = save_checkpoint("ppo_best_eval.pt")
                     logger.info(
                         "New best eval (win rate primary, fresh progression tie-break) "
                         "win_rate=%.3f at update %d -> %s",
@@ -963,28 +826,8 @@ def train_ppo(
                 if regression_early_stop:
                     early_stop_requested = True
                     writer.flush()
-                    regression_stop_path = _save_checkpoint(
-                        vector_env=vec_env,
-                        model=model,
-                        optimizer=optimizer,
-                        save_path=save_path,
-                        update_count=update_count,
-                        total_steps=total_steps,
-                        planned_updates=planned_updates,
-                        entropy_coeff=entropy_coeff,
-                        entropy_signal_ema=entropy_signal_ema,
-                        lr=config.lr,
-                        log_alpha=log_alpha,
-                        alpha_optimizer=alpha_optimizer,
-                        agent_config=agent_config,
-                        config=config,
-                        filename="ppo_regression_stop.pt",
-                        extra={
-                            "best_eval_win_rate": best_eval_win_rate,
-                            "best_eval_update": best_eval_update,
-                            "schedule_total_steps": schedule_total_steps,
-                            "eval_regression_streak": eval_regression_streak,
-                        },
+                    regression_stop_path = save_checkpoint(
+                        "ppo_regression_stop.pt", eval_regression_streak=eval_regression_streak,
                     )
                     _mirror_latest_checkpoint(regression_stop_path, save_path)
                     logger.error(
@@ -1026,11 +869,6 @@ def train_ppo(
                     progress += f", eval_win_rate={eval_win_rate:.3f}"
                 logger.info(progress)
 
-            # === Diagnostic warnings ===
-            # Surface unhealthy PPO dynamics on the console so they are not
-            # buried in TensorBoard. Each warning is rate-limited by
-            # log_interval (the same gate as the progress line above) so the
-            # log stays readable when a condition is persistently true.
             if update_stats.ppo_minibatches_processed:
                 minibatches_done = int(np.sum(update_stats.ppo_minibatches_processed))
                 # minibatches_expected and minibatch_fraction were captured
@@ -1047,9 +885,6 @@ def train_ppo(
                         minibatch_fraction * 100.0,
                     )
 
-                # Phase 4: alert if minibatch_fraction < 0.8 for 10 consecutive
-                # updates, chronic KL-stop means the step size (lr) is wrong,
-                # not the trust region. Prefer fixing lr over reverting target_kl.
                 if minibatches_expected > 0 and minibatch_fraction < 0.8:
                     _low_minibatch_streak += 1
                 else:
@@ -1066,7 +901,6 @@ def train_ppo(
                         config.lr,
                     )
 
-            # === Trust-region diagnostic warnings (Phase 3) ===
             # Surface dangerous KL spikes and premature early-stopping. The
             # hard thresholds can be tightened via the CLI guards below.
             if should_log_progress:
@@ -1127,17 +961,14 @@ def train_ppo(
                         update_count,
                     )
 
-            # === Exploration-pressure warnings (Phase 4) ===
-            mean_normalized_entropy_update = mean_normalized_entropy
             mean_chosen_action_prob = _safe_mean(rm.chosen_action_probs)
-            mean_action_type_entropy_update = mean_action_type_entropy
             if should_log_progress:
-                if mean_normalized_entropy_update < 0.10:
+                if mean_normalized_entropy < 0.10:
                     logger.warning(
                         "ppo/entropy_normalized=%.3f (<0.10) at update %d; the policy "
                         "is near-deterministic. Raise --entropy-coeff / --target-entropy "
                         "or enable --adaptive-entropy.",
-                        mean_normalized_entropy_update,
+                        mean_normalized_entropy,
                         update_count,
                     )
                 if rm.chosen_action_probs and mean_chosen_action_prob > 0.80:
@@ -1147,12 +978,12 @@ def train_ppo(
                         mean_chosen_action_prob,
                         update_count,
                     )
-                if mean_action_type_entropy_update < 0.20:
+                if mean_action_type_entropy < 0.20:
                     logger.warning(
                         "ppo/action_type_entropy_normalized=%.3f (<0.20) at update %d; "
                         "action-family choices have low entropy on this rollout. "
                         "Inspect phase-specific choices and gameplay before diagnosing collapse.",
-                        mean_action_type_entropy_update,
+                        mean_action_type_entropy,
                         update_count,
                     )
 
@@ -1170,16 +1001,7 @@ def train_ppo(
     finally:
         if return_path_replay is not None:
             return_path_replay.close()
-        # Always close the vector env and TensorBoard writer, even on
-        # KeyboardInterrupt, OOM, or any unhandled exception in the training
-        # loop. Without this, an early parent-process exit leaves every
-        # AsyncVectorEnv worker alive long enough to flood the log with
-        # EOFError/BrokenPipe traceback cascades that mask the real cause.
-        #
-        # If you are debugging a crash where the visible trace is just
-        # AsyncVectorEnv EOFError/BrokenPipe, the real exception is usually
-        # above it in the log (or in this finally block). Re-running with
-        # --sync-envs surfaces env-worker errors directly in the parent.
+        # Close workers and logs even when an update or evaluation fails.
         try:
             vec_env.close()
         except Exception:

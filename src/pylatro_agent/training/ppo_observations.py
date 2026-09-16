@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import torch
 
@@ -21,30 +19,31 @@ from ..constants import (
     TOKEN_DIM,
 )
 
-logger = logging.getLogger(__name__)
-
-
 _MISSING = object()
+
+# Shapes exclude the batch axis. Keep the model's observation contract in one
+# place so staging and one-off batches always use the same keys and dtypes.
+_OBSERVATION_SPEC = {
+    "tokens": ((MAX_SEQ_LEN, TOKEN_DIM), torch.long),
+    "token_types": ((MAX_SEQ_LEN,), torch.long),
+    "scalars": ((SCALAR_DIM,), torch.float32),
+    "attention_mask": ((MAX_SEQ_LEN,), torch.long),
+    "action_mask": ((NUM_ACTIONS,), torch.float32),
+    "history_events": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_EVENT_DIM), torch.long),
+    "history_event_features": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_FEATURE_DIM), torch.float32),
+    "history_cards": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS, TOKEN_DIM), torch.long),
+    "history_card_mask": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS), torch.long),
+    "history_jokers": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), torch.long),
+    "history_joker_mask": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS), torch.long),
+    "history_event_mask": ((HISTORY_ROUNDS, HISTORY_MAX_PLAYS), torch.long),
+    "history_round_mask": ((HISTORY_ROUNDS,), torch.long),
+    "history_omitted": ((HISTORY_ROUNDS, HISTORY_OMITTED_DIM), torch.float32),
+}
 
 
 def _observation_buffer_batch(obs_buf) -> dict[str, torch.Tensor]:
     """Expose an observation buffer through the common model-batch interface."""
-    return {
-        "tokens": obs_buf.tokens,
-        "token_types": obs_buf.token_types,
-        "scalars": obs_buf.scalars,
-        "attention_mask": obs_buf.attention_mask,
-        "action_mask": obs_buf.action_mask,
-        "history_events": obs_buf.history_events,
-        "history_event_features": obs_buf.history_event_features,
-        "history_cards": obs_buf.history_cards,
-        "history_card_mask": obs_buf.history_card_mask,
-        "history_jokers": obs_buf.history_jokers,
-        "history_joker_mask": obs_buf.history_joker_mask,
-        "history_event_mask": obs_buf.history_event_mask,
-        "history_round_mask": obs_buf.history_round_mask,
-        "history_omitted": obs_buf.history_omitted,
-    }
+    return {key: getattr(obs_buf, key) for key in _OBSERVATION_SPEC}
 
 
 def _extract_vector_info_value(info_dict: dict, key: str, env_idx: int, default=None):
@@ -95,18 +94,7 @@ def _ppo_terminal_flags(
     """
     dones = terminated | truncated
     stalled = np.asarray(
-        [
-            bool(
-                _extract_step_info_value(
-                    infos,
-                    "stalled",
-                    env_idx,
-                    done=bool(dones[env_idx]),
-                    default=False,
-                )
-            )
-            for env_idx in range(len(dones))
-        ],
+        [_extract_step_flag(infos, "stalled", env_idx, done=bool(done)) for env_idx, done in enumerate(dones)],
         dtype=np.bool_,
     )
     ppo_terminated = np.asarray(terminated, dtype=np.bool_) | stalled
@@ -117,50 +105,8 @@ def _ppo_terminal_flags(
 def _obs_dicts_to_batch(obs_list: list[dict], device: torch.device) -> dict[str, torch.Tensor]:
     """Stack a list of single-env observations into a model batch."""
     return {
-        "tokens": torch.tensor(np.stack([obs["tokens"] for obs in obs_list]), dtype=torch.long, device=device),
-        "token_types": torch.tensor(
-            np.stack([obs["token_types"] for obs in obs_list]),
-            dtype=torch.long,
-            device=device,
-        ),
-        "scalars": torch.tensor(np.stack([obs["scalars"] for obs in obs_list]), dtype=torch.float32, device=device),
-        "attention_mask": torch.tensor(
-            np.stack([obs["attention_mask"] for obs in obs_list]),
-            dtype=torch.long,
-            device=device,
-        ),
-        "action_mask": torch.tensor(
-            np.stack([obs["action_mask"] for obs in obs_list]),
-            dtype=torch.float32,
-            device=device,
-        ),
-        "history_events": torch.tensor(
-            np.stack([obs["history_events"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_event_features": torch.tensor(
-            np.stack([obs["history_event_features"] for obs in obs_list]), dtype=torch.float32, device=device
-        ),
-        "history_cards": torch.tensor(
-            np.stack([obs["history_cards"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_card_mask": torch.tensor(
-            np.stack([obs["history_card_mask"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_jokers": torch.tensor(
-            np.stack([obs["history_jokers"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_joker_mask": torch.tensor(
-            np.stack([obs["history_joker_mask"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_event_mask": torch.tensor(
-            np.stack([obs["history_event_mask"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_round_mask": torch.tensor(
-            np.stack([obs["history_round_mask"] for obs in obs_list]), dtype=torch.long, device=device
-        ),
-        "history_omitted": torch.tensor(
-            np.stack([obs["history_omitted"] for obs in obs_list]), dtype=torch.float32, device=device
-        ),
+        key: torch.tensor(np.stack([obs[key] for obs in obs_list]), dtype=dtype, device=device)
+        for key, (_, dtype) in _OBSERVATION_SPEC.items()
     }
 
 
@@ -170,48 +116,26 @@ class _ObsBuffer:
     Avoids re-creating tensors every step by writing into existing storage.
     """
 
+    tokens: torch.Tensor
+    token_types: torch.Tensor
+    scalars: torch.Tensor
+    attention_mask: torch.Tensor
+    action_mask: torch.Tensor
+    history_events: torch.Tensor
+    history_event_features: torch.Tensor
+    history_cards: torch.Tensor
+    history_card_mask: torch.Tensor
+    history_jokers: torch.Tensor
+    history_joker_mask: torch.Tensor
+    history_event_mask: torch.Tensor
+    history_round_mask: torch.Tensor
+    history_omitted: torch.Tensor
+
     def __init__(self, num_envs: int, device: torch.device) -> None:
         self.num_envs = num_envs
         self.device = device
-        self.tokens = torch.zeros(num_envs, MAX_SEQ_LEN, TOKEN_DIM, dtype=torch.long, device=device)
-        self.token_types = torch.zeros(num_envs, MAX_SEQ_LEN, dtype=torch.long, device=device)
-        self.scalars = torch.zeros(num_envs, SCALAR_DIM, dtype=torch.float32, device=device)
-        self.attention_mask = torch.zeros(num_envs, MAX_SEQ_LEN, dtype=torch.long, device=device)
-        self.action_mask = torch.zeros(num_envs, NUM_ACTIONS, dtype=torch.float32, device=device)
-        self.history_events = torch.zeros(
-            num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_EVENT_DIM, dtype=torch.long, device=device
-        )
-        self.history_event_features = torch.zeros(
-            num_envs,
-            HISTORY_ROUNDS,
-            HISTORY_MAX_PLAYS,
-            HISTORY_FEATURE_DIM,
-            dtype=torch.float32,
-            device=device,
-        )
-        self.history_cards = torch.zeros(
-            num_envs,
-            HISTORY_ROUNDS,
-            HISTORY_MAX_PLAYS,
-            HISTORY_MAX_CARDS,
-            TOKEN_DIM,
-            dtype=torch.long,
-            device=device,
-        )
-        self.history_card_mask = torch.zeros(
-            num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_CARDS, dtype=torch.long, device=device
-        )
-        self.history_jokers = torch.zeros(
-            num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, HISTORY_MAX_JOKERS, dtype=torch.long, device=device
-        )
-        self.history_joker_mask = torch.zeros_like(self.history_jokers)
-        self.history_event_mask = torch.zeros(
-            num_envs, HISTORY_ROUNDS, HISTORY_MAX_PLAYS, dtype=torch.long, device=device
-        )
-        self.history_round_mask = torch.zeros(num_envs, HISTORY_ROUNDS, dtype=torch.long, device=device)
-        self.history_omitted = torch.zeros(
-            num_envs, HISTORY_ROUNDS, HISTORY_OMITTED_DIM, dtype=torch.float32, device=device
-        )
+        for key, (shape, dtype) in _OBSERVATION_SPEC.items():
+            setattr(self, key, torch.zeros((num_envs, *shape), dtype=dtype, device=device))
 
         # CPU tensors and NumPy arrays share storage. CUDA uses persistent
         # pinned staging, so copies can be enqueued without a sync per field.
@@ -247,40 +171,11 @@ class _ObsBuffer:
 
     def as_numpy_dict(self) -> dict:
         """Return current numpy arrays (for storing in rollout buffer)."""
-        return {
-            "tokens": self._np_tokens,
-            "token_types": self._np_token_types,
-            "scalars": self._np_scalars,
-            "attention_mask": self._np_attention_mask,
-            "action_mask": self._np_action_mask,
-            "history_events": self._np_history_events,
-            "history_event_features": self._np_history_event_features,
-            "history_cards": self._np_history_cards,
-            "history_card_mask": self._np_history_card_mask,
-            "history_jokers": self._np_history_jokers,
-            "history_joker_mask": self._np_history_joker_mask,
-            "history_event_mask": self._np_history_event_mask,
-            "history_round_mask": self._np_history_round_mask,
-            "history_omitted": self._np_history_omitted,
-        }
+        return {key: getattr(self, f"_np_{key}") for key in _OBSERVATION_SPEC}
 
 
 def _single_obs_to_batch(obs: dict, device: torch.device) -> dict[str, torch.Tensor]:
     return {
-        "tokens": torch.tensor(obs["tokens"], dtype=torch.long, device=device).unsqueeze(0),
-        "token_types": torch.tensor(obs["token_types"], dtype=torch.long, device=device).unsqueeze(0),
-        "scalars": torch.tensor(obs["scalars"], dtype=torch.float32, device=device).unsqueeze(0),
-        "attention_mask": torch.tensor(obs["attention_mask"], dtype=torch.long, device=device).unsqueeze(0),
-        "action_mask": torch.tensor(obs["action_mask"], dtype=torch.float32, device=device).unsqueeze(0),
-        "history_events": torch.tensor(obs["history_events"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_event_features": torch.tensor(
-            obs["history_event_features"], dtype=torch.float32, device=device
-        ).unsqueeze(0),
-        "history_cards": torch.tensor(obs["history_cards"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_card_mask": torch.tensor(obs["history_card_mask"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_jokers": torch.tensor(obs["history_jokers"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_joker_mask": torch.tensor(obs["history_joker_mask"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_event_mask": torch.tensor(obs["history_event_mask"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_round_mask": torch.tensor(obs["history_round_mask"], dtype=torch.long, device=device).unsqueeze(0),
-        "history_omitted": torch.tensor(obs["history_omitted"], dtype=torch.float32, device=device).unsqueeze(0),
+        key: torch.tensor(obs[key], dtype=dtype, device=device).unsqueeze(0)
+        for key, (_, dtype) in _OBSERVATION_SPEC.items()
     }

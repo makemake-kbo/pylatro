@@ -72,6 +72,23 @@ _PACK_CLAIM = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PACK_CLAIM]
 _SHOP_REROLL = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_REROLL]
 _SHOP_LEAVE = ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE]
 
+# Fixed ordering keeps sampled RNG draws and floating-point reductions stable.
+_SINGLETON_ACTIONS = {
+    ActionType.BLIND_PLAY: ActionRange.BLIND_PLAY,
+    ActionType.BLIND_SKIP: ActionRange.BLIND_SKIP,
+    ActionType.BLIND_REROLL: ActionRange.BLIND_REROLL,
+    ActionType.SHOP_REROLL: ActionRange.SHOP_REROLL,
+    ActionType.SHOP_LEAVE: ActionRange.SHOP_LEAVE,
+    ActionType.PACK_SKIP: ActionRange.PACK_SKIP,
+}
+_INDEXED_ACTIONS = (
+    (_SHOP_BUY, "shop_buy_logits", ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
+    (_SHOP_SELL_JOKER, "shop_sell_joker_logits", ActionRange.SHOP_SELL_JOKER_START, ActionRange.SHOP_SELL_JOKER_END),
+    (_SHOP_SELL_CONSUMABLE, "shop_sell_consumable_logits",
+     ActionRange.SHOP_SELL_CONSUMABLE_START, ActionRange.SHOP_SELL_CONSUMABLE_END),
+    (_PACK_CLAIM, "pack_claim_logits", ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
+)
+
 _SHOP_PHASE_ID = 2
 _DANGER_THRESHOLD = 0.35
 
@@ -469,36 +486,11 @@ class ActionGrammarDistribution:
         macro = _sample_masked(self._t(self.output.macro_logits), self.macro_mask)
         actions = self._first_valid_actions()
 
-        actions = torch.where(
-            macro == ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.BLIND_PLAY],
-            torch.full_like(actions, int(ActionRange.BLIND_PLAY)),
-            actions,
-        )
-        actions = torch.where(
-            macro == ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.BLIND_SKIP],
-            torch.full_like(actions, int(ActionRange.BLIND_SKIP)),
-            actions,
-        )
-        actions = torch.where(
-            macro == ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.BLIND_REROLL],
-            torch.full_like(actions, int(ActionRange.BLIND_REROLL)),
-            actions,
-        )
-        actions = torch.where(
-            macro == ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_REROLL],
-            torch.full_like(actions, int(ActionRange.SHOP_REROLL)),
-            actions,
-        )
-        actions = torch.where(
-            macro == ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.SHOP_LEAVE],
-            torch.full_like(actions, int(ActionRange.SHOP_LEAVE)),
-            actions,
-        )
-        actions = torch.where(
-            macro == ACTION_TYPE_TO_GRAMMAR_INDEX[ActionType.PACK_SKIP],
-            torch.full_like(actions, int(ActionRange.PACK_SKIP)),
-            actions,
-        )
+        for action_type, action_id in _SINGLETON_ACTIONS.items():
+            actions = torch.where(
+                macro == ACTION_TYPE_TO_GRAMMAR_INDEX[action_type],
+                torch.full_like(actions, int(action_id)), actions,
+            )
 
         play_actions = self._sample_hand_actions(is_play=True)
         discard_actions = self._sample_hand_actions(is_play=False)
@@ -512,34 +504,9 @@ class ActionGrammarDistribution:
         actions = torch.where(macro == _CONSUMABLE_HAND, hand_target_actions, actions)
         actions = torch.where(macro == _CONSUMABLE_JOKER, joker_target_actions, actions)
 
-        shop_buy_actions = self._sample_indexed_actions(
-            self._t(self.output.shop_buy_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
-            int(ActionRange.SHOP_BUY_START),
-        )
-        shop_sell_joker_actions = self._sample_indexed_actions(
-            self._t(self.output.shop_sell_joker_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_SELL_JOKER_START, ActionRange.SHOP_SELL_JOKER_END),
-            int(ActionRange.SHOP_SELL_JOKER_START),
-        )
-        shop_sell_consumable_actions = self._sample_indexed_actions(
-            self._t(self.output.shop_sell_consumable_logits),
-            _range_mask(
-                self.action_mask,
-                ActionRange.SHOP_SELL_CONSUMABLE_START,
-                ActionRange.SHOP_SELL_CONSUMABLE_END,
-            ),
-            int(ActionRange.SHOP_SELL_CONSUMABLE_START),
-        )
-        pack_claim_actions = self._sample_indexed_actions(
-            self._t(self.output.pack_claim_logits),
-            _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
-            int(ActionRange.PACK_CLAIM_START),
-        )
-        actions = torch.where(macro == _SHOP_BUY, shop_buy_actions, actions)
-        actions = torch.where(macro == _SHOP_SELL_JOKER, shop_sell_joker_actions, actions)
-        actions = torch.where(macro == _SHOP_SELL_CONSUMABLE, shop_sell_consumable_actions, actions)
-        actions = torch.where(macro == _PACK_CLAIM, pack_claim_actions, actions)
+        for macro_idx, logits, mask, base in self._indexed_distributions():
+            sampled = base + _sample_masked(logits, mask)
+            actions = torch.where(macro == macro_idx, sampled, actions)
 
         valid = self.action_mask.gather(1, actions.unsqueeze(-1)).squeeze(-1)
         return torch.where(valid, actions, self._first_valid_actions())
@@ -574,46 +541,9 @@ class ActionGrammarDistribution:
         log_prob = log_prob + torch.where(action_macro == _CONSUMABLE_HAND, hand_logp, torch.zeros_like(log_prob))
         log_prob = log_prob + torch.where(action_macro == _CONSUMABLE_JOKER, joker_logp, torch.zeros_like(log_prob))
 
-        log_prob = log_prob + torch.where(
-            action_macro == _SHOP_BUY,
-            self._indexed_log_prob(
-                self._t(self.output.shop_buy_logits),
-                _range_mask(self.action_mask, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
-                action_index.clamp(0, MAX_SHOP_ITEMS - 1),
-            ),
-            torch.zeros_like(log_prob),
-        )
-        log_prob = log_prob + torch.where(
-            action_macro == _SHOP_SELL_JOKER,
-            self._indexed_log_prob(
-                self._t(self.output.shop_sell_joker_logits),
-                _range_mask(self.action_mask, ActionRange.SHOP_SELL_JOKER_START, ActionRange.SHOP_SELL_JOKER_END),
-                action_index.clamp(0, MAX_JOKER_SLOTS - 1),
-            ),
-            torch.zeros_like(log_prob),
-        )
-        log_prob = log_prob + torch.where(
-            action_macro == _SHOP_SELL_CONSUMABLE,
-            self._indexed_log_prob(
-                self._t(self.output.shop_sell_consumable_logits),
-                _range_mask(
-                    self.action_mask,
-                    ActionRange.SHOP_SELL_CONSUMABLE_START,
-                    ActionRange.SHOP_SELL_CONSUMABLE_END,
-                ),
-                action_index.clamp(0, MAX_CONSUMABLE_SLOTS - 1),
-            ),
-            torch.zeros_like(log_prob),
-        )
-        log_prob = log_prob + torch.where(
-            action_macro == _PACK_CLAIM,
-            self._indexed_log_prob(
-                self._t(self.output.pack_claim_logits),
-                _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
-                action_index.clamp(0, MAX_PACK_CARDS - 1),
-            ),
-            torch.zeros_like(log_prob),
-        )
+        for macro_idx, logits, mask, _base in self._indexed_distributions():
+            indexed_logp = self._indexed_log_prob(logits, mask, action_index.clamp(0, mask.shape[-1] - 1))
+            log_prob = log_prob + torch.where(action_macro == macro_idx, indexed_logp, torch.zeros_like(log_prob))
         return log_prob
 
     def entropy(self) -> torch.Tensor:
@@ -633,22 +563,8 @@ class ActionGrammarDistribution:
         entropy = entropy + macro_probs[:, _CONSUMABLE_HAND] * self._consumable_hand_entropy()
         entropy = entropy + macro_probs[:, _CONSUMABLE_JOKER] * self._consumable_joker_entropy()
 
-        entropy = entropy + macro_probs[:, _SHOP_BUY] * _masked_entropy(
-            self._t(self.output.shop_buy_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
-        )
-        entropy = entropy + macro_probs[:, _SHOP_SELL_JOKER] * _masked_entropy(
-            self._t(self.output.shop_sell_joker_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_SELL_JOKER_START, ActionRange.SHOP_SELL_JOKER_END),
-        )
-        entropy = entropy + macro_probs[:, _SHOP_SELL_CONSUMABLE] * _masked_entropy(
-            self._t(self.output.shop_sell_consumable_logits),
-            _range_mask(self.action_mask, ActionRange.SHOP_SELL_CONSUMABLE_START, ActionRange.SHOP_SELL_CONSUMABLE_END),
-        )
-        entropy = entropy + macro_probs[:, _PACK_CLAIM] * _masked_entropy(
-            self._t(self.output.pack_claim_logits),
-            _range_mask(self.action_mask, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
-        )
+        for macro_idx, logits, mask, _base in self._indexed_distributions():
+            entropy = entropy + macro_probs[:, macro_idx] * _masked_entropy(logits, mask)
         return entropy
 
     def normalized_action_type_entropy(self) -> torch.Tensor:
@@ -684,14 +600,7 @@ class ActionGrammarDistribution:
             device=self.device,
         )
 
-        for action_type in (
-            ActionType.BLIND_PLAY,
-            ActionType.BLIND_SKIP,
-            ActionType.BLIND_REROLL,
-            ActionType.SHOP_REROLL,
-            ActionType.SHOP_LEAVE,
-            ActionType.PACK_SKIP,
-        ):
+        for action_type in _SINGLETON_ACTIONS:
             macro_idx = ACTION_TYPE_TO_GRAMMAR_INDEX[action_type]
             actions[:, macro_idx] = decode_action_id_for_singleton(action_type)
             conditional_logp[:, macro_idx] = 0.0
@@ -718,28 +627,8 @@ class ActionGrammarDistribution:
         actions[:, _CONSUMABLE_JOKER] = joker_action
         conditional_logp[:, _CONSUMABLE_JOKER] = joker_logp
 
-        indexed_families = (
-            (_SHOP_BUY, self.output.shop_buy_logits, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END),
-            (
-                _SHOP_SELL_JOKER,
-                self.output.shop_sell_joker_logits,
-                ActionRange.SHOP_SELL_JOKER_START,
-                ActionRange.SHOP_SELL_JOKER_END,
-            ),
-            (
-                _SHOP_SELL_CONSUMABLE,
-                self.output.shop_sell_consumable_logits,
-                ActionRange.SHOP_SELL_CONSUMABLE_START,
-                ActionRange.SHOP_SELL_CONSUMABLE_END,
-            ),
-            (_PACK_CLAIM, self.output.pack_claim_logits, ActionRange.PACK_CLAIM_START, ActionRange.PACK_CLAIM_END),
-        )
-        for macro_idx, logits, start, end in indexed_families:
-            action, logp = self._best_indexed_actions(
-                self._t(logits),
-                _range_mask(self.action_mask, start, end),
-                int(start),
-            )
+        for macro_idx, logits, mask, base in self._indexed_distributions():
+            action, logp = self._best_indexed_actions(logits, mask, base)
             actions[:, macro_idx] = action
             conditional_logp[:, macro_idx] = logp
 
@@ -946,18 +835,6 @@ class ActionGrammarDistribution:
         cache[is_play] = torch.where(cand_valid.any(dim=-1, keepdim=True), mixed, ar_probs)
         return cache[is_play]
 
-    def _hand_entropy_autoregressive(self, *, is_play: bool) -> torch.Tensor:
-        family = 0 if is_play else 1
-        valid_subsets = self._hand_valid_subset_mask(is_play)
-        logp = _all_subset_log_probs(
-            self._t(self.output.hand_count_logits[:, family]),
-            self._t(self.output.hand_card_logits[:, family]),
-            valid_subsets,
-            sizes=_hand_subset_sizes(self.device),
-            subset_bits=_hand_subset_bits(self.device),
-        )
-        return _probability_entropy(logp.exp() * valid_subsets)
-
     def _sample_hand_actions(self, *, is_play: bool) -> torch.Tensor:
         if self.output.hand_subset_energies is not None:
             base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
@@ -965,29 +842,18 @@ class ActionGrammarDistribution:
                 self._corrected_hand_log_probs(is_play=is_play), self._hand_valid_subset_mask(is_play),
             )
         eps = self.hand_ar_mixture_eps
-        cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=False)
+        cand_actions = self._sample_candidate_actions(is_play=is_play)
         has_candidates = cand_actions >= 0
         if eps <= 0.0:
             # Backward-compat: candidate when available, AR otherwise.
-            fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=False)
+            fallback = self._sample_hand_actions_autoregressive(is_play=is_play)
             return torch.where(has_candidates, cand_actions, fallback)
         # Mixture sampling: draw Bernoulli(eps) per row to route between the
         # candidate sampler and the AR sampler. Rows without candidates always
         # use AR (the candidate component is empty for them).
         use_ar = (torch.rand(self.batch_size, device=self.device) < eps) | (~has_candidates)
-        ar_actions = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=False)
+        ar_actions = self._sample_hand_actions_autoregressive(is_play=is_play)
         return torch.where(use_ar, ar_actions, cand_actions.clamp_min(0))
-
-    def _greedy_hand_actions(self, *, is_play: bool) -> torch.Tensor:
-        if self.output.hand_subset_energies is not None:
-            base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
-            return base + _masked_argmax(
-                self._corrected_hand_log_probs(is_play=is_play), self._hand_valid_subset_mask(is_play),
-            )
-        cand_actions = self._sample_candidate_actions(is_play=is_play, greedy=True)
-        has_candidates = cand_actions >= 0
-        fallback = self._sample_hand_actions_autoregressive(is_play=is_play, greedy=True)
-        return torch.where(has_candidates, cand_actions, fallback)
 
     def _candidate_distribution(self, *, is_play: bool) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Candidate-head distribution as (logits, valid_mask, mapped_actions).
@@ -1028,25 +894,22 @@ class ActionGrammarDistribution:
         actions = base + subset_idx.clamp_min(0)
         return torch.where(valid, actions, torch.full_like(actions, -1))
 
-    def _sample_candidate_actions(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
+    def _sample_candidate_actions(self, *, is_play: bool) -> torch.Tensor:
         cand_logits, cand_valid, mapped_actions = self._candidate_distribution(is_play=is_play)
         has_candidates = cand_valid.any(dim=-1)
         if not has_candidates.any():
             return torch.full((self.batch_size,), -1, dtype=torch.long, device=self.device)
 
-        cand_idx = _masked_argmax(cand_logits, cand_valid) if greedy else _sample_masked(cand_logits, cand_valid)
+        cand_idx = _sample_masked(cand_logits, cand_valid)
 
         actions = mapped_actions.gather(1, cand_idx.unsqueeze(-1)).squeeze(-1)
         return torch.where(has_candidates, actions, torch.full_like(actions, -1))
 
-    def _sample_hand_actions_autoregressive(self, *, is_play: bool, greedy: bool) -> torch.Tensor:
+    def _sample_hand_actions_autoregressive(self, *, is_play: bool) -> torch.Tensor:
         family = 0 if is_play else 1
         valid_subsets = self._hand_valid_subset_mask(is_play)
         count_mask = _subset_count_mask(valid_subsets, _hand_subset_sizes(self.device), max_count=5)
-        if greedy:
-            count = _masked_argmax(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
-        else:
-            count = _sample_masked(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
+        count = _sample_masked(self._t(self.output.hand_count_logits[:, family]), count_mask) + 1
         bits = _sample_ordered_cards(
             self._t(self.output.hand_card_logits[:, family]),
             valid_subsets,
@@ -1056,7 +919,6 @@ class ActionGrammarDistribution:
             subset_sizes=_hand_subset_sizes(self.device),
             bit_to_subset=_bit_to_hand_subset(self.device),
             slot_bits=_slot_bits(self.device),
-            greedy=greedy,
         )
         subset_idx = _bit_to_hand_subset(self.device)[bits].clamp_min(0)
         base = int(ActionRange.PLAY_SUBSET_START if is_play else ActionRange.DISCARD_SUBSET_START)
@@ -1158,20 +1020,10 @@ class ActionGrammarDistribution:
         slot = _sample_masked(self._t(self.output.consumable_slot_logits[:, 0]), self._consumable_no_target_slot_mask())
         return int(ActionRange.CONSUMABLE_FLAT_START) + slot * CONSUMABLE_ACTIONS_PER_SLOT + CONSUMABLE_NO_TARGET_OFFSET
 
-    def _greedy_consumable_no_target_actions(self) -> torch.Tensor:
-        slot = _masked_argmax(self._t(self.output.consumable_slot_logits[:, 0]), self._consumable_no_target_slot_mask())
-        return int(ActionRange.CONSUMABLE_FLAT_START) + slot * CONSUMABLE_ACTIONS_PER_SLOT + CONSUMABLE_NO_TARGET_OFFSET
-
     def _sample_consumable_hand_actions(self) -> torch.Tensor:
-        return self._build_consumable_hand_actions(greedy=False)
-
-    def _greedy_consumable_hand_actions(self) -> torch.Tensor:
-        return self._build_consumable_hand_actions(greedy=True)
-
-    def _build_consumable_hand_actions(self, *, greedy: bool) -> torch.Tensor:
         slot_mask = self._consumable_hand_slot_mask()
         slot_logits = self._t(self.output.consumable_slot_logits[:, 1])
-        slot = _masked_argmax(slot_logits, slot_mask) if greedy else _sample_masked(slot_logits, slot_mask)
+        slot = _sample_masked(slot_logits, slot_mask)
 
         blocks = self._consumable_blocks()
         hand_start = CONSUMABLE_HAND_SUBSET_OFFSET
@@ -1184,7 +1036,7 @@ class ActionGrammarDistribution:
             max_count=MAX_CONSUMABLE_HAND_TARGETS,
         )
         count_logits = self._t(self.output.consumable_count_logits[rows, slot])
-        count = (_masked_argmax(count_logits, count_mask) if greedy else _sample_masked(count_logits, count_mask)) + 1
+        count = _sample_masked(count_logits, count_mask) + 1
         card_logits = self._t(self.output.consumable_card_logits[rows, slot])
         bits = _sample_ordered_cards(
             card_logits,
@@ -1195,7 +1047,6 @@ class ActionGrammarDistribution:
             subset_sizes=_consumable_subset_sizes(self.device),
             bit_to_subset=_bit_to_consumable_subset(self.device),
             slot_bits=_slot_bits(self.device),
-            greedy=greedy,
         )
         detail = _bit_to_consumable_subset(self.device)[bits].clamp_min(0)
         return (
@@ -1206,22 +1057,16 @@ class ActionGrammarDistribution:
         )
 
     def _sample_consumable_joker_actions(self) -> torch.Tensor:
-        return self._build_consumable_joker_actions(greedy=False)
-
-    def _greedy_consumable_joker_actions(self) -> torch.Tensor:
-        return self._build_consumable_joker_actions(greedy=True)
-
-    def _build_consumable_joker_actions(self, *, greedy: bool) -> torch.Tensor:
         slot_mask = self._consumable_joker_slot_mask()
         slot_logits = self._t(self.output.consumable_slot_logits[:, 2])
-        slot = _masked_argmax(slot_logits, slot_mask) if greedy else _sample_masked(slot_logits, slot_mask)
+        slot = _sample_masked(slot_logits, slot_mask)
         blocks = self._consumable_blocks()
         joker_start = CONSUMABLE_JOKER_OFFSET
         joker_end = joker_start + MAX_JOKER_SLOTS
         rows = torch.arange(self.batch_size, device=self.device)
         joker_mask = blocks[:, :, joker_start:joker_end][rows, slot]
         joker_logits = self._t(self.output.consumable_joker_logits[rows, slot])
-        joker = _masked_argmax(joker_logits, joker_mask) if greedy else _sample_masked(joker_logits, joker_mask)
+        joker = _sample_masked(joker_logits, joker_mask)
         return (
             int(ActionRange.CONSUMABLE_FLAT_START)
             + slot * CONSUMABLE_ACTIONS_PER_SLOT
@@ -1268,11 +1113,9 @@ class ActionGrammarDistribution:
         log_probs = _masked_log_softmax(logits, mask)
         return log_probs.gather(1, target.long().unsqueeze(-1)).squeeze(-1)
 
-    def _sample_indexed_actions(self, logits: torch.Tensor, mask: torch.Tensor, base: int) -> torch.Tensor:
-        return base + _sample_masked(logits, mask)
-
-    def _greedy_indexed_actions(self, logits: torch.Tensor, mask: torch.Tensor, base: int) -> torch.Tensor:
-        return base + _masked_argmax(logits, mask)
+    def _indexed_distributions(self):
+        for macro_idx, name, start, end in _INDEXED_ACTIONS:
+            yield macro_idx, self._t(getattr(self.output, name)), _range_mask(self.action_mask, start, end), int(start)
 
 
 def _range_mask(action_mask: torch.Tensor, start: int | ActionRange, end: int | ActionRange) -> torch.Tensor:
@@ -1286,14 +1129,7 @@ def _macro_valid_mask(action_mask: torch.Tensor) -> torch.Tensor:
         dtype=torch.bool,
         device=action_mask.device,
     )
-    for action_type in (
-        ActionType.BLIND_PLAY,
-        ActionType.BLIND_SKIP,
-        ActionType.BLIND_REROLL,
-        ActionType.SHOP_REROLL,
-        ActionType.SHOP_LEAVE,
-        ActionType.PACK_SKIP,
-    ):
+    for action_type in _SINGLETON_ACTIONS:
         action_id = decode_action_id_for_singleton(action_type)
         mask[:, ACTION_TYPE_TO_GRAMMAR_INDEX[action_type]] = action_mask[:, action_id]
 
@@ -1317,39 +1153,16 @@ def _macro_valid_mask(action_mask: torch.Tensor) -> torch.Tensor:
     mask[:, _CONSUMABLE_HAND] = blocks[:, :, hand_start:hand_end].flatten(1).any(dim=-1)
     mask[:, _CONSUMABLE_JOKER] = blocks[:, :, joker_start:joker_end].flatten(1).any(dim=-1)
 
-    mask[:, _SHOP_BUY] = _range_mask(action_mask, ActionRange.SHOP_BUY_START, ActionRange.SHOP_BUY_END).any(dim=-1)
-    mask[:, _SHOP_SELL_JOKER] = _range_mask(
-        action_mask,
-        ActionRange.SHOP_SELL_JOKER_START,
-        ActionRange.SHOP_SELL_JOKER_END,
-    ).any(dim=-1)
-    mask[:, _SHOP_SELL_CONSUMABLE] = _range_mask(
-        action_mask,
-        ActionRange.SHOP_SELL_CONSUMABLE_START,
-        ActionRange.SHOP_SELL_CONSUMABLE_END,
-    ).any(dim=-1)
-    mask[:, _PACK_CLAIM] = _range_mask(
-        action_mask,
-        ActionRange.PACK_CLAIM_START,
-        ActionRange.PACK_CLAIM_END,
-    ).any(dim=-1)
+    for macro_idx, _name, start, end in _INDEXED_ACTIONS:
+        mask[:, macro_idx] = _range_mask(action_mask, start, end).any(dim=-1)
     return mask
 
 
 def decode_action_id_for_singleton(action_type: ActionType) -> int:
-    if action_type == ActionType.BLIND_PLAY:
-        return int(ActionRange.BLIND_PLAY)
-    if action_type == ActionType.BLIND_SKIP:
-        return int(ActionRange.BLIND_SKIP)
-    if action_type == ActionType.BLIND_REROLL:
-        return int(ActionRange.BLIND_REROLL)
-    if action_type == ActionType.SHOP_REROLL:
-        return int(ActionRange.SHOP_REROLL)
-    if action_type == ActionType.SHOP_LEAVE:
-        return int(ActionRange.SHOP_LEAVE)
-    if action_type == ActionType.PACK_SKIP:
-        return int(ActionRange.PACK_SKIP)
-    raise ValueError(f"{action_type} is not a singleton action")
+    action_id = _SINGLETON_ACTIONS.get(action_type)
+    if action_id is None:
+        raise ValueError(f"{action_type} is not a singleton action")
+    return int(action_id)
 
 
 def _masked_logits(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -1374,10 +1187,6 @@ def _masked_entropy(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 def _sample_masked(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     return torch.distributions.Categorical(logits=_masked_logits(logits, mask)).sample()
-
-
-def _masked_argmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    return _masked_logits(logits, mask).argmax(dim=-1)
 
 
 def _subset_count_mask(
@@ -1422,19 +1231,6 @@ def _next_slot_mask(
     )
     counts_by_slot.scatter_add_(1, next_slots, valid.to(torch.int32))
     return counts_by_slot[:, :MAX_HAND_SIZE] > 0
-
-
-def _subset_card_mask(
-    valid_subset_mask: torch.Tensor,
-    subset_bits: torch.Tensor,
-    slot_bits: torch.Tensor,
-) -> torch.Tensor:
-    bits = subset_bits.view(1, -1)
-    per_slot = [
-        (valid_subset_mask & torch.bitwise_and(bits, slot_bits[slot]).ne(0)).any(dim=-1)
-        for slot in range(MAX_HAND_SIZE)
-    ]
-    return torch.stack(per_slot, dim=-1)
 
 
 def _ordered_card_log_prob(
@@ -1483,7 +1279,6 @@ def _sample_ordered_cards(
     subset_sizes: torch.Tensor,
     bit_to_subset: torch.Tensor,
     slot_bits: torch.Tensor,
-    greedy: bool,
 ) -> torch.Tensor:
     prefix_bits = torch.zeros(card_logits.shape[0], dtype=torch.long, device=card_logits.device)
     last_slots = torch.full_like(prefix_bits, -1)
@@ -1498,7 +1293,7 @@ def _sample_ordered_cards(
             subset_sizes,
             slot_bits,
         )
-        slot = _masked_argmax(card_logits, next_mask) if greedy else _sample_masked(card_logits, next_mask)
+        slot = _sample_masked(card_logits, next_mask)
         step_bits = slot_bits[slot]
         prefix_bits = torch.where(active, torch.bitwise_or(prefix_bits, step_bits), prefix_bits)
         last_slots = torch.where(active, slot, last_slots)

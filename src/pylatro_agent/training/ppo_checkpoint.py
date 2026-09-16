@@ -60,6 +60,10 @@ def _load_checkpoint_strict(
     from ..reward import reward_config_fingerprint
 
     payload = load_checkpoint_payload(checkpoint_path, device)
+    saved_mode = payload.get("agent_config", {}).get("return_value_mode", "terminal_plus_residual")
+    active_mode = getattr(getattr(_unwrap_model(model), "config", None), "return_value_mode", "terminal_plus_residual")
+    if saved_mode != active_mode:
+        raise ValueError("Checkpoint return_value_mode changed; use an explicit checkpoint branch")
     if active_reward_config is not None:
         saved_fingerprint = payload.get("reward_fingerprint")
         active_fingerprint = reward_config_fingerprint(active_reward_config)

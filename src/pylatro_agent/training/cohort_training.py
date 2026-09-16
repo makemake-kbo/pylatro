@@ -84,9 +84,12 @@ def train_complete_cohort(
     update_count, total_steps = 0, 0
     state = initial_cohort_state(config)
     if resume_path:
+        from .outcome_credit import validate_outcome_credit_sources
+
         payload = load_ppo_resume_payload(
             resume_path, "cpu", active_reward_config=config.reward_config, active_win_ante=config.win_ante
         )
+        validate_outcome_credit_sources(payload)
         validate_cohort_resume(config, payload)
         validate_resume_evaluation_seeds(config, payload["ppo_config_fields"])
         _validate_resume_provenance(config, payload)
@@ -100,11 +103,18 @@ def train_complete_cohort(
         agent_config = copy.deepcopy(agent_config or AgentConfig())
         agent_config.hand_ar_mixture_eps = config.hand_ar_mixture_eps
         agent_config.win_only_value = True
+        agent_config.return_value_mode = config.return_value_mode
         agent_config.precision = "fp32"
-    if agent_config.hand_ar_mixture_eps != config.hand_ar_mixture_eps or not agent_config.win_only_value:
+    if (
+        agent_config.hand_ar_mixture_eps != config.hand_ar_mixture_eps
+        or not agent_config.win_only_value
+        or agent_config.return_value_mode != config.return_value_mode
+    ):
         raise ValueError("Cohort policy configuration disagrees with the recipe")
     planned = update_count + additional_updates if additional_updates is not None else config.total_updates
     _validate_state(state, config, update_count, planned)
+    # Persist the effective plan when callers extend via additional_updates.
+    config.total_updates = planned
     model = BalatroAgent(agent_config, vocab).to(device)
     optimizer = _make_policy_optimizer(model.parameters(), config.lr)
     reserved = training_seed_reservations(config)
@@ -144,6 +154,10 @@ def train_complete_cohort(
                 "cohort_state": copy.deepcopy(state),
                 "cohort_ppo_config": asdict(config),
                 **({"cohort_branch": payload["cohort_branch"]} if payload and "cohort_branch" in payload else {}),
+                **(
+                    {"outcome_credit_branch": payload["outcome_credit_branch"]}
+                    if payload and "outcome_credit_branch" in payload else {}
+                ),
             },
         )
         path.replace(committed)
@@ -276,9 +290,14 @@ def train_complete_cohort(
                 }.items():
                     writer.add_scalar("cohort/" + key, value, update_count)
                 for key in ("policy_losses", "outcome_nlls", "return_hubers", "grad_norms", "approx_kls"):
+                    if key == "return_hubers" and not stats.return_loss_enabled:
+                        continue
                     values = getattr(stats, key)
                     if values:
                         writer.add_scalar("cohort/" + key, sum(values) / len(values), update_count)
+                writer.add_scalar("cohort/return_loss_enabled", int(stats.return_loss_enabled), update_count)
+                for key, value in buffer.diagnostics()["credit_targets"].items():
+                    writer.add_scalar("cohort/credit_targets/" + key, value, update_count)
                 checkpoint()
                 if update_count % config.eval_interval == 0:
                     evaluation(writer)

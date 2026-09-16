@@ -1,7 +1,7 @@
 """Frozen-policy complete cohorts and compact, lazy PPO training batches.
 
-The outcome label and GAE boundary are deliberately independent. References
-and the limits of the experiment are in docs/transfer/complete_cohort.md.
+The legacy estimator retains logical GAE boundaries. Complete-episode Monte
+Carlo instead assigns observed reward-to-go with the frozen collection baseline.
 """
 
 from __future__ import annotations
@@ -180,6 +180,29 @@ def fragment_gae(rewards, values, slot_steps, *, gamma, gae_lambda, fragment_len
     return advantages, advantages + values
 
 
+def complete_episode_monte_carlo(rewards, values, *, gamma=1.0):
+    """Observed undiscounted return and its frozen, action-independent baseline.
+
+    Call only for a normally terminated complete episode. Each target uses
+    actual subsequent rewards; neither critic predictions nor artificial
+    collection boundaries enter the target. Values must be the predictions
+    recorded during collection, never predictions recomputed during PPO epochs.
+    Complete-cohort training currently supports only the undiscounted objective.
+    """
+    rewards, values = np.asarray(rewards, np.float32), np.asarray(values, np.float32)
+    if gamma != 1:
+        raise ValueError("Complete-episode Monte Carlo requires gamma=1")
+    if rewards.ndim != 1 or values.ndim != 1 or not len(rewards) or rewards.shape != values.shape:
+        raise ValueError("Monte Carlo requires aligned nonempty complete episode vectors")
+    if not np.isfinite(rewards).all() or not np.isfinite(values).all():
+        raise ValueError("Monte Carlo requires finite rewards and collected values")
+    returns = np.cumsum(rewards[::-1], dtype=np.float64)[::-1].astype(np.float32)
+    advantages = returns - values
+    if not np.isfinite(returns).all() or not np.isfinite(advantages).all():
+        raise ValueError("Non-finite complete-episode returns or advantages")
+    return advantages, returns
+
+
 def collect_complete_cohort(model, envs, config, seeds, slot_counters, *, policy_version, chunk_size=256):
     """Finish a predeclared cohort; no replacement seeds or optimizer calls."""
     seeds = list(seeds)
@@ -307,6 +330,9 @@ class CohortBuffer:
             raise ValueError("Mixed collection policies in cohort")
         if any(e.sampling_configuration != sampling_configuration(config) for e in episodes):
             raise ValueError("Cohort sampling configuration differs from optimization")
+        self.advantage_estimator = config.advantage_estimator
+        if self.advantage_estimator not in ("fragment_gae", "complete_episode_mc"):
+            raise ValueError("Unknown complete-cohort advantage_estimator")
         self.episodes = episodes
         arrays = {
             k: []
@@ -316,6 +342,8 @@ class CohortBuffer:
                 "values",
                 "returns",
                 "advantages",
+                "completed_returns",
+                "raw_advantages",
                 "terminal_outcome_target",
                 "completion_mask",
                 "seed",
@@ -340,20 +368,28 @@ class CohortBuffer:
             outcome = episode.outcome
             if not outcome["terminated"] or outcome.get("truncated") or outcome.get("stalled"):
                 raise ValueError("Censored outcomes cannot train complete-cohort PPO")
-            advantages, returns = fragment_gae(
-                episode.rewards,
-                episode.values,
-                episode.slot_steps,
-                gamma=config.gamma,
-                gae_lambda=config.gae_lambda,
-                fragment_length=config.rollout_length,
+            completed_advantages, completed_returns = complete_episode_monte_carlo(
+                episode.rewards, episode.values, gamma=config.gamma
             )
+            if self.advantage_estimator == "complete_episode_mc":
+                advantages, returns = completed_advantages, completed_returns
+            else:
+                advantages, returns = fragment_gae(
+                    episode.rewards,
+                    episode.values,
+                    episode.slot_steps,
+                    gamma=config.gamma,
+                    gae_lambda=config.gae_lambda,
+                    fragment_length=config.rollout_length,
+                )
             values = {
                 "actions": np.asarray(episode.actions, np.int64),
                 "old_log_probs": np.asarray(episode.log_probs, np.float32),
                 "values": np.asarray(episode.values, np.float32),
                 "returns": returns,
                 "advantages": advantages,
+                "completed_returns": completed_returns,
+                "raw_advantages": advantages,
                 "terminal_outcome_target": np.full(
                     length, terminal_outcome_class(won=outcome["won"], final_ante=outcome["final_ante"]), np.int64
                 ),
@@ -458,7 +494,21 @@ class CohortBuffer:
         )
         for key, group in groups.items():
             coverage[key] = {"rows": int(group.sum()), "labels": int(mask[group].sum())}
+        completed_returns = self.arrays["completed_returns"].astype(np.float64)
+        critic_error = self.arrays["values"] - completed_returns
+        target_error = self.arrays["returns"] - completed_returns
+        raw_advantages = self.arrays["raw_advantages"].astype(np.float64)
         return {
+            "advantage_estimator": self.advantage_estimator,
+            "credit_targets": {
+                "completed_return_mean": float(completed_returns.mean()),
+                "critic_bias_to_completed_return": float(critic_error.mean()),
+                "critic_mse_to_completed_return": float(np.square(critic_error).mean()),
+                "return_target_bias_to_completed_return": float(target_error.mean()),
+                "return_target_mse_to_completed_return": float(np.square(target_error).mean()),
+                "raw_advantage_mean": float(raw_advantages.mean()),
+                "raw_advantage_std": float(raw_advantages.std()),
+            },
             "collected_transitions": self.size,
             "games": len(self.episodes),
             "label_coverage": coverage,

@@ -20,7 +20,7 @@ from .constants import (
 from .embeddings import ContentEmbeddingLayer
 from .entity_heads import ACTION_HEAD_VARIANTS
 from .precision import backbone_autocast
-from .value_head import ValueHead
+from .value_head import ValueHead, validate_return_value_mode
 
 if TYPE_CHECKING:
     from .vocab import Vocab
@@ -45,12 +45,16 @@ class AgentConfig:
     # retaining the learned direct danger-conditioning path.
     danger_shop_leave_logit_penalty: float = 0.0
     win_only_value: bool = False
+    # Persist the value used for PPO credit. Legacy checkpoints retain the
+    # residual; terminal_only is the directly supervised 10 * P(win) baseline.
+    return_value_mode: str = "terminal_plus_residual"
     # CUDA transformer autocast only. Weights, embeddings, grammar/value heads,
     # probability arithmetic, and optimizer state remain FP32. CPU/MPS use FP32.
     precision: str = "fp32"
     action_head_variant: str = "legacy_v1"
 
     def __post_init__(self) -> None:
+        validate_return_value_mode(self.return_value_mode, win_only=self.win_only_value)
         if self.precision not in ("fp32", "bf16"):
             raise ValueError("precision must be 'fp32' or 'bf16'")
         if self.action_head_variant not in ACTION_HEAD_VARIANTS:
@@ -84,7 +88,11 @@ class BalatroAgent(nn.Module):
         )
 
         # Value head
-        self.value_head = ValueHead(d, win_only=config.win_only_value)
+        self.value_head = ValueHead(
+            d,
+            win_only=config.win_only_value,
+            return_value_mode=config.return_value_mode,
+        )
 
     def forward(
         self,

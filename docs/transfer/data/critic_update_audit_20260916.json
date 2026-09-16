@@ -1,0 +1,293 @@
+{
+  "date": "2026-09-16",
+  "scope": "CPU only; read-only checkpoints and stored cohorts; no model training or new games",
+  "reproduction": ".venv/bin/python -m eval.complete_cohort_long_20260915.research_20260916.critic_audit.audit --output /tmp/critic_update_audit.json",
+  "artifacts": {
+    "eval/complete_cohort_long_20260915/research_20260916/critic_audit/audit_repro.json": "03a4804127c5fdc3df86d79dec0b395eab41bf4f6bfe22adcdd77ed9192ff5d0",
+    "eval/complete_cohort_long_20260915/research_20260916/critic_audit/audit.py": "0d1178b903bd5a9d352ae15cbc717ef37980bd0fa09ea67676698e09f426a673",
+    "eval/complete_cohort_long_20260915/research_20260916/critic_audit/README.md": "73a2f0c4d476797bc155c12f3d9e16383f8740bbd5ee3a55230d9a3f3169752c",
+    "eval/complete_cohort_long_20260915/research_20260916/critic_audit/audit.json": "3cbaba70e975a20737eb81c7edcb54659ff5cd8909f7b7356a0968b2b2ae608f",
+    "eval/complete_cohort_long_20260915/research_20260916/critic_audit/audit_before_output_option.py": "ed955c6e2dfe718fef6f3a12d8557bc58e41a958bfb7bf0f6b98baf596518a33"
+  },
+  "checkpoint_comparisons": {
+    "0": {
+      "before_update": 62,
+      "after_update": 122,
+      "groups": {
+        "shared_encoder": {
+          "elements": 22771584,
+          "changed_fraction": 0.9954100689701691,
+          "rms_parameter_delta": 0.000581733991184428,
+          "relative_l2_delta": 0.004359424094919052,
+          "max_abs_delta": 0.004845447838306427,
+          "adam_step_increments": [
+            1560.0
+          ]
+        },
+        "actor_head": {
+          "elements": 371221,
+          "changed_fraction": 0.9969048087257995,
+          "rms_parameter_delta": 0.0005074750259055462,
+          "relative_l2_delta": 0.008862762880938192,
+          "max_abs_delta": 0.0028926320374011993,
+          "adam_step_increments": [
+            1560.0
+          ]
+        },
+        "residual_tower": {
+          "elements": 148225,
+          "changed_fraction": 1.0,
+          "rms_parameter_delta": 0.0026969147034332647,
+          "relative_l2_delta": 0.05933711925321438,
+          "max_abs_delta": 0.017594777047634125,
+          "adam_step_increments": [
+            1560.0
+          ]
+        },
+        "outcome_tower": {
+          "elements": 150920,
+          "changed_fraction": 1.0,
+          "rms_parameter_delta": 0.0013318398214987308,
+          "relative_l2_delta": 0.031242551414342748,
+          "max_abs_delta": 0.007501121610403061,
+          "adam_step_increments": [
+            1560.0
+          ]
+        }
+      }
+    },
+    "1": {
+      "before_update": 62,
+      "after_update": 122,
+      "groups": {
+        "shared_encoder": {
+          "elements": 22771584,
+          "changed_fraction": 0.9953088463235583,
+          "rms_parameter_delta": 0.0006012609775504255,
+          "relative_l2_delta": 0.004505772058131119,
+          "max_abs_delta": 0.005641661584377289,
+          "adam_step_increments": [
+            1560.0
+          ]
+        },
+        "actor_head": {
+          "elements": 371221,
+          "changed_fraction": 0.997066437512964,
+          "rms_parameter_delta": 0.0005368578226318837,
+          "relative_l2_delta": 0.00937724534427159,
+          "max_abs_delta": 0.002568453550338745,
+          "adam_step_increments": [
+            1560.0
+          ]
+        },
+        "residual_tower": {
+          "elements": 148225,
+          "changed_fraction": 1.0,
+          "rms_parameter_delta": 0.00265100288672529,
+          "relative_l2_delta": 0.0582870365713739,
+          "max_abs_delta": 0.014996823272667825,
+          "adam_step_increments": [
+            1560.0
+          ]
+        },
+        "outcome_tower": {
+          "elements": 150920,
+          "changed_fraction": 1.0,
+          "rms_parameter_delta": 0.0012825704893865135,
+          "relative_l2_delta": 0.030150271403313136,
+          "max_abs_delta": 0.007794678211212158,
+          "adam_step_increments": [
+            1560.0
+          ]
+        }
+      }
+    }
+  },
+  "checkpoint_sha256": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/complete_cohort_long_20260915/seed0/initial.pt": "62305ad5d36fe9591e72937242acb76417420c85afd301c65fee4f2014b9ef2b",
+    "/Users/makemake/Documents/code/python/pylatro/eval/complete_cohort_long_20260915/seed0/checkpoints/ppo_update122.pt": "18f993edad20700de2049bfa2636dbd62dd02b28ea603f4e9ba9fd9849a6429a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/complete_cohort_long_20260915/seed1/initial.pt": "5f940b041fbe393ad68cab87e1f90c02ed4d732c3c59f893828eae82b0931d10",
+    "/Users/makemake/Documents/code/python/pylatro/eval/complete_cohort_long_20260915/seed1/checkpoints/ppo_update122.pt": "a6b73882f0654e81fd817c5ebd9f69c4af8b7bdb8e2334b1bae15c73efa03b07"
+  },
+  "optimizer_exposure": {
+    "0": {
+      "updates": 78,
+      "totals": {
+        "games": 4992,
+        "winning_games": 1821,
+        "transitions": 820889,
+        "winning_transitions": 396680,
+        "unique_drawn_transitions": 443613,
+        "draws": 638976,
+        "unique_openings_drawn": 2694,
+        "opening_draws": 3887,
+        "winning_draws": 308713,
+        "grad_groups": 2028,
+        "clipped_grad_groups": 1861,
+        "unique_transition_coverage": 0.5404055846771001,
+        "unique_opening_coverage": 0.5396634615384616,
+        "game_win_fraction": 0.36478365384615385,
+        "row_win_fraction": 0.48323220313586857,
+        "draw_win_fraction": 0.48313708183092946,
+        "gradient_clip_fraction": 0.9176528599605522,
+        "mean_clip_multiplier": 0.7062537990635421
+      }
+    },
+    "1": {
+      "updates": 60,
+      "totals": {
+        "games": 3840,
+        "winning_games": 1397,
+        "transitions": 617530,
+        "winning_transitions": 303937,
+        "unique_drawn_transitions": 338966,
+        "draws": 491520,
+        "unique_openings_drawn": 2079,
+        "opening_draws": 3061,
+        "winning_draws": 241414,
+        "grad_groups": 1560,
+        "clipped_grad_groups": 1367,
+        "unique_transition_coverage": 0.5489061260181691,
+        "unique_opening_coverage": 0.54140625,
+        "game_win_fraction": 0.36380208333333336,
+        "row_win_fraction": 0.49218175635191813,
+        "draw_win_fraction": 0.4911580403645833,
+        "gradient_clip_fraction": 0.8762820512820513,
+        "mean_clip_multiplier": 0.7362748933557823
+      }
+    }
+  },
+  "synthetic_gradient_routes": {
+    "return_huber": {
+      "encoder_input_gradient_norm": 0.02922843210399151,
+      "heads": {
+        "pool_proj.0.weight": {
+          "has_gradient": true,
+          "gradient_norm": 0.1795508712530136
+        },
+        "pool_proj.0.bias": {
+          "has_gradient": true,
+          "gradient_norm": 0.13708925247192383
+        },
+        "outcome_proj.0.weight": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "outcome_proj.0.bias": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "ante_survival.weight": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "ante_survival.bias": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "return_residual.weight": {
+          "has_gradient": true,
+          "gradient_norm": 0.2982877194881439
+        },
+        "return_residual.bias": {
+          "has_gradient": true,
+          "gradient_norm": 0.5600695013999939
+        }
+      }
+    },
+    "outcome_nll": {
+      "encoder_input_gradient_norm": 0.03790374845266342,
+      "heads": {
+        "pool_proj.0.weight": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "pool_proj.0.bias": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "outcome_proj.0.weight": {
+          "has_gradient": true,
+          "gradient_norm": 0.4158879220485687
+        },
+        "outcome_proj.0.bias": {
+          "has_gradient": true,
+          "gradient_norm": 0.26491686701774597
+        },
+        "ante_survival.weight": {
+          "has_gradient": true,
+          "gradient_norm": 0.32237565517425537
+        },
+        "ante_survival.bias": {
+          "has_gradient": true,
+          "gradient_norm": 0.7363414168357849
+        },
+        "return_residual.weight": {
+          "has_gradient": false,
+          "gradient_norm": null
+        },
+        "return_residual.bias": {
+          "has_gradient": false,
+          "gradient_norm": null
+        }
+      }
+    }
+  },
+  "probability_floor_audit": {
+    "endpoint0_replica0": {
+      "decisions": 7826,
+      "outcome_nll_floor_hits": 0,
+      "minimum_realized_outcome_probability": 0.010544002056121826,
+      "opening_pwin_std": 0.019720932279591107,
+      "opening_pwin_min": 0.2943274676799774,
+      "opening_pwin_max": 0.3861369490623474
+    },
+    "endpoint0_replica1": {
+      "decisions": 8616,
+      "outcome_nll_floor_hits": 0,
+      "minimum_realized_outcome_probability": 0.008784065954387188,
+      "opening_pwin_std": 0.03473667518763393,
+      "opening_pwin_min": 0.23149001598358154,
+      "opening_pwin_max": 0.3669039011001587
+    },
+    "endpoint60_replica0": {
+      "decisions": 8448,
+      "outcome_nll_floor_hits": 0,
+      "minimum_realized_outcome_probability": 0.00913542415946722,
+      "opening_pwin_std": 0.02395058207852024,
+      "opening_pwin_min": 0.28432953357696533,
+      "opening_pwin_max": 0.37610694766044617
+    },
+    "endpoint60_replica1": {
+      "decisions": 8246,
+      "outcome_nll_floor_hits": 0,
+      "minimum_realized_outcome_probability": 0.009089529514312744,
+      "opening_pwin_std": 0.022215228597235855,
+      "opening_pwin_min": 0.3222655653953552,
+      "opening_pwin_max": 0.4122169315814972
+    }
+  },
+  "interpretation": [
+    "Every outcome/residual scalar parameter changed and every private critic parameter advanced 1,560 Adam steps across 60 updates. Updating does not imply better calibrated predictions.",
+    "Complete labels exist for all transitions, but 8,192 draws with replacement are reused across two epochs. Unique transition and opening coverage are about 54 percent; omission is uniform sampling, not the old future-dependent label-selection bias.",
+    "Transition weighting gives longer games more representation. This is not automatically bias in an on-policy conditional-value estimator; game-weighted evaluation and state-occupancy training use different measures.",
+    "The residual target detaches terminal_value, blocking direct outcome-tower gradients, but both critic losses still reach the shared encoder. Synthetic gradients prove routing, not harmful interference in the trained model.",
+    "Most steps undergo global gradient clipping. This does not establish insufficient learning: direction, shared losses and Adam scaling matter.",
+    "Zero probability-floor hits in these evaluation forecasts do not exclude rare floor hits in training."
+  ],
+  "production_source_sha256": {
+    "src/pylatro_agent/value_head.py": "5179cd5f2d71eeb4d5c0c408d1f449f479789b91530a1dc90d700d94bea0910a",
+    "src/pylatro_agent/training/cohort.py": "44acbf18e144040bb8b634f2a9fdf4160f9289186ba481a6d2a52d21c026548b",
+    "src/pylatro_agent/training/ppo_optimization.py": "32996e4b88663b60e5cb4dba901cc3e2afd152f884b0ee6cbeae4ae5d39bccb4",
+    "src/pylatro_agent/training/cohort_training.py": "d33e4ad31c7c7a8def6706a3fe612484ad652005b403c08d0922330ac4f23ec8",
+    "src/pylatro_agent/agent.py": "5c966e4ad2d80752f4d51fa571e12b282c0a97ec8d7b8a92fcb553939997cee3"
+  },
+  "reproduction_note": "Use an unused output path. The required --output argument refuses to replace existing files; all original audit results remain preserved.",
+  "reproduction_verification": {
+    "original_result_unchanged": true,
+    "all_numeric_audit_results_identical": true,
+    "refuses_existing_output": true,
+    "requires_explicit_output": true,
+    "torch_manual_seed": 1729
+  }
+}

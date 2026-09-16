@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict
 
 COHORT_VERSION = 1
+# The only recipe fields absent from the archived complete-cohort schema.
+# Restoring them preserves historical behavior; changing them requires a branch.
+LEGACY_CREDIT_DEFAULTS = {
+    "return_value_mode": "terminal_plus_residual",
+    "advantage_estimator": "fragment_gae",
+}
 COHORT_FIELDS = (
     "collection_mode",
     "cohort_games",
@@ -13,6 +20,8 @@ COHORT_FIELDS = (
     "cohort_workers",
     "cohort_seeds",
     "outcome_label_mode",
+    "return_value_mode",
+    "advantage_estimator",
 )
 # These controls affect execution/reporting, not the next policy update.
 RESUME_OVERRIDES = {
@@ -33,10 +42,27 @@ def validate_cohort_config(config):
         raise ValueError("Unknown collection_mode")
     if config.outcome_label_mode not in ("completion_window", "complete_episode"):
         raise ValueError("Unknown outcome_label_mode")
+    if config.return_value_mode not in ("terminal_plus_residual", "terminal_only"):
+        raise ValueError("Unknown return_value_mode")
+    if config.advantage_estimator not in ("fragment_gae", "complete_episode_mc"):
+        raise ValueError("Unknown advantage_estimator")
     if config.collection_mode == "fixed_steps":
         if config.outcome_label_mode != "completion_window":
             raise ValueError("complete_episode labels require complete_cohort collection")
+        if any(getattr(config, key) != default for key, default in LEGACY_CREDIT_DEFAULTS.items()):
+            raise ValueError("Outcome-only value and complete_episode_mc require complete_cohort collection")
         return
+    if config.return_value_mode == "terminal_only":
+        if config.outcome_label_mode != "complete_episode":
+            raise ValueError("terminal_only value requires complete_episode outcome labels")
+        if (
+            config.value_loss_coeff != 0
+            or not math.isfinite(config.outcome_loss_coeff)
+            or config.outcome_loss_coeff <= 0
+        ):
+            raise ValueError("terminal_only value requires zero residual loss and positive outcome loss")
+    if config.advantage_estimator == "complete_episode_mc" and config.return_value_mode != "terminal_only":
+        raise ValueError("complete_episode_mc requires terminal_only value semantics")
     for key in ("num_envs", "cohort_games", "cohort_training_rows", "cohort_max_episode_steps", "total_updates"):
         value = getattr(config, key)
         if type(value) is not int or value <= 0:
@@ -78,6 +104,10 @@ def validate_cohort_resume(config, payload):
     if not isinstance(saved, dict) or not isinstance(state, dict) or state.get("version") != COHORT_VERSION:
         raise ValueError("Missing or incompatible complete-cohort resume metadata")
     active = asdict(config)
+    saved = dict(saved)
+    missing = set(active) - set(saved)
+    if missing <= LEGACY_CREDIT_DEFAULTS.keys():
+        saved.update({key: LEGACY_CREDIT_DEFAULTS[key] for key in missing})
     if set(saved) != set(active):
         raise ValueError("Incompatible complete-cohort configuration schema")
     changed = [key for key in active if key not in RESUME_OVERRIDES and active[key] != saved[key]]

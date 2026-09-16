@@ -69,27 +69,45 @@ def check_seed_separation(seeds, manifests):
     return evidence
 
 
-def restore_configuration(payload, *, mixture=None):
+def restore_agent_configuration(saved):
+    """Restore architecture semantics, with only named historical defaults."""
     from .agent import AgentConfig
+
+    expected = {field.name for field in fields(AgentConfig)}
+    legacy_defaults = {"action_head_variant": "legacy_v1", "return_value_mode": "terminal_plus_residual"}
+    if not isinstance(saved, dict) or set(saved) - expected or expected - set(saved) - legacy_defaults.keys():
+        raise ValueError("Checkpoint agent_config must contain exactly the current configuration fields")
+    missing = expected - set(saved)
+    migrations = [
+        {"field": f"agent_config.{key}", "value": legacy_defaults[key], "source": "exact archived config schema"}
+        for key in sorted(missing)
+    ]
+    return AgentConfig(**{**saved, **{key: legacy_defaults[key] for key in missing}}), migrations
+
+
+def restore_configuration(payload, *, mixture=None):
     from .reward import REWARD_MODEL_VERSION, RewardConfig, reward_config_fingerprint
 
-    configs = []
-    for key, cls in (("agent_config", AgentConfig), ("reward_config", RewardConfig)):
-        saved = payload.get(key)
-        expected = {field.name for field in fields(cls)}
-        # The archived, exact pre-variant config identifies the original head
-        # unambiguously. This is the only supported missing-field migration;
-        # all other omissions and unknown fields still fail closed.
-        if key == "agent_config" and isinstance(saved, dict) and set(saved) == expected - {"action_head_variant"}:
-            saved = dict(saved, action_head_variant="legacy_v1")
-        if not isinstance(saved, dict) or set(saved) != expected:
-            raise ValueError(f"Checkpoint {key} must contain exactly the current configuration fields")
-        configs.append(cls(**saved))
-    agent, reward = configs
+    agent, _migrations = restore_agent_configuration(payload.get("agent_config"))
+    for key in ("ppo_config_fields", "cohort_ppo_config"):
+        saved_recipe = payload.get(key)
+        if saved_recipe is not None:
+            if not isinstance(saved_recipe, dict):
+                raise ValueError(f"Checkpoint {key} must be a configuration dictionary")
+            if "return_value_mode" in saved_recipe and saved_recipe["return_value_mode"] != agent.return_value_mode:
+                raise ValueError(f"Checkpoint {key}.return_value_mode disagrees with agent_config")
+    saved_reward = payload.get("reward_config")
+    if not isinstance(saved_reward, dict) or set(saved_reward) != {field.name for field in fields(RewardConfig)}:
+        raise ValueError("Checkpoint reward_config must contain exactly the current configuration fields")
+    reward = RewardConfig(**saved_reward)
     if payload.get("reward_model_version") != REWARD_MODEL_VERSION or payload.get(
         "reward_fingerprint"
     ) != reward_config_fingerprint(reward):
         raise ValueError("Checkpoint reward schema/fingerprint mismatch")
+    if agent.return_value_mode == "terminal_only" and (
+        reward.objective != "milestone" or reward.milestone_reward_budget != 0 or reward.gamma != 1
+    ):
+        raise ValueError("terminal_only value requires undiscounted terminal-only checkpoint rewards")
     if mixture is not None:
         if not 0 <= mixture <= 1:
             raise ValueError("Mixture must lie in [0, 1]")
@@ -110,10 +128,7 @@ def load_policy(checkpoint, vocab, device, *, mixture=None):
     model.load_state_dict(state, strict=True)
     model.eval()
     payload = dict(payload)
-    payload["configuration_migrations"] = (
-        [{"field": "agent_config.action_head_variant", "value": "legacy_v1", "source": "exact archived config schema"}]
-        if "action_head_variant" not in payload["agent_config"] else []
-    )
+    _config, payload["configuration_migrations"] = restore_agent_configuration(payload["agent_config"])
     return model, reward, payload
 
 

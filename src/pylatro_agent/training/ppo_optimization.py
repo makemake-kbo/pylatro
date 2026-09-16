@@ -98,6 +98,8 @@ class _UpdateStats:
     valid_action_counts: list[float]
     valid_action_type_counts: list[float]
     sample_counts: list[int] = field(default_factory=list)
+    # A disabled objective must not be mistaken for a perfectly fitted loss.
+    return_loss_enabled: bool = True
     grad_norms: list[float] = field(default_factory=list)
     on_policy_fractions: list[float] = field(default_factory=list)
     on_policy_advantage_means: list[float] = field(default_factory=list)
@@ -357,8 +359,17 @@ def _run_ppo_update(
     abandoned halfway through.
     """
     model.eval()
+    model_value_mode = getattr(
+        getattr(_unwrap_model(model), "config", None), "return_value_mode", "terminal_plus_residual"
+    )
+    if model_value_mode != config.return_value_mode:
+        raise ValueError("PPO model and recipe return_value_mode differ")
+    use_return_loss = model_value_mode != "terminal_only"
+    if not use_return_loss and config.value_loss_coeff != 0:
+        raise ValueError("terminal_only critic cannot optimize a residual return loss")
     effective_clip_epsilon = float(config.clip_epsilon)
     stats = _UpdateStats(
+        return_loss_enabled=use_return_loss,
         policy_losses=[],
         return_hubers=[],
         outcome_nlls=[],
@@ -542,12 +553,17 @@ def _run_ppo_update(
             )
             policy_loss = -torch.min(surr1, surr2).mean()
 
-            # The composed return is terminal utility plus a learned return
-            # correction. Regress only the correction: the detached terminal
-            # value prevents stochastic return targets from distorting outcome
-            # calibration.
+            # Legacy composed values fit a bootstrapped residual. The explicit
+            # terminal-only mode has a single proper outcome objective: do not
+            # fit Huber to an already calibrated binary-return expectation.
+            # Detachment in the legacy loss isolates the output tower only;
+            # shared encoder gradients can still change terminal predictions.
             returns_target = batch["returns"]
-            return_loss = return_huber_loss(value_dict, returns_target)
+            return_loss = (
+                return_huber_loss(value_dict, returns_target)
+                if use_return_loss
+                else value_dict["terminal_value"].new_zeros(())
+            )
 
             terminal_nll = outcome_nll(
                 value_dict["outcome_probabilities"],

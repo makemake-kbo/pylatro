@@ -1,0 +1,325 @@
+{
+  "accelerator_seconds": 0,
+  "model_updates": 0,
+  "new_game_rollouts": 0,
+  "numerical_checks": {
+    "gae_algebra_checks": 9180,
+    "maximum_absolute_float32_error": 1.3947486877441406e-05,
+    "constant_offset_examples": [
+      {
+        "lambda": 0.97,
+        "fragment_length": 256,
+        "opening_advantage": 0.0,
+        "opening_return_target": 4.0,
+        "opening_advantage_change_for_plus_one_value_offset": 0.0,
+        "opening_target_change_for_plus_one_value_offset": 1.0
+      },
+      {
+        "lambda": 1.0,
+        "fragment_length": 256,
+        "opening_advantage": 0.0,
+        "opening_return_target": 4.0,
+        "opening_advantage_change_for_plus_one_value_offset": 0.0,
+        "opening_target_change_for_plus_one_value_offset": 1.0
+      },
+      {
+        "lambda": 0.97,
+        "fragment_length": 10000,
+        "opening_advantage": 3.067961733904667e-05,
+        "opening_return_target": 4.000030517578125,
+        "opening_advantage_change_for_plus_one_value_offset": -5.113257429911755e-06,
+        "opening_target_change_for_plus_one_value_offset": 0.999995231628418
+      },
+      {
+        "lambda": 1.0,
+        "fragment_length": 10000,
+        "opening_advantage": 6.0,
+        "opening_return_target": 10.0,
+        "opening_advantage_change_for_plus_one_value_offset": -1.0,
+        "opening_target_change_for_plus_one_value_offset": 0.0
+      }
+    ],
+    "exact_mc_baseline_invariance": [
+      {
+        "baseline": -5.0,
+        "expected_logit_gradient": 1.0500000000000003
+      },
+      {
+        "baseline": 0.0,
+        "expected_logit_gradient": 1.05
+      },
+      {
+        "baseline": 3.5,
+        "expected_logit_gradient": 1.0499999999999998
+      },
+      {
+        "baseline": 10.0,
+        "expected_logit_gradient": 1.0499999999999998
+      },
+      {
+        "baseline": 20.0,
+        "expected_logit_gradient": 1.0499999999999996
+      }
+    ],
+    "perfect_bernoulli_critic_p04_irreducible_mse": 24.0,
+    "scope": "Synthetic mathematical identities, not evidence of a Balatro gameplay cause or PPO improvement."
+  },
+  "saved_forecasts": {
+    "0": {
+      "games": 100,
+      "independent_game_seed_clusters": 50,
+      "forecast_decisions": 16442,
+      "sampled_win_rate": 0.43,
+      "fitted_panel_constant_brier": 0.24509999999999998,
+      "fitted_panel_constant_return_mse": 24.509999999999998,
+      "outcome_head_game_weighted_brier": 0.17619340515639717,
+      "outcome_head_opening_brier": 0.25541677939567664,
+      "outcome_head_brier_reduction_vs_fitted_constant": 0.2811366578686365,
+      "composed_value_game_weighted_mse": 18.992253969713914,
+      "realized_outcome_probability_at_nll_floor": 0,
+      "coarse_game_weighted_reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.2,
+          "decision_count": 1731,
+          "fraction_of_equal_game_weight": 0.14478860842680155,
+          "mean_prediction": 0.1274857906922634,
+          "observed_win_fraction": 0.10532449920131641
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.4,
+          "decision_count": 5520,
+          "fraction_of_equal_game_weight": 0.39163719731211283,
+          "mean_prediction": 0.3002658289587511,
+          "observed_win_fraction": 0.260485039569663
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.6000000000000001,
+          "decision_count": 3454,
+          "fraction_of_equal_game_weight": 0.18521833314832065,
+          "mean_prediction": 0.49135569192699735,
+          "observed_win_fraction": 0.4941213019725472
+        },
+        {
+          "lower": 0.6000000000000001,
+          "upper": 0.8,
+          "decision_count": 3460,
+          "fraction_of_equal_game_weight": 0.1706852304986327,
+          "mean_prediction": 0.702434396646909,
+          "observed_win_fraction": 0.7146337970840966
+        },
+        {
+          "lower": 0.8,
+          "upper": 1.0,
+          "decision_count": 2277,
+          "fraction_of_equal_game_weight": 0.10767063061413229,
+          "mean_prediction": 0.8618723950942455,
+          "observed_win_fraction": 0.9216703071275903
+        }
+      ],
+      "caveats": [
+        "Fitted constant uses this evaluation panel's outcomes; descriptive reference, not held-out baseline.",
+        "Later states contain more outcome information. Improvement over constant is not action credit.",
+        "Repeated states/outcomes are correlated; decision counts are not independent sample sizes.",
+        "Reliability bins have no inferential intervals and do not identify approximation error versus noise."
+      ]
+    },
+    "20": {
+      "games": 100,
+      "independent_game_seed_clusters": 50,
+      "forecast_decisions": 16675,
+      "sampled_win_rate": 0.45,
+      "fitted_panel_constant_brier": 0.24750000000000008,
+      "fitted_panel_constant_return_mse": 24.750000000000007,
+      "outcome_head_game_weighted_brier": 0.1701322210632295,
+      "outcome_head_opening_brier": 0.25097078847578125,
+      "outcome_head_brier_reduction_vs_fitted_constant": 0.3125970866132144,
+      "composed_value_game_weighted_mse": 18.249836981474836,
+      "realized_outcome_probability_at_nll_floor": 0,
+      "coarse_game_weighted_reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.2,
+          "decision_count": 1416,
+          "fraction_of_equal_game_weight": 0.1126877624599888,
+          "mean_prediction": 0.11479716880477098,
+          "observed_win_fraction": 0.10719618794141117
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.4,
+          "decision_count": 4889,
+          "fraction_of_equal_game_weight": 0.3585287444522303,
+          "mean_prediction": 0.31548713775323967,
+          "observed_win_fraction": 0.22524127693946183
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.6000000000000001,
+          "decision_count": 4097,
+          "fraction_of_equal_game_weight": 0.22671893042573518,
+          "mean_prediction": 0.4851397594660891,
+          "observed_win_fraction": 0.45852742619910447
+        },
+        {
+          "lower": 0.6000000000000001,
+          "upper": 0.8,
+          "decision_count": 3976,
+          "fraction_of_equal_game_weight": 0.1935900391588428,
+          "mean_prediction": 0.7011041596302032,
+          "observed_win_fraction": 0.7753337069592183
+        },
+        {
+          "lower": 0.8,
+          "upper": 1.0,
+          "decision_count": 2297,
+          "fraction_of_equal_game_weight": 0.10847452350320293,
+          "mean_prediction": 0.8626297882612562,
+          "observed_win_fraction": 0.9505559052632575
+        }
+      ],
+      "caveats": [
+        "Fitted constant uses this evaluation panel's outcomes; descriptive reference, not held-out baseline.",
+        "Later states contain more outcome information. Improvement over constant is not action credit.",
+        "Repeated states/outcomes are correlated; decision counts are not independent sample sizes.",
+        "Reliability bins have no inferential intervals and do not identify approximation error versus noise."
+      ]
+    },
+    "40": {
+      "games": 100,
+      "independent_game_seed_clusters": 50,
+      "forecast_decisions": 16141,
+      "sampled_win_rate": 0.43,
+      "fitted_panel_constant_brier": 0.24509999999999998,
+      "fitted_panel_constant_return_mse": 24.509999999999998,
+      "outcome_head_game_weighted_brier": 0.17499815080123673,
+      "outcome_head_opening_brier": 0.2479095725652256,
+      "outcome_head_brier_reduction_vs_fitted_constant": 0.28601325662490107,
+      "composed_value_game_weighted_mse": 18.6673660837638,
+      "realized_outcome_probability_at_nll_floor": 0,
+      "coarse_game_weighted_reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.2,
+          "decision_count": 1390,
+          "fraction_of_equal_game_weight": 0.11475118475130622,
+          "mean_prediction": 0.11608124594853264,
+          "observed_win_fraction": 0.11142318193537352
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.4,
+          "decision_count": 5121,
+          "fraction_of_equal_game_weight": 0.4032602914930941,
+          "mean_prediction": 0.31258472671400955,
+          "observed_win_fraction": 0.23700019735946073
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.6000000000000001,
+          "decision_count": 4201,
+          "fraction_of_equal_game_weight": 0.2267231975196261,
+          "mean_prediction": 0.4850493532485607,
+          "observed_win_fraction": 0.4915910797207757
+        },
+        {
+          "lower": 0.6000000000000001,
+          "upper": 0.8,
+          "decision_count": 3205,
+          "fraction_of_equal_game_weight": 0.1519545103359318,
+          "mean_prediction": 0.6986873438163592,
+          "observed_win_fraction": 0.7355921675544782
+        },
+        {
+          "lower": 0.8,
+          "upper": 1.0,
+          "decision_count": 2224,
+          "fraction_of_equal_game_weight": 0.10331081590004168,
+          "mean_prediction": 0.8649891149249741,
+          "observed_win_fraction": 0.9525589285265893
+        }
+      ],
+      "caveats": [
+        "Fitted constant uses this evaluation panel's outcomes; descriptive reference, not held-out baseline.",
+        "Later states contain more outcome information. Improvement over constant is not action credit.",
+        "Repeated states/outcomes are correlated; decision counts are not independent sample sizes.",
+        "Reliability bins have no inferential intervals and do not identify approximation error versus noise."
+      ]
+    },
+    "60": {
+      "games": 100,
+      "independent_game_seed_clusters": 50,
+      "forecast_decisions": 16694,
+      "sampled_win_rate": 0.41,
+      "fitted_panel_constant_brier": 0.24189999999999998,
+      "fitted_panel_constant_return_mse": 24.189999999999998,
+      "outcome_head_game_weighted_brier": 0.1845604883897629,
+      "outcome_head_opening_brier": 0.24716992179357247,
+      "outcome_head_brier_reduction_vs_fitted_constant": 0.23703808024074857,
+      "composed_value_game_weighted_mse": 19.915232833342007,
+      "realized_outcome_probability_at_nll_floor": 0,
+      "coarse_game_weighted_reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.2,
+          "decision_count": 1340,
+          "fraction_of_equal_game_weight": 0.1088213154522158,
+          "mean_prediction": 0.1172088400195888,
+          "observed_win_fraction": 0.07077713219417796
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.4,
+          "decision_count": 5737,
+          "fraction_of_equal_game_weight": 0.41131816562713364,
+          "mean_prediction": 0.3139398249921708,
+          "observed_win_fraction": 0.23446421754147798
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.6000000000000001,
+          "decision_count": 4095,
+          "fraction_of_equal_game_weight": 0.21549423299798803,
+          "mean_prediction": 0.48475617607276367,
+          "observed_win_fraction": 0.5236561541275359
+        },
+        {
+          "lower": 0.6000000000000001,
+          "upper": 0.8,
+          "decision_count": 3732,
+          "fraction_of_equal_game_weight": 0.18030998313555927,
+          "mean_prediction": 0.6978600439001441,
+          "observed_win_fraction": 0.6642485669943033
+        },
+        {
+          "lower": 0.8,
+          "upper": 1.0,
+          "decision_count": 1790,
+          "fraction_of_equal_game_weight": 0.08405630278710323,
+          "mean_prediction": 0.861037607231684,
+          "observed_win_fraction": 0.8713566487796811
+        }
+      ],
+      "caveats": [
+        "Fitted constant uses this evaluation panel's outcomes; descriptive reference, not held-out baseline.",
+        "Later states contain more outcome information. Improvement over constant is not action credit.",
+        "Repeated states/outcomes are correlated; decision counts are not independent sample sizes.",
+        "Reliability bins have no inferential intervals and do not identify approximation error versus noise."
+      ]
+    }
+  },
+  "input_sha256": {
+    "eval/complete_cohort_long_20260915/evaluations/update0/seed0/sampled/outcomes.jsonl": "3311337279be36710f2cd0102322347e2763527f61157d26bab3eecb2c2d14ec",
+    "eval/complete_cohort_long_20260915/evaluations/update0/seed1/sampled/outcomes.jsonl": "504a4d4fc52d0f5a8003a2be23932559bed80a7acde6f5cad42d368e37a9343d",
+    "eval/complete_cohort_long_20260915/evaluations/update20/seed0/sampled/outcomes.jsonl": "665f841f31dad4e1d8dda67d71577a836a303286daa6a1993408f1c0461d5b2b",
+    "eval/complete_cohort_long_20260915/evaluations/update20/seed1/sampled/outcomes.jsonl": "19e72b5650a377cb726d4d55636b573c60d17756eb5dd83a04d968cbe17b8efc",
+    "eval/complete_cohort_long_20260915/evaluations/update40/seed0/sampled/outcomes.jsonl": "c2c57068bb80df960230b62362cf4290bde3f0c9e29c4584ef6eedcf9c0cc3f5",
+    "eval/complete_cohort_long_20260915/evaluations/update40/seed1/sampled/outcomes.jsonl": "589cdc51ebcfada47c3313a81634ed6a670e8c3a66aebf4cd0a1a03666d3acb6",
+    "eval/complete_cohort_long_20260915/evaluations/update60/seed0/sampled/outcomes.jsonl": "34ed8b2cf750f6a59882a4445a681067b380ed248df6225fc01461433d359c6a",
+    "eval/complete_cohort_long_20260915/evaluations/update60/seed1/sampled/outcomes.jsonl": "39867b4cb7d6bd12abcb8c503033be8d26ca18aaaed726bfeffbfa03319f621b",
+    "/Users/makemake/Documents/code/python/pylatro/tools/research_credit_checks.py": "5521f60586cc06cd716f02cd2d43c2a3463646dd8b24a20a115218af13b57aea",
+    "src/pylatro_agent/training/cohort.py": "44acbf18e144040bb8b634f2a9fdf4160f9289186ba481a6d2a52d21c026548b"
+  }
+}

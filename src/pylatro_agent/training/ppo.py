@@ -131,6 +131,8 @@ def train_ppo(
     # this from its config at every action_distribution() call.
     agent_config.hand_ar_mixture_eps = config.hand_ar_mixture_eps
     agent_config.win_only_value = config.reward_config.objective == "milestone"
+    if agent_config.return_value_mode != config.return_value_mode:
+        raise ValueError("PPO and agent return_value_mode differ; use an explicit checkpoint branch")
 
     device = torch.device(config.device)
     use_pin_memory = device.type == "cuda"
@@ -155,6 +157,10 @@ def train_ppo(
             active_reward_config=config.reward_config,
             active_win_ante=config.win_ante,
         )
+        if resume_state.get("agent_config", {}).get(
+            "return_value_mode", "terminal_plus_residual"
+        ) != agent_config.return_value_mode:
+            raise ValueError("Checkpoint return_value_mode changed; use an explicit checkpoint branch")
         _load_state_dict_into_model(model, resume_state["state_dict"], resume_path)
         if resume_state.get("actor_transfer"):
             model._actor_transfer_metadata = resume_state["actor_transfer"]

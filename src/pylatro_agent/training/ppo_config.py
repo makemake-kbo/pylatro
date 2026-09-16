@@ -45,6 +45,11 @@ class PPOConfig:
     cohort_workers: int = 4
     cohort_seeds: list[int] | None = None
     outcome_label_mode: str = "completion_window"
+    # Explicit learning semantics. Archived checkpoints keep the historical
+    # estimator/head; outcome-only complete games can use terminal_outcome
+    # supervision and complete_episode_mc without bootstrapped residuals.
+    return_value_mode: str = "terminal_plus_residual"
+    advantage_estimator: str = "fragment_gae"
     total_timesteps: int = 1_000_000
     # When set, overrides total_timesteps: the run trains for exactly this many
     # PPO updates and total_timesteps is derived as total_updates * steps_per_update.

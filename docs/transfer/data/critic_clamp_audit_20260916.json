@@ -1,0 +1,149 @@
+{
+  "date": "2026-09-16",
+  "scope": "Stored sampled forecasts; no inference, training, or accelerator use.",
+  "limitations": [
+    "Does not audit training minibatches.",
+    "Does not recover individual pre-sigmoid hazard saturation.",
+    "Repeated forecasts within a game are correlated, not independent outcomes."
+  ],
+  "nll_probability_floor": 1e-07,
+  "game_seeds": [
+    190000,
+    190001,
+    190002,
+    190003,
+    190004,
+    190005,
+    190006,
+    190007,
+    190008,
+    190009,
+    190010,
+    190011,
+    190012,
+    190013,
+    190014,
+    190015,
+    190016,
+    190017,
+    190018,
+    190019,
+    190020,
+    190021,
+    190022,
+    190023,
+    190024,
+    190025,
+    190026,
+    190027,
+    190028,
+    190029,
+    190030,
+    190031,
+    190032,
+    190033,
+    190034,
+    190035,
+    190036,
+    190037,
+    190038,
+    190039,
+    190040,
+    190041,
+    190042,
+    190043,
+    190044,
+    190045,
+    190046,
+    190047,
+    190048,
+    190049
+  ],
+  "training_replicas": [
+    0,
+    1
+  ],
+  "sampling_seeds": [
+    0
+  ],
+  "results": [
+    {
+      "additional_updates": 0,
+      "games": 100,
+      "forecasts": 16442,
+      "selected_probability_at_or_below_nll_floor": 0,
+      "minimum_selected_probability": 0.008784065954387188
+    },
+    {
+      "additional_updates": 20,
+      "games": 100,
+      "forecasts": 16675,
+      "selected_probability_at_or_below_nll_floor": 0,
+      "minimum_selected_probability": 0.011415481567382812
+    },
+    {
+      "additional_updates": 40,
+      "games": 100,
+      "forecasts": 16141,
+      "selected_probability_at_or_below_nll_floor": 0,
+      "minimum_selected_probability": 0.003052528016269207
+    },
+    {
+      "additional_updates": 60,
+      "games": 100,
+      "forecasts": 16694,
+      "selected_probability_at_or_below_nll_floor": 0,
+      "minimum_selected_probability": 0.009089529514312744
+    }
+  ],
+  "total_forecasts": 65952,
+  "total_at_or_below_floor": 0,
+  "inputs": [
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update0/seed0/sampled/outcomes.jsonl",
+      "sha256": "3311337279be36710f2cd0102322347e2763527f61157d26bab3eecb2c2d14ec"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update0/seed1/sampled/outcomes.jsonl",
+      "sha256": "504a4d4fc52d0f5a8003a2be23932559bed80a7acde6f5cad42d368e37a9343d"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update20/seed0/sampled/outcomes.jsonl",
+      "sha256": "665f841f31dad4e1d8dda67d71577a836a303286daa6a1993408f1c0461d5b2b"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update20/seed1/sampled/outcomes.jsonl",
+      "sha256": "19e72b5650a377cb726d4d55636b573c60d17756eb5dd83a04d968cbe17b8efc"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update40/seed0/sampled/outcomes.jsonl",
+      "sha256": "c2c57068bb80df960230b62362cf4290bde3f0c9e29c4584ef6eedcf9c0cc3f5"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update40/seed1/sampled/outcomes.jsonl",
+      "sha256": "589cdc51ebcfada47c3313a81634ed6a670e8c3a66aebf4cd0a1a03666d3acb6"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update60/seed0/sampled/outcomes.jsonl",
+      "sha256": "34ed8b2cf750f6a59882a4445a681067b380ed248df6225fc01461433d359c6a"
+    },
+    {
+      "path": "eval/complete_cohort_long_20260915/evaluations/update60/seed1/sampled/outcomes.jsonl",
+      "sha256": "39867b4cb7d6bd12abcb8c503033be8d26ca18aaaed726bfeffbfa03319f621b"
+    }
+  ],
+  "sources": [
+    {
+      "path": "tools/research_critic_clamp_audit.py",
+      "sha256": "90c918bfffb152d3d8cf7ec9327ab7a52d1116a5d936505f0b93043cd342cfb6"
+    },
+    {
+      "path": "src/pylatro_agent/value_head.py",
+      "sha256": "5179cd5f2d71eeb4d5c0c408d1f449f479789b91530a1dc90d700d94bea0910a"
+    },
+    {
+      "path": "src/pylatro_agent/survival.py",
+      "sha256": "bde1ff1aeac1767c2aef70b2a0565f33e20bd73e1a1b01d9553cb2ba886778a3"
+    }
+  ]
+}

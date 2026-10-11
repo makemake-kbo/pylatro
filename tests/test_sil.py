@@ -992,6 +992,99 @@ def test_no_kl_breach_path_trains_normally() -> None:
     assert any(not torch.equal(value, before[key]) for key, value in model.state_dict().items())
 
 
+def test_hard_kl_decision_and_update_ignore_physical_batch_size(monkeypatch) -> None:
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
+
+    monkeypatch.setattr(np.random, "permutation", lambda x: np.arange(x) if np.isscalar(x) else x.copy())
+    torch.manual_seed(512)
+    initial = _SilModel().state_dict()
+    results = []
+    for micro in (1, 2, 3, 4):
+        model = _SilModel()
+        model.load_state_dict(initial)
+        optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
+        buffer = _ppo_signal_buffer(6)
+        buffer.advantages[:] = 1.0
+        _sync_buffer_log_probs(model, buffer)
+        # One large likelihood-ratio change: row KL exp(1)-2 = .718,
+        # while its four-row optimizer group has mean .180 < .25.
+        buffer.log_probs[0] -= 1.0
+        stats = _run_ppo_update(
+            model, optimizer, buffer, 0.0,
+            _sil_ppo_config(ppo_epochs=1, mini_batch_size=4, target_kl_max=0.25),
+            math.ceil(4 / micro), micro, torch.device("cpu"), False,
+        )
+        assert not stats.kl_rollback
+        assert stats.stop_reason == "none"
+        assert stats.ppo_samples_processed == 6
+        assert len(stats.logical_approx_kls) == 2
+        assert stats.logical_approx_kls[0] == pytest.approx((math.e - 2) / 4, abs=1e-6)
+        assert not torch.equal(model.policy_head.weight, initial["policy_head.weight"])
+        results.append((copy.deepcopy(model.state_dict()), copy.deepcopy(optimizer.state_dict())))
+    for model_state, optimizer_state in results[1:]:
+        torch.testing.assert_close(model_state, results[0][0], atol=1e-7, rtol=1e-6)
+        torch.testing.assert_close(optimizer_state, results[0][1], atol=1e-7, rtol=1e-6)
+
+
+def test_full_rollout_kl_groups_rows_and_preserves_rng() -> None:
+    from pylatro_agent.training.ppo_optimization import _evaluate_rollout_kl
+
+    model = _SilModel()
+    buffer = _ppo_signal_buffer(6)
+    _sync_buffer_log_probs(model, buffer)
+    buffer.log_probs[0] -= 1.0
+    config = _sil_ppo_config(mini_batch_size=4)
+    numpy_state = np.random.get_state()
+    order = np.random.permutation(6)
+    np.random.set_state(numpy_state)
+    outlier_position = int(np.flatnonzero(order == 0)[0])
+    expected_max = (math.e - 2) / (4 if outlier_position < 4 else 2)
+    for micro in (1, 2, 3, 4):
+        mean, maximum, samples = _evaluate_rollout_kl(
+            model, buffer, micro, torch.device("cpu"), False, config, logical_batch_size=4,
+        )
+        assert samples == 6
+        assert mean == pytest.approx((math.e - 2) / 6, abs=1e-6)
+        assert maximum == pytest.approx(expected_max, abs=1e-6)
+        state_after = np.random.get_state()
+        assert state_after[0] == numpy_state[0]
+        np.testing.assert_array_equal(state_after[1], numpy_state[1])
+        assert state_after[2:] == numpy_state[2:]
+
+
+@pytest.mark.parametrize("micro", [1, 2, 3, 4])
+def test_hard_kl_short_group_uses_actual_count_and_restores_adam(monkeypatch, micro) -> None:
+    from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
+
+    monkeypatch.setattr(np.random, "permutation", lambda x: np.arange(x) if np.isscalar(x) else x.copy())
+    model = _SilModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.01)
+    for param in model.parameters():
+        param.grad = torch.ones_like(param)
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    buffer = _ppo_signal_buffer(6)
+    buffer.advantages[:] = 1.0
+    _sync_buffer_log_probs(model, buffer)
+    # The final group has TWO rows, so its .718 outlier exceeds .25.
+    # Dividing by the configured four rows would incorrectly accept it.
+    buffer.log_probs[4] -= 1.0
+    model_before = copy.deepcopy(model.state_dict())
+    optimizer_before = copy.deepcopy(optimizer.state_dict())
+    stats = _run_ppo_update(
+        model, optimizer, buffer, 0.0,
+        _sil_ppo_config(ppo_epochs=1, mini_batch_size=4, target_kl_max=0.25),
+        math.ceil(4 / micro), micro, torch.device("cpu"), False,
+    )
+    assert stats.kl_rollback
+    assert stats.stop_reason == "hard_kl"
+    assert stats.ppo_samples_processed == 6
+    assert len(stats.logical_approx_kls) == 2
+    assert stats.logical_approx_kls[-1] > 0.25
+    _assert_nested_tensors_equal(model.state_dict(), model_before)
+    _assert_nested_tensors_equal(optimizer.state_dict(), optimizer_before)
+
+
 def test_sil_shares_optimizer_step_with_ppo() -> None:
     from pylatro_agent.training.ppo_optimization import _make_policy_optimizer, _run_ppo_update
 

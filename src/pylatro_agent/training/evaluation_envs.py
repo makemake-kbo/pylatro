@@ -28,10 +28,12 @@ class _Environments:
     def __init__(self, kwargs, *, compact_observations=False):
         self.compact_observations = compact_observations
         self.kwargs = kwargs
+        self.environment_class = self.kwargs.pop("environment_class", BalatroEnv)
         self.envs = {}
+        self.retained_public_states = []
 
     def reset(self, seed):
-        env = BalatroEnv(seed=seed, **self.kwargs)
+        env = self.environment_class(seed=seed, **self.kwargs)
         self.envs[seed] = env
         obs, _ = env.reset(seed=seed)
         return (_pack_observation(obs) if self.compact_observations else obs), str(env._sub_phase)
@@ -67,6 +69,8 @@ class _Environments:
             }
             compact["phase"] = str(env._sub_phase)
             if terminated or truncated:
+                if hasattr(env, "selected_public_states") and terminated and not truncated:
+                    self.retained_public_states.extend(env.selected_public_states())
                 compact["joker_keys"] = list(env.state.joker_keys)
                 compact["cleared_antes"] = sorted(
                     env._cleared_boss_antes | ({env.state.win_ante} if info.get("won") else set())
@@ -80,6 +84,10 @@ class _Environments:
             else:
                 results.append((seed, (obs, terminated, truncated, compact, seconds)))
         return results
+
+    def public_states(self, _payload=None):
+        records, self.retained_public_states = self.retained_public_states, []
+        return records
 
     def close(self):
         for env in self.envs.values():
@@ -179,6 +187,13 @@ class EvaluationEnvs:
 
     def step_training(self, actions):
         return self._step(actions, training=True)
+
+    def public_states(self):
+        if self.local is not None:
+            return self.local.public_states()
+        for connection in self.connections:
+            connection.send(("public_states", None))
+        return [row for index in range(len(self.connections)) for row in self._receive(index)]
 
     def _step(self, actions, *, training):
         command = "step_training" if training else "step"

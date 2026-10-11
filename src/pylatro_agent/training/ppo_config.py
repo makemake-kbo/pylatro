@@ -57,7 +57,9 @@ class PPOConfig:
     gamma: float = 0.997
     gae_lambda: float = 0.97
     clip_epsilon: float = 0.1
-    # Soft stop at logical batch boundaries; target_kl_max rolls back the entire update.
+    # Soft stop uses full-rollout mean KL at epoch boundaries. The hard maximum
+    # uses sample-weighted logical-batch KL, independent of memory microbatching,
+    # and rolls back the entire update (including Adam state).
     target_kl: float | None = 0.05
     # Diagnostic threshold only. min_minibatch_fraction delays soft KL stopping.
     target_kl_p95: float | None = None

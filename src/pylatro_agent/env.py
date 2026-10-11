@@ -743,7 +743,9 @@ class BalatroEnv(gymnasium.Env):
                 hand_type=result.score.hand_name,
                 score=result.score.total,
             )
-            if ctrl.blind_beaten():
+            if ctrl.phase in (GamePhase.SHOP, GamePhase.GAME_WON):
+                self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
+            elif ctrl.blind_beaten():
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
                     return result
@@ -758,7 +760,7 @@ class BalatroEnv(gymnasium.Env):
             if any(idx >= len(state.hand_cards) for idx in indices):
                 raise IndexError(f"Discard subset {decoded.index} is invalid for hand size {len(state.hand_cards)}")
             result = ctrl.discard_selected(list(indices))
-            self._sub_phase = SubPhase.CHOOSE_ACTION
+            self._sub_phase = _phase_to_sub_phase(ctrl.phase, self._sub_phase)
             return result
 
         elif at == ActionType.USE_CONSUMABLE_NO_TARGET:

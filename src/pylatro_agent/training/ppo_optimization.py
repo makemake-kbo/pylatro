@@ -95,6 +95,7 @@ class _UpdateStats:
     action_type_entropies: list[float] = field(default_factory=list)
     clip_fracs: list[float] = field(default_factory=list)
     approx_kls: list[float] = field(default_factory=list)
+    logical_approx_kls: list[float] = field(default_factory=list)
     valid_action_counts: list[float] = field(default_factory=list)
     valid_action_type_counts: list[float] = field(default_factory=list)
     sample_counts: list[int] = field(default_factory=list)
@@ -110,6 +111,7 @@ class _UpdateStats:
     ppo_samples_processed: int = 0
     running_kl: float = 0.0
     full_kl: float = 0.0
+    full_kl_max: float = 0.0
     kl_rollback: bool = False
     stop_reason: str = "none"
     actual_lr: float = 0.0
@@ -269,22 +271,34 @@ def _evaluate_rollout_kl(
     device: torch.device,
     use_pin_memory: bool,
     config: PPOConfig,
+    *,
+    logical_batch_size: int | None = None,
 ) -> tuple[float, float, int]:
     """Evaluate current-vs-rollout KL over all on-policy samples.
 
+    Return the overall mean, maximum logical-group mean, and sample count.
+    Physical microbatches only bound memory; they do not define the hard guard.
     The buffer API shuffles with NumPy, so preserve its RNG state: a diagnostic
     pass must not change the order of the following training epoch.
     """
     numpy_state = np.random.get_state()
     try:
-        batches = buffer.get_batches(batch_size, device, pin_memory=use_pin_memory)
+        batches = buffer.get_batches(
+            logical_batch_size if logical_batch_size is not None else batch_size,
+            device,
+            pin_memory=use_pin_memory,
+            micro_batch_size=batch_size,
+        )
     finally:
         np.random.set_state(numpy_state)
 
     aggregate = _WeightedKL()
-    minibatch_max = 0.0
+    logical_kl = _WeightedKL()
+    logical_max = 0.0
     with torch.no_grad():
         for batch in batches:
+            if batch["_logical_group_start"].item():
+                logical_kl = _WeightedKL()
             dist, _ = _grammar_distribution(
                 model,
                 batch,
@@ -296,8 +310,10 @@ def _evaluate_rollout_kl(
             ratio = torch.exp(log_ratio)
             kl = ((ratio - 1.0) - log_ratio).mean().item()
             aggregate.add(kl, sample_count)
-            minibatch_max = max(minibatch_max, kl)
-    return aggregate.mean, minibatch_max, aggregate.samples
+            logical_kl.add(kl, sample_count)
+            if batch["_logical_group_end"].item():
+                logical_max = max(logical_max, logical_kl.mean)
+    return aggregate.mean, logical_max, aggregate.samples
 
 
 def _run_ppo_update(
@@ -314,6 +330,8 @@ def _run_ppo_update(
     sil_coeff_now: float = 0.0,
     grad_diagnostics_due: bool = False,
     return_path_replay=None,
+    search_guidance=None,
+    step_guard=None,
 ) -> _UpdateStats:
     """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
 
@@ -356,6 +374,7 @@ def _run_ppo_update(
     min_soft_stop_fraction = config.min_minibatch_fraction if config.min_minibatch_fraction is not None else 0.0
     min_soft_stop_minibatches = math.ceil(expected_minibatches * min_soft_stop_fraction)
     running_kl = _WeightedKL()
+    logical_kl = _WeightedKL()
 
     # SIL logical-group budget. Per update (not per epoch). Attempted groups
     # count even when their gate is empty, so training does not keep resampling
@@ -386,6 +405,19 @@ def _run_ppo_update(
         for i, batch in enumerate(batches):
             is_group_start = bool(batch["_logical_group_start"].item())
             is_step_boundary = bool(batch["_logical_group_end"].item())
+            if is_group_start:
+                if step_guard is not None:
+                    step_guard()
+                logical_kl = _WeightedKL()
+                # Independent public labels never enter the PPO buffer, ratios,
+                # critic targets, or sampling stream. Share this group's step,
+                # clipping and all existing KL guards.
+                if search_guidance is not None:
+                    auxiliary = search_guidance.loss(model, config, device)
+                    if auxiliary is not None:
+                        if not torch.isfinite(auxiliary):
+                            raise RuntimeError("Non-finite search guidance loss")
+                        auxiliary.backward()
             loss_weight = batch["_loss_weight"]
             outcome_loss_weight = torch.as_tensor(outcome_loss_weights[i], device=device)
 
@@ -544,8 +576,8 @@ def _run_ppo_update(
 
             with torch.no_grad():
                 # One device-to-host transfer for telemetry, rather than one
-                # synchronization for every scalar. KL is still checked after
-                # each minibatch, at the same optimizer boundary as before.
+                # synchronization for every scalar. Physical means remain
+                # available for telemetry; hard KL uses the logical group.
                 metrics = {
                     "clip_fracs": ((ratio - 1.0).abs() > effective_clip_epsilon).float().mean(),
                     "approx_kls": ((ratio - 1.0) - log_ratio).mean(),
@@ -578,14 +610,24 @@ def _run_ppo_update(
             stats.sample_counts.append(on_policy_samples)
             stats.ppo_samples_processed += on_policy_samples
             running_kl.add(approx_kl, on_policy_samples)
+            logical_kl.add(approx_kl, on_policy_samples)
             stats.running_kl = running_kl.mean
+            if is_step_boundary:
+                stats.logical_approx_kls.append(logical_kl.mean)
 
-            # A hard minibatch breach rejects the entire PPO update. This check
-            # is intentionally independent of the soft-stop minimum fraction.
-            if rollback_snapshot is not None and config.target_kl_max is not None and approx_kl > config.target_kl_max:
+            # A hard logical-group breach rejects the entire PPO update. All
+            # rows in this group were scored before its single optimizer step.
+            # Use actual row counts, including a short final group, so memory
+            # microbatching does not change the measurement or its threshold.
+            if (
+                is_step_boundary
+                and rollback_snapshot is not None
+                and config.target_kl_max is not None
+                and logical_kl.mean > config.target_kl_max
+            ):
                 logger.warning(
-                    "Rejecting PPO update: minibatch KL %.5f exceeded hard limit %.5f",
-                    approx_kl,
+                    "Rejecting PPO update: logical-batch KL %.5f exceeded hard limit %.5f",
+                    logical_kl.mean,
                     config.target_kl_max,
                 )
                 _restore_ppo_update(model, optimizer, rollback_snapshot)
@@ -605,11 +647,13 @@ def _run_ppo_update(
             device,
             use_pin_memory,
             config,
+            logical_batch_size=logical_batch_size,
         )
         stats.full_kl = full_kl
+        stats.full_kl_max = full_kl_max
         if rollback_snapshot is not None and config.target_kl_max is not None and full_kl_max > config.target_kl_max:
             logger.warning(
-                "Rejecting PPO update: full-rollout minibatch KL %.5f exceeded hard limit %.5f",
+                "Rejecting PPO update: full-rollout logical-batch KL %.5f exceeded hard limit %.5f",
                 full_kl_max,
                 config.target_kl_max,
             )

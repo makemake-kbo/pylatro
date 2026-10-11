@@ -203,10 +203,41 @@ def main():
     parser.add_argument("--n-layers", type=int, default=8, help="Transformer layers (default: 8)")
     parser.add_argument("--d-ff", type=int, default=1024, help="Feed-forward dimension (default: 1024)")
     parser.add_argument("--sample", action="store_true", help="Sample from the policy instead of greedy mode")
-    parser.add_argument("--temperature", type=float, default=0.7, help="Structured policy temperature (default: 0.7)")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="Policy temperature (public default: 1; legacy default: 0.7)")
     parser.add_argument("--audit", action="store_true", help="Print teacher-match and hand-choice diagnostics")
     parser.add_argument("--win-ante", type=int, default=None, help="Curriculum victory ante override")
+    parser.add_argument("--public-information", action="store_true",
+                        help="Use public-information-v2 observations and execution")
+    parser.add_argument("--hybrid", choices=("off", "hand", "shop", "both"), default="off")
+    parser.add_argument("--planning-budget", type=float, default=3.0, help="Planning seconds per decision (default: 3)")
+    parser.add_argument("--search-samples", type=int, choices=(4, 16, 32, 64), default=4,
+                        help="Shared public worlds per candidate (default: 4)")
     args = parser.parse_args()
+    if args.temperature is None:
+        args.temperature = 1.0 if args.public_information else 0.7
+    if args.games < 1 or args.planning_budget < 0 or args.temperature <= 0:
+        parser.error("Games and temperature must be positive; planning budget must be nonnegative")
+
+    if args.hybrid != "off" and not args.public_information:
+        parser.error("Hybrid assistance requires --public-information")
+    if args.public_information:
+        if args.live or args.heuristic:
+            parser.error("The public hybrid runtime currently supports simulator checkpoint play")
+        if args.device not in (None, "cpu"):
+            parser.error("The public runtime uses CPU FP32")
+        from pylatro_agent.hybrid_game import play_game
+        results = []
+        for i in range(args.games):
+            result = play_game(args.checkpoint, str(args.seed + i), mode=args.hybrid,
+                               seconds=args.planning_budget, search_samples=args.search_samples, sample=args.sample,
+                               temperature=args.temperature,
+                               win_ante=args.win_ante or 8)
+            results.append(result)
+            logger.info("Game %s: %s, %s decisions, %.1fs", i + 1,
+                        "WIN" if result["won"] else "LOSS", result["steps"], result["seconds"])
+        print(f"Public hybrid ({args.hybrid}): {sum(r['won'] for r in results)}/{len(results)} wins")
+        return
 
     device = args.device or "cpu"
     if args.checkpoint and args.device is None:

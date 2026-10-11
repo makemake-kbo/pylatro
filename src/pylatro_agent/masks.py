@@ -42,6 +42,7 @@ from .subset_actions import (
 def compute_action_mask(
     state: RunState,
     sub_phase: SubPhase,
+    *, public_information: bool = False,
 ) -> np.ndarray:
     """Return a binary mask of shape (NUM_ACTIONS,) where 1 = valid."""
     mask = np.zeros(NUM_ACTIONS, dtype=np.int8)
@@ -50,7 +51,7 @@ def compute_action_mask(
         _mask_blind_select(mask, state)
 
     elif sub_phase == SubPhase.CHOOSE_ACTION:
-        _mask_choose_action(mask, state)
+        _mask_choose_action(mask, state, public_information=public_information)
 
     elif sub_phase == SubPhase.SHOP:
         _mask_shop(mask, state)
@@ -78,6 +79,7 @@ def _mask_blind_select(mask: np.ndarray, state: RunState) -> None:
 def _mask_choose_action(
     mask: np.ndarray,
     state: RunState,
+    *, public_information: bool = False,
 ) -> None:
     AR = ActionRange
     for index, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
@@ -88,7 +90,7 @@ def _mask_choose_action(
     legal_subsets = legal_subset_mask(hand_size, forced_slots)
 
     if state.current_round.hands_left > 0 and hand_size > 0:
-        play_subsets = _mask_debuffed_plays(state, legal_subsets.astype(np.int8))
+        play_subsets = _mask_debuffed_plays(state, legal_subsets.astype(np.int8), public_information=public_information)
         mask[AR.PLAY_SUBSET_START : AR.PLAY_SUBSET_END + 1] = play_subsets
 
     if state.current_round.discards_left > 0 and hand_size > 0:
@@ -97,7 +99,7 @@ def _mask_choose_action(
     _mask_consumable_flat(mask, state)
 
 
-def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray) -> np.ndarray:
+def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray, *, public_information: bool = False) -> np.ndarray:
     """Zero out play subsets that the active boss debuff would score as 0.
 
     A hand-level debuff (The Psychic's must-play-5, The Eye's no-repeat hand
@@ -142,6 +144,8 @@ def _mask_debuffed_plays(state: RunState, play_subsets: np.ndarray) -> np.ndarra
             if not needs_hand_eval:
                 continue
             cards = [state.hand_cards[i] for i in positions]
+            if public_information and any(card.face_down for card in cards):
+                continue
             hand_name, _, poker_hands, _ = get_poker_hand_info(state, cards)
             if _debuff_hand(state, cards, hand_name, poker_hands, check=True):
                 filtered[idx] = 0

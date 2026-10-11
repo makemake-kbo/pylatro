@@ -298,6 +298,9 @@ def train_complete_cohort(
                 writer.add_scalar("cohort/return_loss_enabled", int(stats.return_loss_enabled), update_count)
                 for key, value in buffer.diagnostics()["credit_targets"].items():
                     writer.add_scalar("cohort/credit_targets/" + key, value, update_count)
+                for horizon, metrics in buffer.diagnostics()["horizon_credit"].items():
+                    for key, value in metrics.items():
+                        writer.add_scalar(f"cohort/horizon_{horizon}/{key}", value, update_count)
                 checkpoint()
                 if update_count % config.eval_interval == 0:
                     evaluation(writer)

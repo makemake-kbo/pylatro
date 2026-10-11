@@ -55,6 +55,7 @@ class GameController:
         drawn = pylatro.start_blind(self.state, blind_type)
         self.round_score = 0
         self.phase = GamePhase.HAND_PLAY
+        self._resolve_empty_hand()
         return drawn
 
     def skip_blind(self) -> str:
@@ -92,6 +93,8 @@ class GameController:
             )
         else:
             pylatro.draw_to_hand(self.state)
+            if self._resolve_empty_hand():
+                return result
             if self.state.current_round.hands_left <= 0:
                 if pylatro.check_mr_bones(self.state, self.round_score, self.blind_target()):
                     self.round_score = 0
@@ -102,7 +105,32 @@ class GameController:
     def discard_selected(self, indices: list[int]) -> DiscardResult:
         assert self.state is not None
         cards = [self.state.hand_cards[i] for i in sorted(indices)]
-        return pylatro.discard_cards(self.state, cards)
+        result = pylatro.discard_cards(self.state, cards)
+        self._resolve_empty_hand()
+        return result
+
+    def _resolve_empty_hand(self) -> bool:
+        """End a round with no playable or drawable cards, even with hands left."""
+        assert self.state is not None
+        state = self.state
+        if self.phase != GamePhase.HAND_PLAY or state.hand_cards:
+            return False
+        if state.current_round.hand_size <= 0:
+            self.phase = GamePhase.GAME_OVER
+            return True
+        if state.draw_pile:
+            return False
+        # Deck exhaustion enters round resolution in the game. A qualifying
+        # Mr. Bones saves the round; it cannot draw another empty hand.
+        hands_left = state.current_round.hands_left
+        if pylatro.check_mr_bones(state, self.round_score, self.blind_target()):
+            state.current_round.hands_left = hands_left
+            self.cash_out()
+            if self.phase != GamePhase.GAME_WON:
+                self.enter_shop()
+        else:
+            self.phase = GamePhase.GAME_OVER
+        return True
 
     # ── Blind target ──
 
@@ -220,9 +248,11 @@ class GameController:
         joker_targets: tuple[int, ...] = (),
     ) -> UseConsumableResult:
         assert self.state is not None
-        return pylatro.use_consumable(
+        result = pylatro.use_consumable(
             self.state, consumable, hand_targets=hand_targets, joker_targets=joker_targets
         )
+        self._resolve_empty_hand()
+        return result
 
     # ── Display helpers ──
 

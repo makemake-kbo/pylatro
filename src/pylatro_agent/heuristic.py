@@ -570,7 +570,9 @@ class HeuristicAgent:
         return play_cards(trial, list(hand_indices)).score.total
 
     def _get_joker_names(self, state: RunState) -> frozenset[str]:
-        keys = state.joker_keys
+        # Purchases and sales mutate joker_keys in place. Retaining that list
+        # would also mutate the cache key and leave the cached names stale.
+        keys = tuple(state.joker_keys)
         if keys != self._joker_names_cache_key:
             self._joker_names_cache = frozenset(state.data.centers[k]["name"] for k in keys)
             self._joker_names_cache_key = keys

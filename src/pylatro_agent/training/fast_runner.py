@@ -247,11 +247,7 @@ class FastRunner:
             indices = subset_indices(idx)
             if any(slot >= len(state.hand_cards) for slot in indices):
                 return
-            self._last_order_decision = apply_best_joker_order(
-                state,
-                tuple(sorted(indices)),
-                remaining_target=max(float(ctrl.blind_target()) - float(self._round_score), 0.0),
-            )
+            self._last_order_decision = self._order_jokers(tuple(sorted(indices)))
             selected_cards = [state.hand_cards[slot] for slot in sorted(indices)]
             pending_history = self._history.capture(
                 state,
@@ -271,7 +267,10 @@ class FastRunner:
                 hand_type=result.score.hand_name,
                 score=result.score.total,
             )
-            if ctrl.blind_beaten():
+            if ctrl.phase in (GamePhase.SHOP, GamePhase.GAME_WON):
+                if ctrl.phase == GamePhase.SHOP:
+                    self._sub_phase = SubPhase.SHOP
+            elif ctrl.blind_beaten():
                 ctrl.cash_out()
                 if ctrl.phase == GamePhase.GAME_WON:
                     return result
@@ -289,7 +288,7 @@ class FastRunner:
             if any(slot >= len(state.hand_cards) for slot in indices):
                 return
             result = ctrl.discard_selected(list(indices))
-            self._sub_phase = SubPhase.CHOOSE_ACTION
+            self._sub_phase = SubPhase.SHOP if ctrl.phase == GamePhase.SHOP else SubPhase.CHOOSE_ACTION
             return result
 
         elif AR.CONSUMABLE_FLAT_START <= aid <= AR.CONSUMABLE_FLAT_END:
@@ -340,7 +339,7 @@ class FastRunner:
             self._sub_phase = SubPhase.BLIND_SELECT
 
         elif AR.PACK_CLAIM_START <= aid <= AR.PACK_CLAIM_END:
-            result = ctrl.claim_from_pack(aid - AR.PACK_CLAIM_START)
+            result = self._claim_pack(aid - AR.PACK_CLAIM_START)
             if state.pack is None or state.pack.choices_remaining <= 0:
                 ctrl.close_current_pack(skipped=False)
                 self._sub_phase = SubPhase.SHOP
@@ -349,6 +348,15 @@ class FastRunner:
         elif aid == AR.PACK_SKIP:
             ctrl.close_current_pack(skipped=True)
             self._sub_phase = SubPhase.SHOP
+
+    def _claim_pack(self, index):
+        return self._ctrl.claim_from_pack(index)
+
+    def _order_jokers(self, indices):
+        return apply_best_joker_order(
+            self._state, indices,
+            remaining_target=max(float(self._ctrl.blind_target()) - float(self._round_score), 0.0),
+        )
 
     def _progress_signature(self):
         state = self._state

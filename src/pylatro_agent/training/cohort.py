@@ -257,6 +257,11 @@ def collect_complete_cohort(model, envs, config, seeds, slot_counters, *, policy
                     action = int(actions_np[i])
                     obs = observations[slot]
                     if not 0 <= action < NUM_ACTIONS or not obs["action_mask"][action]:
+                        diagnostics["invalid_action"] = {
+                            "seed": seed, "action": action, "previous_actions": list(episodes[seed].actions),
+                            "legal_actions": np.flatnonzero(obs["action_mask"]).tolist(),
+                            "scalars": np.asarray(obs["scalars"]).tolist(),
+                        }
                         raise RuntimeError(f"Illegal action {action}, seed {seed}, step {len(episodes[seed].actions)}")
                     episode = episodes[seed]
                     episode.observations.append(obs)
@@ -344,6 +349,8 @@ class CohortBuffer:
                 "advantages",
                 "completed_returns",
                 "raw_advantages",
+                "decisions_to_terminal",
+                "direct_terminal_weight",
                 "terminal_outcome_target",
                 "completion_mask",
                 "seed",
@@ -390,6 +397,12 @@ class CohortBuffer:
                 "advantages": advantages,
                 "completed_returns": completed_returns,
                 "raw_advantages": advantages,
+                "decisions_to_terminal": np.arange(length - 1, -1, -1),
+                "direct_terminal_weight": (
+                    np.ones(length, np.float32) if self.advantage_estimator == "complete_episode_mc"
+                    else completion_mask(episode.slot_steps, config.rollout_length)
+                    * config.gae_lambda ** np.arange(length - 1, -1, -1)
+                ),
                 "terminal_outcome_target": np.full(
                     length, terminal_outcome_class(won=outcome["won"], final_ante=outcome["final_ante"]), np.int64
                 ),
@@ -498,8 +511,20 @@ class CohortBuffer:
         critic_error = self.arrays["values"] - completed_returns
         target_error = self.arrays["returns"] - completed_returns
         raw_advantages = self.arrays["raw_advantages"].astype(np.float64)
+        horizon_credit = {}
+        for name, lo, hi in (("0_31", 0, 32), ("32_99", 32, 100), ("100_plus", 100, self.size + 1)):
+            selected = (self.arrays["decisions_to_terminal"] >= lo) & (self.arrays["decisions_to_terminal"] < hi)
+            if selected.any():
+                horizon_credit[name] = {
+                    "decisions": int(selected.sum()),
+                    "mean_direct_terminal_weight": float(self.arrays["direct_terminal_weight"][selected].mean()),
+                    "return_target_mse_to_completed_return": float(np.square(target_error[selected]).mean()),
+                    "critic_mse_to_completed_return": float(np.square(critic_error[selected]).mean()),
+                    "distinct_optimizer_rows": int(np.unique(self.draw_indices[selected[self.draw_indices]]).size),
+                }
         return {
             "advantage_estimator": self.advantage_estimator,
+            "horizon_credit": horizon_credit,
             "credit_targets": {
                 "completed_return_mean": float(completed_returns.mean()),
                 "critic_bias_to_completed_return": float(critic_error.mean()),

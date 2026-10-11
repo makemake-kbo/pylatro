@@ -1,0 +1,17 @@
+{
+  "created_unix": 1790070747.759368,
+  "pid": 89980,
+  "audit_sha256": "ef62631dc8d31faf464f6f3a1645e6891f1bd1e3cf0a73f78de6d8743c71bd9e",
+  "pins": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/manifest.json": "33ac62f38395b97b27e920b04c7c98a1f13f07d13e367e434cb9c62814c4f131",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/intent.json": "f8759637c52185b48136243c25bc09a328306d9612ea3489bc5986c44086f14c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/continuations/execution.json": "a36d5050e329d5c300727d9062d12b123614cf465cc677c5b214db53114dddc8",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/run_shop_counterfactual.py": "a68e9eb77faee31366ce15d3790766faf51fbd06e97e1637b3d47042f6383ba8"
+  },
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "runner_pid": 89319,
+  "cpu_threads": 2,
+  "maximum_audit_seconds": 1800,
+  "new_sampled_games": 0,
+  "generalization_proven": false
+}

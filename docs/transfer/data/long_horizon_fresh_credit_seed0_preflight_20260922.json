@@ -1,0 +1,152 @@
+{
+  "created_unix": 1790074427.3926752,
+  "script_sha256": "16e69714edf8210a7e5dd7ae46a6a032f495e9d4f28bb7ea191bd7f3845bbcb4",
+  "replica": 0,
+  "endpoint": 20,
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "selection_sha256": "0267a19e59bf5701938dd019a230f1a1ea1995e97b9c2531044306aa84faa9d4",
+  "semantic_recipe_difference": {
+    "advantage_estimator": [
+      "complete_episode_mc",
+      "fragment_gae"
+    ]
+  },
+  "identical_initial_fields": [
+    "state_dict",
+    "optimizer_state_dict",
+    "rng_states",
+    "update_count",
+    "total_steps",
+    "entropy_coeff",
+    "entropy_signal_ema",
+    "lr",
+    "ppo_active_lr",
+    "agent_config",
+    "reward_config",
+    "reward_fingerprint",
+    "reward_model_version",
+    "tokenizer_version",
+    "tokenizer_semantics",
+    "training_reserved_seeds"
+  ],
+  "initial_weights_optimizer_and_rng_exact": true,
+  "models": {
+    "terminal_mc": {
+      "checkpoint_sha256": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+      "agent_config": {
+        "d_model": 384,
+        "n_layers": 12,
+        "n_heads": 8,
+        "d_ff": 1536,
+        "dropout": 0.1,
+        "max_seq_len": 160,
+        "hand_ar_mixture_eps": 0.5,
+        "danger_shop_leave_logit_penalty": 0.0,
+        "win_only_value": true,
+        "return_value_mode": "terminal_only",
+        "precision": "fp32",
+        "action_head_variant": "entity_sale_subset_residual_v1"
+      },
+      "reward_config": {
+        "gamma": 1.0,
+        "objective": "milestone",
+        "milestone_reward_budget": 0.0,
+        "dense_reward_scale": 1.0,
+        "ante1_chip_tempo_bonus": 0.2,
+        "consumable_reward_scale": 1.0,
+        "strategic_event_reward_scale": 1.0,
+        "enable_planet_match_rewards": false,
+        "planet_unmatched_use_penalty_coeff": 0.0,
+        "planet_unmatched_claim_penalty_coeff": 0.0,
+        "enable_score_build_potential": true,
+        "potential_w_blind": 0.5,
+        "potential_w_ante": 2.0,
+        "potential_win_ante": 8,
+        "potential_w_build_quality": 0.88,
+        "potential_w_readiness": 0.4,
+        "potential_w_scaling_option": 0.22,
+        "potential_w_economy": 0.3,
+        "potential_w_tarot_option": 0.0,
+        "potential_w_planet_option": 0.0,
+        "potential_w_seals": 1.25,
+        "potential_w_joker_search": 0.0,
+        "potential_w_standard_pack_search": 0.5,
+        "potential_w_survival_safety": 0.4,
+        "potential_build_cap": 2.0,
+        "potential_readiness_saturation": 1.5
+      }
+    },
+    "terminal_gae": {
+      "checkpoint_sha256": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+      "agent_config": {
+        "d_model": 384,
+        "n_layers": 12,
+        "n_heads": 8,
+        "d_ff": 1536,
+        "dropout": 0.1,
+        "max_seq_len": 160,
+        "hand_ar_mixture_eps": 0.5,
+        "danger_shop_leave_logit_penalty": 0.0,
+        "win_only_value": true,
+        "return_value_mode": "terminal_only",
+        "precision": "fp32",
+        "action_head_variant": "entity_sale_subset_residual_v1"
+      },
+      "reward_config": {
+        "gamma": 1.0,
+        "objective": "milestone",
+        "milestone_reward_budget": 0.0,
+        "dense_reward_scale": 1.0,
+        "ante1_chip_tempo_bonus": 0.2,
+        "consumable_reward_scale": 1.0,
+        "strategic_event_reward_scale": 1.0,
+        "enable_planet_match_rewards": false,
+        "planet_unmatched_use_penalty_coeff": 0.0,
+        "planet_unmatched_claim_penalty_coeff": 0.0,
+        "enable_score_build_potential": true,
+        "potential_w_blind": 0.5,
+        "potential_w_ante": 2.0,
+        "potential_win_ante": 8,
+        "potential_w_build_quality": 0.88,
+        "potential_w_readiness": 0.4,
+        "potential_w_scaling_option": 0.22,
+        "potential_w_economy": 0.3,
+        "potential_w_tarot_option": 0.0,
+        "potential_w_planet_option": 0.0,
+        "potential_w_seals": 1.25,
+        "potential_w_joker_search": 0.0,
+        "potential_w_standard_pack_search": 0.5,
+        "potential_w_survival_safety": 0.4,
+        "potential_build_cap": 2.0,
+        "potential_readiness_saturation": 1.5
+      }
+    }
+  },
+  "matched_training": {
+    "terminal_mc": {
+      "games": 1280,
+      "decisions": 211766,
+      "optimizer_examples": 327680,
+      "logical_steps_per_active_parameter": 520
+    },
+    "terminal_gae": {
+      "games": 1280,
+      "decisions": 213789,
+      "optimizer_examples": 327680,
+      "logical_steps_per_active_parameter": 520
+    }
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/initial.pt": "e59f50d52f75f42858094f200d7566679ecf45d10f245c41f89514b0c2eda5f5",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/checkpoints/ppo_update142.pt": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_mc_seed0_endpoint20_verification.json": "252496d8505b13097c8c0a2a5d8fa2889167ddf5388f30e153e39271ffb155f2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/initial.pt": "e87e68baa9e00d31bae83d1b55ca810026789fd25ea589841ac7222711dd6c96",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/checkpoints/ppo_update142.pt": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_gae_seed0_endpoint20_verification.json": "b7163eb7fe07e039862102427393f345f4e371d86517cea498e1c684e413fe26"
+  },
+  "new_games": 0,
+  "confirmation_outcomes_read": false,
+  "generalization_proven": false,
+  "interpretation": "Preflight verifies the treatment and training records; it is not a gameplay result."
+}

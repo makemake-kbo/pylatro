@@ -1,0 +1,141 @@
+{
+  "created_unix": 1790024166.428138,
+  "script_sha256": "7bf09237ff0e61670d07176ec2ddf246dc8e2b913c94649748742e847aa99a90",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "replica": 0,
+  "mode": "greedy",
+  "stage": "development",
+  "endpoint": 20,
+  "game_seeds": 200,
+  "panels": {
+    "parent": {
+      "checkpoint_sha256": "39158be0fbaf1ecd5b195ce2ed3a077ecc26d224ce38baf6b11bceeb646bb486",
+      "summary": {
+        "game_seeds": 200,
+        "games": 200,
+        "wins": 91,
+        "win_rate": 0.455,
+        "win_rate_cluster_ci95": [
+          0.39,
+          0.52
+        ],
+        "win_rate_wilson_ci95": [
+          0.387482193098835,
+          0.524213886275119
+        ],
+        "mean_final_ante": 6.95,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.965,
+          "2": 0.91,
+          "3": 0.89,
+          "4": 0.81,
+          "5": 0.735,
+          "6": 0.645,
+          "7": 0.545,
+          "8": 0.455
+        }
+      }
+    },
+    "mc10": {
+      "checkpoint_sha256": "db4cf813b95fb30cf72c53fcfc559b0a08363d874016c22ee43c2b5750c0ae11",
+      "summary": {
+        "game_seeds": 200,
+        "games": 200,
+        "wins": 100,
+        "win_rate": 0.5,
+        "win_rate_cluster_ci95": [
+          0.43,
+          0.57
+        ],
+        "win_rate_wilson_ci95": [
+          0.43136085960389187,
+          0.5686391403961082
+        ],
+        "mean_final_ante": 7.22,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.98,
+          "2": 0.935,
+          "3": 0.92,
+          "4": 0.84,
+          "5": 0.785,
+          "6": 0.685,
+          "7": 0.575,
+          "8": 0.5
+        }
+      }
+    },
+    "mc20": {
+      "checkpoint_sha256": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+      "summary": {
+        "game_seeds": 200,
+        "games": 200,
+        "wins": 100,
+        "win_rate": 0.5,
+        "win_rate_cluster_ci95": [
+          0.43,
+          0.57
+        ],
+        "win_rate_wilson_ci95": [
+          0.43136085960389187,
+          0.5686391403961082
+        ],
+        "mean_final_ante": 7.145,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.985,
+          "2": 0.93,
+          "3": 0.9,
+          "4": 0.815,
+          "5": 0.765,
+          "6": 0.67,
+          "7": 0.58,
+          "8": 0.5
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "mc20_vs_parent": {
+      "game_seeds": 200,
+      "games_per_arm": 200,
+      "sampled_or_greedy_delta": 0.045,
+      "paired_ci95": [
+        -0.025,
+        0.115
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "rescued_losses": 29,
+      "new_losses": 20
+    },
+    "mc20_vs_mc10": {
+      "game_seeds": 200,
+      "games_per_arm": 200,
+      "sampled_or_greedy_delta": 0.0,
+      "paired_ci95": [
+        -0.07,
+        0.07
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "rescued_losses": 24,
+      "new_losses": 24
+    }
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed0/greedy/manifest.json": "661cb6002d25caaa90ce02dacc7929fe7642ecc345cc0461c71dd1a77cc32264",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed0/greedy/outcomes.jsonl": "9b003269c74de177ea3f3beca11d8959971b80a729428a911c3bd69c515d8568",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update10/terminal_mc_seed0/greedy/manifest.json": "297e3af3ee923bbb169d4dad66b6250fefe07cbf86c683d1a8d5172df0cd4c0c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update10/terminal_mc_seed0/greedy/outcomes.jsonl": "fd89194a426046f672dc3c77ef4daafd25bdab3c3f59071575d27ead81348325",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update20/terminal_mc_seed0/greedy/manifest.json": "23b4b8551317fe54841d2e32410da4455565eace039dc1aee88d2ca265f1c9f0",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update20/terminal_mc_seed0/greedy/outcomes.jsonl": "89982db19ef62df08655636eaf78ce5eedf002326b2cb5af1f28fa072356e6b2"
+  },
+  "selection_changed": false,
+  "generalization_proven": false,
+  "interpretation": "One fixed training replica on exposed development seeds. Parent and +10 panels are reused, not additional independent games. This report does not supply the +20 matched GAE control, a second-replica result, fresh confirmation, or learned early-decision attribution.",
+  "paired_games_sha256": "ddc436ec2bc27264bb35ca43c740261e9a2c216df6a1afe87061c7c0ff573012"
+}

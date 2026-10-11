@@ -1,0 +1,9 @@
+# Evaluate consequence learning on fixed control actions
+
+This supplements the [action-label coverage study](consequence_action_coverage_20260928.md) before its fit. The original full-support pooled epoch-20 control has complete saved predictions and assessed outcomes on 6,008 eligible development states. Compare the new scorer and control on **those same control-selected actions**, independently of the new scorer's eventual choices.
+
+For each fixed action, take both models' score/clear predictions from their complete legal-support outputs and its already-admitted original-RNG outcome. Compute paired log-score MSE, clear BCE and Brier differences. Report all eligible states, early/later, and fixed control actions inside/outside the original proposal sets. These state groups are fixed by the control; do not redefine them using new predictions. Use the same 10,000 whole-source-game bootstrap draws with seed 1729. Reconcile the control's all-state selected-action means against the completed residual diagnostic.
+
+The hypothesis predicts better consequence estimates on the control's outside-proposal choices, which were poorly modelled under the earlier supervision distribution. This is a descriptive mechanism comparison, not a new confidence threshold or a replacement for the frozen four prediction and four retention gates. It supplements the original-proposal prediction comparison and complete assessment of every new selected action. All results are on exposed development games and cannot establish independent confirmation or autonomous wins.
+
+Keep the fixed epoch-20 endpoint, original controls, normalization, baseline prediction targets, non-play preservation and full-support preference argmax unchanged. No architecture, duration rule or deployment gate is added. The full fresh-win, early-attribution, greedy and final independent-fit requirements remain necessary.

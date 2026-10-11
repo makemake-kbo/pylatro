@@ -1,0 +1,55 @@
+{
+  "verified_unix": 1790000492.330254,
+  "status": "passed",
+  "arm": "terminal_mc",
+  "replica": 0,
+  "global_update": 123,
+  "completed_games": 64,
+  "collected_decisions": 10947,
+  "optimizer_examples": 16384,
+  "adam_step_increments_by_parameter_count": {
+    "26": 314,
+    "0": 4
+  },
+  "horizon_credit": {
+    "0_31": {
+      "decisions": 2011,
+      "mean_direct_terminal_weight": 1.0,
+      "return_target_mse_to_completed_return": 0.0,
+      "critic_mse_to_completed_return": 9.920080293257431,
+      "distinct_optimizer_rows": 1071,
+      "counterfactual_fragment_gae_direct_terminal_coefficient": 0.601136669298009,
+      "counterfactual_fragment_gae_target_mse_to_return": 1.813552231522837
+    },
+    "32_99": {
+      "decisions": 3869,
+      "mean_direct_terminal_weight": 1.0,
+      "return_target_mse_to_completed_return": 0.0,
+      "critic_mse_to_completed_return": 15.258236276413797,
+      "distinct_optimizer_rows": 2004,
+      "counterfactual_fragment_gae_direct_terminal_coefficient": 0.12201465440172195,
+      "counterfactual_fragment_gae_target_mse_to_return": 9.366982628909357
+    },
+    "100_plus": {
+      "decisions": 5067,
+      "mean_direct_terminal_weight": 1.0,
+      "return_target_mse_to_completed_return": 0.0,
+      "critic_mse_to_completed_return": 22.266073141000344,
+      "distinct_optimizer_rows": 2667,
+      "counterfactual_fragment_gae_direct_terminal_coefficient": 0.006612763356767225,
+      "counterfactual_fragment_gae_target_mse_to_return": 18.94049786519862
+    }
+  },
+  "timings": {
+    "collection_seconds": 158.86836449999828,
+    "optimization_seconds": 409.75298233295325,
+    "elapsed_seconds": 570.4575488750124
+  },
+  "initial_checkpoint_sha256": "eee96218759d2a0261aca2f2a1c432911729f1de5fed863c89075811347e7816",
+  "checkpoint_sha256": "76435fd12f3f9199c31b859d2e7eeafe255cb599e5ff49b501f32304c07f1bca",
+  "study_sha256": "889d529df022a2e3740fdea330784445b94238531c3e6a89b8015b5b041f6c3e",
+  "interpretation": "Verifies collection, target definition and optimizer exposure, not generalization. GAE counterfactual uses the same frozen terminal-only values and recorded trajectories; it is not another trained policy. Bootstrap information can transmit distant outcomes. Target MSE to realized return is not conditional-value approximation error.",
+  "full_audit": "eval/long_horizon_generalization_20260921/analysis/first_update_audit.json",
+  "reproduction": ".venv/bin/python -m eval.long_horizon_generalization_20260921.analysis.audit_first_update",
+  "note": "The audit refuses to overwrite its output; preserve or relocate the existing output before reproducing."
+}

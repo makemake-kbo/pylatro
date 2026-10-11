@@ -1,0 +1,111 @@
+{
+  "created_unix": 1790006909.006013,
+  "stage": "development",
+  "candidate_arm": "terminal_mc",
+  "endpoint": 10,
+  "replica": 0,
+  "mode": "greedy",
+  "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "checkpoint_hashes": {
+    "candidate": "212a86b7c99146777f594d714acb7b7e1f00ef3f9a162c7b185922e7186a81c4",
+    "parent": "8496f843758bd3c93912408cf0f9a881e9a0b963e4e88b2855108dc52c13947d"
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed0/greedy/outcomes.jsonl": "4d155ff6e31340c0b72d126208fb78cb1849039df8442359f87058a31ea3221e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed0/greedy/outcomes.jsonl": "26f3a0d7cd4951530166ada3da438d3c0838cad3aaa028c1bb0e3201fe7ec5df"
+  },
+  "matching_evaluation_settings": [
+    "seeds",
+    "greedy",
+    "sampling_seed",
+    "deck",
+    "stake",
+    "win_ante",
+    "temperature",
+    "batch_size",
+    "workers",
+    "cpu_threads",
+    "max_idle_steps",
+    "device",
+    "reward_config"
+  ],
+  "summaries": {
+    "candidate": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 100,
+      "win_rate": 0.5,
+      "win_rate_cluster_ci95": [
+        0.43,
+        0.57
+      ],
+      "win_rate_wilson_ci95": [
+        0.43136085960389187,
+        0.5686391403961082
+      ],
+      "mean_final_ante": 7.22,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.98,
+        "2": 0.935,
+        "3": 0.92,
+        "4": 0.84,
+        "5": 0.785,
+        "6": 0.685,
+        "7": 0.575,
+        "8": 0.5
+      }
+    },
+    "parent": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 91,
+      "win_rate": 0.455,
+      "win_rate_cluster_ci95": [
+        0.39,
+        0.52
+      ],
+      "win_rate_wilson_ci95": [
+        0.387482193098835,
+        0.524213886275119
+      ],
+      "mean_final_ante": 6.95,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.965,
+        "2": 0.91,
+        "3": 0.89,
+        "4": 0.81,
+        "5": 0.735,
+        "6": 0.645,
+        "7": 0.545,
+        "8": 0.455
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 200,
+    "games_per_arm": 200,
+    "sampled_or_greedy_delta": 0.045,
+    "paired_ci95": [
+      -0.02,
+      0.11
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "discordant_pairs": {
+    "candidate_only_wins": 27,
+    "parent_only_wins": 18
+  },
+  "generalization_proven": false,
+  "interpretation": "One development replica at +10 updates. Greedy point estimate is higher while the sampled point estimate is lower. Matched trained control, second replica, later endpoint, independent confirmation, and early-policy attribution remain pending.",
+  "original_analysis_sha256": "ea5adfa20053d16147a1b46411e52adc48e83c088d24f8832c7681a0677bd3f0",
+  "paired_game_rows": {
+    "path": "long_horizon_first_candidate_greedy_games_20260921.jsonl",
+    "sha256": "88cf4f30cba07f37caac3bf29f6780382bccb75d052739155cc36e897dc7c9fe",
+    "rows": 200
+  }
+}

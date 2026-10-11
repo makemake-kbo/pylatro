@@ -1,0 +1,5 @@
+# Reference parameter dispatch follow-up
+
+The admitted first numerical probe finds at most 1.4901161193847656e-7 output difference and 1.1920928955078125e-7 centered-preference difference on 35,365 legal actions in 128 states. No argmax changes. Temporary feature gradients do not remove the difference. The first unequal layer is attention, on three microbatches; this is a small numerical discrepancy, not a scientific transfer finding.
+
+Add one diagnostic mode using an unchanged reference copy with parameter gradient tracking enabled, detach its output, and never call backward or an optimizer. Compare its outputs and parameter strides with the same trainable and frozen copies. This separates effects of weight-gradient dispatch from input-gradient dispatch or copied tensor layout. Use the same bounded first batch, existing 600-second phase caps, saved-array audit and actual owner exit rule. No tolerance is widened and no training is authorized by this diagnostic. Preserve the completed first probe and failed preflight.

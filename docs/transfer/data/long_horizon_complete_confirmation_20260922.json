@@ -1,0 +1,985 @@
+{
+  "stage": "confirmation",
+  "endpoint": 20,
+  "summaries": {
+    "baseline": {
+      "sampled": {
+        "game_seeds": 400,
+        "games": 1600,
+        "wins": 572,
+        "win_rate": 0.3575,
+        "win_rate_cluster_ci95": [
+          0.323125,
+          0.39125
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 6.423125,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.95625,
+          "2": 0.8875,
+          "3": 0.83375,
+          "4": 0.756875,
+          "5": 0.64875,
+          "6": 0.545625,
+          "7": 0.44,
+          "8": 0.3575
+        },
+        "critic": {
+          "games": 1600,
+          "decisions": 257447,
+          "start": {
+            "predicted_win_rate": 0.34321859531104565,
+            "observed_win_rate": 0.3575,
+            "win_brier": 0.23078674421322432
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.581216212656712,
+            "outcome_brier": 0.7101942320916325,
+            "win_brier": 0.17610649728190236,
+            "return_mse": 19.773699862966346,
+            "return_bias": 1.636157455667304
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.3329411866330936,
+            "outcome_brier": 0.6243990952963022,
+            "win_brier": 0.19821724182375586,
+            "return_mse": 20.38751446611704,
+            "return_bias": 0.7625999864990082
+          }
+        }
+      },
+      "greedy": {
+        "game_seeds": 400,
+        "games": 800,
+        "wins": 401,
+        "win_rate": 0.50125,
+        "win_rate_cluster_ci95": [
+          0.4575,
+          0.54375
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 7.01,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.97375,
+          "2": 0.90875,
+          "3": 0.865,
+          "4": 0.80625,
+          "5": 0.7375,
+          "6": 0.6475,
+          "7": 0.57375,
+          "8": 0.50125
+        },
+        "critic": {
+          "games": 800,
+          "decisions": 136546,
+          "start": {
+            "predicted_win_rate": 0.34321859531104565,
+            "observed_win_rate": 0.50125,
+            "win_brier": 0.2775378364757904
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.362167917181251,
+            "outcome_brier": 0.6068738962884327,
+            "win_brier": 0.18169212725117576,
+            "return_mse": 18.33585417441422,
+            "return_bias": 0.5450028076230988
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.1322664878305189,
+            "outcome_brier": 0.5220251006874819,
+            "win_brier": 0.2003524800285526,
+            "return_mse": 18.596642877876842,
+            "return_bias": -0.3373282052173282
+          }
+        }
+      }
+    },
+    "terminal_mc": {
+      "sampled": {
+        "game_seeds": 400,
+        "games": 1600,
+        "wins": 622,
+        "win_rate": 0.38875,
+        "win_rate_cluster_ci95": [
+          0.35375,
+          0.423125
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 6.60625,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.96,
+          "2": 0.901875,
+          "3": 0.851875,
+          "4": 0.770625,
+          "5": 0.690625,
+          "6": 0.57875,
+          "7": 0.465625,
+          "8": 0.38875
+        },
+        "critic": {
+          "games": 1600,
+          "decisions": 265746,
+          "start": {
+            "predicted_win_rate": 0.3796859948709607,
+            "observed_win_rate": 0.38875,
+            "win_brier": 0.23853522930818655
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.537243433986155,
+            "outcome_brier": 0.692292013053376,
+            "win_brier": 0.18223124317704584,
+            "return_mse": 18.2231243189331,
+            "return_bias": 0.5443958429011686
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.2954936838644282,
+            "outcome_brier": 0.6098088785208203,
+            "win_brier": 0.20303097397829217,
+            "return_mse": 20.303097397404834,
+            "return_bias": -0.3221586096675328
+          }
+        }
+      },
+      "greedy": {
+        "game_seeds": 400,
+        "games": 800,
+        "wins": 420,
+        "win_rate": 0.525,
+        "win_rate_cluster_ci95": [
+          0.485,
+          0.565
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 7.20875,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.98,
+          "2": 0.9225,
+          "3": 0.885,
+          "4": 0.835,
+          "5": 0.7675,
+          "6": 0.7,
+          "7": 0.59625,
+          "8": 0.525
+        },
+        "critic": {
+          "games": 800,
+          "decisions": 141478,
+          "start": {
+            "predicted_win_rate": 0.3796859948709607,
+            "observed_win_rate": 0.525,
+            "win_brier": 0.27277583789604765
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.349297979201491,
+            "outcome_brier": 0.6033659237059246,
+            "win_brier": 0.19333996318017388,
+            "return_mse": 19.333996317803297,
+            "return_bias": -0.4927256585587839
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.132581545824151,
+            "outcome_brier": 0.5269022697191496,
+            "win_brier": 0.20968514470518013,
+            "return_mse": 20.968514471751693,
+            "return_bias": -1.317032037391387
+          }
+        }
+      }
+    },
+    "terminal_gae": {
+      "sampled": {
+        "game_seeds": 400,
+        "games": 1600,
+        "wins": 615,
+        "win_rate": 0.384375,
+        "win_rate_cluster_ci95": [
+          0.34875,
+          0.420015625
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 6.591875,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.95875,
+          "2": 0.895625,
+          "3": 0.84625,
+          "4": 0.77625,
+          "5": 0.69125,
+          "6": 0.574375,
+          "7": 0.466875,
+          "8": 0.384375
+        },
+        "critic": {
+          "games": 1600,
+          "decisions": 263868,
+          "start": {
+            "predicted_win_rate": 0.4420101395249367,
+            "observed_win_rate": 0.384375,
+            "win_brier": 0.24107448196523762
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.5824051910676127,
+            "outcome_brier": 0.7133204837134066,
+            "win_brier": 0.19466654584846438,
+            "return_mse": 19.46665458187003,
+            "return_bias": 1.131625911575746
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.3125753243679594,
+            "outcome_brier": 0.6190363019167043,
+            "win_brier": 0.20688183066312146,
+            "return_mse": 20.68818306364403,
+            "return_bias": 0.29002839420136106
+          }
+        }
+      },
+      "greedy": {
+        "game_seeds": 400,
+        "games": 800,
+        "wins": 397,
+        "win_rate": 0.49625,
+        "win_rate_cluster_ci95": [
+          0.455,
+          0.5375
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 7.0825,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.97375,
+          "2": 0.93125,
+          "3": 0.88375,
+          "4": 0.825,
+          "5": 0.74125,
+          "6": 0.665,
+          "7": 0.56625,
+          "8": 0.49625
+        },
+        "critic": {
+          "games": 800,
+          "decisions": 137868,
+          "start": {
+            "predicted_win_rate": 0.4420101395249367,
+            "observed_win_rate": 0.49625,
+            "win_brier": 0.25375586184226845
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.370728054548986,
+            "outcome_brier": 0.6172627747027849,
+            "win_brier": 0.18710683174874723,
+            "return_mse": 18.71068317111171,
+            "return_bias": 0.265813431936889
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.1267808059421471,
+            "outcome_brier": 0.5261588092092361,
+            "win_brier": 0.19446789119573585,
+            "return_mse": 19.4467891171949,
+            "return_bias": -0.5610703304330675
+          }
+        }
+      }
+    },
+    "legacy_gae": {
+      "sampled": {
+        "game_seeds": 400,
+        "games": 1600,
+        "wins": 622,
+        "win_rate": 0.38875,
+        "win_rate_cluster_ci95": [
+          0.355,
+          0.423140625
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 6.641875,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.9675,
+          "2": 0.913125,
+          "3": 0.855,
+          "4": 0.78125,
+          "5": 0.68375,
+          "6": 0.579375,
+          "7": 0.47375,
+          "8": 0.38875
+        },
+        "critic": {
+          "games": 1600,
+          "decisions": 267846,
+          "start": {
+            "predicted_win_rate": 0.38058099906891585,
+            "observed_win_rate": 0.38875,
+            "win_brier": 0.2392698318024351
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.52236858818904,
+            "outcome_brier": 0.6927047947496484,
+            "win_brier": 0.1844824842327526,
+            "return_mse": 20.606256190531436,
+            "return_bias": 1.60361646177149
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.293732156910101,
+            "outcome_brier": 0.6110603561373769,
+            "win_brier": 0.20306087066087167,
+            "return_mse": 20.932337226522144,
+            "return_bias": 0.7942096829195882
+          }
+        }
+      },
+      "greedy": {
+        "game_seeds": 400,
+        "games": 800,
+        "wins": 391,
+        "win_rate": 0.48875,
+        "win_rate_cluster_ci95": [
+          0.4475,
+          0.53
+        ],
+        "win_rate_wilson_ci95": null,
+        "mean_final_ante": 7.11,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.98125,
+          "2": 0.92125,
+          "3": 0.88625,
+          "4": 0.84125,
+          "5": 0.765,
+          "6": 0.66,
+          "7": 0.56625,
+          "8": 0.48875
+        },
+        "critic": {
+          "games": 800,
+          "decisions": 140400,
+          "start": {
+            "predicted_win_rate": 0.38058099906891585,
+            "observed_win_rate": 0.48875,
+            "win_brier": 0.2633017291014268
+          },
+          "interpretation": "Scores measure forecasts for this policy's fresh games, not action correctness",
+          "game_weighted": {
+            "outcome_nll": 1.3646008986474891,
+            "outcome_brier": 0.6206196315871868,
+            "win_brier": 0.18785838947852476,
+            "return_mse": 19.678836204324302,
+            "return_bias": 0.9282819309549373
+          },
+          "decision_weighted": {
+            "outcome_nll": 1.1509759156658252,
+            "outcome_brier": 0.5414563226819202,
+            "win_brier": 0.20145436220282714,
+            "return_mse": 19.58116830452133,
+            "return_bias": 0.15428831917548186
+          }
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "terminal_mc_vs_terminal_gae": {
+      "replicas": {
+        "0": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": -0.0125,
+            "paired_ci95": [
+              -0.0475,
+              0.0225
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.0175,
+            "paired_ci95": [
+              -0.0325,
+              0.07
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        },
+        "1": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": 0.02125,
+            "paired_ci95": [
+              -0.0175,
+              0.06
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.04,
+            "paired_ci95": [
+              -0.0125,
+              0.0925
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        }
+      },
+      "combined": {
+        "sampled": {
+          "game_seeds": 400,
+          "games_per_arm": 1600,
+          "sampled_or_greedy_delta": 0.004375,
+          "paired_ci95": [
+            -0.021875,
+            0.031875
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.02875,
+          "paired_ci95": [
+            -0.0075,
+            0.065
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "passes_gameplay_gate": false
+    },
+    "terminal_mc_vs_baseline": {
+      "replicas": {
+        "0": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": 0.0375,
+            "paired_ci95": [
+              0.0025,
+              0.07125
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.045,
+            "paired_ci95": [
+              -0.0025,
+              0.095
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        },
+        "1": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": 0.025,
+            "paired_ci95": [
+              -0.0125,
+              0.065
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.0025,
+            "paired_ci95": [
+              -0.045,
+              0.05
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        }
+      },
+      "combined": {
+        "sampled": {
+          "game_seeds": 400,
+          "games_per_arm": 1600,
+          "sampled_or_greedy_delta": 0.03125,
+          "paired_ci95": [
+            0.00625,
+            0.05625
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.02375,
+          "paired_ci95": [
+            -0.00875,
+            0.0575
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "passes_gameplay_gate": false
+    },
+    "terminal_mc_vs_legacy_gae": {
+      "replicas": {
+        "0": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": 0.015,
+            "paired_ci95": [
+              -0.02125,
+              0.05125
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.0675,
+            "paired_ci95": [
+              0.0175,
+              0.1175
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        },
+        "1": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": -0.015,
+            "paired_ci95": [
+              -0.05375,
+              0.02375
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.005,
+            "paired_ci95": [
+              -0.045,
+              0.055
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        }
+      },
+      "combined": {
+        "sampled": {
+          "game_seeds": 400,
+          "games_per_arm": 1600,
+          "sampled_or_greedy_delta": 0.0,
+          "paired_ci95": [
+            -0.025,
+            0.02625
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.03625,
+          "paired_ci95": [
+            0.0,
+            0.0725
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "passes_gameplay_gate": false
+    },
+    "terminal_gae_vs_legacy_gae": {
+      "replicas": {
+        "0": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": 0.0275,
+            "paired_ci95": [
+              -0.00875,
+              0.06375
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.05,
+            "paired_ci95": [
+              0.0,
+              0.1
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        },
+        "1": {
+          "sampled": {
+            "game_seeds": 400,
+            "games_per_arm": 800,
+            "sampled_or_greedy_delta": -0.03625,
+            "paired_ci95": [
+              -0.07375,
+              0.00125
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "greedy": {
+            "game_seeds": 400,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": -0.035,
+            "paired_ci95": [
+              -0.0825,
+              0.0125
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          }
+        }
+      },
+      "combined": {
+        "sampled": {
+          "game_seeds": 400,
+          "games_per_arm": 1600,
+          "sampled_or_greedy_delta": -0.004375,
+          "paired_ci95": [
+            -0.03,
+            0.02125
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        },
+        "greedy": {
+          "game_seeds": 400,
+          "games_per_arm": 800,
+          "sampled_or_greedy_delta": 0.0075,
+          "paired_ci95": [
+            -0.02625,
+            0.04125
+          ],
+          "unit": "game seed; sampling repeats averaged before resampling"
+        }
+      },
+      "passes_gameplay_gate": false
+    }
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed0/sample0/outcomes.jsonl": "1abfbf8b868328098ac0c46d09fe78a3d31679d16e9716bc2419c61e50d85931",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed0/sample1/outcomes.jsonl": "acbcce7ae2f28cf5c32ba5c7e312fbf730ac490fea86c5477516ec68bd2b60f2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed0/greedy/outcomes.jsonl": "c2731d4d9aa7d464a2e6704f1d361cddc02c669bdfbc24abe1fe10eaa8d3b73d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample0/outcomes.jsonl": "9f6749cdff4e272e1d54515c19ff110e63a750b7705b64ba00b64236c0f98c61",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample1/outcomes.jsonl": "96d67e6201f8323b91855442464e592759124b376679f71b5add850e3d43ecba",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/greedy/outcomes.jsonl": "2f0bbb84de597afacc89559f7bc942e6b98ee0a16bf7c79af60258b3e28b0121",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/sample0/outcomes.jsonl": "118f93b8a421d0401b60c157d12aa4de124035166670c4d24850c69c019a408f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/sample1/outcomes.jsonl": "cec077ae4b0999d1a578b25edc1722bcb79fd85875bd0f14df97d7935ed24374",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/greedy/outcomes.jsonl": "bcaf9f0e5fa53ebc6275d98f82ff915dd49ba8792edb5a3923b3eda7aa139a96",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample0/outcomes.jsonl": "6744a3dc87aaf7b49fd12057df5bcdccb82ad8f230f4561d705c916e2181765d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample1/outcomes.jsonl": "d598d3e18fa9d57bd2c543254a02d55fe84cd1d1109c3c53451090996a36a98a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/greedy/outcomes.jsonl": "346188d3cb5c8a28de8c52cb6077d030eddbe6cca88973c4d135f2b34f13d32e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/sample0/outcomes.jsonl": "45be00e8842738673f078960c66019c7d1f526814906881b88fb35ff2e565f57",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/sample1/outcomes.jsonl": "c2697e64845120db0a44f308a88b5b4555fb39d11dcc03671811c4f966a3c6ef",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/greedy/outcomes.jsonl": "d1898be6d104231052512c8af5fe2a5ffea86c85b24018c76979f65e2cb92924",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed1/sample0/outcomes.jsonl": "18113efe9488cb9880b196579e1d9bf4e69426208110f3b5d48086a67f6ba87e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed1/sample1/outcomes.jsonl": "2d2ae018e5b1b314a26eb2e9fc5e90e020731b52b4450addd133c13021e33721",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed1/greedy/outcomes.jsonl": "f0ea4e6f36edd0718debc930264c926d0af024aaed3d9f72368ce07b94160b8a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/legacy_gae_seed0/sample0/outcomes.jsonl": "1796f2ada3987308ab66c7a63493b36c46023e1bd5e7a9fc1a1e9c0e05c1bc25",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/legacy_gae_seed0/sample1/outcomes.jsonl": "fc4eabe055599123bf3b3e1f54d3cd1ee70935b3bd2476733fccbd5a971cab54",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/legacy_gae_seed0/greedy/outcomes.jsonl": "585259bfc52eca13e7d0d5a9af83b85857dbfc564dab05018ffbd424c64ee9d2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/legacy_gae_seed1/sample0/outcomes.jsonl": "05040b80506a1bf3eb1cb1583037183b3663b13f425786dd261e1ef803e7137f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/legacy_gae_seed1/sample1/outcomes.jsonl": "b978a60e5ba36d83a1380e16aea88cb1d9af0a2973f29c479db8bc0ef7c533f3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/legacy_gae_seed1/greedy/outcomes.jsonl": "9d22b616332de6e04a79382df3b7c9bf0a7c5d0d38a916ca8460d463e0695aeb"
+  },
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "training_verification": {
+    "terminal_mc_seed0": {
+      "games": 1280,
+      "artifacts": {
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/manifest.json": "6f150b334c4546597ad3a8de09cf16b2b93a75ae6260844a51b68eec46508b92",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/update.json": "fcad417b91891de70728e6045be8cbabb7378ed3c7fd591870c3405443af1189",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_124/manifest.json": "00796fc7508e0879a1af6f9f3bbb39d154bdbf6951108f94c213b5a26a4550ea",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_124/update.json": "038530d81a1494c400eb1735609ea7e5eb61f4fbc0552446b3753cae8e184d8f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_125/manifest.json": "5bb8063d061dee8c78c7eb7b674367b50320b1f6118311290868b4fc7985efc3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_125/update.json": "d831a0d349736c9da7193ddeb6cfeabc588a46eeeca8ac84d6fe0841ace41139",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_126/manifest.json": "4b0bdd8fafe565fb64c058e5a644b65e7e4a5384b53e381d3f1a2e44d93ce95f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_126/update.json": "a559db5db5c5e6c97665915fb035f84c06a67eef97f69b819ebb522077bf9c6e",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_127/manifest.json": "741663453513d22f1ee486965d5575227aca837ca2fece2a9354e12794c552c2",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_127/update.json": "415faa2e77501aba7ecdbb7e3f895535f85ef0e66362f86049294cdefbf558d6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_128/manifest.json": "19339d6eb54152a39538f51f9f5406e927462724e873e94b5765edcef2a1ddf3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_128/update.json": "125a77c9cddaa3e05d40c500d1d43529d758c726c7fd84eb51b29bc9f6afa14f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_129/manifest.json": "194ec818ac3351aaecdb8784257e3a64470dbc8760cc5b298d2a9f0efdbd102b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_129/update.json": "7f962db9b3eab0f3a29fa07d78517c88972fa8b0ee4f053c9c8cda0be2b192be",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_130/manifest.json": "3f277e1b020927252323d81d2d9e7a310d8493b8424f4b17404dff2ee7d9c168",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_130/update.json": "a82641700956b0e6f0e440883d025e9c360dc2cb762a02b34d5edfa213796af9",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_131/manifest.json": "9557d92003081933a90c186a82cb426afef84bcadd93e250476687f4a6829511",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_131/update.json": "efa733db2fdffe198fb540c69b9efd4edfa10a4c2c38edf77632e3bf6c4225f9",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_132/manifest.json": "b4fd91d60b2cfc79400c7099ca3662009d7edaed65ed245481892f69f34a66fb",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_132/update.json": "30452613d6a1eb404323fdad5d6368c0d1bd5d28d126114b1dc94b6b76b4cf21",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_133/manifest.json": "f1a3323a26faf453349b81f482f74638f8a8fb02121a15942891b04d9ddee208",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_133/update.json": "6d388c68112dac54a53a3ee211c33e6c24b4705e59bd2728deb5a3dac57b9170",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_134/manifest.json": "0354957d7f0765afd0dd4270dd08fc983e881df14c36c9656381de666c484288",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_134/update.json": "66524a579193374665abb27d934d87441b0e33fbbdbf644f6ce3c3345fb81857",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_135/manifest.json": "dc3ee1d0898e6f7936a807b36ac777373388e859c908bc4635ad24daf26a37c9",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_135/update.json": "66b6047b9f91d671f9d69c665b69ecd4aa613afbed6f4b458290789d55d386e7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_136/manifest.json": "cc99cd698f2930703718a898662d8a5ad0fc8a7449ff30c0737971e5da1da47a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_136/update.json": "5867f361dccfa5680a402511105637175ee6ea17fad4225449c4e579aeb85de7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_137/manifest.json": "298975ed2ff93f83f060e724a3684beff3effe1ca3212d3124c01f388dd712ee",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_137/update.json": "4049a1d0c0b9dfccb855006d635cfe761bcce8a7ca7e0336807771f01a6c06b1",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_138/manifest.json": "49866f75cec239ccde906856ac312e99bbb3b496335594624eab00a32b17f317",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_138/update.json": "18c17d7e88eb417be873fa9cfe374cee75773c3dbfcb2cf1d2e297004c1f9cca",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_139/manifest.json": "00f004eab471da9fb5911e6499c1d738ddd9155bd34d06dcabd9da5530f06340",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_139/update.json": "08ebb4e4720e174f72d0f41fe803f13d7b5ddfdac8ee3df1704aded1ccc96900",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_140/manifest.json": "40f770515ac3c99129990363a663b45b6dc7a3c8980a5c0fa30cfc2f926ea1ce",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_140/update.json": "12b5895d3954bf58cb8ad0401ff6b8856bd3650ae915bc238b2596893a298a04",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_141/manifest.json": "28ef47855645a8638806776d2ec92d46da12c2e9510df0401aa79776a554c74e",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_141/update.json": "ebcb036f857637055bb28b63b9468b78ffa0b582f0c01d7031d7447086074387",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_142/manifest.json": "1fb8b2a80b2398e8a47714cccf8a93d308f76c2a802c5ac0fd81764cf646a52e",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_142/update.json": "a819685f68f82725c7ac44d65f264c8b2185b6467e0a213e78693512d91977a2"
+      }
+    },
+    "terminal_mc_seed1": {
+      "games": 1280,
+      "artifacts": {
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/manifest.json": "222b7a715a9f3ad0e99866744677b41018d2992ab4cbdc32643daa35c1953e10",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/update.json": "cc46602e00f218c41db7b73d72e7b5a1a4245ef04ccf9ccb6670834d515febae",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_124/manifest.json": "d8edc20e1a510668491894acfa9ce8c3a3113f036e9d68afeabf11c5faec1bac",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_124/update.json": "8128034ccc73c68b4a35e3c6017a988f5ce938914e94f4f330400013db6fe5d3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_125/manifest.json": "e1a83595dafab94b2bc7ad1cb61d7844ce4a60c8c4db7d07192a50a1a3248837",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_125/update.json": "137bd81f4e52f14d2ecf5c37bd104d2eac3d7f7f89c8cb968189b4320c12a3d8",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_126/manifest.json": "c121b86c17704e5b59e4b2d0bfe17d511216ad9c7e466a0fd29bb210b93efb62",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_126/update.json": "cf2310ba333029af136fa0e387c8b02932621e6286e2afa28c6746510ec39bfb",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_127/manifest.json": "780f3f5f114b0cadaa38071853a0d6e0ade98c24bc981534f1574e5f457817da",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_127/update.json": "875492db6fbc9f810ed965a28e6a51dee27fac99c1b0c7e5cc3cf5f07c94c4ec",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_128/manifest.json": "6cf68670223536b6b84d1740bab539207dcfbc9d25327121866af47e422e6524",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_128/update.json": "93447aed22c499e902f77a6c36e771cac5ce06afdc0f85035b07504033cdf0d6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_129/manifest.json": "ecb15f4d7fe91cc567f3935c6081bc6ccae59a36dd0a4488da425dd518b7e945",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_129/update.json": "630355389de95595f645cd2e2afa12e3815af2e9538614cb280b05dbb71d2c73",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_130/manifest.json": "130829cc21ae1d12e98aa4ad32cbc12579b385150d0c63a69a8f2e26e120f9c8",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_130/update.json": "f653a63b4d65b39a8149fc2a9248a9fc7930a237b4d3e4e4ce320d8246bba875",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_131/manifest.json": "b8e7254507ed66abd80612f579079f2210a99968eeeb4a8d93302809758cdd55",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_131/update.json": "6766e9fce0eafc4e8bfb540558bdbac7ac012908ab4731ca966747c79f6dfa25",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_132/manifest.json": "f4ce0829fb9cfa16dbcd1c45b99b3fb5f1a8ee3a7e0ac88aaaa1405df57ffe38",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_132/update.json": "f0c2f35f29ede5073d7ce471fd2dca6adf71c196a7aeec437dd19339d9549945",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_133/manifest.json": "4563744c0f0abe182aae51881b63141e35878ebf7c50b66edf937aea37e81f14",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_133/update.json": "2fa6afba90ac22807edf64efd04260c16763d0494f88e582afa475221a7896c3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_134/manifest.json": "60202bb956a9607afd4ea4d6b677110be71c64c1b4a84868766bfe73cb0ad849",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_134/update.json": "ab898ce3699179ac750169eef8ca342aa3c2151e6d47fd907ddf1616329d47f7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_135/manifest.json": "876e3e5596650faa2aee43adab68f34be0af9503f315a0dcadf46e2a09b53c64",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_135/update.json": "e1b0ba4d715beec56dd32894143a39845714e75ca704ecbe16be3c6ad5ba424a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_136/manifest.json": "ad0378672c6f259929fc2fea9523009ad76289e014cf5219eb92a7567112bf5f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_136/update.json": "8f74c3389ad88d03cdcc3d600bca279038ac65a389bf62c86873adcc521db92d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_137/manifest.json": "e6fba44546e5309587224d91a718217efb00b38f7ef471ad93432a5cbe83a791",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_137/update.json": "9488076116b4f56bf8f8fa73eef3d2b6285acb478f5b6a1a355b094c7a7a79b5",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_138/manifest.json": "1ad6ef46f7297d637f05e1fa15d057d849b8122d5126c366ea5e4bb2e9d4d525",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_138/update.json": "257629eef6f9413d37bd5ce5b8f8bf6ca7823a1b6cab02335455a6821c2590ce",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_139/manifest.json": "446da1a4d6e55b9148d1174b0d685cba28a447d0bcd61622df5f4c46d9f23488",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_139/update.json": "711cc8337dde76e0f046e22b8526ab6589df00eb5f11396e16a98790482690e6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_140/manifest.json": "a1ab25272f517871656d1bfe5de65c7ea41c4df5fe7792ee0d6cdcc5f7857f56",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_140/update.json": "dd6d920022cd72d1d9c61b517851a34eb36d2ed5bf5fb0721afc938273a26991",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_141/manifest.json": "f94cd02546a9018677e3f9862cfe0ed611d553c01aca705d153277c9f033dcfb",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_141/update.json": "d4ddb63560565e8f9674d09265447b6def8d9bb25068a76bde260474bbc49506",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_142/manifest.json": "97a13169dd70fa396ceb2084cab19e83ff8b0aada707ada88d686eb346f10a8a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_142/update.json": "1f796f1e6e49abadf594d6999d4357d84174ae12d4051b4909d9a6c3a08b49d7"
+      }
+    },
+    "terminal_gae_seed0": {
+      "games": 1280,
+      "artifacts": {
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_123/manifest.json": "c5133ae1ad59aff7a8266ef6d85f3dc1628bac275a040908c6cb375f1c498efc",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_123/update.json": "84945f21c8b7445581d1aa4581f59adfc68da87fdeadcd2ef22e5e9e4e8f90ba",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_124/manifest.json": "a12ba1b730a5a0265ca47fcc3996462a8056d08ae317665823bf774944555375",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_124/update.json": "b733ca712637a230445af8beb62cb40ca58668e7799e30ba9618c1bb4f67bbb7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_125/manifest.json": "6b0609c11e329c3a9da4c434f94669ca04dbc174f9361b18cb846d5d032b55de",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_125/update.json": "999d907fe5bc5c1fe0295e28ec44fd2afa9488d5945cc3f9023fc95908d6823b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_126/manifest.json": "7f2c973cd2240b778d632c0464fedeaaa3ae0813d185acec83312e02bc207e2b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_126/update.json": "73b6ec6f456a3f44deea693c16e78613808ca196c38f1859672230a90e1f3fbc",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_127/manifest.json": "5441408be5068f692c8c9b07fd735ec44dec682c925e13efd7c2546aa7c33fa0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_127/update.json": "7046508eac1d3b5d5935708c72045efde44ed9cbae53717dd9bc3ab63932893a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_128/manifest.json": "b3843134d9e408932e05c596f8671738d8856587ab7f6e588e327ab08d1f2221",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_128/update.json": "127cae1ed31b6ece2f778071f77e204504af63c04fb8ec2d03b2b22e084b3bd5",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_129/manifest.json": "c1dfd91d90539d337c3a7f1a4796a752a8198b1715a0df33ac4b5469cecef569",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_129/update.json": "a612850fd2e186e0999fb31a47a1443fcb36f6db2e671c8f5b6205ff60332463",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_130/manifest.json": "87b5334bac6910d423c9ad69a62bdbea2a37066662fb39bcc02e08f4d6efe310",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_130/update.json": "65d87686d1f2bc05fa71fe9d158e37f9a36182aa1243e0fd5a48599107d0cdd3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_131/manifest.json": "145031f9be8d9964a4e581f638784db81a01e8e7a4442f95d85fa90eef292a29",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_131/update.json": "8641ad1b1d536c7efb9fef4c262389166542b1ce25c4fe8934e61c939c8cfa83",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_132/manifest.json": "862cdeeeb028f475f584de6f13cd40534e2e42cd4c803c5c628c55509b7ff011",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_132/update.json": "e494163db103403c25d1d6025bf0ff8190b75efee4309b00946b5d639f32e1f7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_133/manifest.json": "46666495190e20ed6c585ba105270e8c0db122e1f35a06ad10dbcae39b9ed015",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_133/update.json": "a026cd94c6774bb54c89c5b4bbdb571131055bac7d1f7d6bcd76fec5408f0215",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_134/manifest.json": "ea012d95551d668244cb53ac7873f03ea2e1bb3bb29383383b6859ff447377ab",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_134/update.json": "9734777601764875beb10d92104af4ec672730913a0c467e7a6ce69e19223871",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_135/manifest.json": "791adb195238ab44172d0a2ffc8e5bbbe9a5a31b88d857bc271aa6ace3d08e0d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_135/update.json": "0083ae414a358fc745c545ff8d50682f47627b9b76e3264e621e43d2a2cb18e3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_136/manifest.json": "d1ab593392d45d2547f48bab7acb2f442186b923ee0dc621fb677ffdcd759400",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_136/update.json": "059616bc26438c0c9a4770f8deae022100a706913a1539b9772402cb35242fd3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_137/manifest.json": "9bfb1bdb50c16c3539971edc61a59199d664106dae553f5b13473bd4262040fc",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_137/update.json": "69b7d6590d64e4c22d6c2a18fc3469f93906d35995636a27d13ce7ea01ad36d0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_138/manifest.json": "a947af29c3879a190e1c84533d8f0b8fb5cfb31c88c1e6b2df99fecd9f9ef834",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_138/update.json": "469aa525d6a24eb67e0b063b7cd18c1f292ca8217625c17f9140e8ce300af975",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_139/manifest.json": "41874b7d355b7df1b55a6ce3bcb4547d3b1501feaaeb3c7152505fc980a560f5",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_139/update.json": "74d15db8fec28d9f89a427a404ee16f049adbb2080d284ae9bc7b9efca44292f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_140/manifest.json": "448ad7957fdf98288d3fef19e8f0b17430c0c951f4a67c3ff1573c0d71907067",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_140/update.json": "d5eab276e704fe11e5e119c32ee5e2c1e9f53953335961af8740a778a8e00710",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_141/manifest.json": "29a027425e66311027d40a5ab215079c90532f1c2a4a71dc8a0f8ba25c649bd6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_141/update.json": "002d1de2299fb5d90c2643ed5c17b42e731cff0e3d643cab6a1db9a70f89e098",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_142/manifest.json": "1ebd72ffc5633d0646a6f4072be4aebd14520cc30afc2392b6ee534e8c529004",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/logs/cohorts/update_142/update.json": "1b7c3a44be6435fc62253ecb4c3dcc483925aaac5781aaf221b0a84c23fcf35b"
+      }
+    },
+    "terminal_gae_seed1": {
+      "games": 1280,
+      "artifacts": {
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_123/manifest.json": "557a2e5d876ca73e9b764a5b6b403e5683db6a301af30cf94b3f550a7aa0f853",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_123/update.json": "8694383f288e27b0f8f6b21d55823575038fdd18bfd0a6c68c0df92bba2fac8b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_124/manifest.json": "d133e3168220857b1373a38dcecf18366f432e6ff5f791690770f7333d8c2de6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_124/update.json": "ec1deb9e7440bd0115d4706f5aedcc75172a9fb75cd7bab2d25365fe002da2c6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_125/manifest.json": "f556f4f091ca69f41ebfbe95ad5bae0910bc96737d1ca6c48f0533b749091958",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_125/update.json": "0f1d22a2b27f8b6830ede4ae8808d2af1100df9a200a09c33af7d9b1fca5ec9b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_126/manifest.json": "d966dfc5cccc93cacaf494d3d9a1405b23dee831b94972c719f2e6e13428ebfe",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_126/update.json": "fe16f37eade4d509e50e8c1827857ae5a434438a86821fbc27b9c6ec93236c85",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_127/manifest.json": "fd0f3190e6b10f0287454d624fd98775a01c008e8f95cf7f5efcfc880945fe04",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_127/update.json": "fd821203727f7239cdaa505e3d77675029f6d1907c10440360ddf06064f1362b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_128/manifest.json": "d589e7c9e9677648c8e2d49f55bcff1196e83014218e4d5bf073adf20f2ee20e",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_128/update.json": "f5c04ee2c7bbbb6590fb0f3e3288165b195acc71ffdd3da1eb2a9804dd9959d6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_129/manifest.json": "47e06e2b79676b42b09246ee35bc71ad3d8072774088e8b7993bdd3e86782fe1",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_129/update.json": "a1795247e675b6de59f14f11ae391c6625918c1b818729104558de297e7e8d46",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_130/manifest.json": "fc30848f67bb92674400110749143f7085d47e595010711de015649f497783ed",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_130/update.json": "d7d624733a1f4a7bedfab14c4c4d3ff91837d200a176297a67420f4730aca28e",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_131/manifest.json": "f38d039f96262d92a6aa5cb0587b21d3e448f8be6a492a4f642bc7975c41f98f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_131/update.json": "ba5caa2628ca6c33858e2ea19c56b000218414629db07d4fcceeef10e53fa699",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_132/manifest.json": "1a23f4810250d071e02bdb4a5d018f7a00a1db0c9058492ebd563a9a886b93be",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_132/update.json": "2465706e69c45455269f78af4ceaaed916964f2f554e3528ef080d8f5854a591",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_133/manifest.json": "981825ea9db31ccb67034ef12f27d6b4b70dadb0bbb382c97b2c5f12c6fc6b4f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_133/update.json": "3e10440c64331f6963832742c949fa0fb1e6128240f38accfcfea1910419a067",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_134/manifest.json": "8544966e6dfc127ced827b4ffafdc2a89d0be6a24b1734a96c5f766ec6295ef3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_134/update.json": "4f322cb4ab466cd3b635e45f038af87eb6dd66cffa0adee0fb5fa96cb172cdde",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_135/manifest.json": "fdd8f8c3caf931fe8e799044c3365f6106d45bc755e0e22da0bc79adf5d8823b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_135/update.json": "b335016d63ecc701efdb3195ff998aae9c521aa102b75deb99f457906d68b0e3",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_136/manifest.json": "cc636ada096d15ada76b79f6fa88daac73eba3442284fae16767ed079f69b4d7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_136/update.json": "b8af438809142b62e9e5ed34702ba7f3d6538f809ec09521a43103a2782cae09",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_137/manifest.json": "e2014ae345688e494cc176e9c91936e3abf1b81b35c577c80125f5a16e8fdeeb",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_137/update.json": "de36357f1e9d4ceb9389eb9b7706c984abe273ef5249858112c8e440f2b66078",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_138/manifest.json": "bb90b50f03627925dae50579b2c7023b91e2d81cdae30d5149f8ef8a9079d15a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_138/update.json": "36f30b7c90d8d3cd103b635c7ae2041e887b7bb045b7387da3fc91074d87e9d7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_139/manifest.json": "e2b80c9a1a288ebd842a9b73354c4d1d5cceb97302cf751ce5565678fecdc26b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_139/update.json": "d56bd321c7bb49188a24302cf7450750f96684c8964ad60a25ad3eb335ed56f5",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_140/manifest.json": "255b7c8716708d5a1d665c801e2456f1b2298d3b277b27c16f23d68e75f9278a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_140/update.json": "c4ce6279796902b120cdb0b0b121883362f0a9a708c2f6694432cca8f9b84bcf",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_141/manifest.json": "1e7d5062bae01d2b0fe52724b1dfc7d27ba48f7a61d6480170ce41261e77bd4a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_141/update.json": "f69e7e95f1cb2c22228b0a5336d2b03ee945909a1261c8f1f516c48c712fae6d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_142/manifest.json": "84e7a76703046ed1231242d9bb33e1caef55610f23b2778d098a37530e2fb083",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/logs/cohorts/update_142/update.json": "b74868c2ec6699436f5ed160ceb9b5dbfa4908c0b12d63b00efb0a00d9057dd5"
+      }
+    },
+    "legacy_gae_seed0": {
+      "games": 1280,
+      "artifacts": {
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_123/manifest.json": "e03fab845458afeb4e4cc5ec08522b2934f9c13b3c2f89080cb073e2dcda593e",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_123/update.json": "1c7adb04947d7ef295c0d6f730055411fa8e1206f4ee9242771422c1ee581ffb",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_124/manifest.json": "cc540af8268ee7de5f473baf795e548e9ca3cb1ce86783950094e91d21a634d0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_124/update.json": "c6b6d4334a7d69ca6b0091562c49fd411514193a7bcded33f61f716703b7fe39",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_125/manifest.json": "01ffa4471848bc9a84ac3e1a16a6da787920cfc56d46217570b71a307f87b779",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_125/update.json": "04df8136a175b33dafd6ffc381710730b870a3ef7947544e9a0e9ff1cb4db2fe",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_126/manifest.json": "081ffd803bacf6a97643e6d7a20f24c371a5407958954b95560b5cdbabaa2d23",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_126/update.json": "d7a3171c7b42332e4bbab7a6f503b480655370b549675a84b2e8485cbf4dae59",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_127/manifest.json": "c6f2838ef6275e790b47d216caa5a60b92344f63d075ff9ac3d3132fcc544316",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_127/update.json": "d5366f6fc026dd34eef09c219c1efbc9d8e39c649a1fbeb3a153f31219cdf74d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_128/manifest.json": "ef2a60974908f1cb8bf2daefde9c5d74c3cd7b2b3b86e18b20d2e0eae4cd3322",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_128/update.json": "e76525774d9b1daf79b6165a4a5a931b924c2407d8f7069a2a5ff389afac48b7",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_129/manifest.json": "6f6d2436c5eb4525ddecfbaf810a4375bec81bd3b068f3588f29f139492b5b8d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_129/update.json": "28a1c4f323140f18744458792912656c996a1dc8c1bd8a61e2eb1bc575b4e705",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_130/manifest.json": "81123d8d8b533f8c014b6785c3140e2fe83405d1bbd6ca82f0d396e273b158dc",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_130/update.json": "581fe67e95d2a9f8b21bacc19c1cd124d31f176a17bed363f2dfbdfcaef9153b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_131/manifest.json": "d4591244ba780bbe96de9556e2350ca349e31e0269d0cfee66ff0d7d889c8068",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_131/update.json": "2237776a01df3b9960f4398e8ac384b6a5f118021d59f9f2a20674d8c7007252",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_132/manifest.json": "86a71d86a11d46b9afd6385992b5e7a05e748d92d4d6de870c855a55bd47d3b5",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_132/update.json": "b52f8ce22b539c2c003085f3aba605b31f5c280f98d8e435cbccc81bf5841cea",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_133/manifest.json": "71afa2e7e06b869ead25f3dc90f7e2256a16629cf2ceb472069fdca4859babf9",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_133/update.json": "28ebc0189a841b8423f972402b330a8a6cc23c246faff6dd79b18d955daa52f5",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_134/manifest.json": "ecff3316774101618b2f55bbef9d8761276da7056efd11a25e75bc4d3c8ffe36",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_134/update.json": "d169a265ff8f48534249b0a18bb89c0ac87f31b9d378a9f3b017d17881e7ddcc",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_135/manifest.json": "3b5b0cbbf2ef7bb7185d76e65efd52c0fa50ba46339c873348d809086d494a76",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_135/update.json": "e11261304e6ec50a77056c089c8e8742b44e98974ccea924c831aabf64660ab9",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_136/manifest.json": "d477f058ca5ec73ee00c96984e124e1bf3c25ab459252559f7e48f8b5c178d1d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_136/update.json": "ff76dfce2bbd8f146317f9d2097b33bca44d0cb738b3d3cde9d5d18332c6f8ea",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_137/manifest.json": "14351b8f4382839adc3db152d3648db1bfbc47272338302dc365d1c87ce0320c",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_137/update.json": "f9923b6126b663bb3cc5e1d0a838866808fae2f25ace41af09eee97868db1072",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_138/manifest.json": "51764b7d780a018f95c1495679ae1233f3a650bfdb090dbda49a7fafff7756ab",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_138/update.json": "53fd426d1a6dbcf8ad6853dbca2db1076fd59331326aa7f31e5ac03432acec7f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_139/manifest.json": "6242e9ade2318896f6c12e3963998e60258746953c9a6580ffb8927a69d4b297",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_139/update.json": "d1ec991a428083aad1370df407b443ee96e8eaa030b455646a37891ec115d5f6",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_140/manifest.json": "2c4503300edc941da066727a41d1249e940dcfae6c3a28815983f058fada5808",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_140/update.json": "5239a2637c6bbb2faa5a06b2bb8f969b4adfd0b1100fd58e9eafb413785ffc4a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_141/manifest.json": "3f120e69b962296c6354444b19c2ec824eba368bded73532853c19a6ab2223bc",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_141/update.json": "37b09dd5274df443a0f22da6e32a031f73bdeb455437957118ba644174177e27",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_142/manifest.json": "b18150b13e2f2cd9c4d6f66454e7191f23a897087deb3c59bef3ada334298488",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/logs/cohorts/update_142/update.json": "85cca8f50dcf27ae9e9703e0a14c9fa91ef758efaa087a9a8d04435f4faf7621"
+      }
+    },
+    "legacy_gae_seed1": {
+      "games": 1280,
+      "artifacts": {
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_123/manifest.json": "f1eae1665b2b9f7a024abbeed4c867644a175ba2797daa1e8efb983466d6dc4b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_123/update.json": "0f0e83214b79dfd925171fdb27197a46500c790e26868fcbad244adbcc091ebe",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_124/manifest.json": "c2cd6fa5907747616ed3b08faf4bf4459676817b02309ee574eb8109f691cd53",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_124/update.json": "db37b456c94265c0f59583bf17b702135ed3b8156d509fc9ac90b8865c6c7251",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_125/manifest.json": "c6daa479faf2b882bb28912b3f605f084b801d4928d1f24b87a42a8cd9e1c52d",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_125/update.json": "6be3a05c0baab8105899cefe6cfbc245d11216d86d61620bee00ac937d8ebbad",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_126/manifest.json": "479763369ea6adcc48309638a06a37383272c6e21f2711dd9e8e8138b350c290",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_126/update.json": "0b0031b584483b77929b9c475f2b778677c54973cd5d0b51a408cacd40d20171",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_127/manifest.json": "2cc1e551c3870cf62bc7296806c4579d3b8f866db6208c0a980e524180c736ad",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_127/update.json": "3829afcaeb405c3c00d108c960e9439cecb342273f7666ae4e88d97677d32a1f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_128/manifest.json": "a6a7e177529dc016a9df94ead85edcbdcc62be096a7076b76d2ee6fd1f791a3b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_128/update.json": "61b02287ce156b5655beab9b878d67ebd10c1cb875cc702fa0cf860902a917bd",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_129/manifest.json": "14731b5fbaee66d3453824d5f726f479da49588acef280462de2b49ef81ff298",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_129/update.json": "3dc53c618a18d9c69264d98398555412ce1c31a768c8eff9d29ef954cd364194",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_130/manifest.json": "cf6248bc1e72650dcca1aaa1285948c3ba659e5d4b2b956ad1159a0a7c4a25a2",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_130/update.json": "506d2a942a0ea436b39986bc8ceeb5417c548766dcdd2ddfa8d5c23068225ac2",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_131/manifest.json": "de0eadf3f2466e82a7f37fcc3862f6556c422662fdb014bec515dbcbdd7d6c5a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_131/update.json": "aa78748f4093a540fe66273c21c3f8bc7634828594cfce12ad12c75fd891e315",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_132/manifest.json": "b406f90081306c11264bfb7d68509fac3d807bb21c84a683b520cbd6bdb6e094",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_132/update.json": "5fb38ae23da41b088f0c9ca93fabb1fff0180c5a38ef6690cfc2122808bb3723",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_133/manifest.json": "2591030e9aca61cfc2d82e0f82cf0073f13228b2537a5bcde09bc2cb1d65a583",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_133/update.json": "fefcdb8ace9e32affad522b8ea85303b87742315c617287683d6a369358ba243",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_134/manifest.json": "fc556e8a0230a5d00fe2fc3ad6d0350ddcd14d8e1e52aab4640004c8a46cbb16",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_134/update.json": "d84496748d825da2e74335a850e390bbe680737c1ff61f1609c5bd996baa333f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_135/manifest.json": "c6b611dfe7e23c9467387466f513cbdca3c48ba3742ba468650dbf4b4911c352",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_135/update.json": "da8996d9516ef4de3fd031271893e8d867cc8a23218cd3b6a9249d87d7ad71c0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_136/manifest.json": "aacd89828ed49b8ba20892b5213135285623259346e12d299add9bca312fc987",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_136/update.json": "f50162bf2328770b2fd2b3876c09c216b38b2860626cf749110e47fda6833545",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_137/manifest.json": "4305074407b87797030a64945aca4f3e96a6d350d49b7502e03468df8e9be78b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_137/update.json": "45cce3851679bc726ffb104bd5a4e0081a0261a402f37e93aac778470e99d2aa",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_138/manifest.json": "3b3f858bc1085aa71e50ec62125a3d3db57aeb79a5c9052848a748f8799ba8c2",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_138/update.json": "d07e520283f62013e8b83cac24afd98aa93307c358e4ce54324b49118e88d6c0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_139/manifest.json": "b60361c5e3c1c9b2d02ecf6058ec00111b4aeaedb7b384c972ea96197ade5f3b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_139/update.json": "12047f794780b56d67d5738554dd5be56a95a1989be0738d0e0504e4a8ff4d7f",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_140/manifest.json": "00118aca56ec815e9973642b3c3c29257792b809027cd5b06981be155b8e08d0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_140/update.json": "cf2df565a089309003d2636f61a6238985cb0b022fbbde41bb35824f28ea412a",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_141/manifest.json": "a9a76986dc131ae902de985639850057224e456aa47dca741e0deece489167f0",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_141/update.json": "515084dfc8158dc98d34aadfe7c1810035a9ade283ed884eb29449a56e902fae",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_142/manifest.json": "7558d7c12e26f00fca578843f0ad9b94b996bf519220d3760e731109b33ef53b",
+        "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/logs/cohorts/update_142/update.json": "3d4a745acd5f150a1beab6485e8b826d563326e3f29b506e7970846f67847850"
+      }
+    }
+  },
+  "generalization_proven": false,
+  "interpretation": "Development does not validate gains; confirmation also needs the early-transfer intervention"
+}

@@ -1,0 +1,312 @@
+{
+  "created_unix": 1790423342.857985,
+  "equal_score_nonmatching_actions": {
+    "base": 40,
+    "ordinary_r0": 24,
+    "ordinary_r1": 25,
+    "preservation_r0": 29,
+    "preservation_r1": 30
+  },
+  "execution": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/card_sharp_training_cost_20260926/execution_v1/complete.json",
+    "sha256": "4a096a9f4d073d55360274d940166a7897849e962164bc566b44ec3b8ed1673d"
+  },
+  "factual_decisions": 18857,
+  "factual_games": 88,
+  "generalization_proven": false,
+  "higher_scoring_alternatives": [
+    {
+      "action": 244,
+      "choice": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          79962
+        ],
+        "game_over": false,
+        "hand_type": "Three of a Kind",
+        "phase": "hand_play",
+        "post_state_sha256": "be879fb3bfb460648df36ccbd0482ec84f3fbf73acd488a12719fd07e599699d",
+        "score": 8140
+      },
+      "hands_left": 5,
+      "remaining_requirement": 20000.0,
+      "seed": 4000723,
+      "step": 157,
+      "teacher": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          79962
+        ],
+        "game_over": false,
+        "hand_type": "Pair",
+        "phase": "hand_play",
+        "post_state_sha256": "eea2d0d6da035a1de2b7805e1e26984879585d588f6d3cc17a67a85f359f3148",
+        "score": 7800
+      }
+    }
+  ],
+  "historical_controls": 4003,
+  "historical_decisive_example": {
+    "ante": 6,
+    "cache_index": 94611,
+    "eligible": true,
+    "hands_left": 1,
+    "raw_weight": 1.0,
+    "remaining_requirement": 20000.0,
+    "seed": 4000471,
+    "severity": 0.0,
+    "step": 116,
+    "student": {
+      "blind_cleared": true,
+      "card_uid_counter_after": [
+        52074
+      ],
+      "game_over": false,
+      "hand_type": "Pair",
+      "phase": "shop",
+      "score": 33948
+    },
+    "student_action": 145,
+    "student_family": "play_subset",
+    "teacher": {
+      "blind_cleared": true,
+      "card_uid_counter_after": [
+        52074
+      ],
+      "game_over": false,
+      "hand_type": "Pair",
+      "phase": "shop",
+      "score": 33948
+    },
+    "teacher_action": 145,
+    "teacher_probability": 0.2959747135416601
+  },
+  "historical_plays": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/costs_panel_v1/plays.jsonl",
+    "sha256": "6c5e6c3a83ccdb01101f4b28e34a8b9f370136366212ed35be6507c0937d77fc"
+  },
+  "last_hand": [
+    {
+      "all_models_match": true,
+      "alternative": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          52074
+        ],
+        "game_over": true,
+        "hand_type": "Three of a Kind",
+        "phase": "game_over",
+        "post_state_sha256": "6918ebee27ab851cf1b730f52b79eedf6745f54e1fd331cef9712dc2f24d2193",
+        "score": 9386
+      },
+      "alternative_action": 139,
+      "remaining_requirement": 20000.0,
+      "seed": 4000471,
+      "step": 116,
+      "teacher": {
+        "blind_cleared": true,
+        "card_uid_counter_after": [
+          52074
+        ],
+        "game_over": false,
+        "hand_type": "Pair",
+        "phase": "shop",
+        "post_state_sha256": "45152c84534f495bd49827434546907219df1371bd1e929afc266aac63ee98aa",
+        "score": 33948
+      },
+      "teacher_action": 145
+    },
+    {
+      "all_models_match": true,
+      "alternative": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          85068
+        ],
+        "game_over": true,
+        "hand_type": "Three of a Kind",
+        "phase": "game_over",
+        "post_state_sha256": "1f99902ea617e1130aa1396fdc2668720e030e22a82f69f781303d3c6b528c80",
+        "score": 8664
+      },
+      "alternative_action": 413,
+      "remaining_requirement": 67341.0,
+      "seed": 4000769,
+      "step": 223,
+      "teacher": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          85068
+        ],
+        "game_over": true,
+        "hand_type": "Pair",
+        "phase": "game_over",
+        "post_state_sha256": "dd097ccb6938be599e9cbce9a2194ed110983290a87270fcf741fea09bae5a0d",
+        "score": 39123
+      },
+      "teacher_action": 416
+    },
+    {
+      "all_models_match": true,
+      "alternative": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          110022
+        ],
+        "game_over": true,
+        "hand_type": "Three of a Kind",
+        "phase": "game_over",
+        "post_state_sha256": "5beb0752c3810e11cb72b2af86c9930162f7e467a5342252da385e3d802abbee",
+        "score": 7964
+      },
+      "alternative_action": 335,
+      "remaining_requirement": 128664.0,
+      "seed": 4000995,
+      "step": 235,
+      "teacher": {
+        "blind_cleared": false,
+        "card_uid_counter_after": [
+          110022
+        ],
+        "game_over": true,
+        "hand_type": "Pair",
+        "phase": "game_over",
+        "post_state_sha256": "cf35d2694b7864550cc75813a407794b606653b009de95ed0a9448cbf64bf727",
+        "score": 37338
+      },
+      "teacher_action": 338
+    }
+  ],
+  "policy_counts": {
+    "base": {
+      "averted_immediate_loss": 0,
+      "blind_clears": 56,
+      "both_clear": 56,
+      "exact_matches": 71,
+      "extra_clear": 0,
+      "missed_teacher_clear": 5,
+      "new_immediate_loss": 0,
+      "other_family": 3,
+      "score_equal": 111,
+      "score_higher": 9,
+      "score_lower": 22,
+      "states": 145,
+      "teacher_clears": 61
+    },
+    "ordinary_r0": {
+      "averted_immediate_loss": 0,
+      "blind_clears": 57,
+      "both_clear": 57,
+      "exact_matches": 98,
+      "extra_clear": 0,
+      "missed_teacher_clear": 4,
+      "new_immediate_loss": 0,
+      "other_family": 3,
+      "score_equal": 122,
+      "score_higher": 8,
+      "score_lower": 12,
+      "states": 145,
+      "teacher_clears": 61
+    },
+    "ordinary_r1": {
+      "averted_immediate_loss": 0,
+      "blind_clears": 58,
+      "both_clear": 58,
+      "exact_matches": 99,
+      "extra_clear": 0,
+      "missed_teacher_clear": 3,
+      "new_immediate_loss": 0,
+      "other_family": 2,
+      "score_equal": 124,
+      "score_higher": 5,
+      "score_lower": 14,
+      "states": 145,
+      "teacher_clears": 61
+    },
+    "preservation_r0": {
+      "averted_immediate_loss": 0,
+      "blind_clears": 57,
+      "both_clear": 57,
+      "exact_matches": 85,
+      "extra_clear": 0,
+      "missed_teacher_clear": 4,
+      "new_immediate_loss": 0,
+      "other_family": 3,
+      "score_equal": 114,
+      "score_higher": 10,
+      "score_lower": 18,
+      "states": 145,
+      "teacher_clears": 61
+    },
+    "preservation_r1": {
+      "averted_immediate_loss": 0,
+      "blind_clears": 57,
+      "both_clear": 57,
+      "exact_matches": 86,
+      "extra_clear": 0,
+      "missed_teacher_clear": 4,
+      "new_immediate_loss": 0,
+      "other_family": 3,
+      "score_equal": 116,
+      "score_higher": 10,
+      "score_lower": 16,
+      "states": 145,
+      "teacher_clears": 61
+    }
+  },
+  "protocol": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/card_sharp_training_cost_20260926/protocol_v1.json",
+    "sha256": "04e3853e43346d8304cbd6930753fe9848e8355be37562e76ac8a6b0ce270ee6"
+  },
+  "publisher": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/card_sharp_training_cost_20260926/publish_v1.py",
+    "sha256": "e9096f4c29946f558607d58088e379e039ff1255493c93390f7e0d358a901718"
+  },
+  "raw_comparisons": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/card_sharp_training_cost_20260926/panel_v1/comparisons.jsonl",
+    "sha256": "d8917de27eb5f88427f23ae642531c7663a140013da18c79b1597e7b459805d4"
+  },
+  "scope": "Descriptive immediate consequences on teacher training paths. Scores are not full-game values; equal scores are not equivalent successor states. No new fit or fresh evaluation.",
+  "states": 145,
+  "status": "complete",
+  "structural_counts": {
+    "averted_immediate_loss": 0,
+    "blind_clears": 12,
+    "both_clear": 12,
+    "extra_clear": 0,
+    "legal": 156,
+    "missed_teacher_clear": 52,
+    "new_immediate_loss": 1,
+    "other_family": 0,
+    "requested": 156,
+    "score_equal": 0,
+    "score_higher": 1,
+    "score_lower": 155
+  },
+  "structural_groups": {
+    "higher_score": {
+      "alternatives": 1,
+      "games": 1,
+      "states": 1
+    },
+    "lower_score": {
+      "alternatives": 155,
+      "games": 88,
+      "states": 144
+    },
+    "missed_clear": {
+      "alternatives": 52,
+      "games": 36,
+      "states": 49
+    },
+    "new_immediate_loss": {
+      "alternatives": 1,
+      "games": 1,
+      "states": 1
+    }
+  },
+  "verification": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/card_sharp_training_cost_20260926/panel_verification_v1.json",
+    "sha256": "d9463d9a0e04764d38cc36ba71f29903761cf6da01c63bc3823fd1b66cbde19c"
+  }
+}

@@ -1,0 +1,9 @@
+# Account for preserved and overridden base decisions
+
+The fixed-base residual experiment asks whether retaining the complete base action distribution helps learned corrections preserve useful choices. After the single fit's full retention replay and independent audit finish, use only admitted saved labels, actions, outcomes and held-out pair predictions to locate any gain or deficit. This is a descriptive mechanism check, not another policy, fit or selection rule.
+
+Compare the fixed-base endpoint with the preceding survival-ranking endpoint and base. Reproduce all previously audited group counts. Partition eligible states into both scorers retaining base, returning to base, newly overriding base, keeping the same override, or changing between two overrides. These disjoint categories must cover all 6,008 eligible states. Within each, count clears, immediate failures, gains and losses against both the preceding scorer and base. Also retain early/later, last-hand/more-hands and teacher-agreement summaries. Teacher agreement is an analysis group and cannot gate deployment.
+
+Reconcile all 318 held-out original-proposal survival pairs with their previously audited changes, then connect changed pair orderings to the actual chosen actions and known outcomes. Save all changed eligible choices and changed last-hand cases for inspection. An improved pair need not determine the winning action, and a returned base choice can be either helpful or harmful.
+
+Use standard-library parsing only, with a 600-second cap plus 30 seconds of process supervision. Verify identity, original proposal outcomes and identical base outcomes across both admitted retention records. No new inference, simulator branch, bootstrap, RNG target, fitting, threshold, coefficient, checkpoint selection or gate is introduced. No autonomy or long-horizon win claim follows from teacher-state interventions. Preserve every existing prediction, retention and final confirmation requirement.

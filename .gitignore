@@ -32,3 +32,12 @@ vendor/balatro_lua/
 
 # Local ablation experiment output (checkpoints, logs, results)
 ablations/
+
+# Retained experiment evidence and demonstration data (registries stay visible).
+archives/**/*.tar.gz
+archives/**/inventory.jsonl
+archives/**/removed.jsonl
+archives/**/working_tree.patch
+archives/**/working_tree_status.txt
+datasets/current_1000/
+datasets/current_4000/

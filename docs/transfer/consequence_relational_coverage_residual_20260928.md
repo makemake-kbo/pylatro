@@ -1,0 +1,11 @@
+# Saved-data diagnosis after the matched relational comparison
+
+The [fixed-endpoint relational experiment](consequence_relational_coverage_results_20260928.md) improves consequence prediction and passes both immediate-loss count gates, but fails overall and early clear retention. Use its admitted legal-action predictions, original labels and chosen-action outcomes to locate the remaining gap before another intervention. This is post-hoc diagnosis with no new training, inference, simulator call or policy.
+
+Reuse the immutable pooled action-coverage residual analysis, adapting only admission and output paths. Partition states by original-proposal membership, early/later, base/teacher agreement, unchanged/changed action, and gained/lost clears. Reconcile all prior audited outcome groups, exact gained/lost identity sets and proposal prediction metrics, using the same tolerances. Save complete per-state rows and fatal-case predictions/outcomes.
+
+For gained/lost clears and fatalities, count where the selected action has lower predicted score or clear probability than base. The prediction reference is always base, including fatalities where the teacher survives. Inspect both disagreements and cases where the consequence heads favor the failing action. Report all last-hand fatalities and their proposal membership. Prediction-head disagreement alone does not establish an avoidable long-term error or a safe gate; original-RNG outcomes are single realizations.
+
+Preserve the teacher-containing restricted-proposal comparison as an explicitly nondeployable support diagnostic. Compare descriptively with the completed pooled analysis, noting that model-selected groups can differ. Do not select a duration, new threshold, or candidate from this diagnostic.
+
+Freeze the helper, plan and admitted inputs before execution. Use the standard library and previously tested metric helper only, with a 600-second budget plus 30-second supervision grace. Require actual process exit before admission. Reconciliation of existing audited quantities is required; this is not a second independent implementation of every new statistic. Keep all scientific gates and confirmation reservations unchanged.

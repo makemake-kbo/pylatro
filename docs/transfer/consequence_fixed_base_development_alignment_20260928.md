@@ -1,0 +1,5 @@
+# Held-out pair check for the fixed-base scorer
+
+After admitted endpoint prediction, reuse saved arrays and labels to compare the fixed-base scorer with the completed survival-ranking scorer on the same original development proposals. Reconcile both models' aggregate prediction metrics and the control's previous pair summaries before comparing the 318 last-hand survivor/fatal pairs in 56 mixed states. No inference, fitting, extra labels or simulation is needed.
+
+Keep the existing score/clear/preference reports for all, early, later, teacher-winner and nonteacher-winner pairs, state-balanced errors and 10,000 whole-source-game bootstrap draws with seed 1729. These are exploratory mechanism comparisons on already-used development data, with no multiple-comparison adjustment or gate changes. Preserve the 600-second cap plus 30 seconds supervision grace and the complete legal-action retention and final autonomous-win requirements. Improved pair ordering alone cannot establish better action selection or long-horizon learning.

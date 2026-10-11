@@ -1,0 +1,2132 @@
+{
+  "created_unix": 1790501496.0464,
+  "full_teacher_prediction_summary": {
+    "base": {
+      "correct": 21544,
+      "mean_nll": 0.6391055354772996,
+      "mean_play_nll": 1.295090105544545,
+      "play_correct": 4156,
+      "predictions_preexisting": true,
+      "rows": 26045,
+      "teacher_plays": 6113
+    },
+    "combined0": {
+      "correct": 21554,
+      "mean_nll": 0.6462524954510738,
+      "mean_play_nll": 1.3091038900848737,
+      "play_correct": 4182,
+      "predictions_preexisting": false,
+      "rows": 26045,
+      "teacher_plays": 6113
+    },
+    "ordinary0": {
+      "correct": 21477,
+      "mean_nll": 0.6903291851588224,
+      "mean_play_nll": 1.3897496396594828,
+      "play_correct": 4127,
+      "predictions_preexisting": true,
+      "rows": 26045,
+      "teacher_plays": 6113
+    },
+    "preservation0": {
+      "correct": 21588,
+      "mean_nll": 0.6430907695964715,
+      "mean_play_nll": 1.290082888550553,
+      "play_correct": 4196,
+      "predictions_preexisting": true,
+      "rows": 26045,
+      "teacher_plays": 6113
+    },
+    "ranking0": {
+      "correct": 21440,
+      "mean_nll": 0.6917673302079776,
+      "mean_play_nll": 1.3993322592393709,
+      "play_correct": 4108,
+      "predictions_preexisting": true,
+      "rows": 26045,
+      "teacher_plays": 6113
+    }
+  },
+  "generalization_proven": false,
+  "held": {
+    "base": {
+      "all": {
+        "correct": 106,
+        "mode_loser": 233,
+        "mode_other": 0,
+        "mode_winner": 106,
+        "pair_accuracy_percent": 31.26843657817109,
+        "pairs": 339,
+        "preferred_mode_percent": 31.26843657817109,
+        "states": 339
+      },
+      "alternative_preferred": {
+        "correct": 106,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 106,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 106,
+        "preferred_mode_percent": 100.0,
+        "states": 106
+      },
+      "early": {
+        "correct": 35,
+        "mode_loser": 82,
+        "mode_other": 0,
+        "mode_winner": 35,
+        "pair_accuracy_percent": 29.914529914529915,
+        "pairs": 117,
+        "preferred_mode_percent": 29.914529914529915,
+        "states": 117
+      },
+      "early_alternative_preferred": {
+        "correct": 35,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 35,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 35,
+        "preferred_mode_percent": 100.0,
+        "states": 35
+      },
+      "early_teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 82,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 82,
+        "preferred_mode_percent": 0.0,
+        "states": 82
+      },
+      "fatal_alternative": {
+        "correct": 0,
+        "mode_loser": 7,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 7,
+        "preferred_mode_percent": 0.0,
+        "states": 7
+      },
+      "late": {
+        "correct": 71,
+        "mode_loser": 151,
+        "mode_other": 0,
+        "mode_winner": 71,
+        "pair_accuracy_percent": 31.98198198198198,
+        "pairs": 222,
+        "preferred_mode_percent": 31.98198198198198,
+        "states": 222
+      },
+      "late_alternative_preferred": {
+        "correct": 71,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 71,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 71,
+        "preferred_mode_percent": 100.0,
+        "states": 71
+      },
+      "late_teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 151,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 151,
+        "preferred_mode_percent": 0.0,
+        "states": 151
+      },
+      "teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 233,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 233,
+        "preferred_mode_percent": 0.0,
+        "states": 233
+      }
+    },
+    "combined0": {
+      "all": {
+        "correct": 136,
+        "mode_loser": 171,
+        "mode_other": 40,
+        "mode_winner": 128,
+        "pair_accuracy_percent": 40.117994100294986,
+        "pairs": 339,
+        "preferred_mode_percent": 37.75811209439528,
+        "states": 339
+      },
+      "alternative_preferred": {
+        "correct": 102,
+        "mode_loser": 4,
+        "mode_other": 6,
+        "mode_winner": 96,
+        "pair_accuracy_percent": 96.22641509433963,
+        "pairs": 106,
+        "preferred_mode_percent": 90.56603773584905,
+        "states": 106
+      },
+      "early": {
+        "correct": 47,
+        "mode_loser": 64,
+        "mode_other": 10,
+        "mode_winner": 43,
+        "pair_accuracy_percent": 40.17094017094017,
+        "pairs": 117,
+        "preferred_mode_percent": 36.75213675213675,
+        "states": 117
+      },
+      "early_alternative_preferred": {
+        "correct": 34,
+        "mode_loser": 1,
+        "mode_other": 3,
+        "mode_winner": 31,
+        "pair_accuracy_percent": 97.14285714285714,
+        "pairs": 35,
+        "preferred_mode_percent": 88.57142857142857,
+        "states": 35
+      },
+      "early_teacher_preferred": {
+        "correct": 13,
+        "mode_loser": 63,
+        "mode_other": 7,
+        "mode_winner": 12,
+        "pair_accuracy_percent": 15.853658536585366,
+        "pairs": 82,
+        "preferred_mode_percent": 14.634146341463415,
+        "states": 82
+      },
+      "fatal_alternative": {
+        "correct": 1,
+        "mode_loser": 3,
+        "mode_other": 3,
+        "mode_winner": 1,
+        "pair_accuracy_percent": 14.285714285714286,
+        "pairs": 7,
+        "preferred_mode_percent": 14.285714285714286,
+        "states": 7
+      },
+      "late": {
+        "correct": 89,
+        "mode_loser": 107,
+        "mode_other": 30,
+        "mode_winner": 85,
+        "pair_accuracy_percent": 40.090090090090094,
+        "pairs": 222,
+        "preferred_mode_percent": 38.288288288288285,
+        "states": 222
+      },
+      "late_alternative_preferred": {
+        "correct": 68,
+        "mode_loser": 3,
+        "mode_other": 3,
+        "mode_winner": 65,
+        "pair_accuracy_percent": 95.77464788732394,
+        "pairs": 71,
+        "preferred_mode_percent": 91.54929577464789,
+        "states": 71
+      },
+      "late_teacher_preferred": {
+        "correct": 21,
+        "mode_loser": 104,
+        "mode_other": 27,
+        "mode_winner": 20,
+        "pair_accuracy_percent": 13.907284768211921,
+        "pairs": 151,
+        "preferred_mode_percent": 13.245033112582782,
+        "states": 151
+      },
+      "teacher_preferred": {
+        "correct": 34,
+        "mode_loser": 167,
+        "mode_other": 34,
+        "mode_winner": 32,
+        "pair_accuracy_percent": 14.592274678111588,
+        "pairs": 233,
+        "preferred_mode_percent": 13.733905579399142,
+        "states": 233
+      }
+    },
+    "ordinary0": {
+      "all": {
+        "correct": 132,
+        "mode_loser": 169,
+        "mode_other": 56,
+        "mode_winner": 114,
+        "pair_accuracy_percent": 38.93805309734513,
+        "pairs": 339,
+        "preferred_mode_percent": 33.6283185840708,
+        "states": 339
+      },
+      "alternative_preferred": {
+        "correct": 92,
+        "mode_loser": 10,
+        "mode_other": 15,
+        "mode_winner": 81,
+        "pair_accuracy_percent": 86.79245283018868,
+        "pairs": 106,
+        "preferred_mode_percent": 76.41509433962264,
+        "states": 106
+      },
+      "early": {
+        "correct": 46,
+        "mode_loser": 62,
+        "mode_other": 16,
+        "mode_winner": 39,
+        "pair_accuracy_percent": 39.31623931623932,
+        "pairs": 117,
+        "preferred_mode_percent": 33.333333333333336,
+        "states": 117
+      },
+      "early_alternative_preferred": {
+        "correct": 32,
+        "mode_loser": 1,
+        "mode_other": 6,
+        "mode_winner": 28,
+        "pair_accuracy_percent": 91.42857142857143,
+        "pairs": 35,
+        "preferred_mode_percent": 80.0,
+        "states": 35
+      },
+      "early_teacher_preferred": {
+        "correct": 14,
+        "mode_loser": 61,
+        "mode_other": 10,
+        "mode_winner": 11,
+        "pair_accuracy_percent": 17.073170731707318,
+        "pairs": 82,
+        "preferred_mode_percent": 13.414634146341463,
+        "states": 82
+      },
+      "fatal_alternative": {
+        "correct": 2,
+        "mode_loser": 4,
+        "mode_other": 2,
+        "mode_winner": 1,
+        "pair_accuracy_percent": 28.571428571428573,
+        "pairs": 7,
+        "preferred_mode_percent": 14.285714285714286,
+        "states": 7
+      },
+      "late": {
+        "correct": 86,
+        "mode_loser": 107,
+        "mode_other": 40,
+        "mode_winner": 75,
+        "pair_accuracy_percent": 38.73873873873874,
+        "pairs": 222,
+        "preferred_mode_percent": 33.78378378378378,
+        "states": 222
+      },
+      "late_alternative_preferred": {
+        "correct": 60,
+        "mode_loser": 9,
+        "mode_other": 9,
+        "mode_winner": 53,
+        "pair_accuracy_percent": 84.50704225352112,
+        "pairs": 71,
+        "preferred_mode_percent": 74.64788732394366,
+        "states": 71
+      },
+      "late_teacher_preferred": {
+        "correct": 26,
+        "mode_loser": 98,
+        "mode_other": 31,
+        "mode_winner": 22,
+        "pair_accuracy_percent": 17.218543046357617,
+        "pairs": 151,
+        "preferred_mode_percent": 14.56953642384106,
+        "states": 151
+      },
+      "teacher_preferred": {
+        "correct": 40,
+        "mode_loser": 159,
+        "mode_other": 41,
+        "mode_winner": 33,
+        "pair_accuracy_percent": 17.167381974248926,
+        "pairs": 233,
+        "preferred_mode_percent": 14.163090128755364,
+        "states": 233
+      }
+    },
+    "preservation0": {
+      "all": {
+        "correct": 125,
+        "mode_loser": 189,
+        "mode_other": 35,
+        "mode_winner": 115,
+        "pair_accuracy_percent": 36.87315634218289,
+        "pairs": 339,
+        "preferred_mode_percent": 33.92330383480826,
+        "states": 339
+      },
+      "alternative_preferred": {
+        "correct": 98,
+        "mode_loser": 6,
+        "mode_other": 9,
+        "mode_winner": 91,
+        "pair_accuracy_percent": 92.45283018867924,
+        "pairs": 106,
+        "preferred_mode_percent": 85.84905660377359,
+        "states": 106
+      },
+      "early": {
+        "correct": 44,
+        "mode_loser": 71,
+        "mode_other": 8,
+        "mode_winner": 38,
+        "pair_accuracy_percent": 37.60683760683761,
+        "pairs": 117,
+        "preferred_mode_percent": 32.47863247863248,
+        "states": 117
+      },
+      "early_alternative_preferred": {
+        "correct": 35,
+        "mode_loser": 0,
+        "mode_other": 3,
+        "mode_winner": 32,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 35,
+        "preferred_mode_percent": 91.42857142857143,
+        "states": 35
+      },
+      "early_teacher_preferred": {
+        "correct": 9,
+        "mode_loser": 71,
+        "mode_other": 5,
+        "mode_winner": 6,
+        "pair_accuracy_percent": 10.975609756097562,
+        "pairs": 82,
+        "preferred_mode_percent": 7.317073170731708,
+        "states": 82
+      },
+      "fatal_alternative": {
+        "correct": 2,
+        "mode_loser": 3,
+        "mode_other": 3,
+        "mode_winner": 1,
+        "pair_accuracy_percent": 28.571428571428573,
+        "pairs": 7,
+        "preferred_mode_percent": 14.285714285714286,
+        "states": 7
+      },
+      "late": {
+        "correct": 81,
+        "mode_loser": 118,
+        "mode_other": 27,
+        "mode_winner": 77,
+        "pair_accuracy_percent": 36.486486486486484,
+        "pairs": 222,
+        "preferred_mode_percent": 34.68468468468468,
+        "states": 222
+      },
+      "late_alternative_preferred": {
+        "correct": 63,
+        "mode_loser": 6,
+        "mode_other": 6,
+        "mode_winner": 59,
+        "pair_accuracy_percent": 88.73239436619718,
+        "pairs": 71,
+        "preferred_mode_percent": 83.09859154929578,
+        "states": 71
+      },
+      "late_teacher_preferred": {
+        "correct": 18,
+        "mode_loser": 112,
+        "mode_other": 21,
+        "mode_winner": 18,
+        "pair_accuracy_percent": 11.920529801324504,
+        "pairs": 151,
+        "preferred_mode_percent": 11.920529801324504,
+        "states": 151
+      },
+      "teacher_preferred": {
+        "correct": 27,
+        "mode_loser": 183,
+        "mode_other": 26,
+        "mode_winner": 24,
+        "pair_accuracy_percent": 11.587982832618026,
+        "pairs": 233,
+        "preferred_mode_percent": 10.300429184549357,
+        "states": 233
+      }
+    },
+    "ranking0": {
+      "all": {
+        "correct": 147,
+        "mode_loser": 148,
+        "mode_other": 63,
+        "mode_winner": 128,
+        "pair_accuracy_percent": 43.36283185840708,
+        "pairs": 339,
+        "preferred_mode_percent": 37.75811209439528,
+        "states": 339
+      },
+      "alternative_preferred": {
+        "correct": 100,
+        "mode_loser": 5,
+        "mode_other": 12,
+        "mode_winner": 89,
+        "pair_accuracy_percent": 94.33962264150944,
+        "pairs": 106,
+        "preferred_mode_percent": 83.9622641509434,
+        "states": 106
+      },
+      "early": {
+        "correct": 53,
+        "mode_loser": 55,
+        "mode_other": 19,
+        "mode_winner": 43,
+        "pair_accuracy_percent": 45.2991452991453,
+        "pairs": 117,
+        "preferred_mode_percent": 36.75213675213675,
+        "states": 117
+      },
+      "early_alternative_preferred": {
+        "correct": 34,
+        "mode_loser": 1,
+        "mode_other": 5,
+        "mode_winner": 29,
+        "pair_accuracy_percent": 97.14285714285714,
+        "pairs": 35,
+        "preferred_mode_percent": 82.85714285714286,
+        "states": 35
+      },
+      "early_teacher_preferred": {
+        "correct": 19,
+        "mode_loser": 54,
+        "mode_other": 14,
+        "mode_winner": 14,
+        "pair_accuracy_percent": 23.170731707317074,
+        "pairs": 82,
+        "preferred_mode_percent": 17.073170731707318,
+        "states": 82
+      },
+      "fatal_alternative": {
+        "correct": 2,
+        "mode_loser": 4,
+        "mode_other": 2,
+        "mode_winner": 1,
+        "pair_accuracy_percent": 28.571428571428573,
+        "pairs": 7,
+        "preferred_mode_percent": 14.285714285714286,
+        "states": 7
+      },
+      "late": {
+        "correct": 94,
+        "mode_loser": 93,
+        "mode_other": 44,
+        "mode_winner": 85,
+        "pair_accuracy_percent": 42.34234234234234,
+        "pairs": 222,
+        "preferred_mode_percent": 38.288288288288285,
+        "states": 222
+      },
+      "late_alternative_preferred": {
+        "correct": 66,
+        "mode_loser": 4,
+        "mode_other": 7,
+        "mode_winner": 60,
+        "pair_accuracy_percent": 92.95774647887323,
+        "pairs": 71,
+        "preferred_mode_percent": 84.50704225352112,
+        "states": 71
+      },
+      "late_teacher_preferred": {
+        "correct": 28,
+        "mode_loser": 89,
+        "mode_other": 37,
+        "mode_winner": 25,
+        "pair_accuracy_percent": 18.543046357615893,
+        "pairs": 151,
+        "preferred_mode_percent": 16.556291390728475,
+        "states": 151
+      },
+      "teacher_preferred": {
+        "correct": 47,
+        "mode_loser": 143,
+        "mode_other": 51,
+        "mode_winner": 39,
+        "pair_accuracy_percent": 20.17167381974249,
+        "pairs": 233,
+        "preferred_mode_percent": 16.738197424892704,
+        "states": 233
+      }
+    }
+  },
+  "independently_verified_intervals": 24,
+  "matched_training": {
+    "base": {
+      "all": {
+        "correct": 582,
+        "mode_loser": 1395,
+        "mode_other": 0,
+        "mode_winner": 582,
+        "pair_accuracy_percent": 29.438543247344462,
+        "pairs": 1977,
+        "preferred_mode_percent": 29.438543247344462,
+        "states": 1977
+      },
+      "alternative_preferred": {
+        "correct": 582,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 582,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 582,
+        "preferred_mode_percent": 100.0,
+        "states": 582
+      },
+      "early": {
+        "correct": 220,
+        "mode_loser": 460,
+        "mode_other": 0,
+        "mode_winner": 220,
+        "pair_accuracy_percent": 32.35294117647059,
+        "pairs": 680,
+        "preferred_mode_percent": 32.35294117647059,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 220,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 220,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 220,
+        "preferred_mode_percent": 100.0,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 460,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 460,
+        "preferred_mode_percent": 0.0,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 0,
+        "mode_loser": 33,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 33,
+        "preferred_mode_percent": 0.0,
+        "states": 33
+      },
+      "late": {
+        "correct": 362,
+        "mode_loser": 935,
+        "mode_other": 0,
+        "mode_winner": 362,
+        "pair_accuracy_percent": 27.910562837316885,
+        "pairs": 1297,
+        "preferred_mode_percent": 27.910562837316885,
+        "states": 1297
+      },
+      "late_alternative_preferred": {
+        "correct": 362,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 362,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 362,
+        "preferred_mode_percent": 100.0,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 935,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 935,
+        "preferred_mode_percent": 0.0,
+        "states": 935
+      },
+      "teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 1395,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 1395,
+        "preferred_mode_percent": 0.0,
+        "states": 1395
+      }
+    },
+    "combined0": {
+      "all": {
+        "correct": 1632,
+        "mode_loser": 227,
+        "mode_other": 347,
+        "mode_winner": 1403,
+        "pair_accuracy_percent": 82.54931714719271,
+        "pairs": 1977,
+        "preferred_mode_percent": 70.96611026808296,
+        "states": 1977
+      },
+      "alternative_preferred": {
+        "correct": 579,
+        "mode_loser": 1,
+        "mode_other": 37,
+        "mode_winner": 544,
+        "pair_accuracy_percent": 99.48453608247422,
+        "pairs": 582,
+        "preferred_mode_percent": 93.47079037800687,
+        "states": 582
+      },
+      "early": {
+        "correct": 549,
+        "mode_loser": 86,
+        "mode_other": 116,
+        "mode_winner": 478,
+        "pair_accuracy_percent": 80.73529411764706,
+        "pairs": 680,
+        "preferred_mode_percent": 70.29411764705883,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 219,
+        "mode_loser": 0,
+        "mode_other": 15,
+        "mode_winner": 205,
+        "pair_accuracy_percent": 99.54545454545455,
+        "pairs": 220,
+        "preferred_mode_percent": 93.18181818181819,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 330,
+        "mode_loser": 86,
+        "mode_other": 101,
+        "mode_winner": 273,
+        "pair_accuracy_percent": 71.73913043478261,
+        "pairs": 460,
+        "preferred_mode_percent": 59.34782608695652,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 26,
+        "mode_loser": 4,
+        "mode_other": 8,
+        "mode_winner": 21,
+        "pair_accuracy_percent": 78.78787878787878,
+        "pairs": 33,
+        "preferred_mode_percent": 63.63636363636363,
+        "states": 33
+      },
+      "late": {
+        "correct": 1083,
+        "mode_loser": 141,
+        "mode_other": 231,
+        "mode_winner": 925,
+        "pair_accuracy_percent": 83.50038550501156,
+        "pairs": 1297,
+        "preferred_mode_percent": 71.31842713955281,
+        "states": 1297
+      },
+      "late_alternative_preferred": {
+        "correct": 360,
+        "mode_loser": 1,
+        "mode_other": 22,
+        "mode_winner": 339,
+        "pair_accuracy_percent": 99.4475138121547,
+        "pairs": 362,
+        "preferred_mode_percent": 93.646408839779,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 723,
+        "mode_loser": 140,
+        "mode_other": 209,
+        "mode_winner": 586,
+        "pair_accuracy_percent": 77.32620320855615,
+        "pairs": 935,
+        "preferred_mode_percent": 62.67379679144385,
+        "states": 935
+      },
+      "teacher_preferred": {
+        "correct": 1053,
+        "mode_loser": 226,
+        "mode_other": 310,
+        "mode_winner": 859,
+        "pair_accuracy_percent": 75.48387096774194,
+        "pairs": 1395,
+        "preferred_mode_percent": 61.577060931899645,
+        "states": 1395
+      }
+    },
+    "ordinary0": {
+      "all": {
+        "correct": 877,
+        "mode_loser": 910,
+        "mode_other": 326,
+        "mode_winner": 741,
+        "pair_accuracy_percent": 44.360141628730396,
+        "pairs": 1977,
+        "preferred_mode_percent": 37.48103186646434,
+        "states": 1977
+      },
+      "alternative_preferred": {
+        "correct": 363,
+        "mode_loser": 203,
+        "mode_other": 79,
+        "mode_winner": 300,
+        "pair_accuracy_percent": 62.371134020618555,
+        "pairs": 582,
+        "preferred_mode_percent": 51.54639175257732,
+        "states": 582
+      },
+      "early": {
+        "correct": 299,
+        "mode_loser": 311,
+        "mode_other": 109,
+        "mode_winner": 260,
+        "pair_accuracy_percent": 43.970588235294116,
+        "pairs": 680,
+        "preferred_mode_percent": 38.23529411764706,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 145,
+        "mode_loser": 69,
+        "mode_other": 30,
+        "mode_winner": 121,
+        "pair_accuracy_percent": 65.9090909090909,
+        "pairs": 220,
+        "preferred_mode_percent": 55.0,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 154,
+        "mode_loser": 242,
+        "mode_other": 79,
+        "mode_winner": 139,
+        "pair_accuracy_percent": 33.47826086956522,
+        "pairs": 460,
+        "preferred_mode_percent": 30.217391304347824,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 10,
+        "mode_loser": 18,
+        "mode_other": 5,
+        "mode_winner": 10,
+        "pair_accuracy_percent": 30.303030303030305,
+        "pairs": 33,
+        "preferred_mode_percent": 30.303030303030305,
+        "states": 33
+      },
+      "late": {
+        "correct": 578,
+        "mode_loser": 599,
+        "mode_other": 217,
+        "mode_winner": 481,
+        "pair_accuracy_percent": 44.56437933693138,
+        "pairs": 1297,
+        "preferred_mode_percent": 37.085582112567465,
+        "states": 1297
+      },
+      "late_alternative_preferred": {
+        "correct": 218,
+        "mode_loser": 134,
+        "mode_other": 49,
+        "mode_winner": 179,
+        "pair_accuracy_percent": 60.22099447513812,
+        "pairs": 362,
+        "preferred_mode_percent": 49.447513812154696,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 360,
+        "mode_loser": 465,
+        "mode_other": 168,
+        "mode_winner": 302,
+        "pair_accuracy_percent": 38.50267379679144,
+        "pairs": 935,
+        "preferred_mode_percent": 32.29946524064171,
+        "states": 935
+      },
+      "teacher_preferred": {
+        "correct": 514,
+        "mode_loser": 707,
+        "mode_other": 247,
+        "mode_winner": 441,
+        "pair_accuracy_percent": 36.84587813620072,
+        "pairs": 1395,
+        "preferred_mode_percent": 31.612903225806452,
+        "states": 1395
+      }
+    },
+    "preservation0": {
+      "all": {
+        "correct": 791,
+        "mode_loser": 1045,
+        "mode_other": 219,
+        "mode_winner": 713,
+        "pair_accuracy_percent": 40.010116337885684,
+        "pairs": 1977,
+        "preferred_mode_percent": 36.064744562468384,
+        "states": 1977
+      },
+      "alternative_preferred": {
+        "correct": 433,
+        "mode_loser": 143,
+        "mode_other": 53,
+        "mode_winner": 386,
+        "pair_accuracy_percent": 74.39862542955326,
+        "pairs": 582,
+        "preferred_mode_percent": 66.32302405498282,
+        "states": 582
+      },
+      "early": {
+        "correct": 273,
+        "mode_loser": 365,
+        "mode_other": 67,
+        "mode_winner": 248,
+        "pair_accuracy_percent": 40.14705882352941,
+        "pairs": 680,
+        "preferred_mode_percent": 36.470588235294116,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 167,
+        "mode_loser": 52,
+        "mode_other": 17,
+        "mode_winner": 151,
+        "pair_accuracy_percent": 75.9090909090909,
+        "pairs": 220,
+        "preferred_mode_percent": 68.63636363636364,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 106,
+        "mode_loser": 313,
+        "mode_other": 50,
+        "mode_winner": 97,
+        "pair_accuracy_percent": 23.043478260869566,
+        "pairs": 460,
+        "preferred_mode_percent": 21.08695652173913,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 10,
+        "mode_loser": 22,
+        "mode_other": 1,
+        "mode_winner": 10,
+        "pair_accuracy_percent": 30.303030303030305,
+        "pairs": 33,
+        "preferred_mode_percent": 30.303030303030305,
+        "states": 33
+      },
+      "late": {
+        "correct": 518,
+        "mode_loser": 680,
+        "mode_other": 152,
+        "mode_winner": 465,
+        "pair_accuracy_percent": 39.93831919814958,
+        "pairs": 1297,
+        "preferred_mode_percent": 35.851966075558984,
+        "states": 1297
+      },
+      "late_alternative_preferred": {
+        "correct": 266,
+        "mode_loser": 91,
+        "mode_other": 36,
+        "mode_winner": 235,
+        "pair_accuracy_percent": 73.48066298342542,
+        "pairs": 362,
+        "preferred_mode_percent": 64.9171270718232,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 252,
+        "mode_loser": 589,
+        "mode_other": 116,
+        "mode_winner": 230,
+        "pair_accuracy_percent": 26.951871657754012,
+        "pairs": 935,
+        "preferred_mode_percent": 24.59893048128342,
+        "states": 935
+      },
+      "teacher_preferred": {
+        "correct": 358,
+        "mode_loser": 902,
+        "mode_other": 166,
+        "mode_winner": 327,
+        "pair_accuracy_percent": 25.663082437275985,
+        "pairs": 1395,
+        "preferred_mode_percent": 23.440860215053764,
+        "states": 1395
+      }
+    },
+    "ranking0": {
+      "all": {
+        "correct": 1764,
+        "mode_loser": 133,
+        "mode_other": 397,
+        "mode_winner": 1447,
+        "pair_accuracy_percent": 89.22610015174507,
+        "pairs": 1977,
+        "preferred_mode_percent": 73.19170460293374,
+        "states": 1977
+      },
+      "alternative_preferred": {
+        "correct": 569,
+        "mode_loser": 11,
+        "mode_other": 53,
+        "mode_winner": 518,
+        "pair_accuracy_percent": 97.76632302405498,
+        "pairs": 582,
+        "preferred_mode_percent": 89.00343642611683,
+        "states": 582
+      },
+      "early": {
+        "correct": 601,
+        "mode_loser": 54,
+        "mode_other": 133,
+        "mode_winner": 493,
+        "pair_accuracy_percent": 88.38235294117646,
+        "pairs": 680,
+        "preferred_mode_percent": 72.5,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 217,
+        "mode_loser": 2,
+        "mode_other": 19,
+        "mode_winner": 199,
+        "pair_accuracy_percent": 98.63636363636364,
+        "pairs": 220,
+        "preferred_mode_percent": 90.45454545454545,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 384,
+        "mode_loser": 52,
+        "mode_other": 114,
+        "mode_winner": 294,
+        "pair_accuracy_percent": 83.47826086956522,
+        "pairs": 460,
+        "preferred_mode_percent": 63.91304347826087,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 29,
+        "mode_loser": 2,
+        "mode_other": 10,
+        "mode_winner": 21,
+        "pair_accuracy_percent": 87.87878787878788,
+        "pairs": 33,
+        "preferred_mode_percent": 63.63636363636363,
+        "states": 33
+      },
+      "late": {
+        "correct": 1163,
+        "mode_loser": 79,
+        "mode_other": 264,
+        "mode_winner": 954,
+        "pair_accuracy_percent": 89.66846569005396,
+        "pairs": 1297,
+        "preferred_mode_percent": 73.55435620663069,
+        "states": 1297
+      },
+      "late_alternative_preferred": {
+        "correct": 352,
+        "mode_loser": 9,
+        "mode_other": 34,
+        "mode_winner": 319,
+        "pair_accuracy_percent": 97.23756906077348,
+        "pairs": 362,
+        "preferred_mode_percent": 88.12154696132596,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 811,
+        "mode_loser": 70,
+        "mode_other": 230,
+        "mode_winner": 635,
+        "pair_accuracy_percent": 86.7379679144385,
+        "pairs": 935,
+        "preferred_mode_percent": 67.9144385026738,
+        "states": 935
+      },
+      "teacher_preferred": {
+        "correct": 1195,
+        "mode_loser": 122,
+        "mode_other": 344,
+        "mode_winner": 929,
+        "pair_accuracy_percent": 85.66308243727599,
+        "pairs": 1395,
+        "preferred_mode_percent": 66.59498207885305,
+        "states": 1395
+      }
+    }
+  },
+  "paired_intervals": {
+    "all": {
+      "combined0__minus__base": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 8.849557522123893,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            5.101968549459444,
+            12.684477180974786
+          ],
+          "per_replica_difference": [
+            8.849557522123893
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 6.489675516224189,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            2.4390243902439024,
+            10.666768292682924
+          ],
+          "per_replica_difference": [
+            6.489675516224189
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__ordinary0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 1.1799410029498525,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -2.1341463414634148,
+            4.154302670623146
+          ],
+          "per_replica_difference": [
+            1.1799410029498525
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 4.129793510324483,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            0.3174352019288728,
+            7.729498716975676
+          ],
+          "per_replica_difference": [
+            4.129793510324483
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__preservation0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 3.2448377581120944,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            0.3742926269170838,
+            5.9880239520958085
+          ],
+          "per_replica_difference": [
+            3.2448377581120944
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 3.8348082595870205,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            0.2984194073878396,
+            7.909604519774011
+          ],
+          "per_replica_difference": [
+            3.8348082595870205
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__ranking0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": -3.2448377581120944,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -6.158508416020568,
+            -0.8264462809917356
+          ],
+          "per_replica_difference": [
+            -3.2448377581120944
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 339,
+          "difference": 0.0,
+          "family_present_games": 106,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -4.458740900818926,
+            4.568643989104864
+          ],
+          "per_replica_difference": [
+            0.0
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      }
+    },
+    "early": {
+      "combined0__minus__base": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 10.256410256410257,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            3.5714285714285716,
+            17.647058823529413
+          ],
+          "per_replica_difference": [
+            10.256410256410257
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 6.837606837606837,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -0.6037967660114129,
+            15.00110619469025
+          ],
+          "per_replica_difference": [
+            6.837606837606837
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__ordinary0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 0.8547008547008547,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -4.895276292335115,
+            6.306306306306307
+          ],
+          "per_replica_difference": [
+            0.8547008547008547
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 3.4188034188034186,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -2.803738317757009,
+            9.401709401709402
+          ],
+          "per_replica_difference": [
+            3.4188034188034186
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__preservation0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 2.5641025641025643,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -2.830188679245283,
+            8.333333333333334
+          ],
+          "per_replica_difference": [
+            2.5641025641025643
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 4.273504273504273,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -1.9607843137254901,
+            11.450580470737911
+          ],
+          "per_replica_difference": [
+            4.273504273504273
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__ranking0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": -5.128205128205129,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -9.67741935483871,
+            -1.6129032258064515
+          ],
+          "per_replica_difference": [
+            -5.128205128205129
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 117,
+          "difference": 0.0,
+          "family_present_games": 63,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -5.319148936170213,
+            5.042016806722689
+          ],
+          "per_replica_difference": [
+            0.0
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      }
+    },
+    "late": {
+      "combined0__minus__base": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 8.108108108108109,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            4.06086687770431,
+            12.554112554112555
+          ],
+          "per_replica_difference": [
+            8.108108108108109
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 6.306306306306307,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            2.0202020202020203,
+            10.81081081081081
+          ],
+          "per_replica_difference": [
+            6.306306306306307
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__ordinary0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 1.3513513513513513,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -2.33467580639296,
+            4.824561403508772
+          ],
+          "per_replica_difference": [
+            1.3513513513513513
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 4.504504504504505,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            0.8887905604719765,
+            7.949790794979079
+          ],
+          "per_replica_difference": [
+            4.504504504504505
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__preservation0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 3.6036036036036037,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            1.069376493343953,
+            6.153846153846154
+          ],
+          "per_replica_difference": [
+            3.6036036036036037
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 3.6036036036036037,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            0.4503999515210278,
+            7.00023364485981
+          ],
+          "per_replica_difference": [
+            3.6036036036036037
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      },
+      "combined0__minus__ranking0": {
+        "correct": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": -2.2522522522522523,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -5.286396560487971,
+            0.46301679586563227
+          ],
+          "per_replica_difference": [
+            -2.2522522522522523
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        },
+        "mode_winner": {
+          "bootstrap_resamples": 10000,
+          "bootstrap_seed": 1729,
+          "continuation_replicas": 1,
+          "decisions": 222,
+          "difference": 0.0,
+          "family_present_games": 91,
+          "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+          "paired_95_interval": [
+            -5.405405405405405,
+            5.737704918032787
+          ],
+          "per_replica_difference": [
+            0.0
+          ],
+          "seed_clusters": 128,
+          "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+          "zero_denominator_draws": 0
+        }
+      }
+    }
+  },
+  "scope": "One exploratory continuation on training and previously exposed held-out teacher states. Preference probability order and global action mode are distinct. No autonomous-win or final-confirmation claim.",
+  "sources": {
+    "development_execution_v1/held_terminal.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_execution_v1/held_terminal.json",
+      "sha256": "6e3090fb15e93a7fab43237196c2b2841456ed9cf365749c02d853b4a58fbdd9"
+    },
+    "development_execution_v1/train_terminal.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_execution_v1/train_terminal.json",
+      "sha256": "a59a08f85f1a6499bcb2e5acdf9c4e3d768f9f85d4d503ebdf9ef1ef70dead30"
+    },
+    "development_held_v1/audit_result_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/audit_result_v1.json",
+      "sha256": "dc5382c20f01e86d8be6dda1847c595fc50bc60e53b1313b65a76f4eefe5d18a"
+    },
+    "development_held_v1/complete_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/complete_v1.json",
+      "sha256": "51231170e6fe685e12b54521c499b6089ed3f80519386c6d859e00d8125a8570"
+    },
+    "development_held_v1/protocol_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/protocol_v1.json",
+      "sha256": "00e6cacf9367917fd426711e867a1e104f8ea3b5416cfb0a14ee86870318bad7"
+    },
+    "development_protocol_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_protocol_v1.json",
+      "sha256": "58697e6b43570454f5a301af537754df83aa4bbbf10d6b10000dc528fa8548d5"
+    },
+    "development_train_v1/audit_result_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/audit_result_v1.json",
+      "sha256": "9be1f07753f537eab36baeb9f8b2f3313444b3d0f877086e2ce71a456b4ae669"
+    },
+    "development_train_v1/complete_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/complete_v1.json",
+      "sha256": "3d2d53726616638a8723f6ad62640850cc37e5713fa983e439e4480ae45f1285"
+    },
+    "development_train_v1/protocol_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/protocol_v1.json",
+      "sha256": "3f7adcc2ab0cfb196bb08e8109bde2902941e0f6d2edae957a6ecc1edb707ac8"
+    },
+    "execution_manifest_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/execution_manifest_v1.json",
+      "sha256": "4b02cd37b03604f34205e5371b5d1c992d276c52c28b9a4bb63df4757aae236a"
+    },
+    "fit_audit_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/fit_audit_v1.json",
+      "sha256": "61574bd0c54b90c5a25d06480d3222306eb6f97428a7809666ebb05fad47cf73"
+    },
+    "fit_supervisor_terminal_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/fit_supervisor_terminal_v1.json",
+      "sha256": "d493c97466b58d2064d78be582f4d835a24c37cab2446d5cbccaac5b4e19d5b8"
+    },
+    "fits_complete_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/fits_complete_v1.json",
+      "sha256": "594765412f70d86749d98158ce8e9c62a400f8af55f963713f5a887a8105782e"
+    }
+  },
+  "status": "complete_preference_diagnostic",
+  "training": {
+    "base": {
+      "all": {
+        "correct": 632,
+        "mode_loser": 1395,
+        "mode_other": 13,
+        "mode_winner": 619,
+        "pair_accuracy_percent": 31.17908238776517,
+        "pairs": 2027,
+        "preferred_mode_percent": 30.53774050320671,
+        "states": 2022
+      },
+      "alternative_preferred": {
+        "correct": 582,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 582,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 582,
+        "preferred_mode_percent": 100.0,
+        "states": 582
+      },
+      "early": {
+        "correct": 220,
+        "mode_loser": 460,
+        "mode_other": 0,
+        "mode_winner": 220,
+        "pair_accuracy_percent": 32.35294117647059,
+        "pairs": 680,
+        "preferred_mode_percent": 32.35294117647059,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 220,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 220,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 220,
+        "preferred_mode_percent": 100.0,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 0,
+        "mode_loser": 460,
+        "mode_other": 0,
+        "mode_winner": 0,
+        "pair_accuracy_percent": 0.0,
+        "pairs": 460,
+        "preferred_mode_percent": 0.0,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 1,
+        "mode_loser": 33,
+        "mode_other": 0,
+        "mode_winner": 1,
+        "pair_accuracy_percent": 2.9411764705882355,
+        "pairs": 34,
+        "preferred_mode_percent": 2.9411764705882355,
+        "states": 34
+      },
+      "late": {
+        "correct": 412,
+        "mode_loser": 935,
+        "mode_other": 13,
+        "mode_winner": 399,
+        "pair_accuracy_percent": 30.58648849294729,
+        "pairs": 1347,
+        "preferred_mode_percent": 29.621380846325167,
+        "states": 1342
+      },
+      "late_alternative_preferred": {
+        "correct": 362,
+        "mode_loser": 0,
+        "mode_other": 0,
+        "mode_winner": 362,
+        "pair_accuracy_percent": 100.0,
+        "pairs": 362,
+        "preferred_mode_percent": 100.0,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 50,
+        "mode_loser": 935,
+        "mode_other": 13,
+        "mode_winner": 37,
+        "pair_accuracy_percent": 5.0761421319796955,
+        "pairs": 985,
+        "preferred_mode_percent": 3.7563451776649748,
+        "states": 980
+      },
+      "teacher_preferred": {
+        "correct": 50,
+        "mode_loser": 1395,
+        "mode_other": 13,
+        "mode_winner": 37,
+        "pair_accuracy_percent": 3.4602076124567476,
+        "pairs": 1445,
+        "preferred_mode_percent": 2.5605536332179932,
+        "states": 1440
+      }
+    },
+    "combined0": {
+      "all": {
+        "correct": 1682,
+        "mode_loser": 227,
+        "mode_other": 358,
+        "mode_winner": 1442,
+        "pair_accuracy_percent": 82.97977306364085,
+        "pairs": 2027,
+        "preferred_mode_percent": 71.13961519486926,
+        "states": 2022
+      },
+      "alternative_preferred": {
+        "correct": 579,
+        "mode_loser": 1,
+        "mode_other": 37,
+        "mode_winner": 544,
+        "pair_accuracy_percent": 99.48453608247422,
+        "pairs": 582,
+        "preferred_mode_percent": 93.47079037800687,
+        "states": 582
+      },
+      "early": {
+        "correct": 549,
+        "mode_loser": 86,
+        "mode_other": 116,
+        "mode_winner": 478,
+        "pair_accuracy_percent": 80.73529411764706,
+        "pairs": 680,
+        "preferred_mode_percent": 70.29411764705883,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 219,
+        "mode_loser": 0,
+        "mode_other": 15,
+        "mode_winner": 205,
+        "pair_accuracy_percent": 99.54545454545455,
+        "pairs": 220,
+        "preferred_mode_percent": 93.18181818181819,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 330,
+        "mode_loser": 86,
+        "mode_other": 101,
+        "mode_winner": 273,
+        "pair_accuracy_percent": 71.73913043478261,
+        "pairs": 460,
+        "preferred_mode_percent": 59.34782608695652,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 27,
+        "mode_loser": 4,
+        "mode_other": 8,
+        "mode_winner": 22,
+        "pair_accuracy_percent": 79.41176470588235,
+        "pairs": 34,
+        "preferred_mode_percent": 64.70588235294117,
+        "states": 34
+      },
+      "late": {
+        "correct": 1133,
+        "mode_loser": 141,
+        "mode_other": 242,
+        "mode_winner": 964,
+        "pair_accuracy_percent": 84.11284335560505,
+        "pairs": 1347,
+        "preferred_mode_percent": 71.56644394951745,
+        "states": 1342
+      },
+      "late_alternative_preferred": {
+        "correct": 360,
+        "mode_loser": 1,
+        "mode_other": 22,
+        "mode_winner": 339,
+        "pair_accuracy_percent": 99.4475138121547,
+        "pairs": 362,
+        "preferred_mode_percent": 93.646408839779,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 773,
+        "mode_loser": 140,
+        "mode_other": 220,
+        "mode_winner": 625,
+        "pair_accuracy_percent": 78.4771573604061,
+        "pairs": 985,
+        "preferred_mode_percent": 63.45177664974619,
+        "states": 980
+      },
+      "teacher_preferred": {
+        "correct": 1103,
+        "mode_loser": 226,
+        "mode_other": 321,
+        "mode_winner": 898,
+        "pair_accuracy_percent": 76.33217993079585,
+        "pairs": 1445,
+        "preferred_mode_percent": 62.14532871972318,
+        "states": 1440
+      }
+    },
+    "ordinary0": {
+      "all": {
+        "correct": 927,
+        "mode_loser": 910,
+        "mode_other": 338,
+        "mode_winner": 779,
+        "pair_accuracy_percent": 45.73260976813024,
+        "pairs": 2027,
+        "preferred_mode_percent": 38.431179082387764,
+        "states": 2022
+      },
+      "alternative_preferred": {
+        "correct": 363,
+        "mode_loser": 203,
+        "mode_other": 79,
+        "mode_winner": 300,
+        "pair_accuracy_percent": 62.371134020618555,
+        "pairs": 582,
+        "preferred_mode_percent": 51.54639175257732,
+        "states": 582
+      },
+      "early": {
+        "correct": 299,
+        "mode_loser": 311,
+        "mode_other": 109,
+        "mode_winner": 260,
+        "pair_accuracy_percent": 43.970588235294116,
+        "pairs": 680,
+        "preferred_mode_percent": 38.23529411764706,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 145,
+        "mode_loser": 69,
+        "mode_other": 30,
+        "mode_winner": 121,
+        "pair_accuracy_percent": 65.9090909090909,
+        "pairs": 220,
+        "preferred_mode_percent": 55.0,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 154,
+        "mode_loser": 242,
+        "mode_other": 79,
+        "mode_winner": 139,
+        "pair_accuracy_percent": 33.47826086956522,
+        "pairs": 460,
+        "preferred_mode_percent": 30.217391304347824,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 11,
+        "mode_loser": 18,
+        "mode_other": 5,
+        "mode_winner": 11,
+        "pair_accuracy_percent": 32.35294117647059,
+        "pairs": 34,
+        "preferred_mode_percent": 32.35294117647059,
+        "states": 34
+      },
+      "late": {
+        "correct": 628,
+        "mode_loser": 599,
+        "mode_other": 229,
+        "mode_winner": 519,
+        "pair_accuracy_percent": 46.62212323682257,
+        "pairs": 1347,
+        "preferred_mode_percent": 38.530066815144764,
+        "states": 1342
+      },
+      "late_alternative_preferred": {
+        "correct": 218,
+        "mode_loser": 134,
+        "mode_other": 49,
+        "mode_winner": 179,
+        "pair_accuracy_percent": 60.22099447513812,
+        "pairs": 362,
+        "preferred_mode_percent": 49.447513812154696,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 410,
+        "mode_loser": 465,
+        "mode_other": 180,
+        "mode_winner": 340,
+        "pair_accuracy_percent": 41.6243654822335,
+        "pairs": 985,
+        "preferred_mode_percent": 34.51776649746193,
+        "states": 980
+      },
+      "teacher_preferred": {
+        "correct": 564,
+        "mode_loser": 707,
+        "mode_other": 259,
+        "mode_winner": 479,
+        "pair_accuracy_percent": 39.03114186851211,
+        "pairs": 1445,
+        "preferred_mode_percent": 33.14878892733564,
+        "states": 1440
+      }
+    },
+    "preservation0": {
+      "all": {
+        "correct": 841,
+        "mode_loser": 1045,
+        "mode_other": 230,
+        "mode_winner": 752,
+        "pair_accuracy_percent": 41.489886531820424,
+        "pairs": 2027,
+        "preferred_mode_percent": 37.09916132215096,
+        "states": 2022
+      },
+      "alternative_preferred": {
+        "correct": 433,
+        "mode_loser": 143,
+        "mode_other": 53,
+        "mode_winner": 386,
+        "pair_accuracy_percent": 74.39862542955326,
+        "pairs": 582,
+        "preferred_mode_percent": 66.32302405498282,
+        "states": 582
+      },
+      "early": {
+        "correct": 273,
+        "mode_loser": 365,
+        "mode_other": 67,
+        "mode_winner": 248,
+        "pair_accuracy_percent": 40.14705882352941,
+        "pairs": 680,
+        "preferred_mode_percent": 36.470588235294116,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 167,
+        "mode_loser": 52,
+        "mode_other": 17,
+        "mode_winner": 151,
+        "pair_accuracy_percent": 75.9090909090909,
+        "pairs": 220,
+        "preferred_mode_percent": 68.63636363636364,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 106,
+        "mode_loser": 313,
+        "mode_other": 50,
+        "mode_winner": 97,
+        "pair_accuracy_percent": 23.043478260869566,
+        "pairs": 460,
+        "preferred_mode_percent": 21.08695652173913,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 11,
+        "mode_loser": 22,
+        "mode_other": 1,
+        "mode_winner": 11,
+        "pair_accuracy_percent": 32.35294117647059,
+        "pairs": 34,
+        "preferred_mode_percent": 32.35294117647059,
+        "states": 34
+      },
+      "late": {
+        "correct": 568,
+        "mode_loser": 680,
+        "mode_other": 163,
+        "mode_winner": 504,
+        "pair_accuracy_percent": 42.16778025241277,
+        "pairs": 1347,
+        "preferred_mode_percent": 37.41648106904232,
+        "states": 1342
+      },
+      "late_alternative_preferred": {
+        "correct": 266,
+        "mode_loser": 91,
+        "mode_other": 36,
+        "mode_winner": 235,
+        "pair_accuracy_percent": 73.48066298342542,
+        "pairs": 362,
+        "preferred_mode_percent": 64.9171270718232,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 302,
+        "mode_loser": 589,
+        "mode_other": 127,
+        "mode_winner": 269,
+        "pair_accuracy_percent": 30.65989847715736,
+        "pairs": 985,
+        "preferred_mode_percent": 27.309644670050762,
+        "states": 980
+      },
+      "teacher_preferred": {
+        "correct": 408,
+        "mode_loser": 902,
+        "mode_other": 177,
+        "mode_winner": 366,
+        "pair_accuracy_percent": 28.235294117647058,
+        "pairs": 1445,
+        "preferred_mode_percent": 25.32871972318339,
+        "states": 1440
+      }
+    },
+    "ranking0": {
+      "all": {
+        "correct": 1814,
+        "mode_loser": 133,
+        "mode_other": 409,
+        "mode_winner": 1485,
+        "pair_accuracy_percent": 89.49185989146523,
+        "pairs": 2027,
+        "preferred_mode_percent": 73.26097681302417,
+        "states": 2022
+      },
+      "alternative_preferred": {
+        "correct": 569,
+        "mode_loser": 11,
+        "mode_other": 53,
+        "mode_winner": 518,
+        "pair_accuracy_percent": 97.76632302405498,
+        "pairs": 582,
+        "preferred_mode_percent": 89.00343642611683,
+        "states": 582
+      },
+      "early": {
+        "correct": 601,
+        "mode_loser": 54,
+        "mode_other": 133,
+        "mode_winner": 493,
+        "pair_accuracy_percent": 88.38235294117646,
+        "pairs": 680,
+        "preferred_mode_percent": 72.5,
+        "states": 680
+      },
+      "early_alternative_preferred": {
+        "correct": 217,
+        "mode_loser": 2,
+        "mode_other": 19,
+        "mode_winner": 199,
+        "pair_accuracy_percent": 98.63636363636364,
+        "pairs": 220,
+        "preferred_mode_percent": 90.45454545454545,
+        "states": 220
+      },
+      "early_teacher_preferred": {
+        "correct": 384,
+        "mode_loser": 52,
+        "mode_other": 114,
+        "mode_winner": 294,
+        "pair_accuracy_percent": 83.47826086956522,
+        "pairs": 460,
+        "preferred_mode_percent": 63.91304347826087,
+        "states": 460
+      },
+      "fatal_alternative": {
+        "correct": 30,
+        "mode_loser": 2,
+        "mode_other": 10,
+        "mode_winner": 22,
+        "pair_accuracy_percent": 88.23529411764706,
+        "pairs": 34,
+        "preferred_mode_percent": 64.70588235294117,
+        "states": 34
+      },
+      "late": {
+        "correct": 1213,
+        "mode_loser": 79,
+        "mode_other": 276,
+        "mode_winner": 992,
+        "pair_accuracy_percent": 90.05196733481812,
+        "pairs": 1347,
+        "preferred_mode_percent": 73.64513734224202,
+        "states": 1342
+      },
+      "late_alternative_preferred": {
+        "correct": 352,
+        "mode_loser": 9,
+        "mode_other": 34,
+        "mode_winner": 319,
+        "pair_accuracy_percent": 97.23756906077348,
+        "pairs": 362,
+        "preferred_mode_percent": 88.12154696132596,
+        "states": 362
+      },
+      "late_teacher_preferred": {
+        "correct": 861,
+        "mode_loser": 70,
+        "mode_other": 242,
+        "mode_winner": 673,
+        "pair_accuracy_percent": 87.41116751269035,
+        "pairs": 985,
+        "preferred_mode_percent": 68.3248730964467,
+        "states": 980
+      },
+      "teacher_preferred": {
+        "correct": 1245,
+        "mode_loser": 122,
+        "mode_other": 356,
+        "mode_winner": 967,
+        "pair_accuracy_percent": 86.159169550173,
+        "pairs": 1445,
+        "preferred_mode_percent": 66.9204152249135,
+        "states": 1440
+      }
+    }
+  }
+}

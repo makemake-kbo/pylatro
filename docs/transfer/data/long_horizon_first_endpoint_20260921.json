@@ -1,0 +1,120 @@
+{
+  "arm": "terminal_mc",
+  "replica": 0,
+  "endpoint": 10,
+  "global_update": 132,
+  "verified_unix": 1790005085.985114,
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "checkpoint_sha256": "212a86b7c99146777f594d714acb7b7e1f00ef3f9a162c7b185922e7186a81c4",
+  "trajectory_hashes_verified": 640,
+  "exact_training_seed_prefix_verified": true,
+  "complete_labels": true,
+  "optimizer_examples": 163840,
+  "decisions": 103669,
+  "kl_rollbacks": 0,
+  "complete_mc_target_mse": 0,
+  "updates": [
+    {
+      "update": 123,
+      "decisions": 9863,
+      "optimizer_examples": 16384,
+      "collection_seconds": 141.36422941600904,
+      "optimization_seconds": 130.63400387496222,
+      "elapsed_seconds": 273.524271916016,
+      "cohort_manifest_sha256": "6f150b334c4546597ad3a8de09cf16b2b93a75ae6260844a51b68eec46508b92",
+      "update_json_sha256": "fcad417b91891de70728e6045be8cbabb7378ed3c7fd591870c3405443af1189"
+    },
+    {
+      "update": 124,
+      "decisions": 10625,
+      "optimizer_examples": 16384,
+      "collection_seconds": 134.94130325003061,
+      "optimization_seconds": 118.6939901249716,
+      "elapsed_seconds": 255.3117662910372,
+      "cohort_manifest_sha256": "00796fc7508e0879a1af6f9f3bbb39d154bdbf6951108f94c213b5a26a4550ea",
+      "update_json_sha256": "038530d81a1494c400eb1735609ea7e5eb61f4fbc0552446b3753cae8e184d8f"
+    },
+    {
+      "update": 125,
+      "decisions": 10455,
+      "optimizer_examples": 16384,
+      "collection_seconds": 116.8162415419938,
+      "optimization_seconds": 117.1300163329579,
+      "elapsed_seconds": 235.53764008404687,
+      "cohort_manifest_sha256": "5bb8063d061dee8c78c7eb7b674367b50320b1f6118311290868b4fc7985efc3",
+      "update_json_sha256": "d831a0d349736c9da7193ddeb6cfeabc588a46eeeca8ac84d6fe0841ace41139"
+    },
+    {
+      "update": 126,
+      "decisions": 9746,
+      "optimizer_examples": 16384,
+      "collection_seconds": 114.69213533401489,
+      "optimization_seconds": 121.25814758299384,
+      "elapsed_seconds": 237.49832879193127,
+      "cohort_manifest_sha256": "4b0bdd8fafe565fb64c058e5a644b65e7e4a5384b53e381d3f1a2e44d93ce95f",
+      "update_json_sha256": "a559db5db5c5e6c97665915fb035f84c06a67eef97f69b819ebb522077bf9c6e"
+    },
+    {
+      "update": 127,
+      "decisions": 10293,
+      "optimizer_examples": 16384,
+      "collection_seconds": 125.38113704090938,
+      "optimization_seconds": 117.56594400003087,
+      "elapsed_seconds": 244.539575957926,
+      "cohort_manifest_sha256": "741663453513d22f1ee486965d5575227aca837ca2fece2a9354e12794c552c2",
+      "update_json_sha256": "415faa2e77501aba7ecdbb7e3f895535f85ef0e66362f86049294cdefbf558d6"
+    },
+    {
+      "update": 128,
+      "decisions": 10363,
+      "optimizer_examples": 16384,
+      "collection_seconds": 127.90209525008686,
+      "optimization_seconds": 116.09616970899515,
+      "elapsed_seconds": 245.57342491706368,
+      "cohort_manifest_sha256": "19339d6eb54152a39538f51f9f5406e927462724e873e94b5765edcef2a1ddf3",
+      "update_json_sha256": "125a77c9cddaa3e05d40c500d1d43529d758c726c7fd84eb51b29bc9f6afa14f"
+    },
+    {
+      "update": 129,
+      "decisions": 10287,
+      "optimizer_examples": 16384,
+      "collection_seconds": 123.38844679191243,
+      "optimization_seconds": 118.50488541694358,
+      "elapsed_seconds": 243.4671680839965,
+      "cohort_manifest_sha256": "194ec818ac3351aaecdb8784257e3a64470dbc8760cc5b298d2a9f0efdbd102b",
+      "update_json_sha256": "7f962db9b3eab0f3a29fa07d78517c88972fa8b0ee4f053c9c8cda0be2b192be"
+    },
+    {
+      "update": 130,
+      "decisions": 11294,
+      "optimizer_examples": 16384,
+      "collection_seconds": 140.52435266703833,
+      "optimization_seconds": 117.43167074990924,
+      "elapsed_seconds": 259.6941434169421,
+      "cohort_manifest_sha256": "3f277e1b020927252323d81d2d9e7a310d8493b8424f4b17404dff2ee7d9c168",
+      "update_json_sha256": "a82641700956b0e6f0e440883d025e9c360dc2cb762a02b34d5edfa213796af9"
+    },
+    {
+      "update": 131,
+      "decisions": 10768,
+      "optimizer_examples": 16384,
+      "collection_seconds": 135.1625393750146,
+      "optimization_seconds": 116.47557783301454,
+      "elapsed_seconds": 253.32024662499316,
+      "cohort_manifest_sha256": "9557d92003081933a90c186a82cb426afef84bcadd93e250476687f4a6829511",
+      "update_json_sha256": "efa733db2fdffe198fb540c69b9efd4edfa10a4c2c38edf77632e3bf6c4225f9"
+    },
+    {
+      "update": 132,
+      "decisions": 9975,
+      "optimizer_examples": 16384,
+      "collection_seconds": 123.81369541597087,
+      "optimization_seconds": 118.11053879198153,
+      "elapsed_seconds": 243.49115304101724,
+      "cohort_manifest_sha256": "b4fd91d60b2cfc79400c7099ca3662009d7edaed65ed245481892f69f34a66fb",
+      "update_json_sha256": "30452613d6a1eb404323fdad5d6368c0d1bd5d28d126114b1dc94b6b76b4cf21"
+    }
+  ],
+  "interpretation": "One completed training endpoint; candidate gameplay comparison and generalization gates remain pending."
+}

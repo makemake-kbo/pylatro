@@ -1,0 +1,15 @@
+# Shared consequence-label dataset
+
+This implements the data stage of the [pooled/relational recipe](consequence_predictor_experiment_20260927.md). No model fit is launched by this worker. Freeze all input/output helpers and source metadata before collecting labels. Use the passed native label/RNG audits and feature benchmark as prerequisites.
+
+Training is all 1,000 current-rule games 4000000–4000999, 202,141 decisions and 47,149 teacher plays. Development is the existing exposed 128 games 850000000–850000127, 26,045 decisions and 6,113 teacher plays. The split is by whole game; no branching observation or alternative crosses it. No new demonstrations, broader-data games, excluded confirmation outcomes or fresh-game claim.
+
+Reuse the audited proposal rule: teacher play, legal base play if present, up to two other distinct represented plays, and up to two SHA-ranked legal alternatives derived only from visible observation identity and action ID. Keep selected and retained slots in their original coordinates. Record the base's non-play action separately rather than assigning it an invented play score. Exact archived teacher/base labels and pilot outcomes may be reused with their original verification and hash provenance. Factual teacher actions are executed in every replayed game; other actions use independent full-state/card-counter clones. Do not reorder or separately resample the internal Joker-ordering probes.
+
+Require exact cached equality for all 14 observation fields at every factual decision, exact historical teacher outcomes, final win/Ante/decision counts, unchanged parent/snapshot states after each branch, and exact branch input hashes. Training's older archived outcomes sometimes omit a full post-state hash; compare every recorded field and preserve the original schema instead of fabricating missing evidence. New branches record complete post-state hashes. Reusing an audited outcome does not count as a new simulator branch.
+
+Labels use the original recorded RNG continuation, never the fresh-RNG stress draws. Record score, hand type, immediate clear/loss and provenance; no hidden RNG is a model feature. These are noisy observations of the declared conditional prediction targets, not deterministic expected outcomes or eventual win values.
+
+Run serially: training measurement (14,400-second cap), independent complete saved-row audit (1,200), development measurement (3,600), and its independent audit (1,200), each with 30 seconds of supervision grace. On any mismatch or timeout, stop and retain artifacts; no automatic retry, extension or overwrite. Each audit independently reconstructs row coverage, visible input hashes, legal proposals, membership and reused-label provenance from the pinned caches. All actual child and owner exits must be observed before admitting the dataset to feature extraction or fitting.
+
+The output is shared by both readouts. The subsequent feature-cache and fitting protocols must pin this completed dataset and its verification receipts. No scorer fit, policy integration, autonomous game or confirmation fit is included in this stage.

@@ -1,0 +1,152 @@
+{
+  "plan_sha256": "879550245c41fac526da9026cc0163b7d229db9e06795852723f8fd10e9bb334",
+  "metrics": {
+    "r0_global_win": {
+      "games": 80,
+      "nll": 0.6290105566156783
+    },
+    "r0_global_clear4": {
+      "games": 80,
+      "nll": 0.6125288178379877
+    },
+    "r0_global_clear5": {
+      "games": 80,
+      "nll": 0.6857837900218031
+    },
+    "r0_balanced_win": {
+      "games": 80,
+      "nll": 0.631341538798454
+    },
+    "r0_balanced_clear4": {
+      "games": 80,
+      "nll": 0.6137678575393397
+    },
+    "r0_balanced_clear5": {
+      "games": 80,
+      "nll": 0.6875351020343923
+    },
+    "r0_scalars_win": {
+      "games": 80,
+      "nll": 0.6364897950907279
+    },
+    "r0_scalars_clear4": {
+      "games": 80,
+      "nll": 0.6322349132220865
+    },
+    "r0_scalars_clear5": {
+      "games": 80,
+      "nll": 0.6980338210764832
+    },
+    "r1_global_win": {
+      "games": 79,
+      "nll": 0.6907594444480919
+    },
+    "r1_global_clear4": {
+      "games": 79,
+      "nll": 0.5684506016452201
+    },
+    "r1_global_clear5": {
+      "games": 79,
+      "nll": 0.626610009368128
+    },
+    "r1_balanced_win": {
+      "games": 79,
+      "nll": 0.6939532542393695
+    },
+    "r1_balanced_clear4": {
+      "games": 79,
+      "nll": 0.5745535278605404
+    },
+    "r1_balanced_clear5": {
+      "games": 79,
+      "nll": 0.6323948335982107
+    },
+    "r1_scalars_win": {
+      "games": 79,
+      "nll": 0.7378785331885654
+    },
+    "r1_scalars_clear4": {
+      "games": 79,
+      "nll": 0.598766335168182
+    },
+    "r1_scalars_clear5": {
+      "games": 79,
+      "nll": 0.6635436185799679
+    }
+  },
+  "comparisons": {
+    "win": {
+      "balanced_minus_global_nll": 0.0027623959870266236,
+      "by_replica": {
+        "0": 0.0023309821827756302,
+        "1": 0.003193809791277617
+      },
+      "paired_ci95": [
+        -0.0017875974910079434,
+        0.007428944869973698
+      ]
+    },
+    "clear4": {
+      "balanced_minus_global_nll": 0.003670982958336202,
+      "by_replica": {
+        "0": 0.0012390397013519328,
+        "1": 0.006102926215320471
+      },
+      "paired_ci95": [
+        -0.0044061666515709105,
+        0.011594487618449795
+      ]
+    },
+    "clear5": {
+      "balanced_minus_global_nll": 0.0037680681213359004,
+      "by_replica": {
+        "0": 0.0017513120125892054,
+        "1": 0.005784824230082595
+      },
+      "paired_ci95": [
+        -0.0016057295813341136,
+        0.00923530361959143
+      ]
+    }
+  },
+  "passes_probe_gate": false,
+  "generalization_proven": false,
+  "actor_updated": false,
+  "encoder_updated": false,
+  "gameplay_evaluated": false,
+  "elapsed_seconds": 78.18752195802517,
+  "models_unchanged": {
+    "0": "08719f08d10d684f2c4595d81956e06bd10eb13f6683a408cf8050ce9616f230",
+    "1": "608c4c1ebce35ec5f3d162e465726ecfecfa6eca0cc0f6fff5cf34d241664805"
+  },
+  "excluded_games": [
+    {
+      "replica": 0,
+      "seed": 310000022,
+      "split": 0
+    },
+    {
+      "replica": 0,
+      "seed": 310000469,
+      "split": 0
+    },
+    {
+      "replica": 1,
+      "seed": 310100208,
+      "split": 2
+    },
+    {
+      "replica": 1,
+      "seed": 310100386,
+      "split": 1
+    }
+  ],
+  "interpretation": "Tests frozen readout weighting, not missing history, causal action quality, actor/critic gradient conflict, or architecture capacity generally. Outcomes follow ten recorded MC behavior policies per replica. Splits are balanced within cohort, but predictions are for that behavior mixture, not initial-policy value. Games without an eligible shop snapshot are excluded identically from every arm and counted. Binary win and milestone labels avoid the known Ante-reversal categorical-support defect. No training-policy change or gameplay gain can be established by this probe.",
+  "artifacts": {
+    "features.npz": "8b8aa6689500c375f8bba83d48fcca3fe14963621c882f92a1dcbbbd40c71707",
+    "cache_audit.json": "f2264bf633a7cbe5447a36c415a2a6c8f48a928b0c49b993471f1443c73cf5a9",
+    "selection.json": "5dfd0b396f7eeb7e2b261512406b765664042b8c66332ac1592b3f8d16394c8e",
+    "frozen_readouts.npz": "4af084364935de82ca506ba8653c0a18eb1c2f01156e3db7d2085119df09a8aa",
+    "test_games.jsonl": "b545c39498989ef6b7936603225474d8cc8e2f2357ee4a06aee0a8e903062c6d"
+  }
+}

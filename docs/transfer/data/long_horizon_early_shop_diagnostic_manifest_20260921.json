@@ -1,0 +1,76 @@
+{
+  "status": "complete",
+  "pid": 76823,
+  "started_unix": 1790020186.491454,
+  "kind": "early_shop_teacher_diagnostic",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "script_sha256": "8ed6617642860c27c1ead9d9371c69c4deaba06459044396d91a63bf4a2cf2d5",
+  "checkpoints": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/checkpoints/ppo_update132.pt": "1add28c110ebbe7d0f09577b573d4cc7b437eba03ba144d0f2036d056ea88247",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/checkpoints/ppo_update132.pt": "a77a989d544f7a1d61f8ec141d386e3b85751b14984d9eb5563ef9fae3a111aa"
+  },
+  "seeds": [
+    260000,
+    260001,
+    260002,
+    260003,
+    260004,
+    260005,
+    260006,
+    260007,
+    260008,
+    260009,
+    260010,
+    260011,
+    260012,
+    260013,
+    260014,
+    260015,
+    260016,
+    260017,
+    260018,
+    260019,
+    260020,
+    260021,
+    260022,
+    260023,
+    260024
+  ],
+  "replicas": [
+    0,
+    1
+  ],
+  "arms": [
+    "student",
+    "early_shop"
+  ],
+  "greedy": true,
+  "temperature": 1.0,
+  "device": "cpu",
+  "workers": 2,
+  "threads_per_worker": 1,
+  "batch_size": 1,
+  "wall_time_limit_seconds": 3600,
+  "accelerator_seconds": 0,
+  "expected_games": 100,
+  "intervention": "Teacher replaces SHOP only when CURRENT Ante <=3; student controls every other phase",
+  "seed_scope": "First 25 already exposed development seeds; not fresh confirmation or training data",
+  "teacher": {
+    "shop_policy": "search",
+    "grow_scalers": true,
+    "privileged_state_access": true
+  },
+  "model_selection": false,
+  "training_labels": false,
+  "generalization_proven": false,
+  "posthoc_followup": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/manifest.json": "1989ca3cda3e120b1f9f45a9d2ad13828b705525ab35a9e349a61fdcfaa35967",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/results.json": "b0e4b0356a3eba75dfac945f23a5e01597272fd8b7660d195f28b4fe80c2af94"
+  },
+  "ante_rule": "Uses current Ante, so legal Ante decreases can reactivate the intervention",
+  "motivation": "Follow-up to small late-hand effect: test early shops under the unchanged later student policy",
+  "completed_games": 100,
+  "elapsed_seconds": 576.178166458034,
+  "finished_unix": 1790020762.926271
+}

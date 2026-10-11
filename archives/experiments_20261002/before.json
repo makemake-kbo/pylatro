@@ -1,0 +1,10 @@
+{
+  "allocated_bytes": 286410649600,
+  "by_action": {
+    "archive": 14567072234,
+    "delete": 270473777977,
+    "keep": 1186697821
+  },
+  "files": 73834,
+  "logical_bytes": 286227548032
+}

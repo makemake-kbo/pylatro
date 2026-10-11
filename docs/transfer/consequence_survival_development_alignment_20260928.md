@@ -1,0 +1,11 @@
+# Held-out survival-pair alignment from saved predictions
+
+Before the survival-ranking fit finishes, specify a direct transfer check for the relation it is being taught. Compare its fixed epoch-20 predictions with the matched relational coverage control on the original labelled proposals from all 6,113 development states. Enumerate every survivor/fatal pair at last-hand states. These original-RNG outcomes define a diagnostic relation, not a conditional survival probability or a deployable selection gate.
+
+Use only admitted saved predictions and labels. No new model inference, simulation, training, endpoint selection or retention threshold changes. The existing full-action prediction and retention evaluations remain necessary. This check covers original proposals only; it must not imply coverage of every possible development action or of the training inventory's extra proposals.
+
+Reconstruct both models' original-proposal score MSE, clear BCE/Brier and teacher NLL, and reconcile them against their admitted prediction audits. Save every comparison with state identity, action IDs and all three prediction margins. Report correct/tied/incorrect counts, equal-state mean pair error with half error for ties, preference logistic loss and changed rankings. Group all, early, later, teacher-survivor and nonteacher-survivor pairs. Independently recount pair counts and rank errors from the saved rows.
+
+For each nonempty group, report paired 95% intervals for the candidate-minus-control equal-state error in each head. Use the existing 10,000-draw Python Random(1729) bootstrap, resampling entire contributing source games with all their qualifying states and pairs kept together. State means, not individual pairs, determine the pooled estimate. These exploratory intervals quantify uncertainty across the contributing development games and exclude independent-fit uncertainty. They do not create a new advancement gate.
+
+Freeze the helper, parser, metric functions, label records, prediction owners and endpoint predictions after both prediction jobs have passed their audits and actually exited. Run the bounded standard-library diagnostic once, with a 600-second budget plus 30-second supervision grace. Admit only after actual owner exit. The long-horizon win-rate objective remains separate and unproven.

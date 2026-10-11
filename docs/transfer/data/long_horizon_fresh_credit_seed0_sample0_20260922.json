@@ -1,0 +1,127 @@
+{
+  "created_unix": 1790075099.0233579,
+  "script_sha256": "16e69714edf8210a7e5dd7ae46a6a032f495e9d4f28bb7ea191bd7f3845bbcb4",
+  "stage": "confirmation",
+  "endpoint": 20,
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "selection_sha256": "0267a19e59bf5701938dd019a230f1a1ea1995e97b9c2531044306aa84faa9d4",
+  "replica": 0,
+  "mode": "sample0",
+  "game_seeds": 400,
+  "panels": {
+    "terminal_mc": {
+      "checkpoint_sha256": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+      "summary": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 162,
+        "win_rate": 0.405,
+        "win_rate_cluster_ci95": [
+          0.3575,
+          0.4525
+        ],
+        "win_rate_wilson_ci95": [
+          0.3580179525239347,
+          0.4537893833995817
+        ],
+        "mean_final_ante": 6.7975,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.97,
+          "2": 0.9225,
+          "3": 0.8825,
+          "4": 0.81,
+          "5": 0.7175,
+          "6": 0.6125,
+          "7": 0.48,
+          "8": 0.405
+        }
+      }
+    },
+    "terminal_gae": {
+      "checkpoint_sha256": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+      "summary": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 161,
+        "win_rate": 0.4025,
+        "win_rate_cluster_ci95": [
+          0.355,
+          0.45
+        ],
+        "win_rate_wilson_ci95": [
+          0.3555891011441365,
+          0.4512657962510514
+        ],
+        "mean_final_ante": 6.76,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.9725,
+          "2": 0.92,
+          "3": 0.8775,
+          "4": 0.7975,
+          "5": 0.71,
+          "6": 0.595,
+          "7": 0.4925,
+          "8": 0.4025
+        }
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 400,
+    "games_per_arm": 400,
+    "sampled_or_greedy_delta": 0.0025,
+    "paired_ci95": [
+      -0.0475,
+      0.0525
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling",
+    "rescued_losses": 53,
+    "new_losses": 52
+  },
+  "matched_training": {
+    "terminal_mc": {
+      "games": 1280,
+      "decisions": 211766,
+      "optimizer_examples": 327680,
+      "logical_steps_per_active_parameter": 520
+    },
+    "terminal_gae": {
+      "games": 1280,
+      "decisions": 213789,
+      "optimizer_examples": 327680,
+      "logical_steps_per_active_parameter": 520
+    }
+  },
+  "semantic_recipe_difference": {
+    "advantage_estimator": [
+      "complete_episode_mc",
+      "fragment_gae"
+    ]
+  },
+  "initial_weights_optimizer_and_rng_exact": true,
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/initial.pt": "e59f50d52f75f42858094f200d7566679ecf45d10f245c41f89514b0c2eda5f5",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/checkpoints/ppo_update142.pt": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_mc_seed0_endpoint20_verification.json": "252496d8505b13097c8c0a2a5d8fa2889167ddf5388f30e153e39271ffb155f2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/initial.pt": "e87e68baa9e00d31bae83d1b55ca810026789fd25ea589841ac7222711dd6c96",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/checkpoints/ppo_update142.pt": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_gae_seed0_endpoint20_verification.json": "b7163eb7fe07e039862102427393f345f4e371d86517cea498e1c684e413fe26",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed0_preflight.json": "3c98c0c74f08afd8827ca798e83ac926817b946fd10160eca655fdaf03583c63",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/sample0/manifest.json": "79f740eac1f97873d38cc4570da3d54e4705babf02dc45dd08eea87dc10a9849",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/sample0/outcomes.jsonl": "118f93b8a421d0401b60c157d12aa4de124035166670c4d24850c69c019a408f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/sample0/manifest.json": "d61155ac42f2a824276d26a6f2848f8d9f7c48c02f6670a77d751afddfb1236e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/sample0/outcomes.jsonl": "45be00e8842738673f078960c66019c7d1f526814906881b88fb35ff2e565f57"
+  },
+  "independent_paired_bootstrap_verified": true,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 1729,
+  "selection_changed": false,
+  "generalization_proven": false,
+  "interpretation": "One fixed training replica and one confirmation sampling repeat or greedy mode; pointwise interval. The two arms share their initial weights, optimizer, RNG, value objective, architecture and training recipe apart from the advantage estimator and run identifiers/output paths. Both consumed the same planned game seeds and optimizer exposure, with no rollback/early stop. This estimates the credit-estimator effect at equal training exposure. Both replicas, both sampling repeats, parent comparison, greedy guardrail, and reserved early attribution are still required for the main verdict. No stopping, selection or criteria change.",
+  "paired_games_sha256": "af14a4d5577156878d2818ec95496122353103f8b824fc3394ae9d528adcba87"
+}

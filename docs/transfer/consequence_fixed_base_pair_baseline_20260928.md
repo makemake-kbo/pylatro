@@ -1,0 +1,7 @@
+# Measure the fixed prior's survival ordering without a new model run
+
+While the single residual fit runs, use its already-admitted immutable base log probabilities to measure initial survivor/fatal ordering. Compare them with the completed standalone survival-ranking scorer on its saved 3,396 training pairs and 318 original development pairs. This addresses whether the fixed policy distribution already contains the relation that the standalone scorer had to relearn. It does not evaluate the current candidate or change its frozen recipe.
+
+Reuse both completed pair inventories and outcomes. Match every source cache index, seed, step and global action to the packed legal-action cache. Report preference margins, correct/tied/incorrect counts, state-balanced pair error and pair loss for all/early/later/teacher-winner/nonteacher-winner groups and training original/extra pairs. Compare saved standalone margins exactly with the admitted pair artifacts. Recount the saved rows before completion. Results are descriptive, with no new intervals, model inference, simulation, labels or gate changes. The same native fit remains the only native job; this diagnostic uses the standard library only and is capped at 600 seconds plus 30 seconds supervision grace.
+
+A stronger base ordering would support useful information being retained in its action distribution. It would not show that adding that distribution improves autonomous play: the fitted corrections, retention screen and fresh-game evaluation still decide that.

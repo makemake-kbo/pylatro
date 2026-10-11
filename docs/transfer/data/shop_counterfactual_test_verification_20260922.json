@@ -1,0 +1,12 @@
+{
+  "verified_unix": 1790070009.1684191,
+  "tests": 5,
+  "exit_code": 0,
+  "test_source_sha256": "a8199188a5cddaeeca7c4dcba8a84c8aa478aeb39da0eecda20bc71036be541a",
+  "runner_sha256": "a68e9eb77faee31366ce15d3790766faf51fbd06e97e1637b3d47042f6383ba8",
+  "test_log_sha256": "4d2df7a96ce4a667da3ccf295f2d16c728a65ed0e861a3baa919f7bb469b02b5",
+  "real_sampled_counterfactual_games": 0,
+  "toy_rng_trace_tests": true,
+  "real_forced_first_actions": 4,
+  "generalization_proven": false
+}

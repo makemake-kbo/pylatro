@@ -1,0 +1,2068 @@
+{
+  "analysis": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/continuation_transfer_diagnostic_20260925/analysis_v1.json",
+    "sha256": "7c3858f456e650751b13bf639ae72ce36d2cd51b483aa9a0717f875a68674747"
+  },
+  "contrasts": {
+    "discard_subset:accuracy:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 1412,
+      "difference": -0.7790368271954674,
+      "family": "discard_subset",
+      "family_present_games": 121,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -2.0847823469549356,
+        0.553934812914616
+      ],
+      "per_replica_difference": [
+        -0.56657223796034,
+        -0.9915014164305949
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "discard_subset:accuracy:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 1412,
+      "difference": -0.5311614730878187,
+      "family": "discard_subset",
+      "family_present_games": 121,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -1.7562445207301096,
+        0.7617778787354912
+      ],
+      "per_replica_difference": [
+        0.0,
+        -1.0623229461756374
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "discard_subset:accuracy:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 1412,
+      "difference": 0.24787535410764872,
+      "family": "discard_subset",
+      "family_present_games": 121,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -0.6456255507577152,
+        1.1227579930594207
+      ],
+      "per_replica_difference": [
+        0.56657223796034,
+        -0.0708215297450425
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "discard_subset:nll:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 1412,
+      "difference": 0.18182311461795464,
+      "family": "discard_subset",
+      "family_present_games": 121,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.12806840213035245,
+        0.23787035637984638
+      ],
+      "per_replica_difference": [
+        0.14205700821203424,
+        0.22158922102387502
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "discard_subset:nll:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 1412,
+      "difference": 0.18172721917321605,
+      "family": "discard_subset",
+      "family_present_games": 121,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.13327437209473073,
+        0.2331932884681565
+      ],
+      "per_replica_difference": [
+        0.15465586784766785,
+        0.20879857049876427
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "discard_subset:nll:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 1412,
+      "difference": -9.589544473857214e-05,
+      "family": "discard_subset",
+      "family_present_games": 121,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        -0.020423181029532916,
+        0.02016719191654088
+      ],
+      "per_replica_difference": [
+        0.012598859635633605,
+        -0.01279065052511075
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "overall:accuracy:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 26045,
+      "difference": -0.25148780956037625,
+      "family": "overall",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -0.4797463283121855,
+        -0.023307261574998617
+      ],
+      "per_replica_difference": [
+        -0.25724707237473604,
+        -0.24572854674601652
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "overall:accuracy:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 26045,
+      "difference": -0.5701670186216165,
+      "family": "overall",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -0.7956219342924502,
+        -0.3502210417438239
+      ],
+      "per_replica_difference": [
+        -0.5951238241505087,
+        -0.5452102130927241
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "overall:accuracy:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 26045,
+      "difference": -0.31867920906124014,
+      "family": "overall",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -0.4713632441341462,
+        -0.16806727457064496
+      ],
+      "per_replica_difference": [
+        -0.3378767517757727,
+        -0.29948166634670764
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "overall:nll:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 26045,
+      "difference": 0.051260300649106326,
+      "family": "overall",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.04321126058133162,
+        0.05986189430437297
+      ],
+      "per_replica_difference": [
+        0.05122364968152279,
+        0.051296951616689866
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "overall:nll:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 26045,
+      "difference": 0.057112184546250944,
+      "family": "overall",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.04948873572395722,
+        0.06501710468086658
+      ],
+      "per_replica_difference": [
+        0.06057777950419391,
+        0.05364658958830798
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "overall:nll:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 26045,
+      "difference": 0.005851883897144615,
+      "family": "overall",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.0022346689088804435,
+        0.009410937777916276
+      ],
+      "per_replica_difference": [
+        0.00935412982267112,
+        0.0023496379716181105
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "play_subset:accuracy:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 6113,
+      "difference": -0.39260592180598725,
+      "family": "play_subset",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -1.0448481975735404,
+        0.22238006776649524
+      ],
+      "per_replica_difference": [
+        -0.47439882218223456,
+        -0.3108130214297399
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "play_subset:accuracy:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 6113,
+      "difference": -1.6276787174873222,
+      "family": "play_subset",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -2.32922560370032,
+        -0.9150239503280672
+      ],
+      "per_replica_difference": [
+        -1.9466710289546867,
+        -1.3086864060199574
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "play_subset:accuracy:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 6113,
+      "difference": -1.2350727956813348,
+      "family": "play_subset",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -1.7417056549382557,
+        -0.733716204379479
+      ],
+      "per_replica_difference": [
+        -1.472272206772452,
+        -0.9978733845902176
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "play_subset:nll:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 6113,
+      "difference": 0.08348245375240367,
+      "family": "play_subset",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.0631994923299909,
+        0.10375929056323682
+      ],
+      "per_replica_difference": [
+        0.094659534114938,
+        0.07230537338986935
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "play_subset:nll:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 6113,
+      "difference": 0.11673914775068236,
+      "family": "play_subset",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.09436001998814669,
+        0.13903710444739603
+      ],
+      "per_replica_difference": [
+        0.136675794144575,
+        0.09680250135678975
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "play_subset:nll:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 6113,
+      "difference": 0.03325669399827871,
+      "family": "play_subset",
+      "family_present_games": 128,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.021504382660244202,
+        0.04482481992057068
+      ],
+      "per_replica_difference": [
+        0.04201626002963701,
+        0.024497127966920402
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "shop_sell_joker:accuracy:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 837,
+      "difference": 1.015531660692951,
+      "family": "shop_sell_joker",
+      "family_present_games": 127,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -1.201959235860409,
+        3.227950742498625
+      ],
+      "per_replica_difference": [
+        2.031063321385902,
+        0.0
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "shop_sell_joker:accuracy:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 837,
+      "difference": 0.35842293906810035,
+      "family": "shop_sell_joker",
+      "family_present_games": 127,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -1.9025536492837325,
+        2.5626910602038153
+      ],
+      "per_replica_difference": [
+        0.955794504181601,
+        -0.23894862604540024
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "shop_sell_joker:accuracy:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 837,
+      "difference": -0.6571087216248507,
+      "family": "shop_sell_joker",
+      "family_present_games": 127,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "accuracy",
+      "paired_95_interval": [
+        -2.450980392156863,
+        1.0119349140132807
+      ],
+      "per_replica_difference": [
+        -1.075268817204301,
+        -0.23894862604540024
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "percentage_points",
+      "zero_denominator_draws": 0
+    },
+    "shop_sell_joker:nll:ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "ordinary_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 837,
+      "difference": 0.4766700372468177,
+      "family": "shop_sell_joker",
+      "family_present_games": 127,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.381342901311208,
+        0.5778261207063947
+      ],
+      "per_replica_difference": [
+        0.42157644370243647,
+        0.5317636307911989
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "shop_sell_joker:nll:weighted_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_base",
+      "control_shared_across_replicas": true,
+      "decisions": 837,
+      "difference": 0.46249160072638285,
+      "family": "shop_sell_joker",
+      "family_present_games": 127,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        0.37177321793022133,
+        0.5574181310181838
+      ],
+      "per_replica_difference": [
+        0.4380036615716514,
+        0.4869795398811143
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    },
+    "shop_sell_joker:nll:weighted_minus_ordinary": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "contrast": "weighted_minus_ordinary",
+      "control_shared_across_replicas": false,
+      "decisions": 837,
+      "difference": -0.014178436520434871,
+      "family": "shop_sell_joker",
+      "family_present_games": 127,
+      "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+      "metric": "nll",
+      "paired_95_interval": [
+        -0.06376930012162917,
+        0.03362769516963949
+      ],
+      "per_replica_difference": [
+        0.0164272178692149,
+        -0.044784090910084645
+      ],
+      "seed_clusters": 128,
+      "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+      "units": "nats",
+      "zero_denominator_draws": 0
+    }
+  },
+  "generalization_proven": false,
+  "heldout": {
+    "base": {
+      "overall": {
+        "accuracy": 0.8271837204837781,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8224991209304373,
+          "nll": 0.6607152787514834,
+          "teacher_probability": 0.7594759865179869
+        },
+        "exact_matches": 21544,
+        "games": 128,
+        "nll": 0.6391055354772996,
+        "teacher_probability": 0.764013414590246
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 1.0,
+          "decisions": 2915,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.0007749168416202698,
+            "teacher_probability": 0.9993279974637133
+          },
+          "exact_matches": 2915,
+          "games": 128,
+          "nll": 0.0007548785944300907,
+          "teacher_probability": 0.9993410552119635
+        },
+        "blind_reroll": {
+          "accuracy": 0.8695652173913043,
+          "decisions": 23,
+          "equal_game_means": {
+            "accuracy": 0.9166666666666666,
+            "nll": 0.2630283711963178,
+            "teacher_probability": 0.837048961636037
+          },
+          "exact_matches": 20,
+          "games": 16,
+          "nll": 0.3235703017562628,
+          "teacher_probability": 0.8142266622041096
+        },
+        "discard_subset": {
+          "accuracy": 0.5276203966005666,
+          "decisions": 1412,
+          "equal_game_means": {
+            "accuracy": 0.4221018763433818,
+            "nll": 2.975919933912797,
+            "teacher_probability": 0.37888718891973217
+          },
+          "exact_matches": 745,
+          "games": 121,
+          "nll": 2.319161447684058,
+          "teacher_probability": 0.436667430717325
+        },
+        "pack_claim": {
+          "accuracy": 0.8371057513914657,
+          "decisions": 2695,
+          "equal_game_means": {
+            "accuracy": 0.8363573891990398,
+            "nll": 0.4053727555508903,
+            "teacher_probability": 0.7877447846047899
+          },
+          "exact_matches": 2256,
+          "games": 127,
+          "nll": 0.3920308029218444,
+          "teacher_probability": 0.7951037001177585
+        },
+        "pack_skip": {
+          "accuracy": 0.9105322763306908,
+          "decisions": 883,
+          "equal_game_means": {
+            "accuracy": 0.8845367353320913,
+            "nll": 0.29906622337322464,
+            "teacher_probability": 0.8277240274116475
+          },
+          "exact_matches": 804,
+          "games": 125,
+          "nll": 0.24566855349664055,
+          "teacher_probability": 0.8460174936514565
+        },
+        "play_subset": {
+          "accuracy": 0.6798625879273679,
+          "decisions": 6113,
+          "equal_game_means": {
+            "accuracy": 0.6803035205301274,
+            "nll": 1.2907784433045764,
+            "teacher_probability": 0.5448068373856663
+          },
+          "exact_matches": 4156,
+          "games": 128,
+          "nll": 1.295090105544545,
+          "teacher_probability": 0.542534103870983
+        },
+        "shop_buy": {
+          "accuracy": 0.9374412925042269,
+          "decisions": 5323,
+          "equal_game_means": {
+            "accuracy": 0.9285748259036265,
+            "nll": 0.2026150954967156,
+            "teacher_probability": 0.8880356011413594
+          },
+          "exact_matches": 4990,
+          "games": 128,
+          "nll": 0.18548621155506004,
+          "teacher_probability": 0.8956332844968369
+        },
+        "shop_leave": {
+          "accuracy": 0.9400789379260854,
+          "decisions": 2787,
+          "equal_game_means": {
+            "accuracy": 0.9393425050616252,
+            "nll": 0.17620908911819286,
+            "teacher_probability": 0.892713953494129
+          },
+          "exact_matches": 2620,
+          "games": 128,
+          "nll": 0.1707413122561015,
+          "teacher_probability": 0.894052994365144
+        },
+        "shop_reroll": {
+          "accuracy": 0.9427293064876957,
+          "decisions": 2235,
+          "equal_game_means": {
+            "accuracy": 0.9155038866491197,
+            "nll": 0.25598538068075183,
+            "teacher_probability": 0.8617521684687178
+          },
+          "exact_matches": 2107,
+          "games": 125,
+          "nll": 0.20258605702799004,
+          "teacher_probability": 0.8880818639466443
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.2520908004778972,
+          "decisions": 837,
+          "equal_game_means": {
+            "accuracy": 0.24479920779133377,
+            "nll": 2.2505147320899668,
+            "teacher_probability": 0.23861025929073656
+          },
+          "exact_matches": 211,
+          "games": 127,
+          "nll": 2.2286945044940945,
+          "teacher_probability": 0.24068421810552673
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.5373831775700935,
+          "decisions": 214,
+          "equal_game_means": {
+            "accuracy": 0.5595421245421246,
+            "nll": 1.7001643468957581,
+            "teacher_probability": 0.47481255012428364
+          },
+          "exact_matches": 115,
+          "games": 70,
+          "nll": 1.7656523064719991,
+          "teacher_probability": 0.46345399001307974
+        },
+        "use_consumable_joker": {
+          "accuracy": 1.0,
+          "decisions": 13,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.07888678529464717,
+            "teacher_probability": 0.9304675863919544
+          },
+          "exact_matches": 13,
+          "games": 12,
+          "nll": 0.07854303203818674,
+          "teacher_probability": 0.9304344044798784
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9949579831932773,
+          "decisions": 595,
+          "equal_game_means": {
+            "accuracy": 0.9974499089253187,
+            "nll": 0.01350536820246972,
+            "teacher_probability": 0.9893149718051972
+          },
+          "exact_matches": 592,
+          "games": 122,
+          "nll": 0.017821891498413272,
+          "teacher_probability": 0.9869370751481982
+        }
+      }
+    },
+    "ordinary_r0": {
+      "overall": {
+        "accuracy": 0.8246112497600308,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8200034047608001,
+          "nll": 0.7121942391376769,
+          "teacher_probability": 0.7724813324365163
+        },
+        "exact_matches": 21477,
+        "games": 128,
+        "nll": 0.6903291851588224,
+        "teacher_probability": 0.7767515267601975
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 1.0,
+          "decisions": 2915,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.0004700983061287276,
+            "teacher_probability": 0.999593114016496
+          },
+          "exact_matches": 2915,
+          "games": 128,
+          "nll": 0.00047165585566147117,
+          "teacher_probability": 0.9995928794126459
+        },
+        "blind_reroll": {
+          "accuracy": 0.8695652173913043,
+          "decisions": 23,
+          "equal_game_means": {
+            "accuracy": 0.9166666666666666,
+            "nll": 0.30895576773036737,
+            "teacher_probability": 0.8145819989876494
+          },
+          "exact_matches": 20,
+          "games": 16,
+          "nll": 0.38760243139594147,
+          "teacher_probability": 0.7900323626509981
+        },
+        "discard_subset": {
+          "accuracy": 0.5219546742209632,
+          "decisions": 1412,
+          "equal_game_means": {
+            "accuracy": 0.4254086563843791,
+            "nll": 3.1198433674416672,
+            "teacher_probability": 0.3888161795698181
+          },
+          "exact_matches": 737,
+          "games": 121,
+          "nll": 2.4612184558960926,
+          "teacher_probability": 0.45555178234507576
+        },
+        "pack_claim": {
+          "accuracy": 0.8322820037105751,
+          "decisions": 2695,
+          "equal_game_means": {
+            "accuracy": 0.8306669443377639,
+            "nll": 0.4369789719497789,
+            "teacher_probability": 0.789230227963708
+          },
+          "exact_matches": 2243,
+          "games": 127,
+          "nll": 0.4209156472883846,
+          "teacher_probability": 0.7958126726495979
+        },
+        "pack_skip": {
+          "accuracy": 0.9195922989807475,
+          "decisions": 883,
+          "equal_game_means": {
+            "accuracy": 0.893962879122941,
+            "nll": 0.26680054017449034,
+            "teacher_probability": 0.8572554093944647
+          },
+          "exact_matches": 812,
+          "games": 125,
+          "nll": 0.2049585671077344,
+          "teacher_probability": 0.8812534671337504
+        },
+        "play_subset": {
+          "accuracy": 0.6751185997055456,
+          "decisions": 6113,
+          "equal_game_means": {
+            "accuracy": 0.6759524873914633,
+            "nll": 1.3849025855110257,
+            "teacher_probability": 0.5828547886529589
+          },
+          "exact_matches": 4127,
+          "games": 128,
+          "nll": 1.3897496396594828,
+          "teacher_probability": 0.5802666468921279
+        },
+        "shop_buy": {
+          "accuracy": 0.9331204208153298,
+          "decisions": 5323,
+          "equal_game_means": {
+            "accuracy": 0.9270600024325825,
+            "nll": 0.21630059329399912,
+            "teacher_probability": 0.8894541427363621
+          },
+          "exact_matches": 4967,
+          "games": 128,
+          "nll": 0.2000624877434529,
+          "teacher_probability": 0.8963383409670225
+        },
+        "shop_leave": {
+          "accuracy": 0.9390025116612846,
+          "decisions": 2787,
+          "equal_game_means": {
+            "accuracy": 0.9375166075472992,
+            "nll": 0.17883572663608702,
+            "teacher_probability": 0.895535740778846
+          },
+          "exact_matches": 2617,
+          "games": 128,
+          "nll": 0.17352193746238845,
+          "teacher_probability": 0.8971138261114887
+        },
+        "shop_reroll": {
+          "accuracy": 0.9364653243847875,
+          "decisions": 2235,
+          "equal_game_means": {
+            "accuracy": 0.9111540635962949,
+            "nll": 0.2496334642665102,
+            "teacher_probability": 0.8683556091443492
+          },
+          "exact_matches": 2093,
+          "games": 125,
+          "nll": 0.20521439091264432,
+          "teacher_probability": 0.8918464399222946
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.2724014336917563,
+          "decisions": 837,
+          "equal_game_means": {
+            "accuracy": 0.2697136852648664,
+            "nll": 2.657570220435894,
+            "teacher_probability": 0.26065289221456767
+          },
+          "exact_matches": 228,
+          "games": 127,
+          "nll": 2.650270948196531,
+          "teacher_probability": 0.2624265032945036
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.5233644859813084,
+          "decisions": 214,
+          "equal_game_means": {
+            "accuracy": 0.5640934065934066,
+            "nll": 1.9467927225092028,
+            "teacher_probability": 0.4937061869058353
+          },
+          "exact_matches": 112,
+          "games": 70,
+          "nll": 2.084887103127491,
+          "teacher_probability": 0.4721830354783802
+        },
+        "use_consumable_joker": {
+          "accuracy": 1.0,
+          "decisions": 13,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.06094487234076951,
+            "teacher_probability": 0.9432876439567556
+          },
+          "exact_matches": 13,
+          "games": 12,
+          "nll": 0.06337476519491667,
+          "teacher_probability": 0.9410847557593187
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9966386554621849,
+          "decisions": 595,
+          "equal_game_means": {
+            "accuracy": 0.9983606557377049,
+            "nll": 0.013405517337075856,
+            "teacher_probability": 0.9898435337447563
+          },
+          "exact_matches": 593,
+          "games": 122,
+          "nll": 0.018065348310913117,
+          "teacher_probability": 0.9875027949691824
+        }
+      }
+    },
+    "ordinary_r1": {
+      "overall": {
+        "accuracy": 0.8247264350163179,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8198527441402472,
+          "nll": 0.7140833721681197,
+          "teacher_probability": 0.7731914082334894
+        },
+        "exact_matches": 21480,
+        "games": 128,
+        "nll": 0.6904024870939895,
+        "teacher_probability": 0.7778214440945944
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 1.0,
+          "decisions": 2915,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.00046742406912963634,
+            "teacher_probability": 0.9995888587384636
+          },
+          "exact_matches": 2915,
+          "games": 128,
+          "nll": 0.00045479906366789375,
+          "teacher_probability": 0.9995992116736716
+        },
+        "blind_reroll": {
+          "accuracy": 0.8695652173913043,
+          "decisions": 23,
+          "equal_game_means": {
+            "accuracy": 0.9166666666666666,
+            "nll": 0.23540957250224892,
+            "teacher_probability": 0.8619010401222872
+          },
+          "exact_matches": 20,
+          "games": 16,
+          "nll": 0.32763325529294496,
+          "teacher_probability": 0.8285966913647398
+        },
+        "discard_subset": {
+          "accuracy": 0.5177053824362606,
+          "decisions": 1412,
+          "equal_game_means": {
+            "accuracy": 0.4182714564537775,
+            "nll": 3.2228459795082927,
+            "teacher_probability": 0.3830164383290841
+          },
+          "exact_matches": 731,
+          "games": 121,
+          "nll": 2.540750668707933,
+          "teacher_probability": 0.45020669389594314
+        },
+        "pack_claim": {
+          "accuracy": 0.8348794063079777,
+          "decisions": 2695,
+          "equal_game_means": {
+            "accuracy": 0.834436196786407,
+            "nll": 0.4249832266601422,
+            "teacher_probability": 0.7909284131802804
+          },
+          "exact_matches": 2250,
+          "games": 127,
+          "nll": 0.4121918634706925,
+          "teacher_probability": 0.7968424182072001
+        },
+        "pack_skip": {
+          "accuracy": 0.9218573046432617,
+          "decisions": 883,
+          "equal_game_means": {
+            "accuracy": 0.8951279584880204,
+            "nll": 0.28087081268571,
+            "teacher_probability": 0.8526759928808042
+          },
+          "exact_matches": 814,
+          "games": 125,
+          "nll": 0.2178857384918676,
+          "teacher_probability": 0.8755345555824955
+        },
+        "play_subset": {
+          "accuracy": 0.6767544577130705,
+          "decisions": 6113,
+          "equal_game_means": {
+            "accuracy": 0.6778423348323088,
+            "nll": 1.3637458705151977,
+            "teacher_probability": 0.583894634258287
+          },
+          "exact_matches": 4137,
+          "games": 128,
+          "nll": 1.3673954789344145,
+          "teacher_probability": 0.5815064649819158
+        },
+        "shop_buy": {
+          "accuracy": 0.9319932368964869,
+          "decisions": 5323,
+          "equal_game_means": {
+            "accuracy": 0.9235782000601476,
+            "nll": 0.2217134159287554,
+            "teacher_probability": 0.8868925892714469
+          },
+          "exact_matches": 4961,
+          "games": 128,
+          "nll": 0.2018988356889697,
+          "teacher_probability": 0.8948781760075383
+        },
+        "shop_leave": {
+          "accuracy": 0.9429494079655544,
+          "decisions": 2787,
+          "equal_game_means": {
+            "accuracy": 0.9419883860684902,
+            "nll": 0.16457260852445307,
+            "teacher_probability": 0.9050375456841082
+          },
+          "exact_matches": 2628,
+          "games": 128,
+          "nll": 0.15833379767058822,
+          "teacher_probability": 0.906737813884509
+        },
+        "shop_reroll": {
+          "accuracy": 0.9369127516778524,
+          "decisions": 2235,
+          "equal_game_means": {
+            "accuracy": 0.9091912193346134,
+            "nll": 0.25463746779721225,
+            "teacher_probability": 0.872845639204323
+          },
+          "exact_matches": 2094,
+          "games": 125,
+          "nll": 0.19830591927124103,
+          "teacher_probability": 0.8991190916570851
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.2520908004778972,
+          "decisions": 837,
+          "equal_game_means": {
+            "accuracy": 0.24919149092377438,
+            "nll": 2.756605525609833,
+            "teacher_probability": 0.2528618157502858
+          },
+          "exact_matches": 211,
+          "games": 127,
+          "nll": 2.7604581352852935,
+          "teacher_probability": 0.25341366804725307
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.5280373831775701,
+          "decisions": 214,
+          "equal_game_means": {
+            "accuracy": 0.56649136577708,
+            "nll": 1.9374887438360142,
+            "teacher_probability": 0.5019505632759239
+          },
+          "exact_matches": 113,
+          "games": 70,
+          "nll": 2.065357925987908,
+          "teacher_probability": 0.47761665734967906
+        },
+        "use_consumable_joker": {
+          "accuracy": 1.0,
+          "decisions": 13,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.06818876139611045,
+            "teacher_probability": 0.9365606710249305
+          },
+          "exact_matches": 13,
+          "games": 12,
+          "nll": 0.07122690237436193,
+          "teacher_probability": 0.9339049565060885
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9966386554621849,
+          "decisions": 595,
+          "equal_game_means": {
+            "accuracy": 0.9983606557377049,
+            "nll": 0.012837301669122043,
+            "teacher_probability": 0.9903846741911787
+          },
+          "exact_matches": 593,
+          "games": 122,
+          "nll": 0.01744412598236596,
+          "teacher_probability": 0.988130968654623
+        }
+      }
+    },
+    "weighted_r0": {
+      "overall": {
+        "accuracy": 0.821232482242273,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8166935442843728,
+          "nll": 0.7225610213400213,
+          "teacher_probability": 0.769941789065513
+        },
+        "exact_matches": 21389,
+        "games": 128,
+        "nll": 0.6996833149814936,
+        "teacher_probability": 0.7744215246220548
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 1.0,
+          "decisions": 2915,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.0004739307933027617,
+            "teacher_probability": 0.9995828698202245
+          },
+          "exact_matches": 2915,
+          "games": 128,
+          "nll": 0.0004595619246249273,
+          "teacher_probability": 0.9995944200970591
+        },
+        "blind_reroll": {
+          "accuracy": 0.8695652173913043,
+          "decisions": 23,
+          "equal_game_means": {
+            "accuracy": 0.9166666666666666,
+            "nll": 0.324483624661904,
+            "teacher_probability": 0.8054805968522118
+          },
+          "exact_matches": 20,
+          "games": 16,
+          "nll": 0.41095994320779067,
+          "teacher_probability": 0.7797812822417877
+        },
+        "discard_subset": {
+          "accuracy": 0.5276203966005666,
+          "decisions": 1412,
+          "equal_game_means": {
+            "accuracy": 0.4268586481468122,
+            "nll": 3.1479396681269853,
+            "teacher_probability": 0.3833043588120642
+          },
+          "exact_matches": 745,
+          "games": 121,
+          "nll": 2.473817315531726,
+          "teacher_probability": 0.448334667848438
+        },
+        "pack_claim": {
+          "accuracy": 0.8319109461966605,
+          "decisions": 2695,
+          "equal_game_means": {
+            "accuracy": 0.8302170737987926,
+            "nll": 0.4308590881002291,
+            "teacher_probability": 0.7885306748995932
+          },
+          "exact_matches": 2242,
+          "games": 127,
+          "nll": 0.4154931115931838,
+          "teacher_probability": 0.795167682899735
+        },
+        "pack_skip": {
+          "accuracy": 0.9184597961494904,
+          "decisions": 883,
+          "equal_game_means": {
+            "accuracy": 0.8917089108689727,
+            "nll": 0.2706831299943523,
+            "teacher_probability": 0.8551148006725657
+          },
+          "exact_matches": 811,
+          "games": 125,
+          "nll": 0.20809453343348297,
+          "teacher_probability": 0.8779760090966259
+        },
+        "play_subset": {
+          "accuracy": 0.660395877637821,
+          "decisions": 6113,
+          "equal_game_means": {
+            "accuracy": 0.6623987678419855,
+            "nll": 1.425308787805744,
+            "teacher_probability": 0.5730634651542689
+          },
+          "exact_matches": 4037,
+          "games": 128,
+          "nll": 1.43176589968912,
+          "teacher_probability": 0.5703712456022296
+        },
+        "shop_buy": {
+          "accuracy": 0.9319932368964869,
+          "decisions": 5323,
+          "equal_game_means": {
+            "accuracy": 0.9237573410136073,
+            "nll": 0.21540760153924965,
+            "teacher_probability": 0.8897824119578889
+          },
+          "exact_matches": 4961,
+          "games": 128,
+          "nll": 0.19842852912902686,
+          "teacher_probability": 0.8969673844609519
+        },
+        "shop_leave": {
+          "accuracy": 0.9393613204162181,
+          "decisions": 2787,
+          "equal_game_means": {
+            "accuracy": 0.9384957465212526,
+            "nll": 0.1760644237692944,
+            "teacher_probability": 0.8975303349203336
+          },
+          "exact_matches": 2618,
+          "games": 128,
+          "nll": 0.17118790862719413,
+          "teacher_probability": 0.899145232184637
+        },
+        "shop_reroll": {
+          "accuracy": 0.941834451901566,
+          "decisions": 2235,
+          "equal_game_means": {
+            "accuracy": 0.915320182304895,
+            "nll": 0.25119779729615777,
+            "teacher_probability": 0.8701554153668924
+          },
+          "exact_matches": 2105,
+          "games": 125,
+          "nll": 0.198450134262854,
+          "teacher_probability": 0.8956271888381317
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.2616487455197133,
+          "decisions": 837,
+          "equal_game_means": {
+            "accuracy": 0.2598644356518372,
+            "nll": 2.70162409848729,
+            "teacher_probability": 0.2569116077164497
+          },
+          "exact_matches": 219,
+          "games": 127,
+          "nll": 2.666698166065746,
+          "teacher_probability": 0.2607600219027888
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.514018691588785,
+          "decisions": 214,
+          "equal_game_means": {
+            "accuracy": 0.5526648351648351,
+            "nll": 1.9522190378738344,
+            "teacher_probability": 0.4949463150099836
+          },
+          "exact_matches": 110,
+          "games": 70,
+          "nll": 2.0686972427094723,
+          "teacher_probability": 0.46843274225531095
+        },
+        "use_consumable_joker": {
+          "accuracy": 1.0,
+          "decisions": 13,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.07200229280836841,
+            "teacher_probability": 0.9338509924816688
+          },
+          "exact_matches": 13,
+          "games": 12,
+          "nll": 0.07443605951154425,
+          "teacher_probability": 0.9316594432686547
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9966386554621849,
+          "decisions": 595,
+          "equal_game_means": {
+            "accuracy": 0.9983606557377049,
+            "nll": 0.013803543362959303,
+            "teacher_probability": 0.9893973397928418
+          },
+          "exact_matches": 593,
+          "games": 122,
+          "nll": 0.018448366735077187,
+          "teacher_probability": 0.9870318879263575
+        }
+      }
+    },
+    "weighted_r1": {
+      "overall": {
+        "accuracy": 0.8217316183528508,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8166744701281302,
+          "nll": 0.7155075326449162,
+          "teacher_probability": 0.7693152502801256
+        },
+        "exact_matches": 21402,
+        "games": 128,
+        "nll": 0.6927521250656077,
+        "teacher_probability": 0.7739473909629673
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 1.0,
+          "decisions": 2915,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.0005655839884333277,
+            "teacher_probability": 0.9995069959069627
+          },
+          "exact_matches": 2915,
+          "games": 128,
+          "nll": 0.0005479130912301121,
+          "teacher_probability": 0.9995205730447397
+        },
+        "blind_reroll": {
+          "accuracy": 0.8695652173913043,
+          "decisions": 23,
+          "equal_game_means": {
+            "accuracy": 0.9166666666666666,
+            "nll": 0.2517446575196421,
+            "teacher_probability": 0.8438746045893805
+          },
+          "exact_matches": 20,
+          "games": 16,
+          "nll": 0.3270292293290486,
+          "teacher_probability": 0.8167288646127578
+        },
+        "discard_subset": {
+          "accuracy": 0.5169971671388102,
+          "decisions": 1412,
+          "equal_game_means": {
+            "accuracy": 0.41910848279878815,
+            "nll": 3.2254203508962083,
+            "teacher_probability": 0.3798800124867276
+          },
+          "exact_matches": 730,
+          "games": 121,
+          "nll": 2.527960018182822,
+          "teacher_probability": 0.44466533167651034
+        },
+        "pack_claim": {
+          "accuracy": 0.8337662337662337,
+          "decisions": 2695,
+          "equal_game_means": {
+            "accuracy": 0.8331195486397259,
+            "nll": 0.4226214814849874,
+            "teacher_probability": 0.7901894731055004
+          },
+          "exact_matches": 2247,
+          "games": 127,
+          "nll": 0.407902253334353,
+          "teacher_probability": 0.7966387656025068
+        },
+        "pack_skip": {
+          "accuracy": 0.9150622876557192,
+          "decisions": 883,
+          "equal_game_means": {
+            "accuracy": 0.8931344944357328,
+            "nll": 0.2750189156143664,
+            "teacher_probability": 0.852129757554194
+          },
+          "exact_matches": 808,
+          "games": 125,
+          "nll": 0.21797680076526577,
+          "teacher_probability": 0.8720726416617832
+        },
+        "play_subset": {
+          "accuracy": 0.6667757238671683,
+          "decisions": 6113,
+          "equal_game_means": {
+            "accuracy": 0.6684817044990743,
+            "nll": 1.3871141251427608,
+            "teacher_probability": 0.5715847645931507
+          },
+          "exact_matches": 4076,
+          "games": 128,
+          "nll": 1.3918926069013349,
+          "teacher_probability": 0.5689165188761387
+        },
+        "shop_buy": {
+          "accuracy": 0.9304903250046966,
+          "decisions": 5323,
+          "equal_game_means": {
+            "accuracy": 0.9218424547629619,
+            "nll": 0.21741734829258227,
+            "teacher_probability": 0.8861666331731529
+          },
+          "exact_matches": 4953,
+          "games": 128,
+          "nll": 0.19867654197881623,
+          "teacher_probability": 0.8941509292966303
+        },
+        "shop_leave": {
+          "accuracy": 0.9372084678866164,
+          "decisions": 2787,
+          "equal_game_means": {
+            "accuracy": 0.9364067519560352,
+            "nll": 0.1754492186298597,
+            "teacher_probability": 0.8994594906355714
+          },
+          "exact_matches": 2612,
+          "games": 128,
+          "nll": 0.16977845410182732,
+          "teacher_probability": 0.9010543231324614
+        },
+        "shop_reroll": {
+          "accuracy": 0.9445190156599552,
+          "decisions": 2235,
+          "equal_game_means": {
+            "accuracy": 0.9150679793690462,
+            "nll": 0.24038752291646368,
+            "teacher_probability": 0.8771720267460537
+          },
+          "exact_matches": 2111,
+          "games": 125,
+          "nll": 0.18518225233649716,
+          "teacher_probability": 0.9035029239936092
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.24970131421744324,
+          "decisions": 837,
+          "equal_game_means": {
+            "accuracy": 0.24742464447188856,
+            "nll": 2.7034263232204108,
+            "teacher_probability": 0.25140401104201965
+          },
+          "exact_matches": 209,
+          "games": 127,
+          "nll": 2.7156740443752088,
+          "teacher_probability": 0.2519994217957712
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.5373831775700935,
+          "decisions": 214,
+          "equal_game_means": {
+            "accuracy": 0.5726818419675563,
+            "nll": 1.9190801119787997,
+            "teacher_probability": 0.4973171789923503
+          },
+          "exact_matches": 115,
+          "games": 70,
+          "nll": 2.03329763386803,
+          "teacher_probability": 0.4727075584391503
+        },
+        "use_consumable_joker": {
+          "accuracy": 1.0,
+          "decisions": 13,
+          "equal_game_means": {
+            "accuracy": 1.0,
+            "nll": 0.053873912232423514,
+            "teacher_probability": 0.9494153911192353
+          },
+          "exact_matches": 13,
+          "games": 12,
+          "nll": 0.05534750305098267,
+          "teacher_probability": 0.9480257402855314
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9966386554621849,
+          "decisions": 595,
+          "equal_game_means": {
+            "accuracy": 0.9983606557377049,
+            "nll": 0.01312264821590993,
+            "teacher_probability": 0.9899341269203789
+          },
+          "exact_matches": 593,
+          "games": 122,
+          "nll": 0.01722120014766079,
+          "teacher_probability": 0.988061715464191
+        }
+      }
+    }
+  },
+  "limits": [
+    "Already exposed 128-game panel; not fresh confirmation.",
+    "Fixed common base and all four update-4000 endpoints; no selection.",
+    "No optimizer updates, new games, architecture changes, world models or Stage3 access.",
+    "Teacher-state imitation cannot establish the cause of errors on student-reached states or prove long-horizon generalization."
+  ],
+  "training": {
+    "base": {
+      "game_weighted": {
+        "accuracy": 0.8547056501462268,
+        "nll": 0.512186847663586,
+        "teacher_probability": 0.7830131912614736
+      },
+      "overall": {
+        "accuracy": 0.8582969313498994,
+        "decisions": 202141,
+        "nll": 0.496954172591373,
+        "teacher_probability": 0.7870557198741379
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 0.9994217081850534,
+          "decisions": 22480,
+          "nll": 0.0012404063795145523,
+          "teacher_probability": 0.9992031908607447
+        },
+        "blind_reroll": {
+          "accuracy": 0.9618320610687023,
+          "decisions": 131,
+          "nll": 0.16707111133141656,
+          "teacher_probability": 0.8846178234574625
+        },
+        "discard_subset": {
+          "accuracy": 0.5794025858225591,
+          "decisions": 11215,
+          "nll": 1.8753319545070886,
+          "teacher_probability": 0.46416371823136476
+        },
+        "pack_claim": {
+          "accuracy": 0.8513908172547517,
+          "decisions": 20887,
+          "nll": 0.36313902262826747,
+          "teacher_probability": 0.8034721814762144
+        },
+        "pack_skip": {
+          "accuracy": 0.9330067713585939,
+          "decisions": 6941,
+          "nll": 0.21363406121148562,
+          "teacher_probability": 0.861186655364519
+        },
+        "play_subset": {
+          "accuracy": 0.7514475386540541,
+          "decisions": 47149,
+          "nll": 0.9716156186451601,
+          "teacher_probability": 0.5967978714578712
+        },
+        "shop_buy": {
+          "accuracy": 0.9467995878166263,
+          "decisions": 41729,
+          "nll": 0.15836363361155653,
+          "teacher_probability": 0.902786384305374
+        },
+        "shop_leave": {
+          "accuracy": 0.9530260707635009,
+          "decisions": 21480,
+          "nll": 0.15085356940675795,
+          "teacher_probability": 0.9017096603101865
+        },
+        "shop_reroll": {
+          "accuracy": 0.9524254821741671,
+          "decisions": 17110,
+          "nll": 0.15159998595904603,
+          "teacher_probability": 0.9035124068776782
+        },
+        "shop_sell_consumable": {
+          "accuracy": 0.0,
+          "decisions": 6,
+          "nll": 11.255798498789469,
+          "teacher_probability": 0.00012419484130793429
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.3769290724863601,
+          "decisions": 6415,
+          "nll": 1.565951970811071,
+          "teacher_probability": 0.3268040646193956
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.6168359941944848,
+          "decisions": 1378,
+          "nll": 1.2981846305606302,
+          "teacher_probability": 0.5028827965579307
+        },
+        "use_consumable_joker": {
+          "accuracy": 0.9134615384615384,
+          "decisions": 104,
+          "nll": 0.20871344929799726,
+          "teacher_probability": 0.8885491955802708
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9925723221266615,
+          "decisions": 5116,
+          "nll": 0.025114052387655333,
+          "teacher_probability": 0.9836971050481691
+        }
+      },
+      "source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_metric_baseline_v1.json",
+        "sha256": "0cdac90f396b96928963465f17c9225576ef6ea95f1e4c3ba4728a04995fc72d"
+      }
+    },
+    "ordinary_r0": {
+      "game_weighted": {
+        "accuracy": 0.885257779289608,
+        "nll": 0.3853007442904199,
+        "teacher_probability": 0.8237687243127565
+      },
+      "overall": {
+        "accuracy": 0.8887806036380547,
+        "decisions": 202141,
+        "nll": 0.3716713695120999,
+        "teacher_probability": 0.8277059928222987
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 0.9997775800711743,
+          "decisions": 22480,
+          "nll": 0.0006614362133402233,
+          "teacher_probability": 0.9995588638003226
+        },
+        "blind_reroll": {
+          "accuracy": 0.9618320610687023,
+          "decisions": 131,
+          "nll": 0.1677192828905918,
+          "teacher_probability": 0.8845863375061226
+        },
+        "discard_subset": {
+          "accuracy": 0.6609005795809184,
+          "decisions": 11215,
+          "nll": 1.4264435196316283,
+          "teacher_probability": 0.5457490990827845
+        },
+        "pack_claim": {
+          "accuracy": 0.8568008809307225,
+          "decisions": 20887,
+          "nll": 0.34411064040754913,
+          "teacher_probability": 0.8140361247746785
+        },
+        "pack_skip": {
+          "accuracy": 0.957642990923498,
+          "decisions": 6941,
+          "nll": 0.13689415343145495,
+          "teacher_probability": 0.9099565043349694
+        },
+        "play_subset": {
+          "accuracy": 0.8203991601094403,
+          "decisions": 47149,
+          "nll": 0.6791335576686581,
+          "teacher_probability": 0.6958675509315264
+        },
+        "shop_buy": {
+          "accuracy": 0.9506578159074025,
+          "decisions": 41729,
+          "nll": 0.141658357013043,
+          "teacher_probability": 0.9120392557761701
+        },
+        "shop_leave": {
+          "accuracy": 0.9593109869646183,
+          "decisions": 21480,
+          "nll": 0.13011061732846885,
+          "teacher_probability": 0.9131587652514551
+        },
+        "shop_reroll": {
+          "accuracy": 0.9605493863237873,
+          "decisions": 17110,
+          "nll": 0.12770096377449333,
+          "teacher_probability": 0.9150873120377238
+        },
+        "shop_sell_consumable": {
+          "accuracy": 0.0,
+          "decisions": 6,
+          "nll": 10.719136079152426,
+          "teacher_probability": 0.000295132198027099
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.5554169914263445,
+          "decisions": 6415,
+          "nll": 1.0200261291344044,
+          "teacher_probability": 0.4954601672233933
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.706821480406386,
+          "decisions": 1378,
+          "nll": 0.9519982053132847,
+          "teacher_probability": 0.6039752767267347
+        },
+        "use_consumable_joker": {
+          "accuracy": 0.9326923076923077,
+          "decisions": 104,
+          "nll": 0.15969375259380916,
+          "teacher_probability": 0.9043535149823405
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9923768569194683,
+          "decisions": 5116,
+          "nll": 0.021556548437139382,
+          "teacher_probability": 0.9858380288382876
+        }
+      },
+      "source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_metric_r0_ordinary_4000_v1.json",
+        "sha256": "0631908e014b6a31b3836de8565cf6f24c4ca164dedaf632dc2293ba0eac1555"
+      }
+    },
+    "ordinary_r1": {
+      "game_weighted": {
+        "accuracy": 0.8853477534109644,
+        "nll": 0.3860513285159193,
+        "teacher_probability": 0.8247596808482466
+      },
+      "overall": {
+        "accuracy": 0.8891367906560272,
+        "decisions": 202141,
+        "nll": 0.37173107842565356,
+        "teacher_probability": 0.8288345034849132
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 0.9997330960854093,
+          "decisions": 22480,
+          "nll": 0.0007568651899534471,
+          "teacher_probability": 0.9995070168071944
+        },
+        "blind_reroll": {
+          "accuracy": 0.9618320610687023,
+          "decisions": 131,
+          "nll": 0.13438592123966095,
+          "teacher_probability": 0.9049800304710183
+        },
+        "discard_subset": {
+          "accuracy": 0.6509139545251895,
+          "decisions": 11215,
+          "nll": 1.47750065449508,
+          "teacher_probability": 0.5407349127119584
+        },
+        "pack_claim": {
+          "accuracy": 0.8611576578733183,
+          "decisions": 20887,
+          "nll": 0.33703148433683094,
+          "teacher_probability": 0.8152995284259849
+        },
+        "pack_skip": {
+          "accuracy": 0.9567785621668348,
+          "decisions": 6941,
+          "nll": 0.1412195902743713,
+          "teacher_probability": 0.9065690684524632
+        },
+        "play_subset": {
+          "accuracy": 0.823686610532567,
+          "decisions": 47149,
+          "nll": 0.6698228643283239,
+          "teacher_probability": 0.6980917598537136
+        },
+        "shop_buy": {
+          "accuracy": 0.949148074480577,
+          "decisions": 41729,
+          "nll": 0.14363630117539555,
+          "teacher_probability": 0.9099568276385591
+        },
+        "shop_leave": {
+          "accuracy": 0.9630819366852886,
+          "decisions": 21480,
+          "nll": 0.11727921187855662,
+          "teacher_probability": 0.9228627986958166
+        },
+        "shop_reroll": {
+          "accuracy": 0.9611338398597311,
+          "decisions": 17110,
+          "nll": 0.12031649131703606,
+          "teacher_probability": 0.9220356443110072
+        },
+        "shop_sell_consumable": {
+          "accuracy": 0.0,
+          "decisions": 6,
+          "nll": 10.301023801167807,
+          "teacher_probability": 0.00048681414248290413
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.5396726422447389,
+          "decisions": 6415,
+          "nll": 1.0713334903540561,
+          "teacher_probability": 0.48503298586595966
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.7184325108853411,
+          "decisions": 1378,
+          "nll": 0.9443189002415848,
+          "teacher_probability": 0.6058789989071554
+        },
+        "use_consumable_joker": {
+          "accuracy": 0.9230769230769231,
+          "decisions": 104,
+          "nll": 0.15207198701045854,
+          "teacher_probability": 0.9057843359295928
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9929632525410477,
+          "decisions": 5116,
+          "nll": 0.02208246972771561,
+          "teacher_probability": 0.9856008706087422
+        }
+      },
+      "source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_metric_r1_ordinary_4000_v1.json",
+        "sha256": "375927fd7580e0cea6442391ff1fa23d183a30132a4dbb6346bc380317174a15"
+      }
+    },
+    "weighted_r0": {
+      "game_weighted": {
+        "accuracy": 0.8810019315342105,
+        "nll": 0.40287776395280056,
+        "teacher_probability": 0.8189071394367655
+      },
+      "overall": {
+        "accuracy": 0.8845310946319648,
+        "decisions": 202141,
+        "nll": 0.3886912421124093,
+        "teacher_probability": 0.8228398690734722
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 0.9996886120996441,
+          "decisions": 22480,
+          "nll": 0.0007097099981957477,
+          "teacher_probability": 0.9995359595565945
+        },
+        "blind_reroll": {
+          "accuracy": 0.9465648854961832,
+          "decisions": 131,
+          "nll": 0.18759198132671331,
+          "teacher_probability": 0.8777803784424126
+        },
+        "discard_subset": {
+          "accuracy": 0.6293357111012038,
+          "decisions": 11215,
+          "nll": 1.5920995634778605,
+          "teacher_probability": 0.5184204491012901
+        },
+        "pack_claim": {
+          "accuracy": 0.8557954708670464,
+          "decisions": 20887,
+          "nll": 0.3491464797416883,
+          "teacher_probability": 0.8112927756839176
+        },
+        "pack_skip": {
+          "accuracy": 0.9543293473562887,
+          "decisions": 6941,
+          "nll": 0.14613701445051,
+          "teacher_probability": 0.9047318013388431
+        },
+        "play_subset": {
+          "accuracy": 0.8176843623406647,
+          "decisions": 47149,
+          "nll": 0.6906451222831549,
+          "teacher_probability": 0.6875749613118578
+        },
+        "shop_buy": {
+          "accuracy": 0.9491001461813128,
+          "decisions": 41729,
+          "nll": 0.1453572686333642,
+          "teacher_probability": 0.9108942147855655
+        },
+        "shop_leave": {
+          "accuracy": 0.9586126629422719,
+          "decisions": 21480,
+          "nll": 0.13050701777931079,
+          "teacher_probability": 0.9142031881118816
+        },
+        "shop_reroll": {
+          "accuracy": 0.9608416130917592,
+          "decisions": 17110,
+          "nll": 0.1252080211638146,
+          "teacher_probability": 0.9176486879926866
+        },
+        "shop_sell_consumable": {
+          "accuracy": 0.0,
+          "decisions": 6,
+          "nll": 10.834394534428915,
+          "teacher_probability": 0.00025228152355304497
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.5203429462197974,
+          "decisions": 6415,
+          "nll": 1.1157247096614074,
+          "teacher_probability": 0.46839719105548366
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.6850507982583455,
+          "decisions": 1378,
+          "nll": 1.0411029741543272,
+          "teacher_probability": 0.5805600351605077
+        },
+        "use_consumable_joker": {
+          "accuracy": 0.9326923076923077,
+          "decisions": 104,
+          "nll": 0.16381961294092223,
+          "teacher_probability": 0.9015553475428286
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9925723221266615,
+          "decisions": 5116,
+          "nll": 0.02327082922279754,
+          "teacher_probability": 0.9851529217582573
+        }
+      },
+      "source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_metric_r0_weighted_4000_v1.json",
+        "sha256": "68de15b1179d79e29bcbbbe26784168f8ea7dddbbc952354836c2cca3acf69dd"
+      }
+    },
+    "weighted_r1": {
+      "game_weighted": {
+        "accuracy": 0.8811964897482728,
+        "nll": 0.4034439809376661,
+        "teacher_probability": 0.8177649877283554
+      },
+      "overall": {
+        "accuracy": 0.8848427582726909,
+        "decisions": 202141,
+        "nll": 0.38870859748074843,
+        "teacher_probability": 0.8218836339907257
+      },
+      "per_family": {
+        "blind_play": {
+          "accuracy": 0.9995996441281139,
+          "decisions": 22480,
+          "nll": 0.0009007957708691804,
+          "teacher_probability": 0.9994254977278623
+        },
+        "blind_reroll": {
+          "accuracy": 0.9465648854961832,
+          "decisions": 131,
+          "nll": 0.15183974480707882,
+          "teacher_probability": 0.8964897221876077
+        },
+        "discard_subset": {
+          "accuracy": 0.6235399019170753,
+          "decisions": 11215,
+          "nll": 1.6233955019370379,
+          "teacher_probability": 0.5162785101580738
+        },
+        "pack_claim": {
+          "accuracy": 0.8583329343610858,
+          "decisions": 20887,
+          "nll": 0.34324697640447377,
+          "teacher_probability": 0.8126815630800283
+        },
+        "pack_skip": {
+          "accuracy": 0.9544734188157326,
+          "decisions": 6941,
+          "nll": 0.15347387506554896,
+          "teacher_probability": 0.8988686326754486
+        },
+        "play_subset": {
+          "accuracy": 0.8196356232369721,
+          "decisions": 47149,
+          "nll": 0.682331917467388,
+          "teacher_probability": 0.684955103474545
+        },
+        "shop_buy": {
+          "accuracy": 0.9485968990390375,
+          "decisions": 41729,
+          "nll": 0.1464385334586659,
+          "teacher_probability": 0.9081100795390535
+        },
+        "shop_leave": {
+          "accuracy": 0.9578212290502793,
+          "decisions": 21480,
+          "nll": 0.12971233019194697,
+          "teacher_probability": 0.9157819778535831
+        },
+        "shop_reroll": {
+          "accuracy": 0.9642898889538282,
+          "decisions": 17110,
+          "nll": 0.11468278666591217,
+          "teacher_probability": 0.9247797149623274
+        },
+        "shop_sell_consumable": {
+          "accuracy": 0.0,
+          "decisions": 6,
+          "nll": 10.529156605402628,
+          "teacher_probability": 0.0003291001808617665
+        },
+        "shop_sell_joker": {
+          "accuracy": 0.510833982852689,
+          "decisions": 6415,
+          "nll": 1.1599626499048883,
+          "teacher_probability": 0.4568569967486243
+        },
+        "use_consumable_hand_subset": {
+          "accuracy": 0.7010159651669086,
+          "decisions": 1378,
+          "nll": 1.0327868126504838,
+          "teacher_probability": 0.5798214671216828
+        },
+        "use_consumable_joker": {
+          "accuracy": 0.9326923076923077,
+          "decisions": 104,
+          "nll": 0.16039348214182889,
+          "teacher_probability": 0.9027844780101367
+        },
+        "use_consumable_no_target": {
+          "accuracy": 0.9929632525410477,
+          "decisions": 5116,
+          "nll": 0.023088434353456578,
+          "teacher_probability": 0.9853770857813963
+        }
+      },
+      "source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_metric_r1_weighted_4000_v1.json",
+        "sha256": "f2e03337b2bfe0fe2535a7e036aec705143eca0649edef5d57b7025931bd7b38"
+      }
+    }
+  },
+  "verification": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/continuation_transfer_diagnostic_20260925/verification_v1.json",
+    "sha256": "096479ab0bc806e890f74c74b4d8c3f3d1f003817df38d74ba4c9b6b9cafae91"
+  }
+}

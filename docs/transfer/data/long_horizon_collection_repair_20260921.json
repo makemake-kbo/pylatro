@@ -1,0 +1,44 @@
+{
+  "status": "collection_repair_verified_training_started_generalization_not_yet_proven",
+  "failed_seed": 8005054,
+  "original_failure": "Illegal action 0, seed 8005054, step 153",
+  "original_empty_mask": true,
+  "parent_sha256": "3f33838e53c2771f02e07dc9bb7d82d9cdf9824c6675ab11f283c54b35e73be2",
+  "replay_before_seconds": 96.54296633298509,
+  "replay_after_seconds": 158.00439183297567,
+  "completed_replay_games": 64,
+  "failed_seed_after": {
+    "seed": 8005054,
+    "won": false,
+    "final_ante": 5,
+    "terminated": true,
+    "truncated": false,
+    "stalled": false,
+    "steps": 149,
+    "cleared_antes": [
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "regression_verification": "261 passed, 1 skipped",
+  "historical_manifest_count": 701,
+  "historical_reserved_seed_count": 28752,
+  "evidence_sha256": {
+    "eval/long_horizon_generalization_20260921/legality/reproduction_before/result.json": "95ab208f92e1e1b2ba5a22419df1fc20f664ca9dee573c7546be459b59fe5b45",
+    "eval/long_horizon_generalization_20260921/legality/reproduction_after/result.json": "f8badf71e1c3ff9f6996007c97959eb1af5dd5e2eefc5f83421146e3dc15d95a",
+    "eval/long_horizon_generalization_20260921/verification.log": "2605227f2851ed87079bdefeb05092a1bd91af629651ab3decb36c04e3e5b19b",
+    "tests/fixtures/deck_exhaustion_8005054.json": "7a3a611d966927d043fff6174ed1de8023bab217b89d3db36fab3c15437b66b0",
+    "eval/long_horizon_generalization_20260921/manifest.json": "889d529df022a2e3740fdea330784445b94238531c3e6a89b8015b5b041f6c3e"
+  },
+  "game_rule_reference": {
+    "source": "locally installed Balatro.love, read-only inspection",
+    "locations": [
+      "game.lua: Game:update_selecting_hand",
+      "functions/state_events.lua: end_round"
+    ],
+    "source_not_redistributed": true
+  },
+  "interpretation": "Normal terminal labels can now be collected; no win-rate or generalization claim follows from this repair."
+}

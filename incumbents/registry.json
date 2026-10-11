@@ -1,0 +1,20 @@
+{
+  "ppo_replica0": {
+    "original": "eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/checkpoints/ppo_update142.pt",
+    "path": "incumbents/ppo_replica0/checkpoint.pt",
+    "sha256": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+    "strict_load": true
+  },
+  "ppo_replica1": {
+    "original": "eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/checkpoints/ppo_update142.pt",
+    "path": "incumbents/ppo_replica1/checkpoint.pt",
+    "sha256": "7777a609b45bb4f6e629c47e2b4977358c31f3c0545c28ee942aad3e3ccfdae2",
+    "strict_load": true
+  },
+  "supervised": {
+    "original": "eval/pretraining_transfer_20260923/stage2/arms/unfrozen_encoder/checkpoint_4000.pt",
+    "path": "incumbents/supervised/checkpoint.pt",
+    "sha256": "a43e73ab71d3cd6ee78b6b6510d082772b5b362b976e1454a3613eb8f939706f",
+    "strict_load": true
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "verified_unix": 1790067698.6091678,
+  "script_sha256": "57718fec8e27fe96259e957a5c6ce4162e503eb029f4ef3e4c0290d940b9ac03",
+  "result_sha256": "e234131c17f0fb8fa2ea2f1561e99ea27dfb73322bd0db53e9e230aadba81bc4",
+  "plan_sha256": "879550245c41fac526da9026cc0163b7d229db9e06795852723f8fd10e9bb334",
+  "state_selection_and_labels_verified": true,
+  "train_only_standardization_verified": true,
+  "split_disjointness_verified": true,
+  "selected_fit_convergence_verified": true,
+  "validation_selection_and_test_losses_verified": true,
+  "paired_bootstraps_verified": true,
+  "effective_counts": {
+    "0": {
+      "train": {
+        "games": 478,
+        "states": 1364
+      },
+      "validation": {
+        "games": 80,
+        "states": 229
+      },
+      "test": {
+        "games": 80,
+        "states": 223
+      }
+    },
+    "1": {
+      "train": {
+        "games": 480,
+        "states": 1371
+      },
+      "validation": {
+        "games": 79,
+        "states": 224
+      },
+      "test": {
+        "games": 79,
+        "states": 234
+      }
+    }
+  },
+  "excluded_games": 4,
+  "passes_probe_gate": false
+}

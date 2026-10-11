@@ -1,0 +1,308 @@
+{
+  "actions_compared": 42057,
+  "current_manifest": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/manifest_v1.json",
+    "sha256": "f5d410fcb9bd918780991b4d8ec67b50332cc18180e3701aa4705a9c40f459aa"
+  },
+  "games_compared": 256,
+  "generalization_proven": false,
+  "historical_evaluation_actual_exit": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation_execution_terminal_v1.json",
+    "sha256": "67c1a5da02339976faa862d0dd13135cf43a983c7132ad029d20c7818ae18a38"
+  },
+  "historical_verification": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/independent_results_verification_v2.json",
+    "sha256": "d012c6e4a51e834b1561b67b4f2213770e9bc0e30fc53fec40190611678ef12e"
+  },
+  "historical_verification_actual_exit": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/independent_results_verification_terminal_v2.json",
+    "sha256": "63740192a9b8af2276aafa396bc14c9c49216cf9bc8f9de795da1994ef7511a1"
+  },
+  "limitations": [
+    "Timing fields and critic floating-point forecasts are excluded from outcome equality; full recorded action traces are compared exactly.",
+    "This does not compare sampled trajectories: their global random stream can change when the whole evaluation panel changes.",
+    "Control reproducibility does not establish a candidate improvement or substitute for the pending full independent development verification."
+  ],
+  "no_gameplay": true,
+  "no_model_forward": true,
+  "no_training": true,
+  "outcome_fields_compared": [
+    "won",
+    "max_ante",
+    "steps",
+    "action_counts",
+    "final_ante",
+    "round_score",
+    "stalled",
+    "censored",
+    "cash",
+    "terminal_blind",
+    "boss_key",
+    "joker_keys",
+    "cleared_antes"
+  ],
+  "panels": [
+    {
+      "actions_compared": 20886,
+      "all_declared_outcome_fields_identical": true,
+      "all_trace_fields_identical": true,
+      "checkpoints": [
+        {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/stage2/arms/unfrozen_encoder/checkpoint_4000.pt",
+          "sha256": "a43e73ab71d3cd6ee78b6b6510d082772b5b362b976e1454a3613eb8f939706f"
+        }
+      ],
+      "current_actual_exit": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/execution_v1/development_base_greedy_terminal.json",
+        "sha256": "7bcb3efaeb031ed58d61f52434b61bf9e0138c6b87a71f6a4f9b70712d1f1853"
+      },
+      "current_artifacts": {
+        "action_trace": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_base_greedy/actions_development_base_greedy.jsonl.gz",
+          "sha256": "1fdd781096d9909ecd91b5db1f7e0a4a15507ca1416969b7046d1848644a9df1"
+        },
+        "manifest": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_base_greedy/development_base_greedy/manifest.json",
+          "sha256": "f49d39c27b69aa51c736098f47cd227403d8f4ace65f35b56211847d4e783bd0"
+        },
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_base_greedy/development_base_greedy/outcomes.jsonl",
+          "sha256": "90ad169c1b9c3da2ee62d8e000b5b0327dbf3d64cacc7c0bb63b7e82eb27f855"
+        }
+      },
+      "current_panel": "development_base_greedy",
+      "current_result": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_base_greedy/result.json",
+        "sha256": "bed4a49bacf58c5f5e80276241039fa703f51756c41c70f6e96ca26cf10e5387"
+      },
+      "games_compared": 128,
+      "historical_artifacts": {
+        "action_trace": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/actions_confirmation_base_greedy.jsonl.gz",
+          "sha256": "506631a4c6c741e5c43870aa7198560b141abcee5b1c8835fcaf8dd92747d865"
+        },
+        "manifest": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/confirmation_base_greedy/manifest.json",
+          "sha256": "a05124317f8f6d62f9f034c652944420c0a0160f10d48fd218fd45d511d73870"
+        },
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/confirmation_base_greedy/outcomes.jsonl",
+          "sha256": "b26e65f8452f586ddaf99d484b5f0f9499841d5e2374407eb3d129b6123db22f"
+        }
+      },
+      "historical_panel": "confirmation_base_greedy",
+      "historical_result": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/result.json",
+        "sha256": "77d44546937255fd9ccd619c84264656514e42e3df09b6c739d7fd63aef21562"
+      },
+      "outcome_mismatch_games": 0,
+      "trace_mismatch_games": 0
+    },
+    {
+      "actions_compared": 21171,
+      "all_declared_outcome_fields_identical": true,
+      "all_trace_fields_identical": true,
+      "checkpoints": [
+        {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/arms/replica0_ordinary_bc/checkpoint_4000.pt",
+          "sha256": "a2e1e94bae3b6b73064600aa0b71b01730e5c69605d9d47155225554ad68a1f1"
+        }
+      ],
+      "current_actual_exit": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/execution_v1/development_ordinary_bc_r0_greedy_terminal.json",
+        "sha256": "b03994733d6a3ef66cc34af12dd19c35b31feef2cea569f61804d72684c6a075"
+      },
+      "current_artifacts": {
+        "action_trace": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_ordinary_bc_r0_greedy/actions_development_ordinary_bc_r0_greedy.jsonl.gz",
+          "sha256": "f0a5538a4c2208f550c971d72e2f331884b3ecc2828435d86f667254a1151ffb"
+        },
+        "manifest": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_ordinary_bc_r0_greedy/development_ordinary_bc_r0_greedy/manifest.json",
+          "sha256": "3067a25daf38d187eacac4ea31cf466e878f641779143646f3fabbbd087d55b5"
+        },
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_ordinary_bc_r0_greedy/development_ordinary_bc_r0_greedy/outcomes.jsonl",
+          "sha256": "77c8dc25a7ca3ba8c4ec56b4a3185fdc33e7520022ded4dc8666248dbb61cdbc"
+        }
+      },
+      "current_panel": "development_ordinary_bc_r0_greedy",
+      "current_result": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/autonomous_v1/evaluation/development_ordinary_bc_r0_greedy/result.json",
+        "sha256": "d0b773036dac311c5f32a4cb0db8a2a6197a7e29d9370ed9a9a91ef8c9a2c516"
+      },
+      "games_compared": 128,
+      "historical_artifacts": {
+        "action_trace": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/actions_confirmation_ordinary_bc_r0_greedy.jsonl.gz",
+          "sha256": "7f22e67bca075e59f92f763542528c1d32970d806f899899fcb98dfca2c4a196"
+        },
+        "manifest": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/confirmation_ordinary_bc_r0_greedy/manifest.json",
+          "sha256": "cff1065e141b72affac66883531c3b3844be0cbdf6f8e1e88ed57cae3cdc7238"
+        },
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/confirmation_ordinary_bc_r0_greedy/outcomes.jsonl",
+          "sha256": "227a65a85efec27631d704d024e48ed3039f0ca4ca165114122ce0ae42d16171"
+        }
+      },
+      "historical_panel": "confirmation_ordinary_bc_r0_greedy",
+      "historical_result": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/result.json",
+        "sha256": "3641efe348e726dc8f58a68007a30b1ce3aaadc0e143dd457a479a190ab2ab30"
+      },
+      "outcome_mismatch_games": 0,
+      "trace_mismatch_games": 0
+    }
+  ],
+  "scope": "Descriptive reproducibility check of completed greedy controls on existing exposed seeds; no comparison involving the current candidate.",
+  "seeds": [
+    884280000,
+    884280001,
+    884280002,
+    884280003,
+    884280004,
+    884280005,
+    884280006,
+    884280007,
+    884280008,
+    884280009,
+    884280010,
+    884280011,
+    884280012,
+    884280013,
+    884280014,
+    884280015,
+    884280016,
+    884280017,
+    884280018,
+    884280019,
+    884280020,
+    884280021,
+    884280022,
+    884280023,
+    884280024,
+    884280025,
+    884280026,
+    884280027,
+    884280028,
+    884280029,
+    884280030,
+    884280031,
+    884280032,
+    884280033,
+    884280034,
+    884280035,
+    884280036,
+    884280037,
+    884280038,
+    884280039,
+    884280040,
+    884280041,
+    884280042,
+    884280043,
+    884280044,
+    884280045,
+    884280046,
+    884280047,
+    884280048,
+    884280049,
+    884280050,
+    884280051,
+    884280052,
+    884280053,
+    884280054,
+    884280055,
+    884280056,
+    884280057,
+    884280058,
+    884280059,
+    884280060,
+    884280061,
+    884280062,
+    884280063,
+    884280064,
+    884280065,
+    884280066,
+    884280067,
+    884280068,
+    884280069,
+    884280070,
+    884280071,
+    884280072,
+    884280073,
+    884280074,
+    884280075,
+    884280076,
+    884280077,
+    884280078,
+    884280079,
+    884280080,
+    884280081,
+    884280082,
+    884280083,
+    884280084,
+    884280085,
+    884280086,
+    884280087,
+    884280088,
+    884280089,
+    884280090,
+    884280091,
+    884280092,
+    884280093,
+    884280094,
+    884280095,
+    884280096,
+    884280097,
+    884280098,
+    884280099,
+    884280100,
+    884280101,
+    884280102,
+    884280103,
+    884280104,
+    884280105,
+    884280106,
+    884280107,
+    884280108,
+    884280109,
+    884280110,
+    884280111,
+    884280112,
+    884280113,
+    884280114,
+    884280115,
+    884280116,
+    884280117,
+    884280118,
+    884280119,
+    884280120,
+    884280121,
+    884280122,
+    884280123,
+    884280124,
+    884280125,
+    884280126,
+    884280127
+  ],
+  "settings_compared": [
+    "batch_size",
+    "cpu_threads",
+    "deck",
+    "device",
+    "max_idle_steps",
+    "stake",
+    "temperature",
+    "win_ante",
+    "workers",
+    "source_sha256",
+    "greedy",
+    "sampling_seed"
+  ],
+  "source": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/audit_greedy_control_reproducibility_v1.py",
+    "sha256": "29d439b68fc1b1db2652a2dc60f0a1a1af930cd16babaf7fe36cdf462cedd389"
+  },
+  "status": "passed"
+}

@@ -1,0 +1,7 @@
+# Check attention consistency across the full development support
+
+The explicit FP32 math backend passes the original overlap check on the first failed state. That single example is insufficient to adopt it. Before changing scientific evaluation, run a bounded, outcome-free consistency diagnostic on all 6,113 development states and 1,631,530 legal play actions.
+
+Use the unchanged epoch-20 wide scorer and initial reference. Compute the original six proposals in the original batches of 128 with explicit math attention, then every legal action in the original 512-action support chunks with both original and math attention. Keep FP32, one CPU thread, original masks/order and exact centering. Reproduce the saved original-dispatch support prefix and compare the saved original batched outputs as well. Save full-support outputs, proposal outputs, all failed overlap coordinates and greedy action differences between dispatch modes. Do not read simulator outcomes or compute scientific losses/gates.
+
+Recount the saved arrays after actual owner exit. Report the complete mismatch population rather than stopping at its first example; do not waive any discrepancy or widen the fixed 1e-5 relative/absolute tolerance. Adoption requires passing the complete overlap check and a subsequent matched-control check. This diagnostic is allowed 900 seconds, with no fit, simulator, label changes, endpoint changes or scientific acceptance claim. Preserve all prior failed and successful technical artifacts.

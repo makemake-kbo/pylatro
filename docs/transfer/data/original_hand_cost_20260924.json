@@ -1,0 +1,525 @@
+{
+  "artifacts": {
+    "candidate_result": {
+      "path": "eval/original_hand_cost_20260924/candidate_strata_result_v1.json",
+      "sha256": "7deb682fc7238945706c14a9859ab0a2165a9186ccb18a330aa1e3753a90d557"
+    },
+    "candidate_verification": {
+      "path": "eval/original_hand_cost_20260924/candidate_strata_verification_v1.json",
+      "sha256": "3fad76ba4a87b9850d58faa11831a94366f087749cd544ae314e8895795c1353"
+    },
+    "main_audit": {
+      "path": "eval/original_hand_cost_20260924/arithmetic_audit_v1.json",
+      "sha256": "63942228b6433e9f8f0405907e4d9788fdfce35aeb9c3f4643d5c71aca906ba8"
+    },
+    "main_helper": {
+      "path": "eval/original_hand_cost_20260924/measure_v3.py",
+      "sha256": "54223fadc17a6463c93d91de287ebe12a142782d4d13a3fc544cc6698b577061"
+    },
+    "prediction_provenance": {
+      "path": "eval/original_hand_cost_20260924/prediction_provenance_v1.json",
+      "sha256": "8651fc44c00425e691ff4f1f84a7f5d0428b4444f761557a054f8035e718dd19"
+    },
+    "result": {
+      "path": "eval/original_hand_cost_20260924/panel_v3/result.json",
+      "sha256": "7c47521bb186f6d199d2f89e371b24aed0bffebe529a99b90a0671c0bc1a97ec"
+    },
+    "state_fingerprint": {
+      "path": "eval/original_hand_cost_20260924/state_fingerprint_v1.py",
+      "sha256": "d9a7b0d12a2ad473ca2bdf574349d311835a802bc24d1ee777d787033bd65b1d"
+    }
+  },
+  "by_ante": {
+    "1": {
+      "all_play_pairs": {
+        "rows": 1153,
+        "score_equal": 980,
+        "student_at_most_half_teacher": 91,
+        "student_higher": 1,
+        "student_lower": 172
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 1,
+      "changed_play_pairs": {
+        "rows": 182,
+        "score_equal": 9,
+        "student_at_most_half_teacher": 91,
+        "student_higher": 1,
+        "student_lower": 172
+      },
+      "different_actions": 233,
+      "different_play_actions": 182,
+      "exact_action_matches": 971,
+      "games": 200,
+      "games_with_new_immediate_loss": 0,
+      "new_immediate_losses": 0,
+      "play_states": 1204,
+      "student_clears": 543,
+      "student_clears_teacher_does_not": 0,
+      "student_other_family": 51,
+      "teacher_clears": 599,
+      "teacher_clears_student_does_not": 56
+    },
+    "2": {
+      "all_play_pairs": {
+        "rows": 970,
+        "score_equal": 624,
+        "student_at_most_half_teacher": 143,
+        "student_higher": 42,
+        "student_lower": 304
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 4,
+      "changed_play_pairs": {
+        "rows": 371,
+        "score_equal": 25,
+        "student_at_most_half_teacher": 143,
+        "student_higher": 42,
+        "student_lower": 304
+      },
+      "different_actions": 412,
+      "different_play_actions": 371,
+      "exact_action_matches": 599,
+      "games": 199,
+      "games_with_new_immediate_loss": 5,
+      "new_immediate_losses": 5,
+      "play_states": 1011,
+      "student_clears": 514,
+      "student_clears_teacher_does_not": 23,
+      "student_other_family": 41,
+      "teacher_clears": 592,
+      "teacher_clears_student_does_not": 101
+    },
+    "3": {
+      "all_play_pairs": {
+        "rows": 954,
+        "score_equal": 466,
+        "student_at_most_half_teacher": 165,
+        "student_higher": 72,
+        "student_lower": 416
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 2,
+      "changed_play_pairs": {
+        "rows": 534,
+        "score_equal": 46,
+        "student_at_most_half_teacher": 165,
+        "student_higher": 72,
+        "student_lower": 416
+      },
+      "different_actions": 555,
+      "different_play_actions": 534,
+      "exact_action_matches": 420,
+      "games": 195,
+      "games_with_new_immediate_loss": 6,
+      "new_immediate_losses": 6,
+      "play_states": 975,
+      "student_clears": 483,
+      "student_clears_teacher_does_not": 39,
+      "student_other_family": 21,
+      "teacher_clears": 582,
+      "teacher_clears_student_does_not": 138
+    },
+    "4": {
+      "all_play_pairs": {
+        "rows": 1094,
+        "score_equal": 530,
+        "student_at_most_half_teacher": 186,
+        "student_higher": 82,
+        "student_lower": 482
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 5,
+      "changed_play_pairs": {
+        "rows": 611,
+        "score_equal": 47,
+        "student_at_most_half_teacher": 186,
+        "student_higher": 82,
+        "student_lower": 482
+      },
+      "different_actions": 638,
+      "different_play_actions": 611,
+      "exact_action_matches": 483,
+      "games": 193,
+      "games_with_new_immediate_loss": 2,
+      "new_immediate_losses": 2,
+      "play_states": 1121,
+      "student_clears": 477,
+      "student_clears_teacher_does_not": 41,
+      "student_other_family": 27,
+      "teacher_clears": 573,
+      "teacher_clears_student_does_not": 137
+    },
+    "5": {
+      "all_play_pairs": {
+        "rows": 1296,
+        "score_equal": 676,
+        "student_at_most_half_teacher": 223,
+        "student_higher": 73,
+        "student_lower": 547
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 7,
+      "changed_play_pairs": {
+        "rows": 703,
+        "score_equal": 83,
+        "student_at_most_half_teacher": 223,
+        "student_higher": 73,
+        "student_lower": 547
+      },
+      "different_actions": 718,
+      "different_play_actions": 703,
+      "exact_action_matches": 593,
+      "games": 188,
+      "games_with_new_immediate_loss": 5,
+      "new_immediate_losses": 5,
+      "play_states": 1311,
+      "student_clears": 468,
+      "student_clears_teacher_does_not": 28,
+      "student_other_family": 15,
+      "teacher_clears": 556,
+      "teacher_clears_student_does_not": 116
+    },
+    "6": {
+      "all_play_pairs": {
+        "rows": 1262,
+        "score_equal": 651,
+        "student_at_most_half_teacher": 237,
+        "student_higher": 57,
+        "student_lower": 554
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 3,
+      "changed_play_pairs": {
+        "rows": 696,
+        "score_equal": 85,
+        "student_at_most_half_teacher": 237,
+        "student_higher": 57,
+        "student_lower": 554
+      },
+      "different_actions": 706,
+      "different_play_actions": 696,
+      "exact_action_matches": 566,
+      "games": 181,
+      "games_with_new_immediate_loss": 4,
+      "new_immediate_losses": 4,
+      "play_states": 1272,
+      "student_clears": 441,
+      "student_clears_teacher_does_not": 27,
+      "student_other_family": 10,
+      "teacher_clears": 540,
+      "teacher_clears_student_does_not": 126
+    },
+    "7": {
+      "all_play_pairs": {
+        "rows": 1247,
+        "score_equal": 659,
+        "student_at_most_half_teacher": 292,
+        "student_higher": 14,
+        "student_lower": 574
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 14,
+      "changed_play_pairs": {
+        "rows": 703,
+        "score_equal": 115,
+        "student_at_most_half_teacher": 292,
+        "student_higher": 14,
+        "student_lower": 574
+      },
+      "different_actions": 717,
+      "different_play_actions": 703,
+      "exact_action_matches": 544,
+      "games": 178,
+      "games_with_new_immediate_loss": 0,
+      "new_immediate_losses": 0,
+      "play_states": 1261,
+      "student_clears": 379,
+      "student_clears_teacher_does_not": 0,
+      "student_other_family": 14,
+      "teacher_clears": 516,
+      "teacher_clears_student_does_not": 137
+    },
+    "8": {
+      "all_play_pairs": {
+        "rows": 1162,
+        "score_equal": 638,
+        "student_at_most_half_teacher": 258,
+        "student_higher": 14,
+        "student_lower": 510
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 17,
+      "changed_play_pairs": {
+        "rows": 645,
+        "score_equal": 121,
+        "student_at_most_half_teacher": 258,
+        "student_higher": 14,
+        "student_lower": 510
+      },
+      "different_actions": 664,
+      "different_play_actions": 645,
+      "exact_action_matches": 517,
+      "games": 164,
+      "games_with_new_immediate_loss": 1,
+      "new_immediate_losses": 1,
+      "play_states": 1181,
+      "student_clears": 366,
+      "student_clears_teacher_does_not": 0,
+      "student_other_family": 19,
+      "teacher_clears": 473,
+      "teacher_clears_student_does_not": 107
+    }
+  },
+  "by_recorded_outcome": {
+    "False": {
+      "all_play_pairs": {
+        "rows": 2286,
+        "score_equal": 1308,
+        "student_at_most_half_teacher": 403,
+        "student_higher": 46,
+        "student_lower": 932
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 53,
+      "changed_play_pairs": {
+        "rows": 1079,
+        "score_equal": 101,
+        "student_at_most_half_teacher": 403,
+        "student_higher": 46,
+        "student_lower": 932
+      },
+      "different_actions": 1129,
+      "different_play_actions": 1079,
+      "exact_action_matches": 1207,
+      "games": 53,
+      "games_with_new_immediate_loss": 6,
+      "new_immediate_losses": 7,
+      "play_states": 2336,
+      "student_clears": 715,
+      "student_clears_teacher_does_not": 13,
+      "student_other_family": 50,
+      "teacher_clears": 903,
+      "teacher_clears_student_does_not": 201
+    },
+    "True": {
+      "all_play_pairs": {
+        "rows": 6852,
+        "score_equal": 3916,
+        "student_at_most_half_teacher": 1192,
+        "student_higher": 309,
+        "student_lower": 2627
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 0,
+      "changed_play_pairs": {
+        "rows": 3366,
+        "score_equal": 430,
+        "student_at_most_half_teacher": 1192,
+        "student_higher": 309,
+        "student_lower": 2627
+      },
+      "different_actions": 3514,
+      "different_play_actions": 3366,
+      "exact_action_matches": 3486,
+      "games": 147,
+      "games_with_new_immediate_loss": 15,
+      "new_immediate_losses": 16,
+      "play_states": 7000,
+      "student_clears": 2956,
+      "student_clears_teacher_does_not": 145,
+      "student_other_family": 148,
+      "teacher_clears": 3528,
+      "teacher_clears_student_does_not": 717
+    }
+  },
+  "candidate_strata": {
+    "all_have_valid_play_candidates": true,
+    "by_teacher_candidate_coverage": {
+      "False": {
+        "exact_matches": 1755,
+        "games": 200,
+        "mean_teacher_probability": 0.26862961281747205,
+        "missed_teacher_blind_clear": 805,
+        "new_immediate_loss": 17,
+        "plays": 5797,
+        "student_play_lower_score": 3187
+      },
+      "True": {
+        "exact_matches": 2938,
+        "games": 200,
+        "mean_teacher_probability": 0.4368555983581147,
+        "missed_teacher_blind_clear": 113,
+        "new_immediate_loss": 6,
+        "plays": 3539,
+        "student_play_lower_score": 372
+      }
+    },
+    "by_teacher_student_candidate_coverage": {
+      "teacher=False,student=False": {
+        "exact_matches": 1755,
+        "games": 195,
+        "mean_teacher_probability": 0.3829278716614435,
+        "missed_teacher_blind_clear": 88,
+        "new_immediate_loss": 0,
+        "plays": 2032,
+        "student_play_lower_score": 110
+      },
+      "teacher=False,student=True": {
+        "exact_matches": 0,
+        "games": 199,
+        "mean_teacher_probability": 0.20694194695533402,
+        "missed_teacher_blind_clear": 717,
+        "new_immediate_loss": 17,
+        "plays": 3765,
+        "student_play_lower_score": 3077
+      },
+      "teacher=True,student=False": {
+        "exact_matches": 0,
+        "games": 148,
+        "mean_teacher_probability": 0.2315324377344551,
+        "missed_teacher_blind_clear": 78,
+        "new_immediate_loss": 4,
+        "plays": 337,
+        "student_play_lower_score": 156
+      },
+      "teacher=True,student=True": {
+        "exact_matches": 2938,
+        "games": 200,
+        "mean_teacher_probability": 0.458465187717944,
+        "missed_teacher_blind_clear": 35,
+        "new_immediate_loss": 2,
+        "plays": 3202,
+        "student_play_lower_score": 216
+      }
+    },
+    "rows": 9336,
+    "uncovered_with_teacher_probability_above_half": 0
+  },
+  "first_immediate_loss_example": {
+    "ante": 6,
+    "card_uid_counter_before": [
+      223
+    ],
+    "hands_left": 1,
+    "input_sha256": "019be3374077b0650a5fd8dfd7bf99681b2a1080271e8cb1cc5ee595befab3be",
+    "pre_state_sha256": "f6b473933044485d46b98adcbc348d48e258a758fb301b165404c005548580c5",
+    "recorded_won": true,
+    "remaining_target": 20000.0,
+    "seed": 2000051,
+    "step": 182,
+    "student": {
+      "blind_cleared": false,
+      "card_uid_counter_after": [
+        223
+      ],
+      "game_over": true,
+      "game_won": false,
+      "hand_type": "Two Pair",
+      "phase": "game_over",
+      "post_state_sha256": "8a439abc178328e59479e4b8b6216ce740212fb3a117762fea891cd47a79c5fe",
+      "score": 18304
+    },
+    "student_action": 1529,
+    "student_family": "play_subset",
+    "teacher": {
+      "blind_cleared": true,
+      "card_uid_counter_after": [
+        223
+      ],
+      "game_over": false,
+      "game_won": false,
+      "hand_type": "Pair",
+      "phase": "shop",
+      "post_state_sha256": "85ec7a5c60ea4b3ba5a9e0be88fd85f66aa417980bab232f988b867c3555399d",
+      "score": 41064
+    },
+    "teacher_action": 338,
+    "teacher_probability": 0.08467872440814972
+  },
+  "generalization_proven": false,
+  "limits": [
+    "Saved original epoch10 mode-action predictions on training states, without an independent model forward.",
+    "One-action branches from teacher trajectories; not autonomous sampled or greedy win rates.",
+    "Immediate scores do not measure all long-term consequences.",
+    "Candidate-coverage strata do not isolate a causal architecture effect.",
+    "Original prediction-producing source hashes were recorded but the exact helper versions were not recovered."
+  ],
+  "overall": {
+    "all_play_pairs": {
+      "rows": 9138,
+      "score_equal": 5224,
+      "student_at_most_half_teacher": 1595,
+      "student_higher": 355,
+      "student_lower": 3559
+    },
+    "averted_immediate_losses": 0,
+    "both_immediate_loss": 53,
+    "changed_play_pairs": {
+      "rows": 4445,
+      "score_equal": 531,
+      "student_at_most_half_teacher": 1595,
+      "student_higher": 355,
+      "student_lower": 3559
+    },
+    "different_actions": 4643,
+    "different_play_actions": 4445,
+    "exact_action_matches": 4693,
+    "games": 200,
+    "games_with_new_immediate_loss": 21,
+    "new_immediate_losses": 23,
+    "play_states": 9336,
+    "student_clears": 3671,
+    "student_clears_teacher_does_not": 158,
+    "student_other_family": 198,
+    "teacher_clears": 4431,
+    "teacher_clears_student_does_not": 918
+  },
+  "replayed_original_decisions": 44348,
+  "status": "complete_diagnostic",
+  "supplement": {
+    "changed_lower_score_but_both_clear": 885,
+    "early_ante_1_to_3": {
+      "all_play_pairs": {
+        "rows": 3077,
+        "score_equal": 2070,
+        "student_at_most_half_teacher": 399,
+        "student_higher": 115,
+        "student_lower": 892
+      },
+      "averted_immediate_losses": 0,
+      "both_immediate_loss": 7,
+      "changed_play_pairs": {
+        "rows": 1087,
+        "score_equal": 80,
+        "student_at_most_half_teacher": 399,
+        "student_higher": 115,
+        "student_lower": 892
+      },
+      "different_actions": 1200,
+      "different_play_actions": 1087,
+      "exact_action_matches": 1990,
+      "games": 200,
+      "games_with_new_immediate_loss": 10,
+      "new_immediate_losses": 11,
+      "play_states": 3190,
+      "student_clears": 1540,
+      "student_clears_teacher_does_not": 62,
+      "student_other_family": 113,
+      "teacher_clears": 1773,
+      "teacher_clears_student_does_not": 295
+    },
+    "new_immediate_losses_on_recorded_winning_paths": 16,
+    "note": "Counts on recorded teacher paths do not estimate autonomous policy wins; multiple one-action branches from one game are dependent.",
+    "recorded_winning_games": 147,
+    "recorded_winning_games_with_new_immediate_loss": 15
+  },
+  "verification": {
+    "candidate_checks": 18,
+    "main_actual_exit_code": 0,
+    "main_checks": 547,
+    "native_elapsed_seconds": 577.0688338750042,
+    "prior_torch_coverage_agreements": 9336
+  },
+  "world_model_work_deferred": true
+}

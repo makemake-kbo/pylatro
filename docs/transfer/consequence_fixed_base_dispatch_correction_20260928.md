@@ -1,0 +1,7 @@
+# Preserve exact centering with matched parameter dispatch
+
+The admitted second numerical probe reproduced the first probe's tiny discrepancy for both frozen/no-grad and temporary-feature-gradient reference calls. Giving the unchanged reference parameter values gradient tracking removed the discrepancy exactly on all 35,365 legal actions in the same 128-state batch. Parameter strides match in all modes. No output gradient, optimizer step or choice changed in either probe. This is evidence about numerical dispatch, not the cause of failed transfer.
+
+Version 2 of the loss uses `torch.func.functional_call` with temporary gradient-tracked leaves sharing the immutable initial parameter values, then detaches the entire reference output before composing the preference. The registered reference parameters remain frozen, outside the optimizer and without gradients; temporary leaves receive no backward pass. The current readout, inputs, initial tensors, objective, state order and scientific gates remain unchanged. Inference uses identical no-grad calls for both readouts, as before.
+
+Retain the exact initial-centering requirement. Run the six focused tests again against the changed helper, including an odd-sized relational batch, then a new measured backward-only preflight with the original three batches, budgets and saved-output gradient audit. The version-one failed preflight and both numerical probes remain immutable. Admit no fit until version two passes. This correction does not add a trainable branch or a second exploratory fit.

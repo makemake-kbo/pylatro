@@ -1,0 +1,9 @@
+{
+  "archived_files": 25936,
+  "archives": {
+    "evidence.tar.gz": "18818c41da01969cea33dd6cef262b5810352b7d8436bd1af73ab1aa11206f22",
+    "working_tree_source.tar.gz": "718d5550ca958be24be559ec26c8cfbbeabcdf33f5f1739e6b59f8173e23625a"
+  },
+  "inventory_sha256": "ac85d7b23f9d361950869d63c7b17da37cb888b9d89ece45b16e43b4afb1acc5",
+  "reserved_outcomes": "opaque bytes; not parsed or examined"
+}

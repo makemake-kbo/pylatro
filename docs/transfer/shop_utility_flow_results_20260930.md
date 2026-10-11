@@ -1,0 +1,27 @@
+# Replacement supervision now records filtered alternatives
+
+The completed native check accounts for every proposed owned-Joker/offer pair in the four-game training panel and preserves all 245 original teacher decisions and complete comparison traces. It recovers 277 forecast score/value targets that the final-comparison observer omitted. The original demonstration action labels remain intact; this extends the information available for a future auxiliary objective.
+
+The current readout's visible support contains 1,680 potential replacement pairs. They combine legal owned-Joker sale slots with visible Joker offers; they are not necessarily affordable or executable joint actions. The earlier observer recorded 1,255 final gains. It covered every pair in 126 of 245 states and recorded no pair gain in 54 states. The new observer explains all 425 missing comparisons:
+
+| Native path | All pairs | Pairs on teacher-sale states | Pairs on other states | Recorded numeric target |
+| --- | ---: | ---: | ---: | --- |
+| Reaches final comparison | 1,255 | 205 | 1,050 | Forecast score/value and final gain |
+| Rejected for unsafe score decrease | 202 | 35 | 167 | Forecast score/value; no final gain |
+| Rejected for insufficient immediate improvement | 75 | 5 | 70 | Forecast score/value; no final gain |
+| Parent policy preempts shop search | 105 | 0 | 105 | No pair forecast |
+| Shop search returns before pair loop | 40 | 0 | 40 | No pair forecast |
+| Fails affordability/reserve check | 3 | 0 | 3 | No pair forecast |
+| Total | 1,680 | 245 | 1,435 | 1,532 forecast targets; 1,255 final gains |
+
+No pair took the capacity-rejection or direct-purchase paths in this panel; the observer and accounting include those paths for future data. Every entered native iteration has exactly one terminal event. Missing gains remain missing, with explicit reasons. Values from a preceding loop iteration cannot be mistaken for current-pair targets at an early filter. [Independent support and arithmetic audit](../../eval/consequence_prediction_20260927/shop_utility_flow_check_v1/verification_v1.json).
+
+The teacher's best eligible replacement gain exceeding its existing 0.03 threshold matches the sale/non-sale label in all 245 observations, including 28 sale states. This is a reconstruction using teacher-computed values on four training games, not a learned prediction or a universal characterization of the teacher. Elsewhere, early returns, other scored action types, or direct purchases can matter.
+
+The distinction between targets also matters. A forecast-value change excludes income and purchase-price adjustments. Only one of the 277 score-filtered pairs has a positive forecast-value change; that pair lowers the immediate forecast score. This does not establish a valuable action the teacher missed. Future supervision should retain the separate forecast, filter, and net-gain quantities instead of treating any one as eventual win value. [Descriptive value accounting](../../eval/consequence_prediction_20260927/shop_utility_flow_value_accounting_v1.json).
+
+Both recording layers preserve the original source AST when their logging calls are removed. The full native replay reproduces all fourteen inputs for 889 factual decisions, the four game endpoints, and all 245 archived actions, last-decision records, ordered candidate comparisons, and summaries. Runner state, global card-ID allocation and random state are preserved around queries. The independent auditor reconstructs visible pair support, checks the recorded native filter predicates, and recomputes final gain and price terms. No model or proposed action was executed. The native owner and independent auditor both exited successfully. [Frozen protocol](../../eval/consequence_prediction_20260927/shop_utility_flow_check_protocol_v1.json) · [Admitted execution](../../eval/consequence_prediction_20260927/shop_utility_flow_check_owner_terminal_v1.json).
+
+A preceding technical check verified sharing only the native score and sample caches between fresh teachers within a game. All 245 full traces matched fresh-teacher controls. Query time was 86.52 seconds versus 103.74 seconds recorded previously; different execution times make this descriptive rather than a controlled speed claim. Its first auditor incorrectly assumed cache size could not decrease. The source explicitly evicts above 400 entries. A new auditor preserves trace equality and checks cache continuity and its native bound; the failed attempt and correction are retained. No native rerun or scientific result change was needed. [Admitted cache check](../../eval/consequence_prediction_20260927/shop_utility_cache_check_owner_terminal_v1.json) · [Auditor correction](../../eval/consequence_prediction_20260927/shop_utility_cache_audit_correction_v1.json).
+
+The next supervision experiment can now distinguish evaluated alternatives, screened alternatives, and decisions that bypass pair evaluation. Its collection population and learning objective still need freezing before broader work. Teacher values retain the [measured card-ID sampling sensitivity](shop_uid_alias_results_20260930.md); they are noisy heuristic targets, not fully observable ground truth. No new fit, policy qualification, autonomous win gain, or learned long-horizon improvement has been demonstrated. The original spending checks and final fresh-win, retention, early-attribution and independent-confirmation requirements remain unchanged.

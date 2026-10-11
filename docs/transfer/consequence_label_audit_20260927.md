@@ -1,0 +1,15 @@
+# Native label audit before consequence prediction
+
+This is a technical audit of training-label generation, not a model fit or a policy evaluation. It follows the [target preparation](consequence_target_preparation_20260927.md). The [duration game study](continuation_duration_results_20260927.md) and independent audit have now actually completed successfully, but both sampled-gain gates failed. Its frozen decision rule therefore admits this label audit without additional duration games or a confirmation fit.
+
+Use all factual decisions and every recorded play in training games 4000000–4000015, the first 16 games of the existing current-rule corpus. This selection is independent of game outcomes and exposed held-out failures. Keep each game's branches together. Reuse the frozen runtime, full original cache, base predictions and independently verified training-cost replay.
+
+For every recorded play, propose the teacher play, the base play when it is a legal play, up to two other distinct represented candidates, and up to two additional legal plays chosen by a fixed hash of visible observation identity and action ID. Retain the proposal source and selected/retained slot order. A non-play base action is explicitly reported as outside this play-only score diagnostic.
+
+Replay the full factual game and require exact observation/action/terminal equality. For every proposed play, compare an untouched full-action clone with an instrumented clone at the same RNG and card-counter state. Require identical policy-visible inputs, score, phase, clear/loss status, post-state fingerprint and card counter; verify the factual parent is unchanged. Match teacher/base outcomes to the existing audited training replay wherever those outcomes were recorded.
+
+Instrumentation logs random API channel names and stage/scope, not random outputs, numeric RNG seeds or hidden cards. Separate committed pre-score/scoring/post-score calls from internal scoring-state copies used by the Joker-ordering harness. The compiled score hook must observe exactly one committed score and every intercepted copied-state score. Restore hooks on failures. API-call counts are not elementary draw counts.
+
+This audit does not resample RNG, establish a conditional target distribution, certify visible-state determinism or benchmark a trained predictor. An absence of observed random calls is a diagnostic flag, not proof of observation sufficiency. Its purpose is to make the subsequent stochastic-target audit and feature benchmark reliable.
+
+Bound the native worker to 900 seconds and its independent saved-row audit to 600 seconds, with serial process ownership and observed exits. Stop on any mismatch and preserve failed artifacts. No retry that replaces outputs, training, model changes, autonomous games or confirmation evidence. A successful audit still leaves the stochastic target definition, feature/head benchmark, fixed data splits, matched capacities, losses and prediction/retention criteria to be completed before one exploratory fit.

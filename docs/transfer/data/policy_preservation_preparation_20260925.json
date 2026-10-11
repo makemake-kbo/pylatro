@@ -1,0 +1,172 @@
+{
+  "all_jobs_closed": true,
+  "coefficient": 1.0,
+  "generalization_proven": false,
+  "inputs": {
+    "kl_audit": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/kl_audit_v1.json",
+      "sha256": "80c7360d07201d7325b605fe864f7710132d695699399b07b69e7eed7893c04f"
+    },
+    "kl_audit_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/kl_audit_terminal_v1.json",
+      "sha256": "95a56017b517d3a61314b5e2a40f2d29d5f4cabd61185000396585fe55b8bd3d"
+    },
+    "kl_helper": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/preservation_v1.py",
+      "sha256": "4564a3a0780d8594698be30c3b1a6532ac14649bd71e4ca69062c343d365dc5d"
+    },
+    "loss": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/loss_v2.py",
+      "sha256": "50e4fe2d1c96676650f468cec5b1a56db9131376bf7c9aaf97a790c2abb50535"
+    },
+    "native_repeat": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/zero_reproduction_v1/result.json",
+      "sha256": "4d71eb084e115fe8bcb2c4749c4f5d5f644560a9d03194c2f494e5f58b71274a"
+    },
+    "preflight_preparation": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/training_preflight_preparation_v3.json",
+      "sha256": "ac553840580abf173987c9cb5c6b47750f1d181ff9657003a4e3a308dd073abe"
+    },
+    "protocol": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/preparation_protocol_v1.json",
+      "sha256": "06f53247c93756eceb8f5e4eeaea3f6ee062e296b84869ec6ac412abc7864a21"
+    },
+    "repeat_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/zero_reproduction_terminal_v1.json",
+      "sha256": "072b31b04f487cd7a5dcf068da16e6607f00e731db60f0e99b5753f5183d8209"
+    },
+    "training_audit": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/training_audit_v3.json",
+      "sha256": "78830a796faf1a630190a59ffe9e3a394e70ae669bce2ec3c26fe11d1eb37a60"
+    },
+    "training_audit_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/training_audit_terminal_v3.json",
+      "sha256": "9e4ea7e6eac33a3f14b85b883741f8dec761d3f090f606ae2a5cf1d0ee3c312e"
+    },
+    "training_preflight": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/training_preflight_v3/result.json",
+      "sha256": "12cdcfb21a012f2d80698a1a8138c8e8f9df89392c6cdc208e8117c486c1c75d"
+    },
+    "training_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/training_preflight_terminal_v3.json",
+      "sha256": "1a131a55988cb5efbcc4f52088a9a09c41a08a2c2dc3e20d019c76584c9c79e1"
+    }
+  },
+  "kl_audit": {
+    "cases": 16,
+    "elapsed_seconds": 6.333572959003504,
+    "generalization_proven": false,
+    "gradient_elements_compared": 225072,
+    "grammar_families": 15,
+    "helper": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/audit_kl_v1.py",
+      "sha256": "5ebdce43ad4e7f4f3fa53429e4657d28c6709434c0a28143ff4d1246ce0b5cff"
+    },
+    "kl_result": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/kl_check_v1/result.json",
+      "sha256": "bbde133feaf2a35f49e8ba3e563376e2ae7fab5d76dd7eef7af56ae4669658ac"
+    },
+    "legal_leaves": 1856,
+    "maximum_gradient_error": 1.4239722670070504e-16,
+    "maximum_recounted_kl_error": 1.1449174941446927e-16,
+    "protocol": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/preparation_protocol_v1.json",
+      "sha256": "06f53247c93756eceb8f5e4eeaea3f6ee062e296b84869ec6ac412abc7864a21"
+    },
+    "scope": "Independent saved-vector KL arithmetic, raw cache coverage and every paired gradient-array coordinate; no second neural forward or fresh gameplay.",
+    "status": "passed"
+  },
+  "scientific_fit_started": false,
+  "status": "technical_preparation_verified",
+  "training_audit": {
+    "arms": {
+      "ordinary_bc": {
+        "after": {
+          "forward_kl": 0.0005403198720159708,
+          "rows": 320,
+          "scope": "fixed training calibration rows, no validation selection",
+          "teacher_nll": 0.550104409456253
+        },
+        "before": {
+          "forward_kl": 0.0,
+          "rows": 320,
+          "scope": "fixed training calibration rows, no validation selection",
+          "teacher_nll": 0.5590154714882374
+        },
+        "maximum_ordinary_trajectory_error": 5.587935447692871e-08,
+        "moved_tensor_counts": {
+          "actor": 52,
+          "backbone": 146,
+          "embedding": 111
+        },
+        "optimizer_parameters": 310,
+        "rows": 6400,
+        "updates": 20
+      },
+      "policy_preservation_bc": {
+        "after": {
+          "forward_kl": 0.00046291529724840075,
+          "rows": 320,
+          "scope": "fixed training calibration rows, no validation selection",
+          "teacher_nll": 0.5503606833517551
+        },
+        "before": {
+          "forward_kl": 0.0,
+          "rows": 320,
+          "scope": "fixed training calibration rows, no validation selection",
+          "teacher_nll": 0.5590154714882374
+        },
+        "maximum_ordinary_trajectory_error": null,
+        "moved_tensor_counts": {
+          "actor": 52,
+          "backbone": 146,
+          "embedding": 111
+        },
+        "optimizer_parameters": 310,
+        "rows": 6400,
+        "updates": 20
+      }
+    },
+    "checkpoint_tensors_verified": 640,
+    "elapsed_seconds": 10.258884291019058,
+    "final_maximum_parameter_difference": 3.33636999130249e-05,
+    "generalization_proven": false,
+    "helper": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/audit_training_v3.py",
+      "sha256": "69bd8d4534307afbb8e961b7e27b1903388a232f768b1eb81668fe562818987c"
+    },
+    "optimizer_states_verified": 620,
+    "paired_exposure_sha256": "c15f0b874da1d394165a7d2691ee85be3120c8a9b96d29420b93b512bae2c0d6",
+    "preflight": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/training_preflight_v3/result.json",
+      "sha256": "12cdcfb21a012f2d80698a1a8138c8e8f9df89392c6cdc208e8117c486c1c75d"
+    },
+    "protocol": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/preparation_protocol_v1.json",
+      "sha256": "06f53247c93756eceb8f5e4eeaea3f6ee062e296b84869ec6ac412abc7864a21"
+    },
+    "scientific_fit_admitted": false,
+    "scope": "Independent CPU checkpoint/optimizer inspection, row-order reconstruction and raw-log objective checks. No second neural training run or generalization evaluation.",
+    "status": "passed",
+    "training_benefit_proven": false,
+    "zero_equivalence": {
+      "absolute_tolerance": 2e-07,
+      "exact_initial_tensors": true,
+      "exact_leaf_gradient_checks": 20,
+      "maximum_gradient_difference": 1.4901161193847656e-08,
+      "maximum_optimizer_difference": 1.862645149230957e-09,
+      "maximum_parameter_difference": 2.9802322387695312e-08,
+      "model_exact": false,
+      "model_numerically_equivalent": true,
+      "objective": 0.5590154603123665,
+      "optimizer_exact": false,
+      "optimizer_numerically_equivalent": true,
+      "optimizer_tensors_compared": 930,
+      "original_repeat_evidence": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/zero_reproduction_terminal_v1.json",
+        "sha256": "072b31b04f487cd7a5dcf068da16e6607f00e731db60f0e99b5753f5183d8209"
+      }
+    }
+  },
+  "training_benefit_proven": false
+}

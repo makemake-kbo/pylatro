@@ -1,0 +1,142 @@
+{
+  "completed_unix": 1790104970.302879,
+  "candidate": "eval/long_horizon_generalization_20260921_logical_kl/analysis/observation_fix_candidate",
+  "primary_source_files_unchanged": 231,
+  "changed_files": [
+    {
+      "path": "src/pylatro_agent/agent.py",
+      "before_sha256": "09edfe28507c8939bf3410382140cd4e0beedebb4aa50eb641bf46becac1ab67",
+      "after_sha256": "718b8ab89d4cbdf053dbe7214158884dbdfd509b6e69c4d6da17f871a38fa204"
+    },
+    {
+      "path": "src/pylatro_agent/checkpoint.py",
+      "before_sha256": "ed49c89606169532a44df7a6fa95e79810caada3c51b83945ef59fbe5d35e93e",
+      "after_sha256": "2c2bc30afd088d21b167d48273ecc1f144b806b80854e437b39e10713d06b26e"
+    },
+    {
+      "path": "src/pylatro_agent/constants.py",
+      "before_sha256": "1373094c8e23b866b6910a527a5a796027b2d4d39c04db47989d3f6db02d6d39",
+      "after_sha256": "b68271622e827e6eb52defa19cf375cb6a38ca1c62077f9c522c7d55b12c2d9f"
+    },
+    {
+      "path": "src/pylatro_agent/embeddings.py",
+      "before_sha256": "3b3a25bb4d19a53623796171847921d72b4f7798f14d29eeda5cd512a49f08b5",
+      "after_sha256": "ace262f0513e897ff754d0c963bd81bd829975f5abad2281a38e37e3d8f7a57e"
+    },
+    {
+      "path": "src/pylatro_agent/live/policy.py",
+      "before_sha256": "cae5bd7b8f3d7a81d1ddcbcd245ffa637ce0435bad3d29ed8fd8a35ec269fd10",
+      "after_sha256": "f4a90ca5b1d225e66fb1920fc88c8904177c34b39c8bc19b6e02edf7f77f3d34"
+    },
+    {
+      "path": "src/pylatro_agent/schema.py",
+      "before_sha256": "c9578d9bc9e4ba1f9669e213b553e77c26645c00de892ec11c5d946a62ad8319",
+      "after_sha256": "b89771d77c4dc325682746ac9a27d15e85aac9743fb2ff65fffc948d69b3bc9a"
+    },
+    {
+      "path": "src/pylatro_agent/tokenizer.py",
+      "before_sha256": "bd512b2eb8173b11922b79e65c9d2ab4bea5bdfa1a023447f97e40fe3c6fea28",
+      "after_sha256": "bdd59dd02fa522845ecf8a3871780a66f93da19e2022317e3e76a4eb4f20449f"
+    },
+    {
+      "path": "src/pylatro_agent/training/ppo.py",
+      "before_sha256": "55b444791743a57d52e0b79ede1bb05aec1ed2205eeaa17eb2dda87f0182491c",
+      "after_sha256": "7949fe2f4a40d2d3b61c03a2d0d562353b81c9cb230ac74131f2c9b96c5d4c41"
+    },
+    {
+      "path": "src/pylatro_agent/training/ppo_checkpoint.py",
+      "before_sha256": "968eb591e59a2394e679d0fa00e1cece40f82b34e862f3a5e711ba45e83e22fd",
+      "after_sha256": "f96f452a1680a4ad1f599ede33bfadc17d6ee7f3b639ba4b3a958224ede5dd6b"
+    },
+    {
+      "path": "src/pylatro_agent/transfer.py",
+      "before_sha256": "ab7403affa103d63d1af1c51e16195214eac95b30c357640c1b798e7bd0301c7",
+      "after_sha256": "19d30a1749673745abacd2284502d2fc64c348a4c883d1c176eff08384258ab9"
+    },
+    {
+      "path": "src/pylatro_agent/watch.py",
+      "before_sha256": "ecbf3b4deba0532d04877bbcb80aca0230b6101097c809be619f7b0e2e803aea",
+      "after_sha256": "16d9c52a7dab831916e3ef1d3330e768aff4a4ea369e9a15e5f55c70079c10e8"
+    },
+    {
+      "path": "tests/test_archive_return.py",
+      "before_sha256": "accff8f02b8aa1c31aa5e2168a86b4c3b40b3c9586fe6b01c6e73ef114dff838",
+      "after_sha256": "eacf1bbb272af84fce804e0ffe90adc0a18452930ba0864cf3d526436fd4b7dd"
+    },
+    {
+      "path": "tests/test_decision_feature_observations.py",
+      "before_sha256": null,
+      "after_sha256": "48af93e24b4655fc65f2b4df4462d0609503750a11abfcf2e0d8fad14c41582f"
+    },
+    {
+      "path": "tests/test_observation_variant_checkpoint.py",
+      "before_sha256": null,
+      "after_sha256": "3d8dc99b0086abdead1e924bac93feac802b19353bb7733578abf6230b86c0d0"
+    }
+  ],
+  "evidence_sha256": {
+    "changed_files.json": "4ac1343b4f0ddc4f21b1730d9b2affece11c99229848c7b840dce74a380b713c",
+    "implementation_review.md": "72971b0ed494b318a0b0e9ea47b3a3636a171f6ca137ae13066923fc49dc4a20",
+    "final_implementation.patch": "2f330dd4418297638aa5ad36d81fcdc170d3523bc85d7f8627f8744e722103e5",
+    "legacy_before.json": "f37a9a09673f3c19f8c693038332bada5308ee8f4289a29c4e01b68abdd919f8",
+    "legacy_after.json": "f37a9a09673f3c19f8c693038332bada5308ee8f4289a29c4e01b68abdd919f8",
+    "pure_python_targeted_tests.log": "160dd34ee58511896ca7824d945dbe763fa364604e5cc05d8342526e5b11e9bb",
+    "final_checkpoint_tests.log": "27fc986897a1c4da48dc9dc7f863ccb151a1aa7313e9fc3ce9c4bc68b3366672",
+    "final_pure_tokenizer_tests.log": "55482e8e4aa8165e3488de26bab6cda38dfb98476e808556e99ea345456601c9",
+    "native_compile.log": "33f4913e5167751367b5f6dd241f0887fb4dd430aeae0fc4d72a0634234d445b",
+    "tokenizer_native_parity.py": "29f0dde61dff48d3ca5e7e7603d50e2ed264341618f39c84a42b47d183213cfa",
+    "pure_tokenizer_parity.json": "4504f7c71d029f72f354ea6f7ac4b422076f51286054e941102e333f3464c16c",
+    "native_tokenizer_parity.json": "4eb36c9e82716d87b812a3aff02fcf03170ef06584b9078c362633ce501b33e9",
+    "pure_tokenizer_observations.npz": "979d83a1545bd77bba9099c2ef09d66064dec759db953499e31177bd6d7896a1",
+    "native_tokenizer_tests.log": "8686018d444a07b47286daab34abc486f8e4dd1d9e8775927b52e4a93db4d879",
+    "accidental_fixture_artifacts.json": "d5c3ec9a292963eaa5b4491d23c19c67031e04a3745cb71774021a429370bb76"
+  },
+  "native_parity": {
+    "mode": "native",
+    "completed_unix": 1790104911.886177,
+    "fixture_count": 73,
+    "array_count": 1022,
+    "tokenizer_import": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/observation_fix_candidate/src/pylatro_agent/tokenizer.cpython-312-darwin.so",
+    "tokenizer_import_sha256": "73c912988ff003a49eb500653103ca707d3818aaa41a7df38a13a250f5d52cd9",
+    "tokenizer_source_sha256": "bdd59dd02fa522845ecf8a3871780a66f93da19e2022317e3e76a4eb4f20449f",
+    "pure_observation_archive_sha256": "979d83a1545bd77bba9099c2ef09d66064dec759db953499e31177bd6d7896a1",
+    "primary_source_files_unchanged": 231,
+    "native_exact_byte_parity": true,
+    "policy_calls": 0,
+    "training_updates": 0,
+    "full_games": 0
+  },
+  "legacy_synthetic_records_byte_identical": true,
+  "independent_static_review": {
+    "agent": "/root/review_state_encoding",
+    "blocking_source_findings": [],
+    "artifact_finding": "Prior patch import ordering was stale; root regenerated final_implementation.patch and verified all source hashes."
+  },
+  "tests": {
+    "agent_pure_targeted_passed": 110,
+    "agent_final_checkpoint_passed": 20,
+    "agent_final_pure_tokenizer_passed": 66,
+    "root_native_tokenizer_exit_code": 0,
+    "root_native_selectors": [
+      "tests/test_decision_feature_observations.py",
+      "tests/test_tokenizer.py"
+    ]
+  },
+  "validation_deviation": {
+    "accidental_cpu_training_fixtures": 2,
+    "updates_total": 6,
+    "transitions_total": 12,
+    "evaluation_mocked": true,
+    "scientific_learning_evidence": false,
+    "provenance": ".verification/implementation_review.md"
+  },
+  "root_parity_harness_preflight": "First attempt rejected int(SubPhase) before any evidence outputs; changed serialization to phase.value and executed pure/native checks successfully.",
+  "limitations": [
+    "No new scientific training or full-game evaluation; no win-rate or long-horizon gain established.",
+    "Live ingestion does not supply last_tarot_planet.",
+    "Resale encoding saturates above 32767; unknown IDs encode zero.",
+    "Original v13 full-state resume/archive requires frozen source."
+  ],
+  "applied_to_primary": false,
+  "generalization_proven": false
+}

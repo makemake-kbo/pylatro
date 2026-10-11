@@ -1,0 +1,28 @@
+# A measured action-ranking objective is ready for a matched experiment
+
+**The new objective and its training-only preflight passed independent checks. For this objective, no scientific fit or fresh-game evaluation has run, and no win-rate or long-horizon benefit is established.** This tests a concrete gap from the [training-consequence replay](card_sharp_training_cost_20260926.md): fitting the teacher's label does not reliably transfer consequential action rankings, and the earlier weighting scheme could leave an unchosen fatal alternative unaddressed when the base was already correct.
+
+The loss retains ordinary teacher negative log likelihood on every training decision. At states with measured clear preferences, it adds four times the average pairwise logistic loss:
+
+`teacher_NLL + 4 × mean_pairs softplus(log_probability(loser) − log_probability(winner))`
+
+Each state receives one average preference contribution, regardless of how many alternatives were measured. States without preferences receive teacher NLL only. Both components use the full logical batch denominator of 320, including when accumulated in physical batches of 32. The coefficient 4 was fixed before native checks; there was no held-out sweep or coefficient adjustment. It uses the same nominal extra-loss scale as the earlier raw weighting multiplier, but it is a different objective, not an equivalent weighting scheme.
+
+Targets include all 2,027 measured clear disagreements at 2,022 training states. The teacher is preferred in 1,445 pairs and the alternative in 582. Another 9,127 measured comparisons remain unranked because both choices have the same clear and terminal status. Score differences alone create no preference. All targets come from training seeds 4000000–4000999; cached identities and legal actions are independently verified.
+
+| Training stage | Preference pairs | States | Teacher preferred | Alternative preferred | Fatal alternatives |
+|---|---:|---:|---:|---:|---:|
+| Before Ante 4 | 680 | 680 | 460 | 220 | 10 |
+| Ante 4 onward | 1,347 | 1,342 | 985 | 362 | 24 |
+
+The 582 alternative-preferred cases deliberately allow disagreement with the teacher label. Keeping teacher NLL supplies a competing term; coefficient 4 permits the preference to dominate that pair. In an isolated two-action example the optimum assigns 0.2 probability to the teacher and 0.8 to the preferred alternative. This is a mathematical illustration, not a constraint on the full neural policy's probabilities.
+
+The loss uses the existing model and legal-action distribution. Mathematical checks compare values and every gradient coordinate against independent scalar and two-action calculations, including finite differences, padding, empty preferences, shared probability-normalization cancellation, duplicate comparisons, and physical-batch accumulation. Native checks also compare every subset-energy gradient with the expected two-action derivative and verify that the shared action-family probability cancels from the preference term.
+
+The paired native preflight starts both arms from the same base checkpoint and uses the same 6,400 training rows over twenty updates. The ordinary arm reproduces its historical twenty-update NLL trajectory within the preset tolerance. Coefficient zero reproduces ordinary model, gradient and optimizer updates within the previously established native tolerance. The positive coefficient changes the updates; actor, embeddings and encoder receive gradients, while critic tensors remain fixed. Both pilot checkpoints round-trip successfully. The separate CPU audit inspects all four saved model states, optimizer states, raw native-gradient arrays, shuffled row exposure and update logs. Technical admission does not require a favorable metric change, and these pilot checkpoints are not scientific candidates.
+
+The first independent audit misclassified two shared parameter aliases as buffers because the default parameter iterator omits duplicate names. The versioned correction derives aliases from object identity, requires exact agreement with the canonical shared embedding in every saved state, and retains exact base equality for true buffers and critic tensors. The failed audit is preserved; no training, targets, coefficient or tolerance changed.
+
+A blind clear is an immediate outcome, not a complete-game value estimate. The next scientific experiment must therefore compare two fixed continuation replicas against matched ordinary fitting and the base on fresh games, then separately test the contribution of early decisions. The existing completion bar remains unchanged: at least five percentage points of sampled gain against both comparators with positive paired lower bounds and positive effects in both replicas; greedy lower bounds strictly above minus five points; positive separate early-policy attribution in both replicas; and independent verification. The exposed held-out panel can support mechanism checks but cannot serve as untouched confirmation. World models remain deferred.
+
+Artifacts: [frozen objective](../../eval/counterfactual_ranking_20260926/preparation_protocol_v1.json), [all preference targets](../../eval/counterfactual_ranking_20260926/targets_v1/preferences.jsonl), [independent target audit](../../eval/counterfactual_ranking_20260926/targets_verification_v1.json), [native preflight](../../eval/counterfactual_ranking_20260926/training_preflight_v1/result.json), [independent native audit](../../eval/counterfactual_ranking_20260926/training_verification_v2.json), [actual audit exit](../../eval/counterfactual_ranking_20260926/training_verification_terminal_v2.json), [machine-readable report](data/counterfactual_ranking_preparation_20260926.json).

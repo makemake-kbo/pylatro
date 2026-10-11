@@ -1,0 +1,25 @@
+# Immediate labels miss many distinctions in recorded continuations
+
+The completed training panel contains **208 of 1,000 states** where three assessed actions lead to different eventual win/loss outcomes under a common continuation controller. Of the **416 winning-versus-losing action pairs, 291 (69.95%) have the same immediate-clear result**. The eventual winner scores lower immediately in 180 pairs, higher in 177, and equally in 59. These observations motivate studying longer consequences; they do not establish that a model can learn them or improve autonomous play.
+
+The [collection protocol](consequence_continuation_training_panel_20260928.md) selected one decision per original training game, retaining eight previously audited pilot states and collecting 992 new states. Selection did not use future outcomes. Each of the three assigned actions is followed by the same frozen base greedy controller until a terminal outcome or the fixed total-step cap. Original RNG states are restored; the model receives no hidden RNG information. These are realized, controller-dependent outcomes rather than conditional expected action values. Different action paths can consume randomness differently.
+
+All **3,000 branches** finished without censoring: **1,554 wins and 1,446 losses**. The collection and its independent native audit each took about 3.5 hours. The audit replayed all **202,141 factual decisions** and independently checked **275,215 new branch actions**; the 24 pilot branches retain their prior audit. Both child processes and the entire owner exited successfully before admission. The separate [saved-label analysis](consequence_continuation_training_label_analysis_20260928.md) verified target, action, outcome and trace identities and independently recounted the combined summaries. No model was trained.
+
+| Training states | States | Mixed win/loss states | Win/loss action pairs | Pairs with same immediate-clear result | Winner immediate score: higher / equal / lower |
+|---|---:|---:|---:|---:|---:|
+| All | 1,000 | 208 | 416 | 291 | 177 / 59 / 180 |
+| Early, Ante < 4 | 382 | 109 | 218 | 146 | 85 / 31 / 102 |
+| Later | 618 | 99 | 198 | 145 | 92 / 28 / 78 |
+| Teacher and base choose the same action | 760 | 168 | 336 | 231 | 140 / 52 / 144 |
+| Teacher and base choose different actions | 240 | 40 | 80 | 60 | 37 / 7 / 36 |
+
+Both actions are immediately nonterminal in 412 of the 416 win/loss pairs, including all 291 pairs with matching immediate-clear labels. Subsequent controller actions total **273,656**, with a median of 83 per branch. The current blind eventually completes in 2,858 branches and fails in 142. Thus these labels capture substantial subsequent play rather than simply relabeling immediate terminal actions.
+
+Assigning the teacher's action once yields **519 wins**, versus **517** for the base action, with the same continuation controller. The actions coincide in 760 states. This is not a comparison of the complete teacher and base policies, and no confidence interval or resolved teacher advantage is claimed. In **103 states** a measured alternative wins while the base choice loses; in 105, a measured alternative loses while the base choice wins. The corresponding teacher counts are 101 and 107. These observed alternatives are diagnostic opportunities and risks, not achievable policy gains: choosing them using their recorded outcomes would be an oracle.
+
+The result establishes that immediate-clear labels collapse many distinctions in these recorded continuations, and that immediate score alone does not consistently order the eventual winner. It does not isolate an architectural bottleneck, establish deliberate resource preservation, validate terminal-label transfer to held-out games, or demonstrate improved long-horizon generalization. All states come from training teacher trajectories, with one original RNG realization per branch.
+
+The user's [requested width experiment](consequence_relational_width_20260928.md) remains next: `query_dim=192`, `hidden=384`, with `d_model=384`, `state_dim=128` and four heads. Its data, four losses, training exposure and evaluation gates match the completed smaller fixed-base scorer. **These new continuation labels remain diagnostic and do not enter the width fit.** Train one exploratory model; independent confirmation remains reserved for a final qualifying candidate.
+
+Artifacts: [collection owner](../../eval/consequence_prediction_20260927/continuation_training_panel_owner_terminal_v1.json), [collection measurement](../../eval/consequence_prediction_20260927/continuation_training_panel_v1/result_v1.json), [native audit](../../eval/consequence_prediction_20260927/continuation_training_panel_v1/verification_v1.json), [analysis owner](../../eval/consequence_prediction_20260927/continuation_training_label_analysis_owner_terminal_v1.json), [analysis result](../../eval/consequence_prediction_20260927/continuation_training_label_analysis_v1/result_v1.json), and [labels](../../eval/consequence_prediction_20260927/continuation_training_label_analysis_v1/labels.jsonl).

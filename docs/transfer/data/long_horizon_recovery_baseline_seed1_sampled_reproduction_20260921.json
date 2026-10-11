@@ -1,0 +1,27 @@
+{
+  "created_unix": 1790019284.716125,
+  "analysis_script_sha256": "f2530b68d3c259604947b1eb524263afeacbbd7f01a8babf46401c842b35f299",
+  "recovery_study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "previous_source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "replica": 1,
+  "mode": "sample0",
+  "games": 200,
+  "wins_before": 76,
+  "wins_after": 76,
+  "excluded_timing_fields": [
+    "env_seconds",
+    "env_wall_seconds",
+    "policy_seconds"
+  ],
+  "changed_non_timing_fields": {},
+  "gameplay_changed_seeds": [],
+  "all_non_timing_fields_exactly_equal": true,
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed1/sample0/manifest.json": "2025eb14846d1c07083517769b82552b4aeb48c61dc920b283ea7f1e28cb2a34",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed1/sample0/outcomes.jsonl": "7c1ccee5493987145d8a12d76a9f71d7bdafd6df304c8fe8d5f5228324c4ca8c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed1/sample0/manifest.json": "bc85adaf661a51efc0631b1c8e9d4fbafb7e5df8f68ca29bfff591d2daf3130f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed1/sample0/outcomes.jsonl": "a66914a5b92f09f52430cabce4c3015eb4290aa2597a398f9297efcf7a86aebc"
+  },
+  "interpretation": "Repeated exposed development checks recovery reproducibility, not a generalization gain."
+}

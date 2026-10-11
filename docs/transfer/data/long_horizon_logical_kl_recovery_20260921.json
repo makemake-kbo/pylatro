@@ -1,0 +1,50 @@
+{
+  "previous_root": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160",
+  "previous_source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "changed_sources": [
+    "src/pylatro_agent/training/ppo_config.py",
+    "src/pylatro_agent/training/ppo_optimization.py",
+    "tools/long_horizon_study.py"
+  ],
+  "preserved_updates": {
+    "terminal_mc_seed0": 10,
+    "terminal_gae_seed0": 10,
+    "legacy_gae_seed0": 10,
+    "terminal_mc_seed1": 10,
+    "terminal_gae_seed1": 10,
+    "legacy_gae_seed1": 0
+  },
+  "prior_compute": {
+    "root": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160",
+    "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+    "compute_sha256": "d705734a9067270938e598a6a0561b032f0c6001d4c9fa4e7e02fd349170162d",
+    "spent_seconds": 12621.448625790305,
+    "prior_limit_seconds": 40844.404112207936,
+    "reason": "Logical-KL recovery retaining 50 verified accepted updates and all prior compute charges"
+  },
+  "prefix_semantics": "Copied updates retain their original physical-KL source/configuration; all were accepted",
+  "future_semantics": "Hard KL uses sample-weighted logical optimizer groups; thresholds .08/.015 unchanged",
+  "development": "Previously exposed development seeds are rerun; never counted as fresh confirmation",
+  "selection_and_acceptance_unchanged": true,
+  "confirmation_and_early_transfer_unexposed": true,
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "created_unix": 1790017118.910398,
+  "evidence_files": 3374,
+  "remaining_accelerator_seconds": 28222.95548641763,
+  "selection_rule": "Largest development sampled MC-minus-terminal-GAE difference; ties choose earlier endpoint",
+  "acceptance": {
+    "mc_gain_vs_terminal_gae": "At least 5pp, paired 95% lower bound >0, each training replica positive",
+    "mc_gain_vs_frozen_parent": "At least 5pp, paired 95% lower bound >0, each training replica positive",
+    "greedy_guardrail": "Paired lower bound >-5pp against terminal GAE and frozen parent",
+    "early_transfer": "MC acts through Ante 3, terminal-GAE thereafter; positive terminal-win CI versus all-GAE",
+    "integrity": "Complete disjoint panels, fixed sources, full optimizer exposure, no failed/censored games"
+  },
+  "validation": {
+    "tests_passed": 202,
+    "junit_sha256": "8f6b28a7169ed7c989e0f1edf5129ee68a78c663b9ab6735dba108ed5bbfb522",
+    "log_sha256": "d8f483bce9a0623f29214743b7ae4f56a6452220ec16bf8272f91db8e4f11ae1",
+    "ruff": "passed",
+    "diff_check": "passed"
+  }
+}

@@ -1,0 +1,266 @@
+{
+  "created_unix": 1790020940.7226298,
+  "analysis_script_sha256": "c2328a5b777476cf72b0915aea7f066cf594a3686272885b3252cf986892f991",
+  "manifest_sha256": "2876db0e50a3e32759de01bb5333522668446cfe1a51d37582b9350fa451d622",
+  "results_sha256": "2b2fc8124fefff7b5ba63bc4eab04f5d3477de5741a3651924cd076b578688fb",
+  "summaries": {
+    "student": {
+      "game_seeds": 25,
+      "games": 50,
+      "wins": 26,
+      "win_rate": 0.52,
+      "win_rate_cluster_ci95": [
+        0.34,
+        0.680499999999993
+      ],
+      "win_rate_wilson_ci95": null,
+      "mean_final_ante": 7.16,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.98,
+        "2": 0.96,
+        "3": 0.9,
+        "4": 0.84,
+        "5": 0.78,
+        "6": 0.6,
+        "7": 0.58,
+        "8": 0.52
+      }
+    },
+    "early_shop": {
+      "game_seeds": 25,
+      "games": 50,
+      "wins": 29,
+      "win_rate": 0.58,
+      "win_rate_cluster_ci95": [
+        0.4,
+        0.76
+      ],
+      "win_rate_wilson_ci95": null,
+      "mean_final_ante": 7.38,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.98,
+        "2": 0.96,
+        "3": 0.9,
+        "4": 0.88,
+        "5": 0.78,
+        "6": 0.66,
+        "7": 0.64,
+        "8": 0.58
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 25,
+    "games_per_arm": 50,
+    "sampled_or_greedy_delta": 0.06,
+    "paired_ci95": [
+      -0.08,
+      0.2
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "by_replica": {
+    "0": {
+      "game_seeds": 25,
+      "games_per_arm": 25,
+      "sampled_or_greedy_delta": 0.08,
+      "paired_ci95": [
+        -0.08,
+        0.24
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "1": {
+      "game_seeds": 25,
+      "games_per_arm": 25,
+      "sampled_or_greedy_delta": 0.04,
+      "paired_ci95": [
+        -0.16,
+        0.24
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    }
+  },
+  "rescues": [
+    [
+      0,
+      260000
+    ],
+    [
+      0,
+      260018
+    ],
+    [
+      0,
+      260021
+    ],
+    [
+      1,
+      260003
+    ],
+    [
+      1,
+      260006
+    ],
+    [
+      1,
+      260018
+    ],
+    [
+      1,
+      260023
+    ]
+  ],
+  "regressions": [
+    [
+      0,
+      260017
+    ],
+    [
+      1,
+      260002
+    ],
+    [
+      1,
+      260011
+    ],
+    [
+      1,
+      260022
+    ]
+  ],
+  "games_with_changed_actions": 49,
+  "teacher_controlled_steps": 1225,
+  "replacements": 262,
+  "replacement_action_types": {
+    "shop_buy -> shop_leave": 69,
+    "shop_buy -> shop_reroll": 7,
+    "shop_leave -> shop_buy": 22,
+    "shop_sell_joker -> shop_sell_joker": 35,
+    "shop_buy -> shop_sell_joker": 19,
+    "shop_buy -> shop_buy": 60,
+    "shop_reroll -> shop_leave": 2,
+    "shop_sell_joker -> shop_buy": 12,
+    "shop_sell_joker -> shop_leave": 17,
+    "shop_sell_joker -> shop_reroll": 10,
+    "shop_leave -> shop_reroll": 3,
+    "shop_leave -> shop_sell_joker": 4,
+    "shop_reroll -> shop_buy": 2
+  },
+  "shared_prefix_observations_verified": 524,
+  "matched_baseline_games": 50,
+  "matched_baseline_steps": 8746,
+  "baseline_traces_exactly_match_late_hand_diagnostic": true,
+  "common_artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260000.json": "c94f991893641432f63ee09519e6cf7aa883abbff3466ee2eb84c380760b7916",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260000.jsonl.gz": "43a9fb6461d951d2eb8654f815538df7422b62bee5b32d05d940b9e9e7a446e1",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260001.json": "b65b128bf9f34c9efd713b58e8f18b85e32905d84aa3e0265a42385e8d69046a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260001.jsonl.gz": "983a8476e3798a3060a668bdd0bd3d082f49c47440f8790754f9a82c0844035f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260002.json": "22ab95f51a91b02f53df7f429a88dd72019c6861be0be5b7fe4e51b14d16d7bd",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260002.jsonl.gz": "3665e9e82827fe7ad05ccbc08e7260d490a624f8a6172f50b3005b0239c2ab6f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260003.json": "ae998eaa939f12a3e6ab55bb2c4a366b45af8a35f1d47f069eda0eb6a4867f48",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260003.jsonl.gz": "fdf096b6ed46dbff8cc91ee0bff24e8cd4df26fd20f6654cb76f7cf55d913894",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260004.json": "d1cdf5c5d3dd0744214cb8aa6d1f3117ca168abb5b0a1ba9ea6d02ecf5548d2b",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260004.jsonl.gz": "35d50a5383d07663d081c81609c486081feeeb97ad24735ccc0e8a08021f1145",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260005.json": "0e015f8cfa46b38b8cbc8bf6c37be5a5d67ec5414948265af473df6caa4993a2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260005.jsonl.gz": "7cb84d3c28100758051572c67fe206a4122b16fd16225b1b9f746a220f07b516",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260006.json": "0730618d4cab37e6d2bd9f997ddd7b613d852f47242b9aa8da2cb2ff778e9c25",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260006.jsonl.gz": "ac1a5989dba30af6109f6c2a75f5a2f91ee98286adacc310b3a2043e7ce1cff3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260007.json": "db7563ed306d95e526d187844414d793cacd82264ede762f6c1e0dedbe0396ff",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260007.jsonl.gz": "27c1f6264f4f718e2bf342a3c629f77ce3bc6410a6cbb3be432f4ee753203546",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260008.json": "a4aa928db31237c307a66430118671c856885365b8021b0d376f17c4027c67d9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260008.jsonl.gz": "fe42fac9b790210bf60beaf2788c41be7fdf29b5edf353686ca89bd669bebe75",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260009.json": "72530c4395fe9be7644034e6e85a927fb4160f946b8cb5bc09f5fb4c656a9dd6",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260009.jsonl.gz": "cc76a19b3a7ae46a9b9e92d775234e78eb9a4b362cfd9ce4811fba4e213f3f68",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260010.json": "77fee6ca2d97d3327ae1b0c0cc5e5cc01fc12cb89fcea2de5cb9f815a3c3d330",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260010.jsonl.gz": "61dd31740b04cbe2cdf2a798d78c0e8a3fd6c61c5305cab915c3f421184dfb18",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260011.json": "775d61ec2ac3d76ce5660bfe91169126f158a6928017967c838859e505dc45ac",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260011.jsonl.gz": "2450a1e97fc300a6d1525dd8d4cf27e6135882167527b9744b7d75f19dd43f9b",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260012.json": "118d803556914e70f574f92c28672b514dcb0af4f49a24bc58f761a5f6da7eac",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260012.jsonl.gz": "20f92941b88ef4d3297e7ea40257821839c66443643a5bf6daefc0529c83fe13",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260013.json": "398ce0971e39bd37b5421f9bbad89b139ae33a325a10518999646d893958024e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260013.jsonl.gz": "1d9823e64a4a1ed5c58c1943614b934a88b6ca03fe1a0395802cece5fb656614",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260014.json": "f410644ea49e1ced272d0f8a0bac054e52e5ff18ba4464f07f7012c1bda8ef0c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260014.jsonl.gz": "fd875f25e0b700f23a9c9503c5c3391346f701dddde5f603174ccc6f7edb3d60",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260015.json": "1f3c9857e7cf911dd952b58796b0b4dd64ada34a476872d018b2360907c4d489",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260015.jsonl.gz": "6e83f4fa784cf9b094374b695ef70ff41a84e87c83266aeb4f5abbb8c109f844",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260016.json": "dd42fd13a33b4da58fc9f0f0f71d8eb2aef123136e4b616faaecc5f29e58fbed",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260016.jsonl.gz": "fce622b3f1b4609d80aa84aa6348fcaa81027d32c1be15866ca84376be493897",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260017.json": "cbfaf5b0472f0fe506db2643ca5dedfbea7b045d433eea2bc4c6f87340d33d11",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260017.jsonl.gz": "f98b22fe53194c36b428700490809e5b52eec4f741ed225f761594258f14d2ff",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260018.json": "eeab5a1c1a122766240c607a6e6f554fc9bcde8e9aeed02d7585dc4d3eee3487",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260018.jsonl.gz": "ab29a183643c3c78178e8a0da12e5042322d9c8dcce483c83491aae563c250ae",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260019.json": "7c0b8a47c71ee2eaa08324cb4242238e252c778426c55bb53a7dc0992dfb3ff6",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260019.jsonl.gz": "07f90ca7379a09fc447118377355a9ef61fd1ed7a34e6f3e1fa940830d2a7de7",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260020.json": "fa40b681e158f41e7cae5911984e86c812dd21176f54fa6195bfc4582cf27d7e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260020.jsonl.gz": "a63aa0cccf6694b874d54d431595b8d01d8d1b890c580ee4d239cf007ac70150",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260021.json": "622694442e40f61e44862aecd6b5a50e0c68c11c8635ffdf6ef0556d3a83e1b4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260021.jsonl.gz": "f3cf1f9699385d64b8b4542957c07f67345c40670a9dea18ca6b52230b2408a4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260022.json": "7144d028bd78cceda2f423bdf15446755183ae021470b681053eb1464132cbc4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260022.jsonl.gz": "d83c509d7d7c336f85c80df5e2624b6f9b99d3e50d0dfa74630be943c5ceac5c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260023.json": "4e00069ededdef1751b41bb831a4e80b22dc46bac7753d9496753827f6af1f4e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260023.jsonl.gz": "5790b1521d38118dd6ce120190ee0718e3f8e84a6b35327727d0e137d33cb446",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260024.json": "bb12e7350685d296e2012a94b31887ea03401b0bf5bbbe0318b144b360bf316a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed0_student_260024.jsonl.gz": "da13cd0df78a2e92811ab1280ce1a47554921607a4196032d9b8ca9c1de4962f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260000.json": "13bcc43eea845ac503c155e50f8449b328948b37990c05f656190c9436721627",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260000.jsonl.gz": "5b4ada79e37e74b87f7a617e2432eec0fe6e04ea03f5c84d05c35807021fec2c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260001.json": "cfb2a2941caf4d9d85dba80f4515753bc53d372438ba85693ed634d5a664f96d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260001.jsonl.gz": "764791cd7ae0e1a7d902eab09ecaf81849cd5f3ae8dea12f410e0894be5f212b",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260002.json": "d263c7c81a4afb9418ead40535083eca1655fcaac37036d25e6dea63afc55fd0",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260002.jsonl.gz": "e143a381ece53f64b1d113d5c58a6757d072b984446a3cd4d348b1389ad88cab",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260003.json": "3f4674669391da2e0566bf95affa68ce5ae03479ea0dc01990ab14c54519f88f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260003.jsonl.gz": "99a2420af1fa932408ecf37d2fd7ab99085c5c3349d571db08d6704ade0bb82f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260004.json": "703689395a90514195f13332ae27e55fc523c875b2e9c9f7bffef53d733ae011",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260004.jsonl.gz": "33afdf694a1a7bef32fd7498728e310bd437e8111c2b6352c8394b8579f887bb",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260005.json": "beda4ceeca740f11dc8de1cd0883c1f0810e50e4579e222d73d6e825806ff9d0",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260005.jsonl.gz": "992cf6bd3dd8b4051d29346902281693e983208f632831ca605e9c0d8ac6c640",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260006.json": "9b7bda84c513b7bcfed261a25dc80d9a992cdeaafebb90660185c0ca11d9e274",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260006.jsonl.gz": "7ae09c6db84953b9f55e89d1b13618fd4ad7b14379852bf4b31e691983c7bbd9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260007.json": "d77538cbe0a36504bd4aab7bdee6d7d575c4c0dff820b2dba5c2f418128a9f31",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260007.jsonl.gz": "911954aada64b7a66c9810c7950c260b229559b274a39da26ae6aad6fc3dc288",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260008.json": "0f84ef6c0d57ce436b173670aaee35a17a766dfb6130eb4944c32f65104915a2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260008.jsonl.gz": "9e78ae180695b0207ce513fb8410c60a7cc43f5b57f08629357069447daaf835",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260009.json": "fc12dc5f05d6d152d76e2b6e4063dc01803d3d4c34b77cd6fa2badef7de4ec07",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260009.jsonl.gz": "66440ceb5592f629a0bc941f7afd0630ebb7c00c2fa3e2d6355406521fd6408e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260010.json": "6948d0a75ee57b97f47cf0c8c43606d752acef2f073f981249fe7576da5a940c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260010.jsonl.gz": "2b1f77eac378bc5d1777904666dabff1c0ab5c4f17c71a3a5bc97d9fcc86229c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260011.json": "b05e9638d80f7107869cee5aa252e7220db9218a4737a0a5db2f548fbd7c61be",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260011.jsonl.gz": "e45a9f53b56f18df334cb75398bace01444cd04163babe25a0701bacc96457e4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260012.json": "8924d62e0dbad4f0be62b2d7d876fc775b5dd47965cdffff0147a73d4291d9fb",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260012.jsonl.gz": "9737b065eb59c7bd0ea7be46c5c7f4084b53df2968474b430f9367e5d8416fdb",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260013.json": "18acd0273b3c6c81c463544b06c181e47cee0c27c22cb25f40618caa1aa4c463",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260013.jsonl.gz": "d66458c38fb9da61ad2c605a95169ebc5088847bd3787344ec811ce1f81eaa16",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260014.json": "597fb2a0679feea57549c9f8ce15a3cab612c5327cf41445add1e5bb4098c0d7",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260014.jsonl.gz": "094b828db831034c6ac612b268cee35560c1ee2eb62296e1e6ea0778159842b3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260015.json": "12ae4da5d623060e96c94b4d4f691713308e333a6db03a9cd9c4e76ad1cea847",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260015.jsonl.gz": "0cf80626df4b20df09a29b3e89c9267293c78750a387ba8a6fad5ff1654b90c0",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260016.json": "a90953686ad853ba6f48b4b377bacb0de15260a8836bc654582c002f583f5583",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260016.jsonl.gz": "cf5dd0082cb2c7f0c2dd378a8c9ae279066054cdd4ddf3f8f3d72cec2d85f7a9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260017.json": "3a7bff839de3e1d7551e6f1bcf4f6fd066579e9b59ee9ddababcd4bf2c23b600",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260017.jsonl.gz": "a3ce40ea5ecd43cf2964901eaa98dc845f09c248dbca6b79acde25dd40603cf4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260018.json": "03fb22886d26f9b3304beabce1781940b17ca15746136de20f5578b2eb1b2031",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260018.jsonl.gz": "99aafcfa0b39ca5ec9f95b640dea2a239800d615a102678f23756025924369c3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260019.json": "852fe5bafa4b03657986f539dfb55e33f069c229ea09aca3e069d9379a5ced8f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260019.jsonl.gz": "f2a2823ca64e5c22e418c717491f240d87786c0969880af9f65526cc8ba5b8f0",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260020.json": "fe73d48db2227f345944315db5e5425643eeda3fd549d7950d9e2b89660f184f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260020.jsonl.gz": "494ac36d7b1996c51201ac760e23e6f3cccc7880eab03173d46b1a649d53ba0e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260021.json": "3a1785676074fd2a140391c5cf59916eea6574e4ef20475c9560855cec4bc509",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260021.jsonl.gz": "33a44b84d2e5364a6c566188b5278b0207342278ccded883dd6e7c60227759d0",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260022.json": "8e4cdee789809621ee5b728d3adec09ac71c15d389a54526c8a9c7bd70b65479",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260022.jsonl.gz": "9f156e003a50d90c86e21ff618f2d36f150a27d7507d487c5a2b5075b7c362d3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260023.json": "2e13927cd1f4713f6bf270c0022ea6500a1ea2152ebcb63dfee54038bd3e5af5",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260023.jsonl.gz": "94551a263ef7ecbe2c53d09456c5f291576703e2e2aad88f6d018792b6576c57",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260024.json": "3fb8afffefaa6fac4f7c72e0ea219faf29aeec6d2f55b00b7297b9dfbb678a78",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/late_hand_ante6/games/seed1_student_260024.jsonl.gz": "5c14a4cd5db543c55da9fc7da5a2d9a151b03b83feed31ddd602f7d8d56d8464"
+  },
+  "elapsed_seconds": 576.178166458034,
+  "diagnostic_only": true,
+  "learned_improvement": false,
+  "posthoc": true,
+  "interpretation": "Exploratory early-shop intervention on exposed development, conditional on two fixed GAE replicas. Teacher has privileged simulator access. Prefix equality verifies the unchanged earlier decisions, but subsequent visited states and decisions change. This does not validate a trained improvement or prove that shop decisions or input deficiencies alone explain the remaining gap.",
+  "paired_games_sha256": "f2576ee3a825eeb546276f76d7be7dc37935097aab9f31b8611aca5fb19e9e1b"
+}

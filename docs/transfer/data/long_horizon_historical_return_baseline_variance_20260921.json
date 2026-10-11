@@ -1,0 +1,109 @@
+{
+  "created_unix": 1790014324.3321128,
+  "stage": "historical_post_hoc_diagnostic",
+  "dataset": "Completed outcome PPO confirmation, selected update42 and initial control; these are not the current update132 policies",
+  "source_games": "docs/transfer/data/outcome_confirmation_games.jsonl",
+  "source_games_sha256": "89accc0b31dc32c2c6c42a56a5feeef43b4a8cac56af7ee8f5ec466b279ebfbe",
+  "source_metadata": "docs/transfer/data/outcome_confirmation_manifest.json",
+  "source_metadata_sha256": "a0105bed719844a283067394622d4ad5afe136b9c67a30e91c122bc8595f1d9b",
+  "reward_scale": 10,
+  "bootstrap": {
+    "resamples": 5000,
+    "seed": 61723,
+    "unit": "game seed; retain all three attempts and recompute the leave-seed-out reference in each resample"
+  },
+  "method": {
+    "same_seed_baseline": "For each return, average the other two returns from the same policy and game seed.",
+    "constant_reference": "For each return, average returns from all 399 other game seeds for the same policy.",
+    "metric": "Mean squared return minus baseline. Both residual collections have zero overall mean, so this equals their empirical population variance.",
+    "difference": "same-seed baseline residual variance minus constant-reference residual variance; negative is smaller."
+  },
+  "arms": {
+    "control": {
+      "game_seeds": 400,
+      "games": 1200,
+      "sampling_repeats": [
+        0,
+        1,
+        2
+      ],
+      "win_rate": 0.18166666666666667,
+      "same_seed_residual_variance": 15.375,
+      "constant_reference_residual_variance": 14.90670529009798,
+      "variance_difference": 0.46829470990202005,
+      "variance_difference_cluster_ci95": [
+        -1.391974992392567,
+        2.2756351880292467
+      ],
+      "relative_variance_change": 0.031415037782567046,
+      "relative_change_cluster_ci95": [
+        -0.09323812330274092,
+        0.15754981896324616
+      ],
+      "seeds_by_win_count_0_1_2_3": [
+        258,
+        85,
+        38,
+        19
+      ]
+    },
+    "seed0": {
+      "game_seeds": 400,
+      "games": 1200,
+      "sampling_repeats": [
+        0,
+        1,
+        2
+      ],
+      "win_rate": 0.29166666666666663,
+      "same_seed_residual_variance": 20.625,
+      "constant_reference_residual_variance": 20.71740371535913,
+      "variance_difference": -0.09240371535912928,
+      "variance_difference_cluster_ci95": [
+        -2.3470845228673194,
+        2.2812653326437804
+      ],
+      "relative_variance_change": -0.00446019764969996,
+      "relative_change_cluster_ci95": [
+        -0.1110680621049033,
+        0.11108056627050078
+      ],
+      "seeds_by_win_count_0_1_2_3": [
+        192,
+        109,
+        56,
+        43
+      ]
+    },
+    "seed1": {
+      "game_seeds": 400,
+      "games": 1200,
+      "sampling_repeats": [
+        0,
+        1,
+        2
+      ],
+      "win_rate": 0.2991666666666667,
+      "same_seed_residual_variance": 20.625,
+      "constant_reference_residual_variance": 21.025818863505187,
+      "variance_difference": -0.4008188635051866,
+      "variance_difference_cluster_ci95": [
+        -2.61249414611438,
+        1.926482862946141
+      ],
+      "relative_variance_change": -0.019063174952053563,
+      "relative_change_cluster_ci95": [
+        -0.12347602936422543,
+        0.09349428956918963
+      ],
+      "seeds_by_win_count_0_1_2_3": [
+        191,
+        103,
+        62,
+        44
+      ]
+    }
+  },
+  "interpretation": "Three-attempt same-seed baselines show little point-estimate change on these historical policies. This is an exploratory scalar-return diagnostic, not a comparison against the current learned state-value baseline, not a policy-gradient variance estimate, not a gameplay intervention, and not fresh validation. It does not establish a cause of the current plateau or justify changing the running protocol.",
+  "original_analysis_sha256": "15b57675f20e28951e52e823a96632835786c05747d75aaee3c3b0a6f26dddb4"
+}

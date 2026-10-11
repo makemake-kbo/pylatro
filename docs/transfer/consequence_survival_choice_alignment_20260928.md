@@ -1,0 +1,9 @@
+# Diagnose the gap between survival-pair learning and selected actions
+
+The completed survival-ranking experiment improves held-out original-proposal preference ordering, but records 39 immediate losses, equal to its relational control, and fails clear retention. Use only admitted saved pair comparisons, original labels, and complete action/outcome records to locate the mismatch. This is a post-hoc diagnostic, not a new selection rule or success gate.
+
+Reconcile both policies' overall/early/later/base-teacher-agreement counts against the existing retention audit. Partition by last hand versus more hands; identify states with assessed survival pairs and states with improved or worsened preference pairs. For each pair, record whether either policy actually selected its winner, loser, or a different action, and whether that different action was outside the original proposals. For each group report changed choices, clears, immediate losses, new losses relative to the teacher, gained/lost clears and cured/introduced failures. Save the contexts of all changed pairs and all last-hand action changes.
+
+An improved pair below both policies' chosen actions cannot by itself establish a changed decision. Conversely, a selected alternative outside the original proposal set is not unassessed here: its actual outcome was collected by the completed retention replay. Use these outcomes without adding them to training. Report counts descriptively, with no subgroup gate or causal attribution from individual cases.
+
+Freeze the standard-library helper and all input owners/results before this diagnostic. No fitting, neural inference, simulator calls, duration choice or confirmation access. Use the existing 600-second diagnostic budget plus 30-second supervision grace; admit only after actual owner exit zero.

@@ -1,0 +1,125 @@
+{
+  "summaries": {
+    "all_parent": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 79,
+      "win_rate": 0.395,
+      "win_rate_cluster_ci95": [
+        0.325,
+        0.46
+      ],
+      "win_rate_wilson_ci95": [
+        0.32984101013207967,
+        0.46411650840714636
+      ],
+      "mean_final_ante": 6.775,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.975,
+        "2": 0.935,
+        "3": 0.885,
+        "4": 0.79,
+        "5": 0.71,
+        "6": 0.59,
+        "7": 0.495,
+        "8": 0.395
+      }
+    },
+    "early_mc20": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 74,
+      "win_rate": 0.37,
+      "win_rate_cluster_ci95": [
+        0.3,
+        0.44
+      ],
+      "win_rate_wilson_ci95": [
+        0.30612608409859116,
+        0.4387737007594981
+      ],
+      "mean_final_ante": 6.71,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.97,
+        "2": 0.93,
+        "3": 0.885,
+        "4": 0.79,
+        "5": 0.7,
+        "6": 0.585,
+        "7": 0.49,
+        "8": 0.37
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 200,
+    "games_per_arm": 200,
+    "sampled_or_greedy_delta": -0.025,
+    "paired_ci95": [
+      -0.1,
+      0.05
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "routes": {
+    "all_parent": {
+      "early": 12044,
+      "continuation": 22425
+    },
+    "early_mc20": {
+      "early": 11976,
+      "continuation": 22456
+    }
+  },
+  "baseline_reference_changed_seeds": {
+    "won": [],
+    "steps": [],
+    "final_ante": [],
+    "max_ante": [],
+    "cleared_antes": [],
+    "action_counts": [],
+    "joker_keys": []
+  },
+  "baseline_reference_exact": true,
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/initial.pt": "e59f50d52f75f42858094f200d7566679ecf45d10f245c41f89514b0c2eda5f5",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/initial.pt": "39158be0fbaf1ecd5b195ce2ed3a077ecc26d224ce38baf6b11bceeb646bb486",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/checkpoints/ppo_update142.pt": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/mc_endpoint20_seed0_sample0.json": "c366a0bf32af201d6ccbab6635ca6d5426ddcf2d5ba5a63b2be08f99f78241cc",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/mc_endpoint20_seed0_greedy.json": "8cfe4d0571df35cb0918b40b5d96aa2972d0fe81d3c9dc7e517a6b19ce222541",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/all_parent/manifest.json": "927c1e3676edc92a741602cd3336137f9b466d52b23dd4744733287a0b5206a2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/all_parent/outcomes.jsonl": "388864b2f9a21be6bf26f862814f1f05d5bcb92b953e5b44306c302b23261059",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/all_parent/routes.json": "67b23e792c204f60c7fea385fec65560aa14c4f2693973eb1e9d2cc7398d8dff",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/early_mc20/manifest.json": "70e0e6daf9ae2f2d1407d14891f6ebdfeda49d438fff0382b3a0b3c67e800b8e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/early_mc20/outcomes.jsonl": "5fc9f84f3a89cbbd8593fab72741f6232477b7eb25f68cdd8c95fbd412bf7af9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/early_mc20/routes.json": "8daa16c4acc7fb04e700f2af5186dedc2885a361f26c6d285bcce6820840aab3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed0/sample0/manifest.json": "6807b4845beef9b69f2cd3678a096a967f91b81e628df9e30a04890ee9510f1f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed0/sample0/outcomes.jsonl": "f7a4ed18e1a6d4d4370d7d5b07ddc51bf5919916d6b3059775e5fa853d8eb985",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/manifest.json": "78783a75d23eb89475c3d97d06c3212ce7a1de682480de3bf5165f825266c475",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/results.json": "989f056578fc15db6342a39afd23d9805b92c3d7b6c81347cb08faffc7b5c955",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_mc20_parent_development/paired_games.jsonl": "5082319b52b5da14f98c2fbdb6584245ae8856ed6ef4f4eb56d493bcf6889899"
+  },
+  "paired_games_sha256": "5082319b52b5da14f98c2fbdb6584245ae8856ed6ef4f4eb56d493bcf6889899",
+  "models_unchanged": true,
+  "generalization_proven": false,
+  "interpretation": "Post-hoc exposed development, one replica; not the reserved fresh MC-versus-GAE attribution test",
+  "verified_unix": 1790026686.798912,
+  "reporter_sha256": "e516b5356230e113f512d4af6595ef9b87b890b6e9e73251627757f0808844d7",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "rescued_losses": 28,
+  "new_losses": 33,
+  "independent_paired_bootstrap_verified": true,
+  "route_totals_match_game_steps": true,
+  "elapsed_seconds": 1920.006510734558,
+  "accelerator_seconds": 0,
+  "selection_changed": false,
+  "reserved_fresh_attribution": false,
+  "intervention": "MC20 controls all phases with CURRENT Ante <=3; initial MC parent controls other states",
+  "baseline": "Initial MC parent through the same routing wrapper in both branches",
+  "scope": "One fixed replica, 200 exposed development seeds, sampled repeat 0"
+}

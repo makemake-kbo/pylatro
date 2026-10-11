@@ -1,0 +1,90 @@
+{
+  "created_unix": 1790076362.507927,
+  "script_sha256": "6d4c4d1a17f5d52cd8418d245e819f01560a2e5bdd1b22637b52fe16454274dc",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "selection_sha256": "0267a19e59bf5701938dd019a230f1a1ea1995e97b9c2531044306aa84faa9d4",
+  "replica": 1,
+  "endpoint": 20,
+  "stage": "confirmation",
+  "sampling_repeats": [
+    0,
+    1
+  ],
+  "game_seed_clusters": 400,
+  "games_per_policy": 800,
+  "panels": {
+    "parent": {
+      "wins": 295,
+      "games": 800,
+      "win_rate": 0.36875,
+      "checkpoint_sha256": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2"
+    },
+    "mc20": {
+      "wins": 315,
+      "games": 800,
+      "win_rate": 0.39375,
+      "checkpoint_sha256": "895007a43441dea28320f69b89c914d20aa690927f236da3492cac60857ba2ff"
+    }
+  },
+  "paired": {
+    "game_seeds": 400,
+    "games_per_arm": 800,
+    "sampled_or_greedy_delta": 0.025,
+    "paired_ci95": [
+      -0.0125,
+      0.065
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "by_repeat": {
+    "0": {
+      "game_seeds": 400,
+      "games_per_arm": 400,
+      "sampled_or_greedy_delta": 0.005,
+      "paired_ci95": [
+        -0.0525,
+        0.0625
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "rescued_losses": 69,
+      "new_losses": 67
+    },
+    "1": {
+      "game_seeds": 400,
+      "games_per_arm": 400,
+      "sampled_or_greedy_delta": 0.045,
+      "paired_ci95": [
+        -0.0075,
+        0.0975
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "rescued_losses": 66,
+      "new_losses": 48
+    }
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed1_sample0.json": "47608ce5cfc5fc2545399f5aa05961ee453034a4a403f37875a2ee80663321a9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed1_sample0_games.jsonl": "fb78ad7a7705ec110ab4eb7abefc6beb7dc39528addfe6d2770e36da52eb2510",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/initial.pt": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample0/manifest.json": "8dda271c5d6d96c0b58665d138ca0034c1282c88a9705b1bbbe2c346900436aa",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample0/outcomes.jsonl": "9f6749cdff4e272e1d54515c19ff110e63a750b7705b64ba00b64236c0f98c61",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/checkpoints/ppo_update142.pt": "895007a43441dea28320f69b89c914d20aa690927f236da3492cac60857ba2ff",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample0/manifest.json": "d2478856f78917d45e9c5059f52cdb5c90f90460ccf05980f7f867d3b131fe5b",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample0/outcomes.jsonl": "6744a3dc87aaf7b49fd12057df5bcdccb82ad8f230f4561d705c916e2181765d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_mc_seed1_endpoint20_verification.json": "f60a3df4ca95eb0cf19974c49a267ffe513265de6c5a59ecba9e2b3142934c8a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed1_sample1.json": "5fd603e2aa6f36d6c2bff8c56a5247ae372f48606109a4f7b85bda66a9b72324",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed1_sample1_games.jsonl": "25cd05e04f9cbd09d3ca030028b01e883e6079a6351249a7868a62bc3db88850",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample1/manifest.json": "5f283fe5ef634957e4fcdd4ea800b082a8b90a2a65f064f1eb2ddc9d2fb191f6",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample1/outcomes.jsonl": "96d67e6201f8323b91855442464e592759124b376679f71b5add850e3d43ecba",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample1/manifest.json": "4f3ebf505de84977283e99a45c02be69f967570bc432aaa234c7ea778e68748d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample1/outcomes.jsonl": "d598d3e18fa9d57bd2c543254a02d55fe84cd1d1109c3c53451090996a36a98a"
+  },
+  "independent_paired_bootstrap_verified": true,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 1729,
+  "selection_changed": false,
+  "generalization_proven": false,
+  "interpretation": "Both fixed sampling repeats averaged within each of 400 confirmation seed clusters. This is 800 games per policy, not 800 independent seeds. One fixed training replica only; pointwise interim interval, not adjusted for inspecting partial confirmation results. The second replica, matched GAE, greedy guardrail, and reserved early-policy attribution remain required. No training, selection, early stopping, or acceptance criteria change follows this report.",
+  "paired_games_sha256": "303c184af9c3386437c24d9723c69e796d2dc7b8ef5ddff98de5d241b35668b7"
+}

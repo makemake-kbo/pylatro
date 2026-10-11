@@ -1,0 +1,1209 @@
+{
+  "control_reuse": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/control_reuse_admission_v1.json",
+    "sha256": "7a220f8b7d9321407ac4bfe6ecab83ade86755367ac9b035c0ecf19722c13e39"
+  },
+  "created_unix": 1790351898.897911,
+  "evaluation_panels": 23,
+  "evaluation_progress": {
+    "active_processes": [],
+    "completed_panels": 23,
+    "completed_panels_at_controller_loss": 18,
+    "controller_loss": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation_controller_loss_v1.json",
+      "sha256": "5bb51601642096d86e5b6758554a6d74cabb10fb600116d8aa3c1c9e163fe55d"
+    },
+    "coordinator_pid": 1684,
+    "currently_observed_panel": null,
+    "fresh_outcomes_inspected_for_recovery": false,
+    "last_reported_phase": "complete",
+    "observed_original_worker_exit": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/orphan_observer_v1/exit.json",
+      "sha256": "85280ef97c2b770673b4d2f72747d4861fa3d5cec00ac247444ad2b492254d7b"
+    },
+    "observer_launch": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/orphan_observer_launch_v1.json",
+      "sha256": "4f0fae18e4a64801cdd62e9cd706196bc6d47ca328a6f75c8e5bd9595f977e5c"
+    },
+    "original_owner_exit_code": null,
+    "recovery_admission": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation_recovery_admission_terminal_v1.json",
+      "sha256": "4f504b08e76ec7beddb4120d6d3fdc98eaf54afc90fd7db04ba8ea54825021e6"
+    },
+    "recovery_launch": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation_recovery_launch_v1.json",
+      "sha256": "8841c87238410511387e5be40513881b68826876eee1a60c3cf0095d02f2502c"
+    },
+    "recovery_protocol": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation_recovery_protocol_v1.json",
+      "sha256": "f515372007ddf9d04246319fa9927f876a1d02ac4a002272b7a00b4875941785"
+    },
+    "recovery_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation_recovery_terminal_v1.json",
+      "sha256": "0ec95a6cff94284b745ce5e76d9960be0a2d58c090358f293fa8601288582212"
+    },
+    "supervisor_pid": 1683,
+    "unstarted_panels": [],
+    "verifier_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/independent_results_verification_terminal_v2.json",
+      "sha256": "f6c35f2c3d68cb1d0a209c60eb7f686672d78316a19671fde231fce0b12421f3"
+    }
+  },
+  "fit_audit": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/fit_audit_v1.json",
+    "sha256": "1664ef7c39797496839e9ec8e0ff13157f303f94a7e2de07928c88b90fe90f24"
+  },
+  "fit_audit_terminal": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/fit_audit_terminal_v1.json",
+    "sha256": "e4a14027e871b2872ded03920c54e2ea35ea0fa4528984a201d1bbacac36c16f"
+  },
+  "fit_execution_terminal": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/fit_execution_terminal_v1.json",
+    "sha256": "053eeb255b68d6b5788047c77cd03d6a4d8705a6ba26f4915b0bd4a3783b61eb"
+  },
+  "fixed_updates": 4000,
+  "fresh_games_started": true,
+  "fresh_results": {
+    "acceptance": {
+      "all_gates_passed": false,
+      "gates": {
+        "early_vs_ordinary": false,
+        "greedy_vs_base": false,
+        "greedy_vs_ordinary": true,
+        "sampled_vs_base": false,
+        "sampled_vs_ordinary": false
+      }
+    },
+    "actual_verifier_exit": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/independent_results_verification_terminal_v2.json",
+      "sha256": "f6c35f2c3d68cb1d0a209c60eb7f686672d78316a19671fde231fce0b12421f3"
+    },
+    "analysis": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/analysis_v1.json",
+      "sha256": "3db3bb1847da86cb4514760971bd97ca193d00e7607d4a91662827e5cda26178"
+    },
+    "comparisons": {
+      "early_hybrid_minus_ordinary_bc": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "control_win_rate": 0.280625,
+        "gain_pp": -1.25,
+        "paired_95_pp": [
+          -3.625,
+          1.125
+        ],
+        "per_replica_gain_pp": [
+          -2.125,
+          -0.375
+        ],
+        "seed_clusters": 400,
+        "streams": 2,
+        "treatment_win_rate": 0.268125,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 1600,
+        "unique_treatment_games": 1600
+      },
+      "greedy_ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "control_win_rate": 0.39,
+        "gain_pp": -3.375,
+        "paired_95_pp": [
+          -7.75,
+          1.125
+        ],
+        "per_replica_gain_pp": [
+          -1.5,
+          -5.25
+        ],
+        "seed_clusters": 400,
+        "streams": 1,
+        "treatment_win_rate": 0.35625,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 400,
+        "unique_treatment_games": 800
+      },
+      "greedy_preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "control_win_rate": 0.39,
+        "gain_pp": -0.875,
+        "paired_95_pp": [
+          -5.0,
+          3.375
+        ],
+        "per_replica_gain_pp": [
+          -0.5,
+          -1.25
+        ],
+        "seed_clusters": 400,
+        "streams": 1,
+        "treatment_win_rate": 0.38125,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 400,
+        "unique_treatment_games": 800
+      },
+      "greedy_preservation_minus_ordinary_bc": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "control_win_rate": 0.35625,
+        "gain_pp": 2.5,
+        "paired_95_pp": [
+          -0.75,
+          5.75
+        ],
+        "per_replica_gain_pp": [
+          1.0,
+          4.0
+        ],
+        "seed_clusters": 400,
+        "streams": 1,
+        "treatment_win_rate": 0.38125,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 800,
+        "unique_treatment_games": 800
+      },
+      "sampled_ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "control_win_rate": 0.2725,
+        "gain_pp": -1.1875,
+        "paired_95_pp": [
+          -4.314062499999999,
+          2.0625
+        ],
+        "per_replica_gain_pp": [
+          -3.625,
+          1.25
+        ],
+        "seed_clusters": 400,
+        "streams": 2,
+        "treatment_win_rate": 0.260625,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 800,
+        "unique_treatment_games": 1600
+      },
+      "sampled_preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "control_win_rate": 0.2725,
+        "gain_pp": -0.1875,
+        "paired_95_pp": [
+          -3.25,
+          3.0
+        ],
+        "per_replica_gain_pp": [
+          -1.0,
+          0.625
+        ],
+        "seed_clusters": 400,
+        "streams": 2,
+        "treatment_win_rate": 0.270625,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 800,
+        "unique_treatment_games": 1600
+      },
+      "sampled_preservation_minus_ordinary_bc": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "control_win_rate": 0.260625,
+        "gain_pp": 1.0,
+        "paired_95_pp": [
+          -1.6265624999999986,
+          3.6875
+        ],
+        "per_replica_gain_pp": [
+          2.625,
+          -0.625
+        ],
+        "seed_clusters": 400,
+        "streams": 2,
+        "treatment_win_rate": 0.270625,
+        "uncertainty_unit": "whole seed, all replicas/streams together",
+        "unique_control_games": 1600,
+        "unique_treatment_games": 1600
+      }
+    },
+    "independent_verification": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/independent_results_verification_v2.json",
+      "sha256": "86aca1bfdb6ab8ac544c5f4ce7b54d65974eda3314f3d08397b18f92ebf02f5c"
+    },
+    "raw_action_records": 1396901,
+    "raw_counts": [
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_base_greedy/confirmation_base_greedy/outcomes.jsonl",
+          "sha256": "fa6137c3573d3e9655b6b4d389728dae2bbf89fa3271a1e40a8ff1cdb53e2d4c"
+        },
+        "panel": "confirmation_base_greedy",
+        "wins": 156
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_base_sample0/confirmation_base_sample0/outcomes.jsonl",
+          "sha256": "336cfeab6af22af303850611c54f3e470b2f0b44f1f3b7e9bfba1c7764a4ed2d"
+        },
+        "panel": "confirmation_base_sample0",
+        "wins": 102
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_base_sample1/confirmation_base_sample1/outcomes.jsonl",
+          "sha256": "23d0c72972765afa3f49033e9c56f1bf773dbfd405265b7bd0a32f8214d58826"
+        },
+        "panel": "confirmation_base_sample1",
+        "wins": 116
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_ordinary_bc_r0_greedy/confirmation_ordinary_bc_r0_greedy/outcomes.jsonl",
+          "sha256": "87a8fca293a8d0364832403c9ce2459e3c416d011bd89eb76165e74b11da95e4"
+        },
+        "panel": "confirmation_ordinary_bc_r0_greedy",
+        "wins": 150
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_ordinary_bc_r0_sample0/confirmation_ordinary_bc_r0_sample0/outcomes.jsonl",
+          "sha256": "9ce581d0c6fa964b56bcf80262081bd171e58a8e93bd2119225d68d1e7d1154a"
+        },
+        "panel": "confirmation_ordinary_bc_r0_sample0",
+        "wins": 89
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_ordinary_bc_r0_sample1/confirmation_ordinary_bc_r0_sample1/outcomes.jsonl",
+          "sha256": "73b1c8bb8c406e038d3e67f75cb1427e12e3dbb51da1db2f9180d65199ed3ff9"
+        },
+        "panel": "confirmation_ordinary_bc_r0_sample1",
+        "wins": 100
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_policy_preservation_bc_r0_greedy/confirmation_policy_preservation_bc_r0_greedy/outcomes.jsonl",
+          "sha256": "3df32b0572bc36c866b3f24144ae946f9f6e7ccfc188dd81818730426ea21742"
+        },
+        "panel": "confirmation_policy_preservation_bc_r0_greedy",
+        "wins": 154
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_policy_preservation_bc_r0_sample0/confirmation_policy_preservation_bc_r0_sample0/outcomes.jsonl",
+          "sha256": "3df36e1eba5623592559d8eddcc08e328462299838a191f45d9329a370a350e7"
+        },
+        "panel": "confirmation_policy_preservation_bc_r0_sample0",
+        "wins": 109
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_policy_preservation_bc_r0_sample1/confirmation_policy_preservation_bc_r0_sample1/outcomes.jsonl",
+          "sha256": "6c83710f6fdb6b6fbf5a960cb16fa561bd94622db7ed0753c1c51d91d1197b5b"
+        },
+        "panel": "confirmation_policy_preservation_bc_r0_sample1",
+        "wins": 101
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_ordinary_bc_r1_greedy/confirmation_ordinary_bc_r1_greedy/outcomes.jsonl",
+          "sha256": "732f9304bb3a4a9374b5e6d32270f297682712b1e8a9e436a59191c95f2e53de"
+        },
+        "panel": "confirmation_ordinary_bc_r1_greedy",
+        "wins": 135
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_ordinary_bc_r1_sample0/confirmation_ordinary_bc_r1_sample0/outcomes.jsonl",
+          "sha256": "303148496008f48c2400fe1ec69b5ed82b9b188c850298ddea118f50aa7808e5"
+        },
+        "panel": "confirmation_ordinary_bc_r1_sample0",
+        "wins": 112
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_ordinary_bc_r1_sample1/confirmation_ordinary_bc_r1_sample1/outcomes.jsonl",
+          "sha256": "99522e28156d2e9415541d025eeacb8a1462a9b8dbc0d46c3bd1d89c73c1df45"
+        },
+        "panel": "confirmation_ordinary_bc_r1_sample1",
+        "wins": 116
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_policy_preservation_bc_r1_greedy/confirmation_policy_preservation_bc_r1_greedy/outcomes.jsonl",
+          "sha256": "8f1c3f43b1890e8818733e547ffe9d8d7b59715837b50324970d2d075d34e83f"
+        },
+        "panel": "confirmation_policy_preservation_bc_r1_greedy",
+        "wins": 151
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_policy_preservation_bc_r1_sample0/confirmation_policy_preservation_bc_r1_sample0/outcomes.jsonl",
+          "sha256": "60b2e1a3e22eac425c90f61d3b1353e599c4b3220ed00a647251e2faa2b771d8"
+        },
+        "panel": "confirmation_policy_preservation_bc_r1_sample0",
+        "wins": 104
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/confirmation_policy_preservation_bc_r1_sample1/confirmation_policy_preservation_bc_r1_sample1/outcomes.jsonl",
+          "sha256": "9385b81f4dc19e62dc6eec4f862064d7d513eb533d0283ed3dcf5057bddb11be"
+        },
+        "panel": "confirmation_policy_preservation_bc_r1_sample1",
+        "wins": 119
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_ordinary_bc_r0_sample0/early_ordinary_bc_r0_sample0/outcomes.jsonl",
+          "sha256": "a3bfe4b4d0574414ee5deb32571c82a74d0b9c43186ea0d1296f60a9d52d3a3e"
+        },
+        "panel": "early_ordinary_bc_r0_sample0",
+        "wins": 105
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_ordinary_bc_r0_sample1/early_ordinary_bc_r0_sample1/outcomes.jsonl",
+          "sha256": "69a199d891aa0deb17e17cbe251f6d3b360d8d336df4665ece108d1f91f0feeb"
+        },
+        "panel": "early_ordinary_bc_r0_sample1",
+        "wins": 123
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_early_hybrid_r0_sample0/early_early_hybrid_r0_sample0/outcomes.jsonl",
+          "sha256": "7d33438978a0f87dc379b0affa51c940341c963f748c14d25101e69cc786da07"
+        },
+        "panel": "early_early_hybrid_r0_sample0",
+        "wins": 96
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_early_hybrid_r0_sample1/early_early_hybrid_r0_sample1/outcomes.jsonl",
+          "sha256": "8a8b8d4692aa98fb8b39458349151236e9433a9021bfee42b6031d73e0155d34"
+        },
+        "panel": "early_early_hybrid_r0_sample1",
+        "wins": 115
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_ordinary_bc_r1_sample0/early_ordinary_bc_r1_sample0/outcomes.jsonl",
+          "sha256": "5c1172f053e8ac70194d2d0dbd45e2f4d93e1be635d411d99ccc113608cfa850"
+        },
+        "panel": "early_ordinary_bc_r1_sample0",
+        "wins": 113
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_ordinary_bc_r1_sample1/early_ordinary_bc_r1_sample1/outcomes.jsonl",
+          "sha256": "90c1d2c68f30c130d3d65bb6201d9a6b74b41b2ee8db59ab40b818195c558cd1"
+        },
+        "panel": "early_ordinary_bc_r1_sample1",
+        "wins": 108
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_early_hybrid_r1_sample0/early_early_hybrid_r1_sample0/outcomes.jsonl",
+          "sha256": "f06e73c82123ffa48cd397dfe3246d2c28d193ad4a8456ac2799ab4cd5278f3a"
+        },
+        "panel": "early_early_hybrid_r1_sample0",
+        "wins": 109
+      },
+      {
+        "games": 400,
+        "outcomes": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/evaluation/early_early_hybrid_r1_sample1/early_early_hybrid_r1_sample1/outcomes.jsonl",
+          "sha256": "1c9c5e9d4633d539fcad7db8a3171a4802670e0639d7a7d9fbf2e79bb028f91a"
+        },
+        "panel": "early_early_hybrid_r1_sample1",
+        "wins": 109
+      }
+    ],
+    "report": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/docs/transfer/policy_preservation_results_20260926.md",
+      "sha256": "03a3ff8614b068edf362d4a974f55d3e3c536195f97c6e135bf598c7718f3f3e"
+    },
+    "unique_autonomous_games": 9200,
+    "verification_scope": "Independent raw outcome/trace recount, permanent early latch, frequency-based whole-seed bootstrap and all fixed gates. No repeated model/engine execution; fitting tensor/exposure verification is separate."
+  },
+  "fresh_results_independently_verified": true,
+  "frozen_gates": {
+    "early_hybrid_minus_ordinary": {
+      "lower_95_pp_strictly_above": 0,
+      "positive_both_replicas": true
+    },
+    "greedy_both_controls": {
+      "lower_95_pp_strictly_above": -5
+    },
+    "sampled_both_controls": {
+      "lower_95_pp_strictly_above": 0,
+      "minimum_gain_pp": 5,
+      "positive_both_replicas": true
+    }
+  },
+  "generalization_proven": false,
+  "manifest": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/execution_manifest_v1.json",
+    "sha256": "9f55ab3a4d0b5c4be3b994a8c2f43c25321457358cdc791d3729dab1f32b1aee"
+  },
+  "planned_game_episodes": 9200,
+  "prior_publication_snapshot": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/publication_snapshot_v2/provenance.json",
+    "sha256": "fd76e8b57c235540e3c3dc269daba4267375126ebda6e941afe866cfd32328a1"
+  },
+  "reused_ordinary_controls": 2,
+  "secondary_mechanism": {
+    "analysis": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/mechanism_analysis_v1.json",
+      "sha256": "7fd1606abab668e4f87b750673f347b9bdddef5f005968c9a24c00adda34c5bf"
+    },
+    "prior_verifier_failure": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/mechanism_verification_terminal_v1.json",
+      "sha256": "6f3e8ed666f3ce0c121560c88ada33b3b75b3b2a0b85968e8c912155a12a3f5f"
+    },
+    "protocol": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/mechanism_protocol_v1.json",
+      "sha256": "db897d74069eeb9d1441b45d5befa84202a1ef9c65a699daff3b156030b60871"
+    },
+    "report": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/docs/transfer/policy_preservation_mechanism_20260926.md",
+      "sha256": "fb69bf60f007ef964a4851cd2651476836e71ae798c0f809dbe2443298786122"
+    },
+    "reported_contrasts": {
+      "ante<=3:accuracy:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 7688,
+        "difference": -0.45525494276795003,
+        "family_present_games": 128,
+        "group": "ante<=3",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          -0.8982905363054277,
+          -0.039297749237847644
+        ],
+        "per_replica_difference": [
+          -0.5332986472424558,
+          -0.37721123829344433
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante<=3:accuracy:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 7688,
+        "difference": -0.12356919875130074,
+        "family_present_games": 128,
+        "group": "ante<=3",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          -0.44010181923044167,
+          0.1799497428975404
+        ],
+        "per_replica_difference": [
+          -0.13007284079084286,
+          -0.11706555671175858
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante<=3:accuracy:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 7688,
+        "difference": 0.3316857440166493,
+        "family_present_games": 128,
+        "group": "ante<=3",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          0.051782462166314845,
+          0.6217636717688068
+        ],
+        "per_replica_difference": [
+          0.4032258064516129,
+          0.2601456815816857
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante<=3:nll:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 7688,
+        "difference": 0.05049004341822826,
+        "family_present_games": 128,
+        "group": "ante<=3",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          0.03802030964516807,
+          0.06302186207558157
+        ],
+        "per_replica_difference": [
+          0.05266135069084144,
+          0.04831873614561509
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante<=3:nll:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 7688,
+        "difference": 0.004372233008741372,
+        "family_present_games": 128,
+        "group": "ante<=3",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.0011928644503228535,
+          0.009791367446337728
+        ],
+        "per_replica_difference": [
+          0.004665697313145985,
+          0.004078768704336759
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante<=3:nll:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 7688,
+        "difference": -0.0461178104094869,
+        "family_present_games": 128,
+        "group": "ante<=3",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.05437828638150927,
+          -0.038061983319795954
+        ],
+        "per_replica_difference": [
+          -0.04799565337769546,
+          -0.04423996744127833
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante>=4:accuracy:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 18357,
+        "difference": -0.16614915291169582,
+        "family_present_games": 125,
+        "group": "ante>=4",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          -0.42581120915342396,
+          0.09118168819235592
+        ],
+        "per_replica_difference": [
+          -0.1416353434657079,
+          -0.1906629623576837
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante>=4:accuracy:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 18357,
+        "difference": 0.24786185106498884,
+        "family_present_games": 125,
+        "group": "ante>=4",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          0.038370274668135446,
+          0.45295345968522555
+        ],
+        "per_replica_difference": [
+          0.2941657133518549,
+          0.20155798877812278
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante>=4:accuracy:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 18357,
+        "difference": 0.41401100397668467,
+        "family_present_games": 125,
+        "group": "ante>=4",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          0.2361965774173855,
+          0.5951783092791658
+        ],
+        "per_replica_difference": [
+          0.43580105681756276,
+          0.3922209511358065
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante>=4:nll:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 18357,
+        "difference": 0.051582888086650076,
+        "family_present_games": 125,
+        "group": "ante>=4",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          0.041812394594502915,
+          0.061899247097316965
+        ],
+        "per_replica_difference": [
+          0.050621533575424746,
+          0.05254424259787541
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante>=4:nll:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 18357,
+        "difference": 0.003256191955092568,
+        "family_present_games": 125,
+        "group": "ante>=4",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.0010592631038612715,
+          0.007577645837814136
+        ],
+        "per_replica_difference": [
+          0.003700252856695697,
+          0.0028121310534894384
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "ante>=4:nll:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 18357,
+        "difference": -0.04832669613155751,
+        "family_present_games": 125,
+        "group": "ante>=4",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.05520745901510785,
+          -0.04185690815724856
+        ],
+        "per_replica_difference": [
+          -0.04692128071872904,
+          -0.04973211154438597
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "overall:accuracy:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 26045,
+        "difference": -0.25148780956037625,
+        "family_present_games": 128,
+        "group": "overall",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          -0.4797463283121855,
+          -0.023307261574998617
+        ],
+        "per_replica_difference": [
+          -0.25724707237473604,
+          -0.24572854674601652
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "overall:accuracy:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 26045,
+        "difference": 0.1382223075446343,
+        "family_present_games": 128,
+        "group": "overall",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          -0.036295145487223825,
+          0.3130342109132428
+        ],
+        "per_replica_difference": [
+          0.16893837588788635,
+          0.10750623920138222
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "overall:accuracy:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 26045,
+        "difference": 0.3897101171050106,
+        "family_present_games": 128,
+        "group": "overall",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          0.24026310473500342,
+          0.5495872096389341
+        ],
+        "per_replica_difference": [
+          0.4261854482626224,
+          0.3532347859473987
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "overall:nll:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 26045,
+        "difference": 0.051260300649106326,
+        "family_present_games": 128,
+        "group": "overall",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          0.04321126058133162,
+          0.05986189430437297
+        ],
+        "per_replica_difference": [
+          0.05122364968152279,
+          0.051296951616689866
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "overall:nll:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 26045,
+        "difference": 0.003585626534491765,
+        "family_present_games": 128,
+        "group": "overall",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          0.00010350015141443887,
+          0.007115291388824997
+        ],
+        "per_replica_difference": [
+          0.003985234119171792,
+          0.003186018949811737
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "overall:nll:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 26045,
+        "difference": -0.04767467411461457,
+        "family_present_games": 128,
+        "group": "overall",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.053284906270099214,
+          -0.04225373932874969
+        ],
+        "per_replica_difference": [
+          -0.047238415562351,
+          -0.04811093266687813
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "play_subset:accuracy:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 6113,
+        "difference": -0.39260592180598725,
+        "family_present_games": 128,
+        "group": "play_subset",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          -1.0448481975735404,
+          0.22238006776649524
+        ],
+        "per_replica_difference": [
+          -0.47439882218223456,
+          -0.3108130214297399
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "play_subset:accuracy:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 6113,
+        "difference": 0.613446752821855,
+        "family_present_games": 128,
+        "group": "play_subset",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          0.07508541214750541,
+          1.128952683387373
+        ],
+        "per_replica_difference": [
+          0.6543432030099787,
+          0.5725503026337314
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "play_subset:accuracy:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 6113,
+        "difference": 1.0060526746278422,
+        "family_present_games": 128,
+        "group": "play_subset",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "accuracy",
+        "paired_95_interval": [
+          0.5301677618020966,
+          1.50388726438797
+        ],
+        "per_replica_difference": [
+          1.1287420251922133,
+          0.8833633240634713
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "play_subset:nll:ordinary_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "ordinary_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 6113,
+        "difference": 0.08348245375240367,
+        "family_present_games": 128,
+        "group": "play_subset",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          0.0631994923299909,
+          0.10375929056323682
+        ],
+        "per_replica_difference": [
+          0.094659534114938,
+          0.07230537338986935
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "play_subset:nll:preservation_minus_base": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_base",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": true,
+        "decisions": 6113,
+        "difference": -0.007065632165244399,
+        "family_present_games": 128,
+        "group": "play_subset",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.016622285869320172,
+          0.0024981967327952852
+        ],
+        "per_replica_difference": [
+          -0.0050072169939920095,
+          -0.00912404733649679
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      },
+      "play_subset:nll:preservation_minus_ordinary": {
+        "bootstrap_resamples": 10000,
+        "bootstrap_seed": 1729,
+        "comparison": "preservation_minus_ordinary",
+        "continuation_replicas": 2,
+        "control_shared_across_replicas": false,
+        "decisions": 6113,
+        "difference": -0.09054808591764807,
+        "family_present_games": 128,
+        "group": "play_subset",
+        "interval_scope": "unadjusted descriptive interval on previously exposed teacher states",
+        "metric": "nll",
+        "paired_95_interval": [
+          -0.10375780938884459,
+          -0.0774235088125429
+        ],
+        "per_replica_difference": [
+          -0.09966675110893,
+          -0.08142942072636614
+        ],
+        "seed_clusters": 128,
+        "uncertainty_unit": "whole seed; all continuation replicas inside each cluster",
+        "zero_denominator_draws": 0
+      }
+    },
+    "reported_overall_metrics": {
+      "base": {
+        "accuracy": 0.8271837204837781,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8224991209304373,
+          "nll": 0.6607152787514834,
+          "teacher_probability": 0.7594759865179869
+        },
+        "exact_matches": 21544,
+        "games": 128,
+        "nll": 0.6391055354772996,
+        "teacher_probability": 0.764013414590246
+      },
+      "ordinary_bc_0": {
+        "accuracy": 0.8246112497600308,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8200034047608001,
+          "nll": 0.7121942391376769,
+          "teacher_probability": 0.7724813324365163
+        },
+        "exact_matches": 21477,
+        "games": 128,
+        "nll": 0.6903291851588224,
+        "teacher_probability": 0.7767515267601975
+      },
+      "ordinary_bc_1": {
+        "accuracy": 0.8247264350163179,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8198527441402472,
+          "nll": 0.7140833721681197,
+          "teacher_probability": 0.7731914082334894
+        },
+        "exact_matches": 21480,
+        "games": 128,
+        "nll": 0.6904024870939895,
+        "teacher_probability": 0.7778214440945944
+      },
+      "policy_preservation_bc_0": {
+        "accuracy": 0.8288731042426569,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.824235312500608,
+          "nll": 0.6648271464542526,
+          "teacher_probability": 0.7664922153495595
+        },
+        "exact_matches": 21588,
+        "games": 128,
+        "nll": 0.6430907695964715,
+        "teacher_probability": 0.7710283754585391
+      },
+      "policy_preservation_bc_1": {
+        "accuracy": 0.8282587828757919,
+        "decisions": 26045,
+        "equal_game_means": {
+          "accuracy": 0.8232613488460424,
+          "nll": 0.6654640550315142,
+          "teacher_probability": 0.7663169066554208
+        },
+        "exact_matches": 21572,
+        "games": 128,
+        "nll": 0.6422915544271115,
+        "teacher_probability": 0.7709816045360408
+      }
+    },
+    "reported_overall_transitions": {
+      "0": {
+        "base_correct_ordinary_wrong": 562,
+        "base_correct_preservation_wrong": 295,
+        "base_wrong_ordinary_correct": 495,
+        "base_wrong_preservation_correct": 339,
+        "lost_base_wrong_ordinary_correct": 220,
+        "mode_changed": 1003,
+        "ordinary_correct_preservation_wrong": 271,
+        "ordinary_wrong_preservation_correct": 382,
+        "rescued_base_correct_ordinary_wrong": 318,
+        "rows": 26045
+      },
+      "1": {
+        "base_correct_ordinary_wrong": 545,
+        "base_correct_preservation_wrong": 309,
+        "base_wrong_ordinary_correct": 481,
+        "base_wrong_preservation_correct": 337,
+        "lost_base_wrong_ordinary_correct": 196,
+        "mode_changed": 949,
+        "ordinary_correct_preservation_wrong": 252,
+        "ordinary_wrong_preservation_correct": 344,
+        "rescued_base_correct_ordinary_wrong": 292,
+        "rows": 26045
+      }
+    },
+    "scan": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/mechanism_scan_v1/result.json",
+      "sha256": "23c8c0fc6436dc46b53de087e18bce2f5436534e73fa00140b72d61976627c92"
+    },
+    "scope": "Descriptive comparison on exposed teacher states; no autonomous outcome or long-horizon success claim.",
+    "status": "independently_verified",
+    "verification": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/mechanism_verification_v2.json",
+      "sha256": "5e1fd8d3eb60d0ee7fc3e810568a9766cefeffcd32351c33c44f8e462bfedcfd"
+    },
+    "verification_terminal": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/mechanism_verification_terminal_v2.json",
+      "sha256": "9d5049f1627bed1b9415e16f1a4daaf34e4cbd8e59d717b0cd4a841f8adc22f0"
+    }
+  },
+  "seed_reservation": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/seed_reservation_v1.json",
+    "sha256": "9b7063b01374204e22f61d60f52a554a264f96b361d7fbb7d9cb10e6e4975713"
+  },
+  "status": "complete_scientific_gates_failed",
+  "training_start": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/scientific_execution_start_v1.json",
+    "sha256": "a12b0acef2fe76383e0ff107caa13dcabd9543377764fb4b2f95570f3ed66e99"
+  },
+  "treatment_fits": 2,
+  "treatment_fits_completed": 2,
+  "unique_environment_seeds": 800,
+  "updated_unix": 1790418424.4476879,
+  "worker_audit": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/policy_preservation_20260925/worker_smoke_audit_v2.json",
+    "sha256": "8286ae4235c9fec6116cbc55bfec32c644e466a8e84d8f4d54f34b946a7d16c0"
+  },
+  "world_models_deferred": true
+}

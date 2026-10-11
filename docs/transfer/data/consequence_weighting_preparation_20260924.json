@@ -1,0 +1,169 @@
+{
+  "artifacts": {
+    "costs": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/costs_panel_v1/result.json",
+      "sha256": "baea453a5584a3c4da10b500a60213729ddae04c820c04298225c46d0d6c9b9a"
+    },
+    "gradient_tests": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/gradient_tests_v1.json",
+      "sha256": "f43be83448bfe0ab3ed9dabe6744111be7b2b2982c9f781838ca74ed0b23ad1f"
+    },
+    "preparation_protocol": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/preparation_protocol_v1.json",
+      "sha256": "b85d327b40f9f467de0bd81e190781e564e06f40e688ed30e169ab6f2bee7774"
+    },
+    "row_stream_tests": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/row_stream_tests_v1.json",
+      "sha256": "40a21b77c17407d23741ff1212541a9977b3f4602b9bccbde877dd8738415c61"
+    },
+    "seed_reservation": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/seed_reservation_v1.json",
+      "sha256": "ccf16c631d1849267433410d0bd6ea1631e12b64079ce7ed4ad0e000f0b8b6ea"
+    },
+    "training_protocol_draft": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_protocol_draft_v1.md",
+      "sha256": "f7ac48472046b346ef1ee1a6df8a5c5f3546b0aae1cabffaa03f5e99a5b1745a"
+    },
+    "training_smoke": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_smoke_v2/result.json",
+      "sha256": "8fa61068111a41bbd56a7333a76ab9d2df58a42c32b36e4f72b2379c3009babd"
+    },
+    "verification": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/costs_verification_v1.json",
+      "sha256": "dcf94695dc48b2e0f1907b22fab3c236ce1667a58e4710d3335a1c253e982cc3"
+    },
+    "weight_rule_tests": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/weight_rule_tests_v1.json",
+      "sha256": "1251ebc8c5d363bd65e2acd9ba581b589aec967a25552ae01c8a58d40030bf5c"
+    }
+  },
+  "counterfactual_branches": 21994,
+  "counts": {
+    "both_clear": 20409,
+    "different_eligible_play": 10997,
+    "eligible": 46427,
+    "missed_teacher_clear": 1395,
+    "new_immediate_loss": 33,
+    "nonpositive_requirement": 0,
+    "teacher_plays": 47149,
+    "upweighted": 5850
+  },
+  "counts_by_ante": {
+    "early": {
+      "both_clear": 8246,
+      "different_eligible_play": 2875,
+      "eligible": 16014,
+      "missed_teacher_clear": 460,
+      "new_immediate_loss": 10,
+      "nonpositive_requirement": 0,
+      "teacher_plays": 16326,
+      "upweighted": 1443
+    },
+    "late": {
+      "both_clear": 12163,
+      "different_eligible_play": 8122,
+      "eligible": 30413,
+      "missed_teacher_clear": 935,
+      "new_immediate_loss": 23,
+      "nonpositive_requirement": 0,
+      "teacher_plays": 30823,
+      "upweighted": 4407
+    }
+  },
+  "created_unix": 1790256724.281556,
+  "decisions": 202141,
+  "games": 1000,
+  "games_with_new_immediate_loss": 33,
+  "generalization_proven": false,
+  "limits": [
+    "One-step play-to-play interventions on teacher training paths, not autonomous win rates.",
+    "Model choices in other action families are unassessed and retain raw weight one.",
+    "Weights use full simulator/copied-RNG information for training only; inputs and labels remain unchanged.",
+    "The rule redistributes existing supervision; it supplies no new state coverage.",
+    "All native preparation processes are terminal. Only disposable smoke optimizer steps have run; no scientific fitting or new evaluation game."
+  ],
+  "native_training_smoke": [
+    {
+      "arm": "ordinary_bc",
+      "checkpoint_roundtrip_passed": true,
+      "frozen_critic_unchanged": true,
+      "initial_model_sha256": "16ce721bd3669876cc61b88ec7f27f4d3b1980f32b5cac316458cab99ed2919e",
+      "initial_prediction_rows": 320,
+      "initial_rng_sha256": "b30e5e3814575d24a50cc7398983167ae09effbe8803e92dc7b1e1a42245277c",
+      "maximum_initial_nll_error": 0.0,
+      "moved_groups": {
+        "actor": 40,
+        "backbone": 146,
+        "embedding": 106
+      },
+      "objective": 0.5882784463465214,
+      "replica": 0,
+      "row_order_sha256": "e370e9ce28960d1b146ffd19676fbe67fec17879e654141e0d9102d194ede374",
+      "smoke_checkpoint": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_smoke_v2/ordinary_bc/checkpoint_0001.pt",
+        "sha256": "a2d379384f605b121a352161d428ea3c12499461626e54ad48d766ce159aa681"
+      },
+      "unit_nll": 0.5882784463465214,
+      "updated_model_sha256": "d0436fc509a9e6935ea4065f7257429fb0b8c1c71025bd77686d83d49a8af8ef"
+    },
+    {
+      "arm": "consequence_weighted_bc",
+      "checkpoint_roundtrip_passed": true,
+      "frozen_critic_unchanged": true,
+      "initial_model_sha256": "16ce721bd3669876cc61b88ec7f27f4d3b1980f32b5cac316458cab99ed2919e",
+      "initial_prediction_rows": 320,
+      "initial_rng_sha256": "b30e5e3814575d24a50cc7398983167ae09effbe8803e92dc7b1e1a42245277c",
+      "maximum_initial_nll_error": 0.0,
+      "moved_groups": {
+        "actor": 38,
+        "backbone": 146,
+        "embedding": 106
+      },
+      "objective": 0.6883322801440954,
+      "replica": 0,
+      "row_order_sha256": "e370e9ce28960d1b146ffd19676fbe67fec17879e654141e0d9102d194ede374",
+      "smoke_checkpoint": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/training_smoke_v2/consequence_weighted_bc/checkpoint_0001.pt",
+        "sha256": "834db26dc08a6b0b1132d5f5652215a8e22316ed5ec5f38dd67cb562d9e8eda3"
+      },
+      "unit_nll": 0.5882784463465214,
+      "updated_model_sha256": "84230f607c0980ea3bfe724cf7a66b15d8936b2f5ebf7282cbabc4b9636ea9d6"
+    }
+  ],
+  "recorded_teacher_wins": 728,
+  "seed_reservation": {
+    "confirmation_count": 400,
+    "confirmation_range": [
+      884240000,
+      884240399
+    ],
+    "early_count": 400,
+    "early_range": [
+      884250000,
+      884250399
+    ],
+    "gated_files_not_opened": 950,
+    "historical_text_files": 9066,
+    "prior_reserved_seeds_checked": 800
+  },
+  "status": "preparation_complete_training_not_admitted",
+  "summary": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/consequence_weighting_20260924/preparation_summary_v1.json",
+    "sha256": "1caeed9a52a1f26f34f89aed54873324b7d2a32758f5aca2d963ef239a236126"
+  },
+  "upweighted_row_fraction": 0.028940195210274015,
+  "weights": {
+    "games_with_upweighted_rows": 964,
+    "global_raw_weight_mean": 1.0419384994342638,
+    "last_hand": {
+      "new_immediate_loss": 33,
+      "plays": 904,
+      "upweighted": 88
+    },
+    "normalized_weight_max": 4.798747721400856,
+    "normalized_weight_min": 0.9597495442801711,
+    "severity_sum": 2119.3725535353674,
+    "weighted_training_mass_on_upweighted_rows": 0.06802579488426835
+  },
+  "winning_teacher_games_with_new_immediate_loss": 26
+}

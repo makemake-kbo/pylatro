@@ -1,0 +1,46 @@
+{
+  "verified_unix": 1790005286.048487,
+  "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "replica": 0,
+  "cohort_update": 123,
+  "games": 64,
+  "decisions": 9863,
+  "same_collected_policy_sha256": "08719f08d10d684f2c4595d81956e06bd10eb13f6683a408cf8050ce9616f230",
+  "same_game_outcomes": true,
+  "exact_recorded_array_matches": {
+    "actions": true,
+    "rewards": true,
+    "values": true,
+    "log_probs": true,
+    "slot_steps": true,
+    "obs_scalars": true
+  },
+  "differing_seeds_by_array": {},
+  "same_optimizer_row_draws": true,
+  "credit_targets": {
+    "terminal_mc": {
+      "completed_return_mean": 5.854202575281355,
+      "critic_bias_to_completed_return": -0.8807054810804983,
+      "critic_mse_to_completed_return": 18.560351866795735,
+      "return_target_bias_to_completed_return": 0.0,
+      "return_target_mse_to_completed_return": 0.0,
+      "raw_advantage_mean": 0.8807054813524449,
+      "raw_advantage_std": 4.217192161423392
+    },
+    "terminal_gae": {
+      "completed_return_mean": 5.854202575281355,
+      "critic_bias_to_completed_return": -0.8807054810804983,
+      "critic_mse_to_completed_return": 18.560351866795735,
+      "return_target_bias_to_completed_return": -0.7640297896993864,
+      "return_target_mse_to_completed_return": 12.842607490422868,
+      "raw_advantage_mean": 0.1166756939611106,
+      "raw_advantage_std": 1.423041450192053
+    }
+  },
+  "cohort_manifest_hashes": {
+    "terminal_mc": "6f150b334c4546597ad3a8de09cf16b2b93a75ae6260844a51b68eec46508b92",
+    "terminal_gae": "c5133ae1ad59aff7a8266ef6d85f3dc1628bac275a040908c6cb375f1c498efc"
+  },
+  "interpretation": "First matched cohorts only. Tests rollout and row-sampling equivalence before credit-estimator updates; not a gameplay improvement or evidence of equivalent subsequent on-policy distributions."
+}

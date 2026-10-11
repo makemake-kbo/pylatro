@@ -1,0 +1,118 @@
+{
+  "paired": {
+    "game_seeds": 400,
+    "games_per_arm": 1600,
+    "sampled_or_greedy_delta": 0.01625,
+    "paired_ci95": [
+      -0.01125,
+      0.044375
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "replicas": {
+    "0": {
+      "game_seeds": 400,
+      "games_per_arm": 800,
+      "sampled_or_greedy_delta": 0.01125,
+      "paired_ci95": [
+        -0.0275,
+        0.05125
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "1": {
+      "game_seeds": 400,
+      "games_per_arm": 800,
+      "sampled_or_greedy_delta": 0.02125,
+      "paired_ci95": [
+        -0.0175,
+        0.06125
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    }
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed0/sample0/outcomes.jsonl": "0c314228a0e5ca45ceabc0ee95f0ea250f4bd108f3ebbc1f64f2f992828a7d2d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed0/sample1/outcomes.jsonl": "4923a38054974772ef5469060249091665d750f89b6f0c91e61546a2dbdcf831",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed0/sample0/outcomes.jsonl": "96abd2402613e421df5ad2eb379ed64820b795d02a8a476e90b4cc114a59b3d4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed0/sample1/outcomes.jsonl": "bccb2c4fcd1bc62b46ed3973aa31c94b85034cd1f215337c3020434569f42872",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed1/sample0/outcomes.jsonl": "7882c0137136c8147b182b360c131473e61f089d70620ff77eba61c505236b1c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed1/sample1/outcomes.jsonl": "ba93084c60f2d4e4c3e881b008bb8a156438ffa9c72937ac960cbd4a91315ad1",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed1/sample0/outcomes.jsonl": "ed8a63c32c65c15c5293d923322568990d6da5b0bb1ffda80a150313258d04b4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed1/sample1/outcomes.jsonl": "2f8980e6443166f936f7f53dde51a635e7c2b71b873738474eab5bd2d1f3970e"
+  },
+  "routes": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed0/sample0": {
+      "early": 24163,
+      "continuation": 45824
+    },
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed0/sample1": {
+      "early": 47691,
+      "continuation": 89053
+    },
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed0/sample0": {},
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed0/sample1": {},
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed1/sample0": {
+      "early": 23485,
+      "continuation": 42912
+    },
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/early_mc_seed1/sample1": {
+      "early": 47098,
+      "continuation": 84339
+    },
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed1/sample0": {},
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/early_transfer/all_gae_seed1/sample1": {}
+  },
+  "summaries": {
+    "early_mc": {
+      "game_seeds": 400,
+      "games": 1600,
+      "wins": 635,
+      "win_rate": 0.396875,
+      "win_rate_cluster_ci95": [
+        0.363125,
+        0.430625
+      ],
+      "win_rate_wilson_ci95": null,
+      "mean_final_ante": 6.66375,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.959375,
+        "2": 0.908125,
+        "3": 0.86,
+        "4": 0.784375,
+        "5": 0.674375,
+        "6": 0.585,
+        "7": 0.496875,
+        "8": 0.396875
+      }
+    },
+    "all_gae": {
+      "game_seeds": 400,
+      "games": 1600,
+      "wins": 609,
+      "win_rate": 0.380625,
+      "win_rate_cluster_ci95": [
+        0.34625,
+        0.41375
+      ],
+      "win_rate_wilson_ci95": null,
+      "mean_final_ante": 6.64,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.96125,
+        "2": 0.90875,
+        "3": 0.855625,
+        "4": 0.79,
+        "5": 0.68375,
+        "6": 0.57625,
+        "7": 0.484375,
+        "8": 0.380625
+      }
+    }
+  },
+  "passes_early_transfer_gate": false,
+  "interpretation": "Only Ante 1-3 policy is changed. Both groups use the identical GAE policy in Antes 4-8."
+}

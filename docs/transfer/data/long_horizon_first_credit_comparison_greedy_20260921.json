@@ -1,0 +1,164 @@
+{
+  "created_unix": 1790008997.527452,
+  "stage": "development",
+  "endpoint": 10,
+  "replica": 0,
+  "mode": "greedy",
+  "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "checkpoint_hashes": {
+    "terminal_mc": "212a86b7c99146777f594d714acb7b7e1f00ef3f9a162c7b185922e7186a81c4",
+    "terminal_gae": "0e6e35a404d354ece7be8be51bd75858ff28d87ff4e986688fc5e4434921eced",
+    "parent": "8496f843758bd3c93912408cf0f9a881e9a0b963e4e88b2855108dc52c13947d"
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed0/greedy/outcomes.jsonl": "4d155ff6e31340c0b72d126208fb78cb1849039df8442359f87058a31ea3221e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed0/greedy/outcomes.jsonl": "2cb992c8c186d6b2b7cf85971ebf53bc32291b32bba4b87949e2781e28b0ecf7",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed0/greedy/outcomes.jsonl": "26f3a0d7cd4951530166ada3da438d3c0838cad3aaa028c1bb0e3201fe7ec5df"
+  },
+  "matching_evaluation_settings": [
+    "seeds",
+    "greedy",
+    "sampling_seed",
+    "deck",
+    "stake",
+    "win_ante",
+    "temperature",
+    "batch_size",
+    "workers",
+    "cpu_threads",
+    "max_idle_steps",
+    "device",
+    "reward_config"
+  ],
+  "mc_and_terminal_gae_agent_config_equal": true,
+  "summaries": {
+    "terminal_mc": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 100,
+      "win_rate": 0.5,
+      "win_rate_cluster_ci95": [
+        0.43,
+        0.57
+      ],
+      "win_rate_wilson_ci95": [
+        0.43136085960389187,
+        0.5686391403961082
+      ],
+      "mean_final_ante": 7.22,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.98,
+        "2": 0.935,
+        "3": 0.92,
+        "4": 0.84,
+        "5": 0.785,
+        "6": 0.685,
+        "7": 0.575,
+        "8": 0.5
+      }
+    },
+    "terminal_gae": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 107,
+      "win_rate": 0.535,
+      "win_rate_cluster_ci95": [
+        0.465,
+        0.605
+      ],
+      "win_rate_wilson_ci95": [
+        0.4658664687236316,
+        0.6028143584299599
+      ],
+      "mean_final_ante": 7.375,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.99,
+        "2": 0.95,
+        "3": 0.915,
+        "4": 0.865,
+        "5": 0.81,
+        "6": 0.71,
+        "7": 0.6,
+        "8": 0.535
+      }
+    },
+    "parent": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 91,
+      "win_rate": 0.455,
+      "win_rate_cluster_ci95": [
+        0.39,
+        0.52
+      ],
+      "win_rate_wilson_ci95": [
+        0.387482193098835,
+        0.524213886275119
+      ],
+      "mean_final_ante": 6.95,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.965,
+        "2": 0.91,
+        "3": 0.89,
+        "4": 0.81,
+        "5": 0.735,
+        "6": 0.645,
+        "7": 0.545,
+        "8": 0.455
+      }
+    }
+  },
+  "comparisons": {
+    "terminal_mc_vs_terminal_gae": {
+      "game_seeds": 200,
+      "games_per_arm": 200,
+      "sampled_or_greedy_delta": -0.035,
+      "paired_ci95": [
+        -0.105,
+        0.035
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "left_only_wins": 22,
+      "right_only_wins": 29
+    },
+    "terminal_mc_vs_parent": {
+      "game_seeds": 200,
+      "games_per_arm": 200,
+      "sampled_or_greedy_delta": 0.045,
+      "paired_ci95": [
+        -0.02,
+        0.11
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "left_only_wins": 27,
+      "right_only_wins": 18
+    },
+    "terminal_gae_vs_parent": {
+      "game_seeds": 200,
+      "games_per_arm": 200,
+      "sampled_or_greedy_delta": 0.08,
+      "paired_ci95": [
+        0.015,
+        0.14
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling",
+      "left_only_wins": 29,
+      "right_only_wins": 13
+    }
+  },
+  "generalization_proven": false,
+  "interpretation": "First completed greedy credit comparison, one development replica at +10. Paired game-seed uncertainty; remaining replica, later endpoint, confirmation and early-policy attribution remain pending. The selection rule is unchanged.",
+  "original_analysis_sha256": "ec5b42f481d95efa426908d528ca47099f346ceec38b4cdc94f3db1f8f23e071",
+  "paired_game_rows": {
+    "path": "long_horizon_first_credit_comparison_greedy_games_20260921.jsonl",
+    "sha256": "435153a72d25a8e7addb2d0956302f77bdc4a425960f4a6da7a7cf169f658998",
+    "rows": 200
+  }
+}

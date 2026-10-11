@@ -1,0 +1,51 @@
+{
+  "metrics": {
+    "policy_preferred_minus_other": {
+      "delta": 0.046875,
+      "ci95": [
+        -0.0703125,
+        0.171875
+      ],
+      "replica_deltas": {
+        "0": 0.015625,
+        "1": 0.078125
+      }
+    },
+    "buy_minus_leave": {
+      "delta": 0.046875,
+      "ci95": [
+        -0.0703125,
+        0.1640625
+      ],
+      "replica_deltas": {
+        "0": 0.078125,
+        "1": 0.015625
+      }
+    },
+    "critic_preferred_minus_other": {
+      "delta": 0.0625,
+      "ci95": [
+        -0.0546875,
+        0.1796875
+      ],
+      "replica_deltas": {
+        "0": 0.078125,
+        "1": 0.046875
+      }
+    }
+  },
+  "primary_games": 256,
+  "duplicate_controls": 4,
+  "duplicate_full_traces_exact": true,
+  "state_clusters": 32,
+  "fixed_replicas": 2,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 1729,
+  "policy_pair_ranking": "unresolved",
+  "execution_sha256": "a36d5050e329d5c300727d9062d12b123614cf465cc677c5b214db53114dddc8",
+  "outcomes_sha256": "5a002b0e6db2f228b1764fa6201ddb0ea37b848e40b3cdd5629403ad9b56f505",
+  "state_results_sha256": "c36ac25c261a68be3af4f716a2e923d1956e6f314a62bf16b72b978986c71e3a",
+  "controls_sha256": "0760f093ac8bd8bf2c6db18da34e63a71194d90ac1506adb16e51a2b104cc3a4",
+  "interpretation": "Exploratory counterfactual diagnosis on reused training states, not held-out full-start games. State and action selection use observable prefixes and fixed policy probabilities, not continuation outcomes. Negative primary CI upper bound would establish poor ranking of this pair on this panel; positive lower bound would show alignment on this panel, not a new learned policy gain. Factual critic values after each forced action predict the common sampled continuation. A purchase may subsequently be sold by that continuation; do not prevent policy responses. No oracle that selects actions from measured outcomes is used as an improvement estimate.",
+  "generalization_proven": false
+}

@@ -1,0 +1,322 @@
+[
+  {
+    "replica": 0,
+    "seed": 310000005,
+    "buy_wins": 3,
+    "leave_wins": 3,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": -0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000060,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": -0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000055,
+    "buy_wins": 2,
+    "leave_wins": 3,
+    "repeats": 4,
+    "buy_minus_leave": -0.25,
+    "policy_preferred_minus_other": -0.25,
+    "critic_preferred_minus_other": -0.25
+  },
+  {
+    "replica": 0,
+    "seed": 310000036,
+    "buy_wins": 4,
+    "leave_wins": 1,
+    "repeats": 4,
+    "buy_minus_leave": 0.75,
+    "policy_preferred_minus_other": 0.75,
+    "critic_preferred_minus_other": 0.75
+  },
+  {
+    "replica": 0,
+    "seed": 310000031,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000004,
+    "buy_wins": 3,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.75,
+    "policy_preferred_minus_other": 0.75,
+    "critic_preferred_minus_other": 0.75
+  },
+  {
+    "replica": 0,
+    "seed": 310000041,
+    "buy_wins": 2,
+    "leave_wins": 2,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": -0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000047,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000052,
+    "buy_wins": 3,
+    "leave_wins": 1,
+    "repeats": 4,
+    "buy_minus_leave": 0.5,
+    "policy_preferred_minus_other": 0.5,
+    "critic_preferred_minus_other": 0.5
+  },
+  {
+    "replica": 0,
+    "seed": 310000007,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000061,
+    "buy_wins": 1,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.25,
+    "policy_preferred_minus_other": 0.25,
+    "critic_preferred_minus_other": 0.25
+  },
+  {
+    "replica": 0,
+    "seed": 310000062,
+    "buy_wins": 1,
+    "leave_wins": 3,
+    "repeats": 4,
+    "buy_minus_leave": -0.5,
+    "policy_preferred_minus_other": -0.5,
+    "critic_preferred_minus_other": 0.5
+  },
+  {
+    "replica": 0,
+    "seed": 310000010,
+    "buy_wins": 3,
+    "leave_wins": 3,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 0,
+    "seed": 310000028,
+    "buy_wins": 2,
+    "leave_wins": 4,
+    "repeats": 4,
+    "buy_minus_leave": -0.5,
+    "policy_preferred_minus_other": -0.5,
+    "critic_preferred_minus_other": -0.5
+  },
+  {
+    "replica": 0,
+    "seed": 310000003,
+    "buy_wins": 3,
+    "leave_wins": 1,
+    "repeats": 4,
+    "buy_minus_leave": 0.5,
+    "policy_preferred_minus_other": -0.5,
+    "critic_preferred_minus_other": -0.5
+  },
+  {
+    "replica": 0,
+    "seed": 310000008,
+    "buy_wins": 0,
+    "leave_wins": 1,
+    "repeats": 4,
+    "buy_minus_leave": -0.25,
+    "policy_preferred_minus_other": -0.25,
+    "critic_preferred_minus_other": -0.25
+  },
+  {
+    "replica": 1,
+    "seed": 310100058,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100033,
+    "buy_wins": 1,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.25,
+    "policy_preferred_minus_other": 0.25,
+    "critic_preferred_minus_other": 0.25
+  },
+  {
+    "replica": 1,
+    "seed": 310100026,
+    "buy_wins": 2,
+    "leave_wins": 3,
+    "repeats": 4,
+    "buy_minus_leave": -0.25,
+    "policy_preferred_minus_other": -0.25,
+    "critic_preferred_minus_other": 0.25
+  },
+  {
+    "replica": 1,
+    "seed": 310100017,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100031,
+    "buy_wins": 1,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.25,
+    "policy_preferred_minus_other": 0.25,
+    "critic_preferred_minus_other": -0.25
+  },
+  {
+    "replica": 1,
+    "seed": 310100055,
+    "buy_wins": 2,
+    "leave_wins": 4,
+    "repeats": 4,
+    "buy_minus_leave": -0.5,
+    "policy_preferred_minus_other": 0.5,
+    "critic_preferred_minus_other": 0.5
+  },
+  {
+    "replica": 1,
+    "seed": 310100043,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100051,
+    "buy_wins": 3,
+    "leave_wins": 2,
+    "repeats": 4,
+    "buy_minus_leave": 0.25,
+    "policy_preferred_minus_other": 0.25,
+    "critic_preferred_minus_other": -0.25
+  },
+  {
+    "replica": 1,
+    "seed": 310100038,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100032,
+    "buy_wins": 1,
+    "leave_wins": 1,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": -0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100040,
+    "buy_wins": 4,
+    "leave_wins": 2,
+    "repeats": 4,
+    "buy_minus_leave": 0.5,
+    "policy_preferred_minus_other": 0.5,
+    "critic_preferred_minus_other": 0.5
+  },
+  {
+    "replica": 1,
+    "seed": 310100041,
+    "buy_wins": 2,
+    "leave_wins": 2,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": -0.0,
+    "critic_preferred_minus_other": -0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100011,
+    "buy_wins": 2,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.5,
+    "policy_preferred_minus_other": 0.5,
+    "critic_preferred_minus_other": 0.5
+  },
+  {
+    "replica": 1,
+    "seed": 310100020,
+    "buy_wins": 0,
+    "leave_wins": 3,
+    "repeats": 4,
+    "buy_minus_leave": -0.75,
+    "policy_preferred_minus_other": -0.75,
+    "critic_preferred_minus_other": -0.75
+  },
+  {
+    "replica": 1,
+    "seed": 310100050,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": -0.0,
+    "critic_preferred_minus_other": 0.0
+  },
+  {
+    "replica": 1,
+    "seed": 310100052,
+    "buy_wins": 0,
+    "leave_wins": 0,
+    "repeats": 4,
+    "buy_minus_leave": 0.0,
+    "policy_preferred_minus_other": 0.0,
+    "critic_preferred_minus_other": 0.0
+  }
+]

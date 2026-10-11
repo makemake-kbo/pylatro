@@ -1,0 +1,7 @@
+# Diagnose the wider scorer's prediction overlap failure
+
+The single width fit and its independent training audit passed. Prediction measurement subsequently failed the unchanged `rtol=1e-5, atol=1e-5` overlap check after 727 completed development states. Preserve that failed owner, helper, protocol and partial artifacts. No scientific prediction result is admitted and no second fit is authorized.
+
+Probe only the first failed state, index 727, and its original 128-state/six-proposal batch. Reconstruct the exact frozen feature, action and checkpoint inputs. Compare repeated original batches, the existing single-state full-support layout, a single-state six-proposal layout, and a batch repeating the failed state. Save corresponding output arrays and intermediate pooled/query/attention/readout values. Reproduce the failed check and quantify which coordinates exceed the unchanged tolerance.
+
+Also evaluate an independent float64 copy of the same saved FP32 parameter values on the two original layouts as a numerical diagnostic. Do not change the trained checkpoint, scientific evaluation precision, tolerances, labels, endpoint, action selection or gates. Float64 is a reference probe, not an admitted replacement policy. All model parameters and the initial reference remain immutable; run no optimizer, simulator or new fit. Use CPU, one thread, and a fixed 600-second bound. Check saved arrays independently after actual owner exit before proposing a correction. No generalization claim follows from this probe.

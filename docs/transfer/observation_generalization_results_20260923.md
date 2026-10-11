@@ -1,0 +1,32 @@
+The frozen observation-generalization study is complete. **None of its three success gates passed.** Independent analysis of all completed raw outcomes exactly reproduced the reported comparisons, confidence intervals, summaries, and gate decisions. These results do not establish a held-out benefit from the three added observations or a long-horizon learning gain.
+
+The treatment exposed pack enhancement, global Fool target, and consumable resale value. Its matched control used the same corrected architecture with those three inputs hidden. Each pair began with identical actor, critic, optimizer, and RNG state from a trained terminal-GAE parent at update 142, then received eight updates through the fixed update-150 endpoint. Each branch completed 512 training games and 131,072 optimizer examples. The endpoint and evaluation settings were fixed before outcomes were opened.
+
+The original bar required **both** full-versus-parent and full-versus-ablated comparisons to show at least a five-percentage-point sampled win gain, a paired 95% interval strictly above zero, and a positive sampled point estimate in each replica. Each also required a greedy paired interval lower bound above −5 percentage points. The early-policy test separately required a positive paired interval and positive points in both replicas. All three gates were required; they were not relaxed after the results.
+
+All 26 canonical panels contain exactly 400 completed games: 18 confirmation panels (7,200 games) and eight early-policy panels (3,200 games). Confirmation used seeds 290000–290399; early evaluation used the separate seeds 300000–300399. Each sampled arm has two policy-sampling repeats for each of two fixed trained replicas. Greedy evaluation has one run per replica and seed. There are no missing, duplicated, stalled, or censored canonical games. Archived interrupted greedy attempts are excluded; their replacement panels were completed as whole panels.
+
+| Confirmation arm | Sampled wins | Sampled win rate | Greedy wins | Greedy win rate |
+|---|---:|---:|---:|---:|
+| Frozen parent | 652 / 1,600 | 40.7500% | 423 / 800 | 52.8750% |
+| Full observations | 643 / 1,600 | 40.1875% | 430 / 800 | 53.7500% |
+| Ablated observations | 650 / 1,600 | 40.6250% | 422 / 800 | 52.7500% |
+
+All differences and intervals below are **percentage points**. The paired bootstrap resamples 400 whole game-seed clusters, averaging repeats and replicas within each seed; it does not treat all repeated games as independent. Intervals use the frozen 10,000-resample procedure and RNG seed 1729.
+
+| Comparison | Sampled difference [95% interval] | Sampled replica 0 / replica 1 | Greedy difference [95% interval] | Gate |
+|---|---:|---:|---:|---|
+| Full − parent | −0.5625 [−3.1250, +2.0625] | +1.6250 / −2.7500 | +0.8750 [−2.6250, +4.3750] | Failed |
+| Full − ablated | −0.4375 [−3.0625, +2.2500] | −0.6250 / −0.2500 | +1.0000 [−2.2500, +4.2500] | Failed |
+
+Both greedy noninferiority subgates passed, but neither greedy interval demonstrates superiority. Both sampled comparisons failed the gain, positive-interval, and per-replica requirements. Their pooled interval upper bounds are below the prespecified +5-point target, providing negative evidence for a target-sized benefit at this endpoint and in this task.
+
+The early-policy intervention used the full policy whenever the current Ante was at most 3, and the matched ablated policy afterward; it could reactivate if Ante decreased. Against the all-ablated control, it won **591/1,600 versus 578/1,600**, a difference of **+0.8125 points [−1.8750, +3.5625]**. Replica differences were −0.1250 and +1.7500 points. Both early-policy requirements failed. Routing records account for every action. This comparison uses a different seed panel from confirmation; its absolute win rates should not be interpreted as a confirmation-panel decline.
+
+The control amendment is finalized. A reproduced MPS embedding-padding gradient issue allowed the hidden categorical zero rows to learn constants. The narrow validation amendment allowed these constants while requiring all nonzero identity rows and the resale adapter to remain zero. Trained-control input-invariance proofs covered actor, all critic outputs, and the critic-only path within CPU and MPS execution. Original failure artifacts were retained; frozen training source and outcome gates were preserved. This validates the information-ablation comparison without claiming legacy-model equivalence or equality between backends. The successful [external finalization receipt](../../eval/observation_generalization_20260922/analysis/finalize_v2_completion_v1_1790170668810510000.json) has SHA-256 `b7afd89325db03126b907e0df78b193d0ef6cb2f8d0e28796dcd3b4871c07878`.
+
+The causal scope is narrow: eight additional PPO updates on two fixed trained replicas, on unseen procedural Blue Deck / White Stake / Ante-8 games. The intervals do not quantify variation across newly trained replicas. The three-field bundle does not identify individual field effects, and eight updates may be insufficient to learn useful use of the added information. Even a positive early-policy result would not, by itself, distinguish improved immediate survival from strategic preparation or prove explicit planning.
+
+The observation omissions were real architectural findings. Their role as the explanation for the original pretraining-transfer gap is **unsupported by this experiment, not disproven**. These endpoints are PPO descendants, so this study does not test whether a corrected supervised model can fit complete demonstration games, generalize on fresh teacher states, or sustain its behavior during autonomous rollout. Those remain distinct questions for the [pretraining-transfer diagnosis](pretraining_gap_focus_20260923.md).
+
+The [independent raw-data audit](../../eval/observation_generalization_20260922/analysis/independent_completed_results_audit_1790171190268480000.json) pins all 60 panel artifacts, the protocol, result, endpoint lock, and amendment/finalization sources. It rehashed 236 frozen source files and independently reproduced all statistics without importing model code or generating games. Audit SHA-256: `1e73e70da1e4661919053b528ff3bc24942a137dbe25da2f3b241034875fba19`. [Final results](../../eval/observation_generalization_20260922/final_results.json) SHA-256: `07883d331c19cd499c35ac84ead4788fead75baeab7363eebea4ac697c91fc57`.

@@ -1,0 +1,88 @@
+{
+  "verified_unix": 1790025267.252825,
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "replica": 1,
+  "endpoint": 10,
+  "mode": "greedy",
+  "summaries": {
+    "parent": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 102,
+      "win_rate": 0.51,
+      "win_rate_cluster_ci95": [
+        0.44,
+        0.58
+      ],
+      "win_rate_wilson_ci95": [
+        0.44118587678458643,
+        0.5784372166878682
+      ],
+      "mean_final_ante": 6.895,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.975,
+        "2": 0.91,
+        "3": 0.885,
+        "4": 0.79,
+        "5": 0.68,
+        "6": 0.6,
+        "7": 0.545,
+        "8": 0.51
+      }
+    },
+    "legacy10": {
+      "game_seeds": 200,
+      "games": 200,
+      "wins": 101,
+      "win_rate": 0.505,
+      "win_rate_cluster_ci95": [
+        0.435,
+        0.575
+      ],
+      "win_rate_wilson_ci95": [
+        0.43627000033527485,
+        0.5735415464009526
+      ],
+      "mean_final_ante": 7.0,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.975,
+        "2": 0.915,
+        "3": 0.895,
+        "4": 0.8,
+        "5": 0.715,
+        "6": 0.63,
+        "7": 0.565,
+        "8": 0.505
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 200,
+    "games_per_arm": 200,
+    "sampled_or_greedy_delta": -0.005,
+    "paired_ci95": [
+      -0.075,
+      0.065
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "rescues": 24,
+  "regressions": 25,
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/initial.pt": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed1/greedy/manifest.json": "368fa148515b19ec396b0643bca3bc5b06d779c7634e34d2ca596e18ce7314ea",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update0/baseline_seed1/greedy/outcomes.jsonl": "f24bb191f0d2f3f580beaf3e750bb5357f37542fac141ea173f17c2975ac8f47",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/checkpoints/ppo_update132.pt": "707ea059c2215870bc97286db390d52e914a11570a96c4a72ff222881b580d6c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update10/legacy_gae_seed1/greedy/manifest.json": "e374264ec4ea5c1368888d5c2d9de75f1b0bc5fb5b12c5e616800633de275b65",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/development/update10/legacy_gae_seed1/greedy/outcomes.jsonl": "020d17a0e11dff2ed19ecc299ebf9951f784f9d54e2d50df2bfe9328fdadce28"
+  },
+  "analysis_method": "paired_statistics, independently reproduced from exported seed pairs with 10000 bootstrap draws and RNG1729",
+  "generalization_proven": false,
+  "selection_changed": false,
+  "paired_games_sha256": "c27e70babf504e3ba2f6427450ac7dd4185ef105df67e13e013644aa5ab4c94a"
+}

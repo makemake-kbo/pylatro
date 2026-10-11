@@ -1,0 +1,621 @@
+{
+  "checkpoint": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/stage2/arms/unfrozen_encoder/checkpoint_4000.pt",
+    "sha256": "a43e73ab71d3cd6ee78b6b6510d082772b5b362b976e1454a3613eb8f939706f"
+  },
+  "contrasts": {
+    "exposed_held_out_minus_later_training": {
+      "fixed_family_mix": {
+        "accuracy": -0.03056294065148779,
+        "nll": 0.14109801412880701,
+        "teacher_probability": -0.022255858949326135
+      },
+      "raw": {
+        "accuracy": -0.031113210866121288,
+        "nll": 0.14215136288592667,
+        "teacher_probability": -0.02304230528389195
+      }
+    },
+    "exposed_held_out_minus_original": {
+      "fixed_family_mix": {
+        "accuracy": -0.00552708791712786,
+        "nll": 0.02846334883946877,
+        "teacher_probability": -0.007115942423202459
+      },
+      "raw": {
+        "accuracy": -0.015991230964949255,
+        "nll": 0.06788759288257029,
+        "teacher_probability": -0.02106408378527913
+      }
+    },
+    "original_minus_later_training": {
+      "fixed_family_mix": {
+        "accuracy": -0.02503585273435993,
+        "nll": 0.11263466528933824,
+        "teacher_probability": -0.015139916526123676
+      },
+      "raw": {
+        "accuracy": -0.015121979901172034,
+        "nll": 0.07426377000335638,
+        "teacher_probability": -0.00197822149861282
+      }
+    }
+  },
+  "excluded_from_reweighting": {
+    "exposed_held_out": {
+      "decisions": 0,
+      "families": [],
+      "fraction": 0.0
+    },
+    "later_training": {
+      "decisions": 6,
+      "families": [
+        "shop_sell_consumable"
+      ],
+      "fraction": 2.9682251497686885e-05
+    },
+    "original": {
+      "decisions": 17,
+      "families": [
+        "shop_sell_consumable"
+      ],
+      "fraction": 1.508906096336915e-05
+    }
+  },
+  "fixed_family_means": {
+    "exposed_held_out": {
+      "accuracy": 0.8271837204837781,
+      "nll": 0.6391055354772996,
+      "teacher_probability": 0.764013414590246
+    },
+    "later_training": {
+      "accuracy": 0.8577466611352659,
+      "nll": 0.49800752134849263,
+      "teacher_probability": 0.7862692735395721
+    },
+    "original": {
+      "accuracy": 0.8327108084009059,
+      "nll": 0.6106421866378309,
+      "teacher_probability": 0.7711293570134484
+    }
+  },
+  "fixed_held_out_family_weights": {
+    "family/blind_play": 0.11192167402572471,
+    "family/blind_reroll": 0.0008830869648684968,
+    "family/discard_subset": 0.05421386062583989,
+    "family/pack_claim": 0.10347475523133039,
+    "family/pack_skip": 0.033902860433864465,
+    "family/play_subset": 0.23470915722787483,
+    "family/shop_buy": 0.2043770397389134,
+    "family/shop_leave": 0.10700710309080437,
+    "family/shop_reroll": 0.08581301593396046,
+    "family/shop_sell_joker": 0.032136686504127474,
+    "family/use_consumable_hand_subset": 0.008216548281819927,
+    "family/use_consumable_joker": 0.000499136110577846,
+    "family/use_consumable_no_target": 0.022845075830293722
+  },
+  "generalization_proven": false,
+  "inputs": [
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/measurement_terminal_v1.json",
+      "sha256": "26c2c333860ff91634e7a31111b2232d6efbb18c466576be4ce99d609a1fa473"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/verification_terminal_v1.json",
+      "sha256": "dc1ddf309eaa056b956b92524ade9b369d7790ade2715cf2a0d3b51160a054fe"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/reference_metrics_terminal_v1.json",
+      "sha256": "d215013ed36d36b4e36dda9ccc41317cb02c4744265a626f7b4088d84c502247"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/measurement_v1/result.json",
+      "sha256": "923354f6e0a1574c7bdcbbde54e054938998a519bd83151e718c9f881f38609c"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/verification_v1.json",
+      "sha256": "9d9cd9cdd5215f5f22b6407a82a8a41ae2b4b5a036921463a7c84222b221ff2b"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/reference_metrics_v1.json",
+      "sha256": "2ff49a434cb59c0ef00979e48a77c5470bd541dbad57f3346f4a09332c257254"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/reference_comparison_v1.json",
+      "sha256": "8a8d19ee7bfc14c03eb50dcf5a5961903cc3eb80c383b316bd00a8080327a7f7"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/summary.json",
+      "sha256": "69f9935bb1f82f26a7431df16bfa338c895edf0208c7aefaa08a54ab97643bdf"
+    }
+  ],
+  "limitations": [
+    "Original records contributed inherited weights; this is not an untouched generalization set.",
+    "Reweighting controls action-family proportions, not state difficulty or training exposure.",
+    "Agreement is exact action identity; disagreement need not imply a worse action or a lost game.",
+    "No confidence intervals or causal data-remedy claim are inferred from these descriptive population differences.",
+    "Fresh-game matched-control, greedy and early-attribution criteria remain necessary for the full goal."
+  ],
+  "measurement_predictions": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/measurement_v1/predictions.jsonl",
+    "sha256": "4bc95487b52241af42546d4dd201264559fa414a4a9ffb57ac11b92e7cd6b85e"
+  },
+  "original_measurement_elapsed_seconds": 3214.3713853340014,
+  "populations": {
+    "exposed_held_out": {
+      "equal_game": {
+        "accuracy": 0.8224991209304373,
+        "nll": 0.6607152787514834,
+        "teacher_probability": 0.7594759865179869
+      },
+      "games": 128,
+      "metrics": {
+        "family/blind_play": {
+          "accuracy": 1.0,
+          "correct": 2915,
+          "decisions": 2915,
+          "nll": 0.0007548785944300907,
+          "teacher_probability": 0.9993410552119635
+        },
+        "family/blind_reroll": {
+          "accuracy": 0.8695652173913043,
+          "correct": 20,
+          "decisions": 23,
+          "nll": 0.3235703017562628,
+          "teacher_probability": 0.8142266622041096
+        },
+        "family/discard_subset": {
+          "accuracy": 0.5276203966005666,
+          "correct": 745,
+          "decisions": 1412,
+          "nll": 2.319161447684058,
+          "teacher_probability": 0.436667430717325
+        },
+        "family/pack_claim": {
+          "accuracy": 0.8371057513914657,
+          "correct": 2256,
+          "decisions": 2695,
+          "nll": 0.3920308029218444,
+          "teacher_probability": 0.7951037001177585
+        },
+        "family/pack_skip": {
+          "accuracy": 0.9105322763306908,
+          "correct": 804,
+          "decisions": 883,
+          "nll": 0.24566855349664055,
+          "teacher_probability": 0.8460174936514565
+        },
+        "family/play_subset": {
+          "accuracy": 0.6798625879273679,
+          "correct": 4156,
+          "decisions": 6113,
+          "nll": 1.295090105544545,
+          "teacher_probability": 0.542534103870983
+        },
+        "family/shop_buy": {
+          "accuracy": 0.9374412925042269,
+          "correct": 4990,
+          "decisions": 5323,
+          "nll": 0.18548621155506004,
+          "teacher_probability": 0.8956332844968369
+        },
+        "family/shop_leave": {
+          "accuracy": 0.9400789379260854,
+          "correct": 2620,
+          "decisions": 2787,
+          "nll": 0.1707413122561015,
+          "teacher_probability": 0.894052994365144
+        },
+        "family/shop_reroll": {
+          "accuracy": 0.9427293064876957,
+          "correct": 2107,
+          "decisions": 2235,
+          "nll": 0.20258605702799004,
+          "teacher_probability": 0.8880818639466443
+        },
+        "family/shop_sell_joker": {
+          "accuracy": 0.2520908004778972,
+          "correct": 211,
+          "decisions": 837,
+          "nll": 2.2286945044940945,
+          "teacher_probability": 0.24068421810552673
+        },
+        "family/use_consumable_hand_subset": {
+          "accuracy": 0.5373831775700935,
+          "correct": 115,
+          "decisions": 214,
+          "nll": 1.7656523064719991,
+          "teacher_probability": 0.46345399001307974
+        },
+        "family/use_consumable_joker": {
+          "accuracy": 1.0,
+          "correct": 13,
+          "decisions": 13,
+          "nll": 0.07854303203818674,
+          "teacher_probability": 0.9304344044798784
+        },
+        "family/use_consumable_no_target": {
+          "accuracy": 0.9949579831932773,
+          "correct": 592,
+          "decisions": 595,
+          "nll": 0.017821891498413272,
+          "teacher_probability": 0.9869370751481982
+        },
+        "outcome/0": {
+          "accuracy": 0.7850805721528155,
+          "correct": 4336,
+          "decisions": 5523,
+          "nll": 0.8192318154193694,
+          "teacher_probability": 0.7140547789564724
+        },
+        "outcome/1": {
+          "accuracy": 0.8385147646428224,
+          "correct": 17208,
+          "decisions": 20522,
+          "nll": 0.5906289033693156,
+          "teacher_probability": 0.7774585731812863
+        },
+        "overall": {
+          "accuracy": 0.8271837204837781,
+          "correct": 21544,
+          "decisions": 26045,
+          "nll": 0.6391055354772996,
+          "teacher_probability": 0.764013414590246
+        },
+        "phase/early": {
+          "accuracy": 0.8167273673257024,
+          "correct": 6279,
+          "decisions": 7688,
+          "nll": 0.7224855747120881,
+          "teacher_probability": 0.7454881805619743
+        },
+        "phase/late": {
+          "accuracy": 0.831562891540012,
+          "correct": 15265,
+          "decisions": 18357,
+          "nll": 0.6041855735207134,
+          "teacher_probability": 0.7717718718114343
+        }
+      },
+      "ordered_row_identity_sha256": "525bdc0c7c3a90afe106551050fb2ef867cef2f9b177155004e13d9d1e8d0ef2",
+      "rows": 26045,
+      "teacher_wins": 95
+    },
+    "later_training": {
+      "equal_game": {
+        "accuracy": 0.8547056501462268,
+        "nll": 0.512186847663586,
+        "teacher_probability": 0.7830131912614736
+      },
+      "games": 1000,
+      "metrics": {
+        "family/blind_play": {
+          "accuracy": 0.9994217081850534,
+          "correct": 22467,
+          "decisions": 22480,
+          "nll": 0.0012404063795145523,
+          "teacher_probability": 0.9992031908607447
+        },
+        "family/blind_reroll": {
+          "accuracy": 0.9618320610687023,
+          "correct": 126,
+          "decisions": 131,
+          "nll": 0.16707111133141656,
+          "teacher_probability": 0.8846178234574625
+        },
+        "family/discard_subset": {
+          "accuracy": 0.5794025858225591,
+          "correct": 6498,
+          "decisions": 11215,
+          "nll": 1.8753319545070886,
+          "teacher_probability": 0.46416371823136476
+        },
+        "family/pack_claim": {
+          "accuracy": 0.8513908172547517,
+          "correct": 17783,
+          "decisions": 20887,
+          "nll": 0.36313902262826747,
+          "teacher_probability": 0.8034721814762144
+        },
+        "family/pack_skip": {
+          "accuracy": 0.9330067713585939,
+          "correct": 6476,
+          "decisions": 6941,
+          "nll": 0.21363406121148562,
+          "teacher_probability": 0.861186655364519
+        },
+        "family/play_subset": {
+          "accuracy": 0.7514475386540541,
+          "correct": 35430,
+          "decisions": 47149,
+          "nll": 0.9716156186451601,
+          "teacher_probability": 0.5967978714578712
+        },
+        "family/shop_buy": {
+          "accuracy": 0.9467995878166263,
+          "correct": 39509,
+          "decisions": 41729,
+          "nll": 0.15836363361155653,
+          "teacher_probability": 0.902786384305374
+        },
+        "family/shop_leave": {
+          "accuracy": 0.9530260707635009,
+          "correct": 20471,
+          "decisions": 21480,
+          "nll": 0.15085356940675795,
+          "teacher_probability": 0.9017096603101865
+        },
+        "family/shop_reroll": {
+          "accuracy": 0.9524254821741671,
+          "correct": 16296,
+          "decisions": 17110,
+          "nll": 0.15159998595904603,
+          "teacher_probability": 0.9035124068776782
+        },
+        "family/shop_sell_consumable": {
+          "accuracy": 0.0,
+          "correct": 0,
+          "decisions": 6,
+          "nll": 11.255798498789469,
+          "teacher_probability": 0.00012419484130793429
+        },
+        "family/shop_sell_joker": {
+          "accuracy": 0.3769290724863601,
+          "correct": 2418,
+          "decisions": 6415,
+          "nll": 1.565951970811071,
+          "teacher_probability": 0.3268040646193956
+        },
+        "family/use_consumable_hand_subset": {
+          "accuracy": 0.6168359941944848,
+          "correct": 850,
+          "decisions": 1378,
+          "nll": 1.2981846305606302,
+          "teacher_probability": 0.5028827965579307
+        },
+        "family/use_consumable_joker": {
+          "accuracy": 0.9134615384615384,
+          "correct": 95,
+          "decisions": 104,
+          "nll": 0.20871344929799726,
+          "teacher_probability": 0.8885491955802708
+        },
+        "family/use_consumable_no_target": {
+          "accuracy": 0.9925723221266615,
+          "correct": 5078,
+          "decisions": 5116,
+          "nll": 0.025114052387655333,
+          "teacher_probability": 0.9836971050481691
+        },
+        "outcome/0": {
+          "accuracy": 0.8215819059000575,
+          "correct": 37124,
+          "decisions": 45186,
+          "nll": 0.6521635854506563,
+          "teacher_probability": 0.7364856278052779
+        },
+        "outcome/1": {
+          "accuracy": 0.8688668726705107,
+          "correct": 136373,
+          "decisions": 156955,
+          "nll": 0.45227071217622483,
+          "teacher_probability": 0.8016144161897921
+        },
+        "overall": {
+          "accuracy": 0.8582969313498994,
+          "correct": 173497,
+          "decisions": 202141,
+          "nll": 0.496954172591373,
+          "teacher_probability": 0.7870557198741379
+        },
+        "phase/early": {
+          "accuracy": 0.8486568487079839,
+          "correct": 49789,
+          "decisions": 58668,
+          "nll": 0.544990904091673,
+          "teacher_probability": 0.7753094798991412
+        },
+        "phase/late": {
+          "accuracy": 0.8622388881531716,
+          "correct": 123708,
+          "decisions": 143473,
+          "nll": 0.4773113201824904,
+          "teacher_probability": 0.7918589121601646
+        }
+      },
+      "ordered_row_identity_sha256": "89b9465368f03897f809833e75de3d93a0da90b34e429928510350668bc7a43b",
+      "rows": 202141,
+      "teacher_wins": 728
+    },
+    "original": {
+      "equal_game": {
+        "accuracy": 0.8394141084415234,
+        "nll": 0.5891511328761442,
+        "teacher_probability": 0.7806201522393081
+      },
+      "games": 5000,
+      "metrics": {
+        "family/blind_play": {
+          "accuracy": 0.9991690974984531,
+          "correct": 113036,
+          "decisions": 113130,
+          "nll": 0.0018091533787965948,
+          "nll_sum": 204.66952174325877,
+          "teacher_probability": 0.9989142771321788,
+          "teacher_probability_sum": 113007.1721719634
+        },
+        "family/blind_reroll": {
+          "accuracy": 0.9060869565217391,
+          "correct": 521,
+          "decisions": 575,
+          "nll": 0.32120571384145674,
+          "nll_sum": 184.69328545883764,
+          "teacher_probability": 0.8392963625364536,
+          "teacher_probability_sum": 482.5954084584608
+        },
+        "family/discard_subset": {
+          "accuracy": 0.5084980091431942,
+          "correct": 27585,
+          "decisions": 54248,
+          "nll": 2.3500467362764375,
+          "nll_sum": 127485.33534952419,
+          "teacher_probability": 0.4164094064745295,
+          "teacher_probability_sum": 22589.377482430278
+        },
+        "family/pack_claim": {
+          "accuracy": 0.8414826272521555,
+          "correct": 88131,
+          "decisions": 104733,
+          "nll": 0.38424567633190987,
+          "nll_sum": 40243.20241926992,
+          "teacher_probability": 0.7968583117320366,
+          "teacher_probability_sum": 83457.36156263138
+        },
+        "family/pack_skip": {
+          "accuracy": 0.978493656752767,
+          "correct": 130579,
+          "decisions": 133449,
+          "nll": 0.06611978208007628,
+          "nll_sum": 8823.6187988041,
+          "teacher_probability": 0.959508850629417,
+          "teacher_probability_sum": 128045.49660764508
+        },
+        "family/play_subset": {
+          "accuracy": 0.694465841085501,
+          "correct": 164087,
+          "decisions": 236278,
+          "nll": 1.219920851896435,
+          "nll_sum": 288240.4590443859,
+          "teacher_probability": 0.5586471734713176,
+          "teacher_probability_sum": 131996.036853456
+        },
+        "family/shop_buy": {
+          "accuracy": 0.9351906368923674,
+          "correct": 195366,
+          "decisions": 208905,
+          "nll": 0.18890064653595925,
+          "nll_sum": 39462.28956459457,
+          "teacher_probability": 0.8932968291160118,
+          "teacher_probability_sum": 186614.17408648046
+        },
+        "family/shop_leave": {
+          "accuracy": 0.945436049200037,
+          "correct": 102230,
+          "decisions": 108130,
+          "nll": 0.17111396887694402,
+          "nll_sum": 18502.553454663957,
+          "teacher_probability": 0.8953504464895391,
+          "teacher_probability_sum": 96814.24377891386
+        },
+        "family/shop_reroll": {
+          "accuracy": 0.9460950071127072,
+          "correct": 81139,
+          "decisions": 85762,
+          "nll": 0.17402918836215786,
+          "nll_sum": 14925.091252315382,
+          "teacher_probability": 0.8966258037097766,
+          "teacher_probability_sum": 76896.42217775786
+        },
+        "family/shop_sell_consumable": {
+          "accuracy": 0.0,
+          "correct": 0,
+          "decisions": 17,
+          "nll": 9.56928544885972,
+          "nll_sum": 162.67785263061523,
+          "teacher_probability": 0.0004940141531095346,
+          "teacher_probability_sum": 0.008398240602862088
+        },
+        "family/shop_sell_joker": {
+          "accuracy": 0.246179277649554,
+          "correct": 7893,
+          "decisions": 32062,
+          "nll": 2.1535973226101737,
+          "nll_sum": 69048.63735752739,
+          "teacher_probability": 0.2413695094122579,
+          "teacher_probability_sum": 7738.7892107758125
+        },
+        "family/use_consumable_hand_subset": {
+          "accuracy": 0.5809186056569501,
+          "correct": 13432,
+          "decisions": 23122,
+          "nll": 1.5310596426258871,
+          "nll_sum": 35401.16105679576,
+          "teacher_probability": 0.4829409197116268,
+          "teacher_probability_sum": 11166.559945572235
+        },
+        "family/use_consumable_joker": {
+          "accuracy": 0.9366852886405959,
+          "correct": 503,
+          "decisions": 537,
+          "nll": 0.19883047079892802,
+          "nll_sum": 106.77196281902434,
+          "teacher_probability": 0.8884567689642634,
+          "teacher_probability_sum": 477.10128493380944
+        },
+        "family/use_consumable_no_target": {
+          "accuracy": 0.9906600249066002,
+          "correct": 25456,
+          "decisions": 25696,
+          "nll": 0.02989207643848679,
+          "nll_sum": 768.1067961633565,
+          "teacher_probability": 0.9813789737910904,
+          "teacher_probability_sum": 25217.51411053586
+        },
+        "outcome/0": {
+          "accuracy": 0.8021182027422624,
+          "correct": 187143,
+          "decisions": 233311,
+          "nll": 0.7544960487880651,
+          "nll_sum": 176032.22763879225,
+          "teacher_probability": 0.7337793311321008,
+          "teacher_probability_sum": 171198.78952576156
+        },
+        "outcome/1": {
+          "accuracy": 0.8538977066782487,
+          "correct": 762815,
+          "decisions": 893333,
+          "nll": 0.5233513595466684,
+          "nll_sum": 467527.040077904,
+          "teacher_probability": 0.7984749959466778,
+          "teacher_probability_sum": 713304.0635540335
+        },
+        "overall": {
+          "accuracy": 0.8431749514487273,
+          "correct": 949958,
+          "decisions": 1126644,
+          "nll": 0.5712179425947294,
+          "nll_sum": 643559.2677166963,
+          "teacher_probability": 0.7850774983755251,
+          "teacher_probability_sum": 884502.8530797951
+        },
+        "phase/early": {
+          "accuracy": 0.836886052639934,
+          "correct": 263594,
+          "decisions": 314970,
+          "nll": 0.6112962892400006,
+          "nll_sum": 192539.99222192296,
+          "teacher_probability": 0.7739423720581766,
+          "teacher_probability_sum": 243768.6289271639
+        },
+        "phase/late": {
+          "accuracy": 0.8456153578899903,
+          "correct": 686364,
+          "decisions": 811674,
+          "nll": 0.5556655449044484,
+          "nll_sum": 451019.27549477323,
+          "teacher_probability": 0.789398482830091,
+          "teacher_probability_sum": 640734.2241526312
+        }
+      },
+      "rows": 1126644,
+      "teacher_wins": 3728
+    }
+  },
+  "source": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/compare_corpora_v1.py",
+    "sha256": "8da5dd9edb90f529f7964566b6f6ffeb16cf12cc53c5719a46aecb532680e993"
+  },
+  "status": "verified",
+  "training_launched": false,
+  "verification_elapsed_seconds": 51.57160341599956
+}

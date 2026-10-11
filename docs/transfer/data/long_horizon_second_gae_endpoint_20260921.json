@@ -1,0 +1,125 @@
+{
+  "arm": "terminal_gae",
+  "replica": 1,
+  "endpoint": 10,
+  "global_update": 132,
+  "verified_unix": 1790014797.330919,
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "checkpoint_sha256": "c06b6c4dde2b786940e52d6686dce3abf55614eb09642ee89ce07851a292eedf",
+  "initial_checkpoint_sha256": "87ee63aff03c30bd947860d7f81e20378a3eeb069ec1b954d3b8a1300a38b5bf",
+  "trajectory_hashes_verified": 640,
+  "exact_training_seed_prefix_verified": true,
+  "training_seeds_disjoint_from_replica0": true,
+  "complete_labels": true,
+  "optimizer_examples": 163840,
+  "decisions": 100542,
+  "kl_rollbacks": 0,
+  "return_loss_enabled": false,
+  "matched_mc_training_audit_sha256": "fa90e1df497c415929977530f6a4467b5b23237d00318f6820fbad9577c73ec7",
+  "matched_mc_game_count_and_optimizer_exposure": true,
+  "updates": [
+    {
+      "update": 123,
+      "decisions": 9990,
+      "optimizer_examples": 16384,
+      "collection_seconds": 144.8508028750075,
+      "optimization_seconds": 128.17014379205648,
+      "elapsed_seconds": 274.5771549579222,
+      "cohort_manifest_sha256": "557a2e5d876ca73e9b764a5b6b403e5683db6a301af30cf94b3f550a7aa0f853",
+      "update_json_sha256": "8694383f288e27b0f8f6b21d55823575038fdd18bfd0a6c68c0df92bba2fac8b"
+    },
+    {
+      "update": 124,
+      "decisions": 9934,
+      "optimizer_examples": 16384,
+      "collection_seconds": 117.35607383295428,
+      "optimization_seconds": 115.87284708302468,
+      "elapsed_seconds": 234.8278638329357,
+      "cohort_manifest_sha256": "d133e3168220857b1373a38dcecf18366f432e6ff5f791690770f7333d8c2de6",
+      "update_json_sha256": "ec1deb9e7440bd0115d4706f5aedcc75172a9fb75cd7bab2d25365fe002da2c6"
+    },
+    {
+      "update": 125,
+      "decisions": 11173,
+      "optimizer_examples": 16384,
+      "collection_seconds": 123.97148612502497,
+      "optimization_seconds": 115.93316987494472,
+      "elapsed_seconds": 241.61753091705032,
+      "cohort_manifest_sha256": "f556f4f091ca69f41ebfbe95ad5bae0910bc96737d1ca6c48f0533b749091958",
+      "update_json_sha256": "0f1d22a2b27f8b6830ede4ae8808d2af1100df9a200a09c33af7d9b1fca5ec9b"
+    },
+    {
+      "update": 126,
+      "decisions": 9754,
+      "optimizer_examples": 16384,
+      "collection_seconds": 117.02913258399349,
+      "optimization_seconds": 114.70270908297971,
+      "elapsed_seconds": 233.2887101250235,
+      "cohort_manifest_sha256": "d966dfc5cccc93cacaf494d3d9a1405b23dee831b94972c719f2e6e13428ebfe",
+      "update_json_sha256": "fe16f37eade4d509e50e8c1827857ae5a434438a86821fbc27b9c6ec93236c85"
+    },
+    {
+      "update": 127,
+      "decisions": 10052,
+      "optimizer_examples": 16384,
+      "collection_seconds": 114.83532245794777,
+      "optimization_seconds": 115.54439283302054,
+      "elapsed_seconds": 231.91629170801025,
+      "cohort_manifest_sha256": "fd0f3190e6b10f0287454d624fd98775a01c008e8f95cf7f5efcfc880945fe04",
+      "update_json_sha256": "fd821203727f7239cdaa505e3d77675029f6d1907c10440360ddf06064f1362b"
+    },
+    {
+      "update": 128,
+      "decisions": 8990,
+      "optimizer_examples": 16384,
+      "collection_seconds": 99.42757416702807,
+      "optimization_seconds": 111.40662787493784,
+      "elapsed_seconds": 212.11777041701134,
+      "cohort_manifest_sha256": "d589e7c9e9677648c8e2d49f55bcff1196e83014218e4d5bf073adf20f2ee20e",
+      "update_json_sha256": "f5c04ee2c7bbbb6590fb0f3e3288165b195acc71ffdd3da1eb2a9804dd9959d6"
+    },
+    {
+      "update": 129,
+      "decisions": 9897,
+      "optimizer_examples": 16384,
+      "collection_seconds": 108.38399383297656,
+      "optimization_seconds": 110.28219549998175,
+      "elapsed_seconds": 220.093586999923,
+      "cohort_manifest_sha256": "47e06e2b79676b42b09246ee35bc71ad3d8072774088e8b7993bdd3e86782fe1",
+      "update_json_sha256": "a1795247e675b6de59f14f11ae391c6625918c1b818729104558de297e7e8d46"
+    },
+    {
+      "update": 130,
+      "decisions": 9698,
+      "optimizer_examples": 16384,
+      "collection_seconds": 106.38861320796423,
+      "optimization_seconds": 110.70385870803148,
+      "elapsed_seconds": 218.4636002079351,
+      "cohort_manifest_sha256": "fc30848f67bb92674400110749143f7085d47e595010711de015649f497783ed",
+      "update_json_sha256": "d7d624733a1f4a7bedfab14c4c4d3ff91837d200a176297a67420f4730aca28e"
+    },
+    {
+      "update": 131,
+      "decisions": 10729,
+      "optimizer_examples": 16384,
+      "collection_seconds": 124.00191550003365,
+      "optimization_seconds": 111.03740445803851,
+      "elapsed_seconds": 236.52758741704747,
+      "cohort_manifest_sha256": "f38d039f96262d92a6aa5cb0587b21d3e448f8be6a492a4f642bc7975c41f98f",
+      "update_json_sha256": "ba5caa2628ca6c33858e2ea19c56b000218414629db07d4fcceeef10e53fa699"
+    },
+    {
+      "update": 132,
+      "decisions": 10325,
+      "optimizer_examples": 16384,
+      "collection_seconds": 111.26650075009093,
+      "optimization_seconds": 111.16352150007151,
+      "elapsed_seconds": 223.85625487507787,
+      "cohort_manifest_sha256": "1a23f4810250d071e02bdb4a5d018f7a00a1db0c9058492ebd563a9a886b93be",
+      "update_json_sha256": "2465706e69c45455269f78af4ceaaed916964f2f554e3528ef080d8f5854a591"
+    }
+  ],
+  "interpretation": "Second terminal-GAE training replica at +10 verified, with the same planned game seeds and optimizer exposure as matched MC. This verifies training integrity, not gameplay improvement or the generalization gates.",
+  "original_analysis_sha256": "490a78d7c6f822be1d59db6c45df6d9f8563324c0d3c7eb6a4ee0f9ee697ecfc"
+}

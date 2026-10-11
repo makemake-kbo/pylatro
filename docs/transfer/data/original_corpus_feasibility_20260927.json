@@ -1,0 +1,346 @@
+{
+  "bytes_per_row": 52375,
+  "cache_allocated": false,
+  "current_cache_metadata": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/stage2/arms/unfrozen_encoder/cache/complete.json",
+    "sha256": "3016af6ecc995e6b97ecd5853d1c0aaa1541de4610576d36062b94240d099e47"
+  },
+  "current_source_manifest": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/stage2_manifest_frozen_v1.json",
+    "sha256": "322967f4e72f2aa81b89de5859297790df48b86be17fb2908eade7ef38889881"
+  },
+  "elapsed_seconds": 60.59771025000373,
+  "free_disk_bytes_at_start": 207722770432,
+  "game_metadata": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/games.jsonl",
+    "sha256": "fd0713cff697b40e855754456253b219f6c6a57666eb5207ce6505e627e584bf"
+  },
+  "games": 5000,
+  "generalization_proven": false,
+  "issue_examples": [],
+  "issues": {},
+  "limitations": [
+    "Matching recorded-observation schema and semantic source hashes does not establish current engine trajectory parity for the historical corpus.",
+    "Only action masks and scalar identity/setting/outcome columns were decoded for all rows; other observation value ranges and model compatibility still require admission checks.",
+    "This admits further preparation, not a training recipe, a claim that more data fixes transfer, or reuse of development seeds as untouched confirmation."
+  ],
+  "matching_semantic_sources": {
+    "src/pylatro/game_data.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/candidate/src/pylatro/game_data.json",
+      "sha256": "8f127b03787d3861d48dca2d03f8751be74e189ee2d8b6cdaeec59b915b9709d"
+    },
+    "src/pylatro_agent/constants.py": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/candidate/src/pylatro_agent/constants.py",
+      "sha256": "1373094c8e23b866b6910a527a5a796027b2d4d39c04db47989d3f6db02d6d39"
+    },
+    "src/pylatro_agent/schema.py": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/candidate/src/pylatro_agent/schema.py",
+      "sha256": "c9578d9bc9e4ba1f9669e213b553e77c26645c00de892ec11c5d946a62ad8319"
+    },
+    "src/pylatro_agent/tokenizer.py": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/candidate/src/pylatro_agent/tokenizer.py",
+      "sha256": "bd512b2eb8173b11922b79e65c9d2ab4bea5bdfa1a023447f97e40fe3c6fea28"
+    },
+    "src/pylatro_agent/vocab.py": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/pretraining_transfer_20260923/candidate/src/pylatro_agent/vocab.py",
+      "sha256": "bab9f186fd8d9794d9589ab748349f0e698755876bc73f35eb19ed1c44b847eb"
+    }
+  },
+  "maximum_decoded_group_rows": 338,
+  "metadata": {
+    "actions": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/actions.json",
+      "sha256": "61ed4296430e4e8a6ec727030519aaa34cc5fba72c9fddf0f96b0ea521202d4f"
+    },
+    "constants": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/constants.json",
+      "sha256": "1ad16ea624f6b032cf9fc623f05d73451c4eb45e6b172716233afa3421a80bb3"
+    },
+    "generation": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/generation.json",
+      "sha256": "1f50b9b42b9c07dd842d63bf3635db2a03732b42fe62eb3f07e708733672fb03"
+    },
+    "schema": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/schema.json",
+      "sha256": "473a95565e6bc149dd1113ae9d1d644195e3bd6c671687a04f139b64954ab212"
+    },
+    "summary": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/summary.json",
+      "sha256": "69f9935bb1f82f26a7431df16bfa338c895edf0208c7aefaa08a54ab97643bdf"
+    },
+    "vocabulary": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/metadata/vocabulary.json",
+      "sha256": "469a3be0677c39d1f530f2456a949dc554f80e71a6120cccbe17228792b8651c"
+    }
+  },
+  "model_compatibility_forward_tested": false,
+  "native_cache_estimate_bytes": 59007979500,
+  "no_model_or_engine_import": true,
+  "observation_fields": {
+    "action_mask": {
+      "dtype": "int8",
+      "shape": [
+        17327
+      ]
+    },
+    "attention_mask": {
+      "dtype": "int8",
+      "shape": [
+        160
+      ]
+    },
+    "history_card_mask": {
+      "dtype": "int8",
+      "shape": [
+        3,
+        12,
+        5
+      ]
+    },
+    "history_cards": {
+      "dtype": "int16",
+      "shape": [
+        3,
+        12,
+        5,
+        47
+      ]
+    },
+    "history_event_features": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        12,
+        6
+      ]
+    },
+    "history_event_mask": {
+      "dtype": "int8",
+      "shape": [
+        3,
+        12
+      ]
+    },
+    "history_events": {
+      "dtype": "int16",
+      "shape": [
+        3,
+        12,
+        6
+      ]
+    },
+    "history_joker_mask": {
+      "dtype": "int8",
+      "shape": [
+        3,
+        12,
+        8
+      ]
+    },
+    "history_jokers": {
+      "dtype": "int16",
+      "shape": [
+        3,
+        12,
+        8
+      ]
+    },
+    "history_omitted": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        19
+      ]
+    },
+    "history_round_mask": {
+      "dtype": "int8",
+      "shape": [
+        3
+      ]
+    },
+    "scalars": {
+      "dtype": "float32",
+      "shape": [
+        33
+      ]
+    },
+    "token_types": {
+      "dtype": "int8",
+      "shape": [
+        160
+      ]
+    },
+    "tokens": {
+      "dtype": "int16",
+      "shape": [
+        160,
+        47
+      ]
+    }
+  },
+  "ordered_row_identity_sha256": "660ac8d904414c775851e27408690f72dd6da3d2dd2de2a8bf291ac81323583e",
+  "records": 1126644,
+  "row_groups": 5000,
+  "row_identity_encoding": "struct.pack('<qii?', seed, step, action, won), shard manifest order then row-group order",
+  "scope": "Original corpus schema, identities and teacher-action legality census; no model forward, full-observation value audit, simulator replay, or training.",
+  "seed_lists_checked_disjoint": {
+    "current_autonomous_development": 128,
+    "current_early_development": 128,
+    "exposed_teacher_state_development": 128,
+    "later_training": 1000
+  },
+  "seed_max": 2080230,
+  "seed_min": 2000000,
+  "seeds_are_contiguous": false,
+  "shards": [
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00000-of-00020.parquet",
+      "records": 56371,
+      "row_groups": 250,
+      "sha256": "0f566375c224c54370470e70d10918c4e2d40ff8a9a97d3c96e59ce81a8bc9d6"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00001-of-00020.parquet",
+      "records": 56747,
+      "row_groups": 250,
+      "sha256": "69ccec96c08ebdeecc930b8094400129309679d63b4c4e4246feba853354181c"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00002-of-00020.parquet",
+      "records": 55502,
+      "row_groups": 250,
+      "sha256": "ba0890caee3a9349714bddb3cf1fff086cb09876974d0251d0af4a0eb2d68909"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00003-of-00020.parquet",
+      "records": 56323,
+      "row_groups": 250,
+      "sha256": "f3f6aa22619e50cf6be5acdef37b0908d64f098210c36b3db092c78d675acb21"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00004-of-00020.parquet",
+      "records": 55914,
+      "row_groups": 250,
+      "sha256": "d7ac4a02e60b8d3bb68386f458e6a5344adf7ffa537fe47ca0ce17601f4c589f"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00005-of-00020.parquet",
+      "records": 56642,
+      "row_groups": 250,
+      "sha256": "01a1596c8343790b0ad652ffc2c606197e0d69eb6ad371708ca52513ee3ab49e"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00006-of-00020.parquet",
+      "records": 56233,
+      "row_groups": 250,
+      "sha256": "f143c0d2868476c26b21d6f3e14b86b8f64063ca2eb6ad12262395f575349378"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00007-of-00020.parquet",
+      "records": 57531,
+      "row_groups": 250,
+      "sha256": "e1dc19a20270cfb176cc88674119d24ef52fb9bd9a7b98858c0774f2309f7b55"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00008-of-00020.parquet",
+      "records": 57345,
+      "row_groups": 250,
+      "sha256": "695eff48ce89224c1c1866abc3ab1cc22600ea067a51daaddaebd315e3beb16e"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00009-of-00020.parquet",
+      "records": 55199,
+      "row_groups": 250,
+      "sha256": "b8889aa59e0b0f91d20372acac877c4f13f7c910b70cc54829150d1649f76691"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00010-of-00020.parquet",
+      "records": 57388,
+      "row_groups": 250,
+      "sha256": "77f3d9563b0203b3c3a4f30209c2700497ae0cc1e0fbdc55424366d9c4f5eb3a"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00011-of-00020.parquet",
+      "records": 56565,
+      "row_groups": 250,
+      "sha256": "0a8296233cf493bc140964c01f595b25703cafbb0e6984e148373fb157a27298"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00012-of-00020.parquet",
+      "records": 56209,
+      "row_groups": 250,
+      "sha256": "cb4763a43ab7bf60c6def6831e63431731fde39701a22613a3a37bb5919bd06a"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00013-of-00020.parquet",
+      "records": 55485,
+      "row_groups": 250,
+      "sha256": "252b53122498b77f1f032a7e813c225510fb9b90924b1f2586cede7accefb5e1"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00014-of-00020.parquet",
+      "records": 56526,
+      "row_groups": 250,
+      "sha256": "2159c20dae7bfa6ab0eaf68ae82b42aa9e2a2a4dca2665ce701a5c9703a3d03e"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00015-of-00020.parquet",
+      "records": 56526,
+      "row_groups": 250,
+      "sha256": "3872f975d657d56da63223eeb51b8b29fb2ee3a7814ead1290b1416d6db413c2"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00016-of-00020.parquet",
+      "records": 55914,
+      "row_groups": 250,
+      "sha256": "736e8c75611c0a73473911a04733b42fd951158200b6ee81b1d9dee641702ef9"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00017-of-00020.parquet",
+      "records": 56068,
+      "row_groups": 250,
+      "sha256": "70d498d330971efda858a34bfb5b50a784aac1c95abda68c71d825257b03e570"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00018-of-00020.parquet",
+      "records": 55794,
+      "row_groups": 250,
+      "sha256": "c86235cc4c66446fc316dc5a878b68275ba8e7040d411367eecd2e9efefa7e90"
+    },
+    {
+      "games": 250,
+      "path": "/Users/makemake/Documents/code/python/pylatro/cache/datasets/5k-balatro-games/data/train-00019-of-00020.parquet",
+      "records": 56362,
+      "row_groups": 250,
+      "sha256": "db52791b031fe624a7e9af1210230572f2d32e3458b47b99ebba4cd8a3f2f81f"
+    }
+  ],
+  "source": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/original_corpus_feasibility_20260927/audit_v1.py",
+    "sha256": "d4ddb98e958e55f20626a5c777bd7040a6d09f570192f9b3396103552d6f90e3"
+  },
+  "status": "passed",
+  "time_limit_seconds": 300,
+  "training_launched": false,
+  "training_recipe_frozen": false,
+  "wins": 3728
+}

@@ -1,0 +1,3505 @@
+{
+  "checks": {
+    "archived_contrast_counts_and_means_reproduced": 240,
+    "maximum_delta_decomposition_error": 2.562999725341797e-06,
+    "stratum_pair_delta_identities": 69784,
+    "tolerance": 2e-05
+  },
+  "decomposition": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/docs/transfer/data/ranking_preservation_score_decomposition_20260927.json",
+    "sha256": "67ee33476d9b83aa81a73cd3a0a42ade580632b12f5578ff13f6c073b8018822"
+  },
+  "decomposition_actual_exit": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/score_decomposition_terminal_v1.json",
+    "sha256": "535708ffc5adf1b7de381f213d2312ab815ebc137cefc1b56bac55e58969ca8e"
+  },
+  "generalization_proven": false,
+  "limitations": [
+    "Shared encoder and projection changes affect both score components; additive log-score deltas are not independent parameter causes.",
+    "An increased margin need not cross zero or change the global mode; a correct pair ranking need not cause a game win.",
+    "Outcome-selected pair populations are not representative of all actions; train/held comparisons are descriptive."
+  ],
+  "no_gameplay": true,
+  "no_model_forward": true,
+  "no_training": true,
+  "populations": {
+    "held": {
+      "combined0__minus__base": {
+        "all": {
+          "newly_correct": 34,
+          "newly_incorrect": 4,
+          "pairs": 339,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.10423178093887009,
+              "median": 0.13941001892089844,
+              "negative": 146,
+              "positive": 193,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.16208027588659596,
+              "median": 0.18367576599121094,
+              "negative": 138,
+              "positive": 201,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.05784849396145801,
+              "median": 0.056952714920043945,
+              "negative": 144,
+              "positive": 195,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 4,
+          "pairs": 106,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.144068661866323,
+              "median": 0.13652053475379944,
+              "negative": 45,
+              "positive": 61,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.2718118092941366,
+              "median": 0.2903337776660919,
+              "negative": 36,
+              "positive": 70,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.1277431494222497,
+              "median": 0.11456316709518433,
+              "negative": 42,
+              "positive": 64,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 13,
+          "newly_incorrect": 1,
+          "pairs": 117,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.17345587291523942,
+              "median": 0.17153385281562805,
+              "negative": 47,
+              "positive": 70,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.20208905105534783,
+              "median": 0.1658533215522766,
+              "negative": 46,
+              "positive": 71,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.028633158431093916,
+              "median": 0.053945302963256836,
+              "negative": 48,
+              "positive": 69,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 35,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.1772620045713016,
+              "median": 0.24428129196166992,
+              "negative": 15,
+              "positive": 20,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.21663729569741658,
+              "median": 0.2699075937271118,
+              "negative": 12,
+              "positive": 23,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.03937522258077349,
+              "median": 0.07205080986022949,
+              "negative": 16,
+              "positive": 19,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 13,
+          "newly_incorrect": 0,
+          "pairs": 82,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.17183130452545678,
+              "median": 0.13374459743499756,
+              "negative": 32,
+              "positive": 50,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.19587943443983066,
+              "median": 0.10758450627326965,
+              "negative": 34,
+              "positive": 48,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.024048131050133124,
+              "median": 0.0535283088684082,
+              "negative": 32,
+              "positive": 50,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 1,
+          "newly_incorrect": 0,
+          "pairs": 7,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.3716889108930315,
+              "median": 0.36019039154052734,
+              "negative": 2,
+              "positive": 5,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.7467496906008039,
+              "median": 0.6895546317100525,
+              "negative": 1,
+              "positive": 6,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.37506082228251864,
+              "median": 0.07490348815917969,
+              "negative": 3,
+              "positive": 4,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 21,
+          "newly_incorrect": 3,
+          "pairs": 222,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.06774881354591868,
+              "median": 0.12293575704097748,
+              "negative": 99,
+              "positive": 123,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.1409945700544159,
+              "median": 0.19536936283111572,
+              "negative": 92,
+              "positive": 130,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.07324576538962287,
+              "median": 0.06065791845321655,
+              "negative": 96,
+              "positive": 126,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 3,
+          "pairs": 71,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.12770574644837582,
+              "median": 0.11906188726425171,
+              "negative": 30,
+              "positive": 41,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.2990105131798437,
+              "median": 0.30699700117111206,
+              "negative": 24,
+              "positive": 47,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.17130480349903376,
+              "median": 0.12084245681762695,
+              "negative": 26,
+              "positive": 45,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 21,
+          "newly_incorrect": 0,
+          "pairs": 151,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.0395571431083395,
+              "median": 0.13941001892089844,
+              "negative": 69,
+              "positive": 82,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.06669568288947968,
+              "median": 0.13488000631332397,
+              "negative": 68,
+              "positive": 83,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.027138535550098545,
+              "median": 0.046456336975097656,
+              "negative": 70,
+              "positive": 81,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 34,
+          "newly_incorrect": 0,
+          "pairs": 233,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.0861085647229473,
+              "median": 0.13941001892089844,
+              "negative": 101,
+              "positive": 132,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.1121594924479723,
+              "median": 0.12316685914993286,
+              "negative": 102,
+              "positive": 131,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.02605092538272874,
+              "median": 0.05160939693450928,
+              "negative": 102,
+              "positive": 131,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__ordinary0": {
+        "all": {
+          "newly_correct": 16,
+          "newly_incorrect": 12,
+          "pairs": 339,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.1686097782401912,
+              "median": 0.18354583531618118,
+              "negative": 137,
+              "positive": 202,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.27894734555805945,
+              "median": 0.22088438272476196,
+              "negative": 130,
+              "positive": 209,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.11033759189214679,
+              "median": 0.06797438859939575,
+              "negative": 143,
+              "positive": 196,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 10,
+          "newly_incorrect": 0,
+          "pairs": 106,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.03379788889356379,
+              "median": -0.06080816686153412,
+              "negative": 56,
+              "positive": 50,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.011272792247528175,
+              "median": -0.03468170762062073,
+              "negative": 54,
+              "positive": 52,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.0450706883983792,
+              "median": 0.06513619422912598,
+              "negative": 44,
+              "positive": 62,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 6,
+          "newly_incorrect": 5,
+          "pairs": 117,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.05812146890367198,
+              "median": 0.18354583531618118,
+              "negative": 47,
+              "positive": 70,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.1334052839053747,
+              "median": 0.13334941864013672,
+              "negative": 50,
+              "positive": 67,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.07528383023718484,
+              "median": 0.014260292053222656,
+              "negative": 54,
+              "positive": 63,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 2,
+          "newly_incorrect": 0,
+          "pairs": 35,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.5051378976021494,
+              "median": -0.543917715549469,
+              "negative": 26,
+              "positive": 9,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.5327271730772086,
+              "median": -0.43902039527893066,
+              "negative": 25,
+              "positive": 10,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.02758933050291879,
+              "median": 0.014260292053222656,
+              "negative": 15,
+              "positive": 20,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 4,
+          "newly_incorrect": 5,
+          "pairs": 82,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.29853705216835186,
+              "median": 0.31990599632263184,
+              "negative": 21,
+              "positive": 61,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.4177301131052578,
+              "median": 0.40650680661201477,
+              "negative": 25,
+              "positive": 57,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.11919310616283882,
+              "median": 0.014598459005355835,
+              "negative": 39,
+              "positive": 43,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 7,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.14261503304753984,
+              "median": 0.1467580795288086,
+              "negative": 3,
+              "positive": 4,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.2250730906214033,
+              "median": -0.06189912557601929,
+              "negative": 4,
+              "positive": 3,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.08245811292103358,
+              "median": -0.06758522987365723,
+              "negative": 5,
+              "positive": 2,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 10,
+          "newly_incorrect": 7,
+          "pairs": 222,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.22684010343105943,
+              "median": 0.19320088624954224,
+              "negative": 90,
+              "positive": 132,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.35565194561825814,
+              "median": 0.2931866142898798,
+              "negative": 80,
+              "positive": 142,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.12881187168327538,
+              "median": 0.088523268699646,
+              "negative": 89,
+              "positive": 133,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 8,
+          "newly_incorrect": 0,
+          "pairs": 71,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.19855281962475307,
+              "median": 0.2337762415409088,
+              "negative": 30,
+              "positive": 41,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.27944178923859564,
+              "median": 0.3554258346557617,
+              "negative": 29,
+              "positive": 42,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.08088900757507539,
+              "median": 0.0788726806640625,
+              "negative": 29,
+              "positive": 42,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 2,
+          "newly_incorrect": 7,
+          "pairs": 151,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.24014074681018363,
+              "median": 0.15744364261627197,
+              "negative": 60,
+              "positive": 91,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.391485860207371,
+              "median": 0.2930327355861664,
+              "negative": 51,
+              "positive": 100,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.1513451389129588,
+              "median": 0.09052515029907227,
+              "negative": 60,
+              "positive": 91,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 6,
+          "newly_incorrect": 12,
+          "pairs": 233,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.26069223624953897,
+              "median": 0.24541378021240234,
+              "negative": 81,
+              "positive": 152,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.4007220350469706,
+              "median": 0.30008605122566223,
+              "negative": 76,
+              "positive": 157,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.14002983124982646,
+              "median": 0.07129734754562378,
+              "negative": 99,
+              "positive": 134,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__preservation0": {
+        "all": {
+          "newly_correct": 15,
+          "newly_incorrect": 4,
+          "pairs": 339,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.16868140271543403,
+              "median": 0.14904457330703735,
+              "negative": 121,
+              "positive": 218,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.24867156407573318,
+              "median": 0.21907925605773926,
+              "negative": 114,
+              "positive": 225,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.07999017526969797,
+              "median": 0.0299685001373291,
+              "negative": 139,
+              "positive": 200,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 5,
+          "newly_incorrect": 1,
+          "pairs": 106,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.31020150474219954,
+              "median": 0.3761301748454571,
+              "negative": 22,
+              "positive": 84,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.4636229844500293,
+              "median": 0.5195537358522415,
+              "negative": 22,
+              "positive": 84,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.1534214826687327,
+              "median": 0.06955334544181824,
+              "negative": 36,
+              "positive": 70,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 6,
+          "newly_incorrect": 3,
+          "pairs": 117,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.1533098441795406,
+              "median": 0.16755008697509766,
+              "negative": 43,
+              "positive": 74,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.1773980628285143,
+              "median": 0.20397019386291504,
+              "negative": 46,
+              "positive": 71,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.024088229379083358,
+              "median": 0.0007375478744506836,
+              "negative": 57,
+              "positive": 60,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 35,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.15248791596719197,
+              "median": 0.30596724152565,
+              "negative": 12,
+              "positive": 23,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.1859574894819941,
+              "median": 0.2932475805282593,
+              "negative": 13,
+              "positive": 22,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.03346956031663077,
+              "median": 0.0004035830497741699,
+              "negative": 17,
+              "positive": 18,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 6,
+          "newly_incorrect": 2,
+          "pairs": 82,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.1536606671970065,
+              "median": 0.12571223080158234,
+              "negative": 31,
+              "positive": 51,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.17374464901300465,
+              "median": 0.16338668763637543,
+              "negative": 33,
+              "positive": 49,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.020084002759398485,
+              "median": 0.0027393996715545654,
+              "negative": 40,
+              "positive": 42,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 7,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.00949632269995553,
+              "median": -0.013846158981323242,
+              "negative": 5,
+              "positive": 2,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.13583929198128836,
+              "median": 0.4430274963378906,
+              "negative": 3,
+              "positive": 4,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.1453357424054827,
+              "median": 0.028677046298980713,
+              "negative": 3,
+              "positive": 4,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 9,
+          "newly_incorrect": 1,
+          "pairs": 222,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.17678262951137783,
+              "median": 0.14856938272714615,
+              "negative": 78,
+              "positive": 144,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.28623462554386203,
+              "median": 0.2559239938855171,
+              "negative": 68,
+              "positive": 154,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.10945201161745433,
+              "median": 0.06621575355529785,
+              "negative": 82,
+              "positive": 140,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 5,
+          "newly_incorrect": 0,
+          "pairs": 71,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.387947640053823,
+              "median": 0.4220457077026367,
+              "negative": 10,
+              "positive": 61,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.6005003411244129,
+              "median": 0.6222876310348511,
+              "negative": 9,
+              "positive": 62,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.21255271199723363,
+              "median": 0.14706867933273315,
+              "negative": 19,
+              "positive": 52,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 4,
+          "newly_incorrect": 1,
+          "pairs": 151,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.07749312124307582,
+              "median": 0.029898375272750854,
+              "negative": 68,
+              "positive": 83,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.13846730232386795,
+              "median": 0.11736476421356201,
+              "negative": 59,
+              "positive": 92,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.06097419885610113,
+              "median": 0.03847312927246094,
+              "negative": 63,
+              "positive": 88,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 10,
+          "newly_incorrect": 3,
+          "pairs": 233,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.10429886702943769,
+              "median": 0.055968284606933594,
+              "negative": 99,
+              "positive": 134,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.15088250587970145,
+              "median": 0.12129640579223633,
+              "negative": 92,
+              "positive": 141,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.04658365774052337,
+              "median": 0.020039498805999756,
+              "negative": 103,
+              "positive": 130,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__ranking0": {
+        "all": {
+          "newly_correct": 3,
+          "newly_incorrect": 14,
+          "pairs": 339,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.06672973842923269,
+              "median": -0.05408644676208496,
+              "negative": 182,
+              "positive": 157,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.06652934850086417,
+              "median": -0.07391893863677979,
+              "negative": 186,
+              "positive": 153,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.00020040066192987042,
+              "median": -0.01422429084777832,
+              "negative": 174,
+              "positive": 165,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 2,
+          "newly_incorrect": 0,
+          "pairs": 106,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.4186964198103491,
+              "median": -0.4423885941505432,
+              "negative": 74,
+              "positive": 32,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.6139643057513068,
+              "median": -0.4994710609316826,
+              "negative": 83,
+              "positive": 23,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.19526784515605783,
+              "median": -0.16212782263755798,
+              "negative": 64,
+              "positive": 42,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 0,
+          "newly_incorrect": 6,
+          "pairs": 117,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.1272338327561688,
+              "median": -0.1236402690410614,
+              "negative": 64,
+              "positive": 53,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.09126369792044672,
+              "median": -0.10887938737869263,
+              "negative": 63,
+              "positive": 54,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.035970149896083735,
+              "median": 0.006065666675567627,
+              "negative": 58,
+              "positive": 59,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 0,
+          "pairs": 35,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.7786175082836833,
+              "median": -0.6938039660453796,
+              "negative": 30,
+              "positive": 5,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.909926550223359,
+              "median": -0.6755031943321228,
+              "negative": 31,
+              "positive": 4,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.1313090213707515,
+              "median": -0.09885883331298828,
+              "negative": 20,
+              "positive": 15,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 6,
+          "pairs": 82,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.15079578484703854,
+              "median": 0.1694355010986328,
+              "negative": 34,
+              "positive": 48,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.2581655683064061,
+              "median": 0.19547882676124573,
+              "negative": 32,
+              "positive": 50,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.10736979616851342,
+              "median": 0.048142582178115845,
+              "negative": 38,
+              "positive": 44,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 7,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.2634109343801226,
+              "median": -0.06865596771240234,
+              "negative": 4,
+              "positive": 3,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.2624213865825108,
+              "median": -0.08288037776947021,
+              "negative": 4,
+              "positive": 3,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.0009896414620535715,
+              "median": -0.04661548137664795,
+              "negative": 5,
+              "positive": 2,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 3,
+          "newly_incorrect": 8,
+          "pairs": 222,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.03484244547314472,
+              "median": -0.03467869758605957,
+              "negative": 118,
+              "positive": 104,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.0534936778608139,
+              "median": -0.07243961095809937,
+              "negative": 123,
+              "positive": 99,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.018651223934448517,
+              "median": -0.01923269033432007,
+              "negative": 116,
+              "positive": 106,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 2,
+          "newly_incorrect": 0,
+          "pairs": 71,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.24127053112631114,
+              "median": -0.32349348068237305,
+              "negative": 44,
+              "positive": 27,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.4680674246735346,
+              "median": -0.4100104868412018,
+              "negative": 52,
+              "positive": 19,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.2267968427967018,
+              "median": -0.18042612075805664,
+              "negative": 44,
+              "positive": 27,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 1,
+          "newly_incorrect": 8,
+          "pairs": 151,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.06221976698629114,
+              "median": 0.03950095176696777,
+              "negative": 74,
+              "positive": 77,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.14143834878622696,
+              "median": 0.07199418544769287,
+              "negative": 71,
+              "positive": 80,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.07921857036502156,
+              "median": 0.016617655754089355,
+              "negative": 72,
+              "positive": 79,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 1,
+          "newly_incorrect": 14,
+          "pairs": 233,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.09339244279994473,
+              "median": 0.0681072399020195,
+              "negative": 108,
+              "positive": 125,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.18251831445427283,
+              "median": 0.10910198837518692,
+              "negative": 103,
+              "positive": 130,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.08912586871646505,
+              "median": 0.03131294250488281,
+              "negative": 110,
+              "positive": 123,
+              "zero": 0
+            }
+          }
+        }
+      }
+    },
+    "training_all": {
+      "combined0__minus__base": {
+        "all": {
+          "newly_correct": 1053,
+          "newly_incorrect": 3,
+          "pairs": 2027,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1310893185749158,
+              "median": 1.0114355087280273,
+              "negative": 282,
+              "positive": 1745,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.8173441267856059,
+              "median": 1.7075923085212708,
+              "negative": 279,
+              "positive": 1748,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6862548211994698,
+              "median": 0.435697078704834,
+              "negative": 455,
+              "positive": 1572,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 3,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.02348502169769654,
+              "median": 0.06055079400539398,
+              "negative": 265,
+              "positive": 317,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.10567935528489682,
+              "median": 0.04376596212387085,
+              "negative": 278,
+              "positive": 304,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.08219434141703078,
+              "median": -0.055550456047058105,
+              "negative": 341,
+              "positive": 241,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 330,
+          "newly_incorrect": 1,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1333554983686875,
+              "median": 1.0299489349126816,
+              "negative": 116,
+              "positive": 564,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.6261385396752945,
+              "median": 1.5404817014932632,
+              "negative": 114,
+              "positive": 566,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.49278305102797115,
+              "median": 0.26451513171195984,
+              "negative": 181,
+              "positive": 499,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.11406229565089399,
+              "median": -0.07266038656234741,
+              "negative": 113,
+              "positive": 107,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.19995738662440668,
+              "median": -0.017580121755599976,
+              "negative": 113,
+              "positive": 107,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.08589510809291492,
+              "median": -0.055550456047058105,
+              "negative": 129,
+              "positive": 91,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 330,
+          "newly_incorrect": 0,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.7299466172476177,
+              "median": 1.5100588202476501,
+              "negative": 3,
+              "positive": 457,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.4994887652968907,
+              "median": 2.2681499123573303,
+              "negative": 1,
+              "positive": 459,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7695421706075254,
+              "median": 0.5362067818641663,
+              "negative": 52,
+              "positive": 408,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 26,
+          "newly_incorrect": 0,
+          "pairs": 34,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.5760893015300526,
+              "median": 1.3750706166028976,
+              "negative": 0,
+              "positive": 34,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.5224831888780876,
+              "median": 2.118785262107849,
+              "negative": 0,
+              "positive": 34,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.9463939281070933,
+              "median": 0.7467980980873108,
+              "negative": 4,
+              "positive": 30,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 723,
+          "newly_incorrect": 2,
+          "pairs": 1347,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1299452931407918,
+              "median": 1.0068535804748535,
+              "negative": 166,
+              "positive": 1181,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.9138695902117469,
+              "median": 1.7772825956344604,
+              "negative": 165,
+              "positive": 1182,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7839243117092093,
+              "median": 0.5386180877685547,
+              "negative": 274,
+              "positive": 1073,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 2,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.03156194037330743,
+              "median": 0.12154698371887207,
+              "negative": 152,
+              "positive": 210,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.04838331413933832,
+              "median": 0.08389751613140106,
+              "negative": 165,
+              "positive": 197,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.0799452566968802,
+              "median": -0.05515196919441223,
+              "negative": 212,
+              "positive": 150,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 723,
+          "newly_incorrect": 0,
+          "pairs": 985,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.5336151141578775,
+              "median": 1.334825038909912,
+              "negative": 14,
+              "positive": 971,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.635022434247374,
+              "median": 2.3045607805252075,
+              "negative": 0,
+              "positive": 985,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 1.101407340910229,
+              "median": 0.8338544368743896,
+              "negative": 62,
+              "positive": 923,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 1053,
+          "newly_incorrect": 0,
+          "pairs": 1445,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.5961151082210474,
+              "median": 1.4017672538757324,
+              "negative": 17,
+              "positive": 1428,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.5918767680070816,
+              "median": 2.296309173107147,
+              "negative": 1,
+              "positive": 1444,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.9957616811598874,
+              "median": 0.735571026802063,
+              "negative": 114,
+              "positive": 1331,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__ordinary0": {
+        "all": {
+          "newly_correct": 755,
+          "newly_incorrect": 0,
+          "pairs": 2027,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8921283218121964,
+              "median": 0.7937427163124084,
+              "negative": 351,
+              "positive": 1676,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4043796805181432,
+              "median": 1.2511602640151978,
+              "negative": 233,
+              "positive": 1794,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5122513724008568,
+              "median": 0.33878374099731445,
+              "negative": 407,
+              "positive": 1620,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 216,
+          "newly_incorrect": 0,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.0943990065316154,
+              "median": 1.0317249409854412,
+              "negative": 75,
+              "positive": 507,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.3677996957444192,
+              "median": 1.2700197100639343,
+              "negative": 65,
+              "positive": 517,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.27340069561684666,
+              "median": 0.16143959760665894,
+              "negative": 157,
+              "positive": 425,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 250,
+          "newly_incorrect": 0,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.9164588106138741,
+              "median": 0.8456746339797974,
+              "negative": 123,
+              "positive": 557,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.3294759189162184,
+              "median": 1.2050418853759766,
+              "negative": 79,
+              "positive": 601,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.41301712428822235,
+              "median": 0.25761473178863525,
+              "negative": 157,
+              "positive": 523,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 74,
+          "newly_incorrect": 0,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.016575969315388,
+              "median": 0.926922395825386,
+              "negative": 35,
+              "positive": 185,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.1217044044116682,
+              "median": 0.9476588442921638,
+              "negative": 32,
+              "positive": 188,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.10512844391844489,
+              "median": 0.0807618498802185,
+              "negative": 85,
+              "positive": 135,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 176,
+          "newly_incorrect": 0,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8685766912348892,
+              "median": 0.8096859790384769,
+              "negative": 88,
+              "positive": 372,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4288449041140467,
+              "median": 1.294494405388832,
+              "negative": 47,
+              "positive": 413,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5602682322911594,
+              "median": 0.395109623670578,
+              "negative": 72,
+              "positive": 388,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 16,
+          "newly_incorrect": 0,
+          "pairs": 34,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.897900016649681,
+              "median": 0.8183576501905918,
+              "negative": 5,
+              "positive": 29,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.5143323935130064,
+              "median": 1.138483315706253,
+              "negative": 5,
+              "positive": 29,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6164324003107408,
+              "median": 0.33969610929489136,
+              "negative": 5,
+              "positive": 29,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 505,
+          "newly_incorrect": 0,
+          "pairs": 1347,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8798456697074147,
+              "median": 0.7572184503078461,
+              "negative": 228,
+              "positive": 1119,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4421930122845195,
+              "median": 1.2608696967363358,
+              "negative": 154,
+              "positive": 1193,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5623473551154756,
+              "median": 0.38485121726989746,
+              "negative": 250,
+              "positive": 1097,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 142,
+          "newly_incorrect": 0,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.141694775005566,
+              "median": 1.1234681569039822,
+              "negative": 40,
+              "positive": 322,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.5173603700350415,
+              "median": 1.4863569736480713,
+              "negative": 33,
+              "positive": 329,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.3756655999639416,
+              "median": 0.2411799430847168,
+              "negative": 72,
+              "positive": 290,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 363,
+          "newly_incorrect": 0,
+          "pairs": 985,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.7836128005521552,
+              "median": 0.6408440992236137,
+              "negative": 188,
+              "positive": 797,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4145680544107235,
+              "median": 1.2133934199810028,
+              "negative": 121,
+              "positive": 864,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6309552691914708,
+              "median": 0.4650747776031494,
+              "negative": 178,
+              "positive": 807,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 539,
+          "newly_incorrect": 0,
+          "pairs": 1445,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8106601290739944,
+              "median": 0.6908378601074219,
+              "negative": 276,
+              "positive": 1169,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4191129339010549,
+              "median": 1.2343750298023224,
+              "negative": 168,
+              "positive": 1277,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6084528214584998,
+              "median": 0.4393056035041809,
+              "negative": 250,
+              "positive": 1195,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__preservation0": {
+        "all": {
+          "newly_correct": 841,
+          "newly_incorrect": 0,
+          "pairs": 2027,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.0224373853730049,
+              "median": 0.8854030668735504,
+              "negative": 65,
+              "positive": 1962,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.5714966848381893,
+              "median": 1.3719971179962158,
+              "negative": 29,
+              "positive": 1998,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5490593073193993,
+              "median": 0.36514973640441895,
+              "negative": 216,
+              "positive": 1811,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 146,
+          "newly_incorrect": 0,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8027131555672363,
+              "median": 0.7691439539194107,
+              "negative": 33,
+              "positive": 549,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.0305624421769144,
+              "median": 0.9861088469624519,
+              "negative": 19,
+              "positive": 563,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.22784929110626995,
+              "median": 0.1540319323539734,
+              "negative": 124,
+              "positive": 458,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 276,
+          "newly_incorrect": 0,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.055470102335162,
+              "median": 0.9277833476662636,
+              "negative": 21,
+              "positive": 659,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4675119066172664,
+              "median": 1.3110373616218567,
+              "negative": 11,
+              "positive": 669,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.4120418115135501,
+              "median": 0.22628363966941833,
+              "negative": 112,
+              "positive": 568,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 52,
+          "newly_incorrect": 0,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.7511058816178279,
+              "median": 0.6948648020625114,
+              "negative": 15,
+              "positive": 205,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.8737737646834417,
+              "median": 0.8119096159934998,
+              "negative": 11,
+              "positive": 209,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.12266788414933465,
+              "median": 0.06199046969413757,
+              "negative": 71,
+              "positive": 149,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 224,
+          "newly_incorrect": 0,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.201035599199974,
+              "median": 1.1040397435426712,
+              "negative": 6,
+              "positive": 454,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.7514736266725737,
+              "median": 1.6005448251962662,
+              "negative": 0,
+              "positive": 460,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5504380376442619,
+              "median": 0.3467397093772888,
+              "negative": 41,
+              "positive": 419,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 16,
+          "newly_incorrect": 0,
+          "pairs": 34,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.148088020436904,
+              "median": 0.9546947479248047,
+              "negative": 1,
+              "positive": 33,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.8532050821711035,
+              "median": 1.5112895369529724,
+              "negative": 0,
+              "positive": 34,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7051170573515051,
+              "median": 0.4843001365661621,
+              "negative": 2,
+              "positive": 32,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 565,
+          "newly_incorrect": 0,
+          "pairs": 1347,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.005761626253282,
+              "median": 0.8682804107666016,
+              "negative": 44,
+              "positive": 1303,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.6239908564716174,
+              "median": 1.3983741402626038,
+              "negative": 18,
+              "positive": 1329,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6182292383869401,
+              "median": 0.43354904651641846,
+              "negative": 104,
+              "positive": 1243,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 94,
+          "newly_incorrect": 0,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.834076692221573,
+              "median": 0.8125805668532848,
+              "negative": 18,
+              "positive": 344,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.1258483787751576,
+              "median": 1.1102963238954544,
+              "negative": 8,
+              "positive": 354,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.2917716931242969,
+              "median": 0.2258133590221405,
+              "negative": 53,
+              "positive": 309,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 471,
+          "newly_incorrect": 0,
+          "pairs": 985,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.0688580182527527,
+              "median": 0.9018656462430954,
+              "negative": 26,
+              "positive": 959,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.8070645386301132,
+              "median": 1.5509034395217896,
+              "negative": 10,
+              "positive": 975,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7382065291332109,
+              "median": 0.5499202609062195,
+              "negative": 51,
+              "positive": 934,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 695,
+          "newly_incorrect": 0,
+          "pairs": 1445,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1109353104574045,
+              "median": 0.9640711545944214,
+              "negative": 32,
+              "positive": 1413,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.7893677777301353,
+              "median": 1.5628659129142761,
+              "negative": 10,
+              "positive": 1435,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6784324764792894,
+              "median": 0.48367059230804443,
+              "negative": 92,
+              "positive": 1353,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__ranking0": {
+        "all": {
+          "newly_correct": 18,
+          "newly_incorrect": 150,
+          "pairs": 2027,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.574342467710486,
+              "median": -0.5359479486942291,
+              "negative": 1678,
+              "positive": 349,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.7567971394016312,
+              "median": -0.7190700769424438,
+              "negative": 1783,
+              "positive": 244,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.18245466668792823,
+              "median": -0.1058349609375,
+              "negative": 1312,
+              "positive": 715,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 10,
+          "newly_incorrect": 0,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.3506402807419038,
+              "median": -0.3466118574142456,
+              "negative": 420,
+              "positive": 162,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.4111324109991571,
+              "median": -0.40922413766384125,
+              "negative": 434,
+              "positive": 148,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.06049210872641953,
+              "median": 0.0007700920104980469,
+              "negative": 291,
+              "positive": 291,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 6,
+          "newly_incorrect": 58,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.649468098712318,
+              "median": -0.6039665341377258,
+              "negative": 577,
+              "positive": 103,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.7638793195104774,
+              "median": -0.7487284131348133,
+              "negative": 590,
+              "positive": 90,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.11441121526500758,
+              "median": -0.05134508013725281,
+              "negative": 399,
+              "positive": 281,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 2,
+          "newly_incorrect": 0,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.477023466845805,
+              "median": -0.4371041804552078,
+              "negative": 169,
+              "positive": 51,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.5777767561545426,
+              "median": -0.532558336853981,
+              "negative": 175,
+              "positive": 45,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.1007532768628814,
+              "median": -0.004227757453918457,
+              "negative": 112,
+              "positive": 108,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 4,
+          "newly_incorrect": 58,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.7319416183006504,
+              "median": -0.7006170265376568,
+              "negative": 408,
+              "positive": 52,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.8528848932894028,
+              "median": -0.8346006572246552,
+              "negative": 415,
+              "positive": 45,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.12094327276167663,
+              "median": -0.06302094459533691,
+              "negative": 287,
+              "positive": 173,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 0,
+          "newly_incorrect": 3,
+          "pairs": 34,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.6538340773652581,
+              "median": -0.4550634026527405,
+              "negative": 29,
+              "positive": 5,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.9542594893890268,
+              "median": -0.8154137134552002,
+              "negative": 29,
+              "positive": 5,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.30042536469066844,
+              "median": -0.2566155195236206,
+              "negative": 26,
+              "positive": 8,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 12,
+          "newly_incorrect": 92,
+          "pairs": 1347,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.5364171306048842,
+              "median": -0.5100805759429932,
+              "negative": 1101,
+              "positive": 246,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.7532218740163191,
+              "median": -0.7104911804199219,
+              "negative": 1193,
+              "positive": 154,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.21680473867574265,
+              "median": -0.1504368782043457,
+              "negative": 913,
+              "positive": 434,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 8,
+          "newly_incorrect": 0,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.273832819573787,
+              "median": -0.31696054339408875,
+              "negative": 251,
+              "positive": 111,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.3098568421201935,
+              "median": -0.34392306208610535,
+              "negative": 259,
+              "positive": 103,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.03602399549431564,
+              "median": 0.002781897783279419,
+              "negative": 179,
+              "positive": 183,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 4,
+          "newly_incorrect": 92,
+          "pairs": 985,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.6329201971970234,
+              "median": -0.579327791929245,
+              "negative": 850,
+              "positive": 135,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.9161641496979409,
+              "median": -0.8585006594657898,
+              "negative": 934,
+              "positive": 51,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.28324395596678487,
+              "median": -0.22802269458770752,
+              "negative": 734,
+              "positive": 251,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 8,
+          "newly_incorrect": 150,
+          "pairs": 1445,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.6644425873061365,
+              "median": -0.604731559753418,
+              "negative": 1258,
+              "positive": 187,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.8960198881422817,
+              "median": -0.8497459888458252,
+              "negative": 1349,
+              "positive": 96,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.2315773024897262,
+              "median": -0.16661477088928223,
+              "negative": 1021,
+              "positive": 424,
+              "zero": 0
+            }
+          }
+        }
+      }
+    },
+    "training_matched": {
+      "combined0__minus__base": {
+        "all": {
+          "newly_correct": 1053,
+          "newly_incorrect": 3,
+          "pairs": 1977,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.147397769201447,
+              "median": 1.040897786617279,
+              "negative": 277,
+              "positive": 1700,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.8304862296467832,
+              "median": 1.7386264204978943,
+              "negative": 279,
+              "positive": 1698,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6830884725171987,
+              "median": 0.4169607162475586,
+              "negative": 455,
+              "positive": 1522,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 3,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.02348502169769654,
+              "median": 0.06055079400539398,
+              "negative": 265,
+              "positive": 317,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.10567935528489682,
+              "median": 0.04376596212387085,
+              "negative": 278,
+              "positive": 304,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.08219434141703078,
+              "median": -0.055550456047058105,
+              "negative": 341,
+              "positive": 241,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 330,
+          "newly_incorrect": 1,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1333554983686875,
+              "median": 1.0299489349126816,
+              "negative": 116,
+              "positive": 564,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.6261385396752945,
+              "median": 1.5404817014932632,
+              "negative": 114,
+              "positive": 566,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.49278305102797115,
+              "median": 0.26451513171195984,
+              "negative": 181,
+              "positive": 499,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 1,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.11406229565089399,
+              "median": -0.07266038656234741,
+              "negative": 113,
+              "positive": 107,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.19995738662440668,
+              "median": -0.017580121755599976,
+              "negative": 113,
+              "positive": 107,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.08589510809291492,
+              "median": -0.055550456047058105,
+              "negative": 129,
+              "positive": 91,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 330,
+          "newly_incorrect": 0,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.7299466172476177,
+              "median": 1.5100588202476501,
+              "negative": 3,
+              "positive": 457,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.4994887652968907,
+              "median": 2.2681499123573303,
+              "negative": 1,
+              "positive": 459,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7695421706075254,
+              "median": 0.5362067818641663,
+              "negative": 52,
+              "positive": 408,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 26,
+          "newly_incorrect": 0,
+          "pairs": 33,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.5996011567838264,
+              "median": 1.4075089395046234,
+              "negative": 0,
+              "positive": 33,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.551851537643057,
+              "median": 2.118902802467346,
+              "negative": 0,
+              "positive": 33,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.9522504228534121,
+              "median": 0.7404665946960449,
+              "negative": 4,
+              "positive": 29,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 723,
+          "newly_incorrect": 2,
+          "pairs": 1297,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1547599466619531,
+              "median": 1.041677288711071,
+              "negative": 161,
+              "positive": 1136,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.9376230293234311,
+              "median": 1.8300021886825562,
+              "negative": 165,
+              "positive": 1132,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7828630959656758,
+              "median": 0.5188121795654297,
+              "negative": 274,
+              "positive": 1023,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 0,
+          "newly_incorrect": 2,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.03156194037330743,
+              "median": 0.12154698371887207,
+              "negative": 152,
+              "positive": 210,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.04838331413933832,
+              "median": 0.08389751613140106,
+              "negative": 165,
+              "positive": 197,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.0799452566968802,
+              "median": -0.05515196919441223,
+              "negative": 212,
+              "positive": 150,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 723,
+          "newly_incorrect": 0,
+          "pairs": 935,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.589623773695632,
+              "median": 1.3969089984893799,
+              "negative": 9,
+              "positive": 926,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.7065367152416373,
+              "median": 2.3572790026664734,
+              "negative": 0,
+              "positive": 935,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 1.1169129608467938,
+              "median": 0.8343874216079712,
+              "negative": 62,
+              "positive": 873,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 1053,
+          "newly_incorrect": 0,
+          "pairs": 1395,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.6358951056195843,
+              "median": 1.4331748485565186,
+              "negative": 12,
+              "positive": 1383,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 2.638262839274194,
+              "median": 2.3280230462551117,
+              "negative": 1,
+              "positive": 1394,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 1.002367754029544,
+              "median": 0.735571026802063,
+              "negative": 114,
+              "positive": 1281,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__ordinary0": {
+        "all": {
+          "newly_correct": 755,
+          "newly_incorrect": 0,
+          "pairs": 1977,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.9196643449957768,
+              "median": 0.815862774848938,
+              "negative": 320,
+              "positive": 1657,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4601079798381273,
+              "median": 1.2786411046981812,
+              "negative": 193,
+              "positive": 1784,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5404436482162746,
+              "median": 0.35307419300079346,
+              "negative": 361,
+              "positive": 1616,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 216,
+          "newly_incorrect": 0,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.0943990065316154,
+              "median": 1.0317249409854412,
+              "negative": 75,
+              "positive": 507,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.3677996957444192,
+              "median": 1.2700197100639343,
+              "negative": 65,
+              "positive": 517,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.27340069561684666,
+              "median": 0.16143959760665894,
+              "negative": 157,
+              "positive": 425,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 250,
+          "newly_incorrect": 0,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.9164588106138741,
+              "median": 0.8456746339797974,
+              "negative": 123,
+              "positive": 557,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.3294759189162184,
+              "median": 1.2050418853759766,
+              "negative": 79,
+              "positive": 601,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.41301712428822235,
+              "median": 0.25761473178863525,
+              "negative": 157,
+              "positive": 523,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 74,
+          "newly_incorrect": 0,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.016575969315388,
+              "median": 0.926922395825386,
+              "negative": 35,
+              "positive": 185,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.1217044044116682,
+              "median": 0.9476588442921638,
+              "negative": 32,
+              "positive": 188,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.10512844391844489,
+              "median": 0.0807618498802185,
+              "negative": 85,
+              "positive": 135,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 176,
+          "newly_incorrect": 0,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8685766912348892,
+              "median": 0.8096859790384769,
+              "negative": 88,
+              "positive": 372,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4288449041140467,
+              "median": 1.294494405388832,
+              "negative": 47,
+              "positive": 413,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5602682322911594,
+              "median": 0.395109623670578,
+              "negative": 72,
+              "positive": 388,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 16,
+          "newly_incorrect": 0,
+          "pairs": 33,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.9219956359628475,
+              "median": 0.8281448483467102,
+              "negative": 5,
+              "positive": 28,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.5775766562331806,
+              "median": 1.1673285961151123,
+              "negative": 4,
+              "positive": 29,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6555810408158735,
+              "median": 0.35038959980010986,
+              "negative": 4,
+              "positive": 29,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 505,
+          "newly_incorrect": 0,
+          "pairs": 1297,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.921344964409573,
+              "median": 0.7937427163124084,
+              "negative": 197,
+              "positive": 1100,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.52859664709094,
+              "median": 1.3138718008995056,
+              "negative": 114,
+              "positive": 1183,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6072516946858779,
+              "median": 0.4122598171234131,
+              "negative": 204,
+              "positive": 1093,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 142,
+          "newly_incorrect": 0,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.141694775005566,
+              "median": 1.1234681569039822,
+              "negative": 40,
+              "positive": 322,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.5173603700350415,
+              "median": 1.4863569736480713,
+              "negative": 33,
+              "positive": 329,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.3756655999639416,
+              "median": 0.2411799430847168,
+              "negative": 72,
+              "positive": 290,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 363,
+          "newly_incorrect": 0,
+          "pairs": 935,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8360330591306967,
+              "median": 0.6885146498680115,
+              "negative": 157,
+              "positive": 778,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.5329469490099081,
+              "median": 1.2745542526245117,
+              "negative": 81,
+              "positive": 854,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6969139046210019,
+              "median": 0.4970262050628662,
+              "negative": 132,
+              "positive": 803,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 539,
+          "newly_incorrect": 0,
+          "pairs": 1395,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8467642926560935,
+              "median": 0.7263975143432617,
+              "negative": 245,
+              "positive": 1150,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4986193929869,
+              "median": 1.2798404693603516,
+              "negative": 128,
+              "positive": 1267,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.651855116612595,
+              "median": 0.46653199195861816,
+              "negative": 204,
+              "positive": 1191,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__preservation0": {
+        "all": {
+          "newly_correct": 841,
+          "newly_incorrect": 0,
+          "pairs": 1977,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.0450156568712095,
+              "median": 0.8975677490234375,
+              "negative": 48,
+              "positive": 1929,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.6021656746979376,
+              "median": 1.3938472270965576,
+              "negative": 19,
+              "positive": 1958,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5571500265393283,
+              "median": 0.37110602855682373,
+              "negative": 205,
+              "positive": 1772,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 146,
+          "newly_incorrect": 0,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.8027131555672363,
+              "median": 0.7691439539194107,
+              "negative": 33,
+              "positive": 549,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.0305624421769144,
+              "median": 0.9861088469624519,
+              "negative": 19,
+              "positive": 563,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.22784929110626995,
+              "median": 0.1540319323539734,
+              "negative": 124,
+              "positive": 458,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 276,
+          "newly_incorrect": 0,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.055470102335162,
+              "median": 0.9277833476662636,
+              "negative": 21,
+              "positive": 659,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.4675119066172664,
+              "median": 1.3110373616218567,
+              "negative": 11,
+              "positive": 669,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.4120418115135501,
+              "median": 0.22628363966941833,
+              "negative": 112,
+              "positive": 568,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 52,
+          "newly_incorrect": 0,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.7511058816178279,
+              "median": 0.6948648020625114,
+              "negative": 15,
+              "positive": 205,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 0.8737737646834417,
+              "median": 0.8119096159934998,
+              "negative": 11,
+              "positive": 209,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.12266788414933465,
+              "median": 0.06199046969413757,
+              "negative": 71,
+              "positive": 149,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 224,
+          "newly_incorrect": 0,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.201035599199974,
+              "median": 1.1040397435426712,
+              "negative": 6,
+              "positive": 454,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.7514736266725737,
+              "median": 1.6005448251962662,
+              "negative": 0,
+              "positive": 460,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.5504380376442619,
+              "median": 0.3467397093772888,
+              "negative": 41,
+              "positive": 419,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 16,
+          "newly_incorrect": 0,
+          "pairs": 33,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1711700901840671,
+              "median": 0.9878308773040771,
+              "negative": 1,
+              "positive": 32,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.896049948352756,
+              "median": 1.5192328691482544,
+              "negative": 0,
+              "positive": 33,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.724879857265588,
+              "median": 0.5118246078491211,
+              "negative": 2,
+              "positive": 31,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 565,
+          "newly_incorrect": 0,
+          "pairs": 1297,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.0395345289487055,
+              "median": 0.8913092613220215,
+              "negative": 27,
+              "positive": 1270,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.6727628699908106,
+              "median": 1.4247786700725555,
+              "negative": 8,
+              "positive": 1289,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6332283505312553,
+              "median": 0.4499826431274414,
+              "negative": 93,
+              "positive": 1204,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 94,
+          "newly_incorrect": 0,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 0.834076692221573,
+              "median": 0.8125805668532848,
+              "negative": 18,
+              "positive": 344,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.1258483787751576,
+              "median": 1.1102963238954544,
+              "negative": 8,
+              "positive": 354,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.2917716931242969,
+              "median": 0.2258133590221405,
+              "negative": 53,
+              "positive": 309,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 471,
+          "newly_incorrect": 0,
+          "pairs": 935,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.1190807716173923,
+              "median": 0.9398906230926514,
+              "negative": 9,
+              "positive": 926,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.8845094430604004,
+              "median": 1.5918725430965424,
+              "negative": 0,
+              "positive": 935,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.7654286820620777,
+              "median": 0.583605170249939,
+              "negative": 40,
+              "positive": 895,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 695,
+          "newly_incorrect": 0,
+          "pairs": 1395,
+          "score_changes": {
+            "energy_margin": {
+              "mean": 1.146105302576523,
+              "median": 0.9931414127349854,
+              "negative": 15,
+              "positive": 1380,
+              "zero": 0
+            },
+            "margin": {
+              "mean": 1.8406410018142352,
+              "median": 1.595341682434082,
+              "negative": 0,
+              "positive": 1395,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": 0.6945357097092495,
+              "median": 0.5050438642501831,
+              "negative": 81,
+              "positive": 1314,
+              "zero": 0
+            }
+          }
+        }
+      },
+      "combined0__minus__ranking0": {
+        "all": {
+          "newly_correct": 18,
+          "newly_incorrect": 150,
+          "pairs": 1977,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.5821840378729515,
+              "median": -0.5449662804603577,
+              "negative": 1642,
+              "positive": 335,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.7516380726587316,
+              "median": -0.7145452499389648,
+              "negative": 1734,
+              "positive": 243,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.16945403009336527,
+              "median": -0.09818148612976074,
+              "negative": 1263,
+              "positive": 714,
+              "zero": 0
+            }
+          }
+        },
+        "alternative_preferred": {
+          "newly_correct": 10,
+          "newly_incorrect": 0,
+          "pairs": 582,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.3506402807419038,
+              "median": -0.3466118574142456,
+              "negative": 420,
+              "positive": 162,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.4111324109991571,
+              "median": -0.40922413766384125,
+              "negative": 434,
+              "positive": 148,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.06049210872641953,
+              "median": 0.0007700920104980469,
+              "negative": 291,
+              "positive": 291,
+              "zero": 0
+            }
+          }
+        },
+        "early": {
+          "newly_correct": 6,
+          "newly_incorrect": 58,
+          "pairs": 680,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.649468098712318,
+              "median": -0.6039665341377258,
+              "negative": 577,
+              "positive": 103,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.7638793195104774,
+              "median": -0.7487284131348133,
+              "negative": 590,
+              "positive": 90,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.11441121526500758,
+              "median": -0.05134508013725281,
+              "negative": 399,
+              "positive": 281,
+              "zero": 0
+            }
+          }
+        },
+        "early_alternative_preferred": {
+          "newly_correct": 2,
+          "newly_incorrect": 0,
+          "pairs": 220,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.477023466845805,
+              "median": -0.4371041804552078,
+              "negative": 169,
+              "positive": 51,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.5777767561545426,
+              "median": -0.532558336853981,
+              "negative": 175,
+              "positive": 45,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.1007532768628814,
+              "median": -0.004227757453918457,
+              "negative": 112,
+              "positive": 108,
+              "zero": 0
+            }
+          }
+        },
+        "early_teacher_preferred": {
+          "newly_correct": 4,
+          "newly_incorrect": 58,
+          "pairs": 460,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.7319416183006504,
+              "median": -0.7006170265376568,
+              "negative": 408,
+              "positive": 52,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.8528848932894028,
+              "median": -0.8346006572246552,
+              "negative": 415,
+              "positive": 45,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.12094327276167663,
+              "median": -0.06302094459533691,
+              "negative": 287,
+              "positive": 173,
+              "zero": 0
+            }
+          }
+        },
+        "fatal_alternative": {
+          "newly_correct": 0,
+          "newly_incorrect": 3,
+          "pairs": 33,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.6700024469332262,
+              "median": -0.4774928092956543,
+              "negative": 28,
+              "positive": 5,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.9655481062152169,
+              "median": -0.8157016038894653,
+              "negative": 28,
+              "positive": 5,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.29554561051455414,
+              "median": -0.23396635055541992,
+              "negative": 25,
+              "positive": 8,
+              "zero": 0
+            }
+          }
+        },
+        "late": {
+          "newly_correct": 12,
+          "newly_incorrect": 92,
+          "pairs": 1297,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.5469078918661903,
+              "median": -0.5269308090209961,
+              "negative": 1065,
+              "positive": 232,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.7452201483262819,
+              "median": -0.7054827809333801,
+              "negative": 1144,
+              "positive": 153,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.19831225220846413,
+              "median": -0.13496434688568115,
+              "negative": 864,
+              "positive": 433,
+              "zero": 0
+            }
+          }
+        },
+        "late_alternative_preferred": {
+          "newly_correct": 8,
+          "newly_incorrect": 0,
+          "pairs": 362,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.273832819573787,
+              "median": -0.31696054339408875,
+              "negative": 251,
+              "positive": 111,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.3098568421201935,
+              "median": -0.34392306208610535,
+              "negative": 259,
+              "positive": 103,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.03602399549431564,
+              "median": 0.002781897783279419,
+              "negative": 179,
+              "positive": 183,
+              "zero": 0
+            }
+          }
+        },
+        "late_teacher_preferred": {
+          "newly_correct": 4,
+          "newly_incorrect": 92,
+          "pairs": 935,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.6526332139729816,
+              "median": -0.5936956405639648,
+              "negative": 814,
+              "positive": 121,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.9137779203547354,
+              "median": -0.8585006594657898,
+              "negative": 885,
+              "positive": 50,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.26114471095768527,
+              "median": -0.19882583618164062,
+              "negative": 685,
+              "positive": 250,
+              "zero": 0
+            }
+          }
+        },
+        "teacher_preferred": {
+          "newly_correct": 8,
+          "newly_incorrect": 150,
+          "pairs": 1395,
+          "score_changes": {
+            "energy_margin": {
+              "mean": -0.678785089235152,
+              "median": -0.6230461597442627,
+              "negative": 1222,
+              "positive": 173,
+              "zero": 0
+            },
+            "margin": {
+              "mean": -0.8936984992435862,
+              "median": -0.8497459888458252,
+              "negative": 1300,
+              "positive": 95,
+              "zero": 0
+            },
+            "reference_margin": {
+              "mean": -0.21491341234108025,
+              "median": -0.1528835892677307,
+              "negative": 972,
+              "positive": 423,
+              "zero": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "scope": "Post-hoc descriptive differences between actual saved model endpoints on fixed exposed pairs; no hybrid model or parameter intervention.",
+  "source": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/recount_score_changes_v1.py",
+    "sha256": "2e33d578110aad06beb27979953fe62e536e8fdf8f40c336bdd1b9269a895acc"
+  },
+  "sources": {
+    "held": {
+      "actual_audit_exit": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/audit_terminal_v1.json",
+        "sha256": "fc2c5196c86053c16c2c384b539833b314d0dd71043fc02d880f0470f36c6152"
+      },
+      "audit": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/audit_result_v1.json",
+        "sha256": "dc5382c20f01e86d8be6dda1847c595fc50bc60e53b1313b65a76f4eefe5d18a"
+      },
+      "audit_source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/audit_v1.py",
+        "sha256": "8b469766f1d5f1c58f21ec312dc227023627e29c4dc6f601e50823ab22fa8422"
+      },
+      "protocol": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/protocol_v1.json",
+        "sha256": "00e6cacf9367917fd426711e867a1e104f8ea3b5416cfb0a14ee86870318bad7"
+      },
+      "verified_pairs": {
+        "base": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/base_verified_pairs_v1.jsonl",
+          "sha256": "abf7d7fafcdd01313dc79922138fd1cc1d72175423c20a2abc7e7e70da63748a"
+        },
+        "combined0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/combined0_verified_pairs_v1.jsonl",
+          "sha256": "db02d9b5d820d6de66a71e82920a9fafe00d0514c4248268e8f509946ba21d5c"
+        },
+        "ordinary0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/ordinary0_verified_pairs_v1.jsonl",
+          "sha256": "32453c89210ca0c28b44270173ebc178f55ec292fba9aab95d9017bd8e11fdb8"
+        },
+        "preservation0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/preservation0_verified_pairs_v1.jsonl",
+          "sha256": "ba1a2995be0e234f41cfa00832644b810132b8dce9a4c96a6b4650b1933dd00c"
+        },
+        "ranking0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_held_v1/ranking0_verified_pairs_v1.jsonl",
+          "sha256": "80f85b466d5722a19f72810e3bf9b2965994780aced80519087ba38b1136449f"
+        }
+      }
+    },
+    "train": {
+      "actual_audit_exit": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/audit_terminal_v1.json",
+        "sha256": "6cdd027e788951b040d12886cfa0e80d1ff592b739e1b3a2c4668c0fa81c8403"
+      },
+      "audit": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/audit_result_v1.json",
+        "sha256": "9be1f07753f537eab36baeb9f8b2f3313444b3d0f877086e2ce71a456b4ae669"
+      },
+      "audit_source": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/audit_v1.py",
+        "sha256": "f793f85a33f45ecc9a5587854738710c4032586e6a522cb1457e49d11c87e94f"
+      },
+      "protocol": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/protocol_v1.json",
+        "sha256": "3f7adcc2ab0cfb196bb08e8109bde2902941e0f6d2edae957a6ecc1edb707ac8"
+      },
+      "verified_pairs": {
+        "base": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/base_verified_pairs_v1.jsonl",
+          "sha256": "ec5836a04bb852b6564e766e4cbbc77f79c6db5e53372236a03471cf7861a064"
+        },
+        "combined0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/combined0_verified_pairs_v1.jsonl",
+          "sha256": "ea5191092e04a27419401c23442cdb72a91b4f4178b39e106ac3b0a6ed94c95b"
+        },
+        "ordinary0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/ordinary0_verified_pairs_v1.jsonl",
+          "sha256": "a4ac813670e86cbb79a70520c2c7cfe1e974b18af27e51c6440deb7bd5f82ed1"
+        },
+        "preservation0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/preservation0_verified_pairs_v1.jsonl",
+          "sha256": "b154a0e1cf489a3f12c98fbe3193350ed253ef2938bf08b3afd1f2059cca4426"
+        },
+        "ranking0": {
+          "path": "/Users/makemake/Documents/code/python/pylatro/eval/ranking_preservation_20260927/development_train_v1/ranking0_verified_pairs_v1.jsonl",
+          "sha256": "7caf35aa84bd33d1eefc167f91ca78af38e558f4e0a1bef61e5e61320d915d14"
+        }
+      }
+    }
+  },
+  "status": "passed"
+}

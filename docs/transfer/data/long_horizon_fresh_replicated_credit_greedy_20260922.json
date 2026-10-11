@@ -1,0 +1,175 @@
+{
+  "created_unix": 1790091403.118386,
+  "script_sha256": "0d7827f4234459f577027db3fdda95e1de4e98dc67c0c77f69824bddef8ff70c",
+  "stage": "confirmation",
+  "endpoint": 20,
+  "mode": "greedy",
+  "sampling_repeats": [
+    null
+  ],
+  "fixed_training_replicas": [
+    0,
+    1
+  ],
+  "game_seed_clusters": 400,
+  "games_per_policy": 800,
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "selection_sha256": "0267a19e59bf5701938dd019a230f1a1ea1995e97b9c2531044306aa84faa9d4",
+  "panels": {
+    "parent": {
+      "wins": 401,
+      "games": 800,
+      "win_rate": 0.50125
+    },
+    "terminal_mc": {
+      "wins": 420,
+      "games": 800,
+      "win_rate": 0.525
+    },
+    "terminal_gae": {
+      "wins": 397,
+      "games": 800,
+      "win_rate": 0.49625
+    }
+  },
+  "comparisons": {
+    "terminal_mc_vs_terminal_gae": {
+      "game_seeds": 400,
+      "games_per_arm": 800,
+      "sampled_or_greedy_delta": 0.02875,
+      "paired_ci95": [
+        -0.0075,
+        0.065
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "terminal_mc_vs_parent": {
+      "game_seeds": 400,
+      "games_per_arm": 800,
+      "sampled_or_greedy_delta": 0.02375,
+      "paired_ci95": [
+        -0.00875,
+        0.0575
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "terminal_gae_vs_parent": {
+      "game_seeds": 400,
+      "games_per_arm": 800,
+      "sampled_or_greedy_delta": -0.005,
+      "paired_ci95": [
+        -0.0375,
+        0.0275
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    }
+  },
+  "per_replica_and_repeat": {
+    "seed0_greedy": {
+      "credit": {
+        "game_seeds": 400,
+        "games_per_arm": 400,
+        "sampled_or_greedy_delta": 0.0175,
+        "paired_ci95": [
+          -0.0325,
+          0.07
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling",
+        "rescued_losses": 59,
+        "new_losses": 52
+      },
+      "mc_parent": {
+        "game_seeds": 400,
+        "games_per_arm": 400,
+        "sampled_or_greedy_delta": 0.045,
+        "paired_ci95": [
+          -0.0025,
+          0.095
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling",
+        "rescued_losses": 57,
+        "new_losses": 39
+      }
+    },
+    "seed1_greedy": {
+      "credit": {
+        "game_seeds": 400,
+        "games_per_arm": 400,
+        "sampled_or_greedy_delta": 0.04,
+        "paired_ci95": [
+          -0.0125,
+          0.0925
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling",
+        "rescued_losses": 65,
+        "new_losses": 49
+      },
+      "mc_parent": {
+        "game_seeds": 400,
+        "games_per_arm": 400,
+        "sampled_or_greedy_delta": 0.0025,
+        "paired_ci95": [
+          -0.045,
+          0.05
+        ],
+        "unit": "game seed; sampling repeats averaged before resampling",
+        "rescued_losses": 47,
+        "new_losses": 46
+      }
+    }
+  },
+  "checkpoints": {
+    "parent_seed0": "39158be0fbaf1ecd5b195ce2ed3a077ecc26d224ce38baf6b11bceeb646bb486",
+    "terminal_mc_seed0": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+    "terminal_gae_seed0": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+    "parent_seed1": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+    "terminal_mc_seed1": "895007a43441dea28320f69b89c914d20aa690927f236da3492cac60857ba2ff",
+    "terminal_gae_seed1": "7777a609b45bb4f6e629c47e2b4977358c31f3c0545c28ee942aad3e3ccfdae2"
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/initial.pt": "e59f50d52f75f42858094f200d7566679ecf45d10f245c41f89514b0c2eda5f5",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/checkpoints/ppo_update142.pt": "3ce281a9f2982da5b5da32ef4ac62afc0c7b24b91addace4ed6ac20ab1546c06",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_mc_seed0_endpoint20_verification.json": "252496d8505b13097c8c0a2a5d8fa2889167ddf5388f30e153e39271ffb155f2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/initial.pt": "e87e68baa9e00d31bae83d1b55ca810026789fd25ea589841ac7222711dd6c96",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/checkpoints/ppo_update142.pt": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_gae_seed0_endpoint20_verification.json": "b7163eb7fe07e039862102427393f345f4e371d86517cea498e1c684e413fe26",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed0_preflight.json": "3c98c0c74f08afd8827ca798e83ac926817b946fd10160eca655fdaf03583c63",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/greedy/manifest.json": "fa96baad2849dfe494249f960cb47d487b684905613accf9ecfc1eb07c33d4b3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed0/greedy/outcomes.jsonl": "bcaf9f0e5fa53ebc6275d98f82ff915dd49ba8792edb5a3923b3eda7aa139a96",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/greedy/manifest.json": "aa47fa640c216b9b2b942691e5a1f6831c209e4d6f9a4d80386e7ec2f0cbfe69",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed0/greedy/outcomes.jsonl": "d1898be6d104231052512c8af5fe2a5ffea86c85b24018c76979f65e2cb92924",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed0_greedy.json": "fcbf9b06c41bde3567dda007b3b5d8f70338262ba8a242ad933e661fb85fb6cf",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed0_greedy_games.jsonl": "036dfe6011a956b63578f0b34e9d3cee765199cd4ac83a22cf0d486a92390fd5",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/initial.pt": "39158be0fbaf1ecd5b195ce2ed3a077ecc26d224ce38baf6b11bceeb646bb486",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed0/greedy/manifest.json": "6ce25d6d3b4ec2e5e21bb5a98ad6e5bae42a6301b952e2230bc6c990332b29b6",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed0/greedy/outcomes.jsonl": "c2731d4d9aa7d464a2e6704f1d361cddc02c669bdfbc24abe1fe10eaa8d3b73d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed0_greedy.json": "09d6ede4f2ef5fea45b13ac7f9a6af47b69fdf5be1733097cbb23b2150da1ee3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed0_greedy_games.jsonl": "4d6a53d0e4183f397f09e9113ff4e49bcbb1486cf3ea3b500700be3934137e78",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/initial.pt": "4982b9036f366092b338b23996284bdb10ffbbb4c3132792616ed934eb6e0284",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/checkpoints/ppo_update142.pt": "895007a43441dea28320f69b89c914d20aa690927f236da3492cac60857ba2ff",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_mc_seed1_endpoint20_verification.json": "f60a3df4ca95eb0cf19974c49a267ffe513265de6c5a59ecba9e2b3142934c8a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/initial.pt": "15221b5df75e40a63d92c51eee3fd136795c808cc219db3e38c23f4cecfdf0e1",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/checkpoints/ppo_update142.pt": "7777a609b45bb4f6e629c47e2b4977358c31f3c0545c28ee942aad3e3ccfdae2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_gae_seed1_endpoint20_verification.json": "145d341af908388ccffb70703d724b9a9f42940e55b3df059139fea58b6083c9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed1_preflight.json": "0368b46535d1bfc19c7a1f515c93cca6cc99e922c10c2a74185a9f54e0e1d436",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/greedy/manifest.json": "a94353430985d03c85a0026c5488725a3f3c7fa2d9c9b1da119ba377789b1f90",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/greedy/outcomes.jsonl": "346188d3cb5c8a28de8c52cb6077d030eddbe6cca88973c4d135f2b34f13d32e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed1/greedy/manifest.json": "0b16624a3698808676d7367f4c04564f8aeb5c4d9389130eab1a37943c7bc634",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_gae_seed1/greedy/outcomes.jsonl": "f0ea4e6f36edd0718debc930264c926d0af024aaed3d9f72368ce07b94160b8a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed1_greedy.json": "d208fafeac057914978f492efa2fa65c6c789e7da38ee53add731fe658d49b6e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_credit_seed1_greedy_games.jsonl": "583f3ff745a4c5178a9135ee937174cd72de49a13bd8790dd97b9872fce1027f",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/initial.pt": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/greedy/manifest.json": "b840fea09a329ad1c53817458d428b49e8c662fd3928720d055d3f70a6ead5cc",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/greedy/outcomes.jsonl": "2f0bbb84de597afacc89559f7bc942e6b98ee0a16bf7c79af60258b3e28b0121",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed1_greedy.json": "32a08b039b67a5109e7bcea41329094ee3b08ba9e6d9469b497a3a88754d0892",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/fresh_mc_parent_seed1_greedy_games.jsonl": "2cfd943febff0e5c48192ed34fb41345efce2347cdfe5d30832aedd8eed683a5"
+  },
+  "independent_paired_bootstrap_verified": true,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 1729,
+  "selection_changed": false,
+  "generalization_proven": false,
+  "interpretation": "Both fixed training replicas and the specified evaluation repeats averaged within each of 400 game seeds. More plays of the same seed are not additional independent seeds. These are pointwise confirmation comparisons and do not change selection or stopping. The full two-repeat sampled comparison, greedy guardrail and reserved learned early-policy intervention remain required for the main verdict. MC-versus-GAE isolates the credit-estimator treatment at equal training exposure; parent contrasts compare additional training with the unchanged starting policies.",
+  "paired_games_sha256": "4b41bb75ba8d43396c4e271b12f28e0e047f52f39f6350220da17f6501cfd866"
+}

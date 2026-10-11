@@ -1,0 +1,95 @@
+{
+  "arms": {
+    "counterfactual_ranking_bc": {
+      "examples": 6400,
+      "moved": {
+        "actor": 52,
+        "backbone": 146,
+        "embedding": 111
+      },
+      "ordinary_trajectory_error": null,
+      "preference_pair_exposures": 67,
+      "preference_state_exposures": 67,
+      "updates": 20
+    },
+    "ordinary_bc": {
+      "examples": 6400,
+      "moved": {
+        "actor": 52,
+        "backbone": 146,
+        "embedding": 111
+      },
+      "ordinary_trajectory_error": 4.6566128730773926e-08,
+      "preference_pair_exposures": 67,
+      "preference_state_exposures": 67,
+      "updates": 20
+    }
+  },
+  "created_unix": 1790424852.150392,
+  "generalization_proven": false,
+  "native_checks": {
+    "checkpoint_tensors_verified": 1280,
+    "final_maximum_difference": 7.029250264167786e-05,
+    "native_energy_gradient_error": 4.433917816237809e-10,
+    "native_macro_gradient_error": 2.3283064365386963e-10,
+    "optimizer_states_verified": 1240,
+    "zero_gradient_error": 7.450580596923828e-09,
+    "zero_optimizer_error": 9.313225746154785e-10,
+    "zero_parameter_error": 1.1920928955078125e-07
+  },
+  "native_result": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/training_preflight_v1/result.json",
+    "sha256": "7c4a06741508ee17edcb6a6d52082c52f2036dc48faa3de166ea7d34f2f5ab3a"
+  },
+  "native_verification": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/training_verification_v2.json",
+    "sha256": "54f59bf08e4e2dc88d85c08c2fea8b54349e0a793dfce1d86de015836b9aa6bd"
+  },
+  "objective": {
+    "coefficient": 4.0,
+    "denominator": "Average pairs within each state; zero for absent pairs. Both terms divide by the full logical batch size320, not active rows or physical slice size.",
+    "formula": "mean_all_rows[teacher_NLL + 4 * mean_available_clear_preferences softplus(logp_loser - logp_winner)]",
+    "interaction": "Retain teacher NLL even if alternative clears and teacher does not. In isolated binary case, coefficient4 gives p(teacher)=0.2 and p(preferred alternative)=0.8. General multisubset policies need no such fixed probability.",
+    "parameters": "Train actor/embedding/backbone; freeze critic. No architecture change, reference KL, entropy term, outcome weights or gradient clipping.",
+    "selection": "Single fixed coefficient before native checks; same nominal extra-loss scale as the previous raw weighting multiplier. No held-out sweep or adjustment.",
+    "targets": "All2027 measured clear-disagreement pairs at2022 training states. Either direction permitted. Leave9127 same-status pairs unranked, irrespective of score."
+  },
+  "protocol": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/preparation_protocol_v1.json",
+    "sha256": "614a30d9bba8dc014cad6b7da76c0d247fa138293f548a6843c330d7bb3b0eb4"
+  },
+  "publisher": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/publish_preparation_v1.py",
+    "sha256": "5afc99a805af3b4739d684a53b7ee76127daa64d8ffef0a169d1f05f8b576cc5"
+  },
+  "scientific_fit_started": false,
+  "stage_counts": {
+    "early": {
+      "alternative_preferred": 220,
+      "new_immediate_loss": 10,
+      "pairs": 680,
+      "states": 680,
+      "teacher_preferred": 460
+    },
+    "late": {
+      "alternative_preferred": 362,
+      "new_immediate_loss": 24,
+      "pairs": 1347,
+      "states": 1342,
+      "teacher_preferred": 985
+    }
+  },
+  "status": "preparation_complete",
+  "target_counts": {
+    "alternative_preferred": 582,
+    "new_immediate_loss": 34,
+    "pairs": 2027,
+    "states": 2022,
+    "teacher_preferred": 1445
+  },
+  "target_verification": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/targets_verification_v1.json",
+    "sha256": "f8a8f9f031a8c7060ea5a07f5149e057315b02d3eb84440ec6606f020c0aec98"
+  },
+  "training_benefit_proven": false
+}

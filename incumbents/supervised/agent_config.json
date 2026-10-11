@@ -1,0 +1,14 @@
+{
+  "action_head_variant": "entity_sale_subset_residual_v1",
+  "d_ff": 1536,
+  "d_model": 384,
+  "danger_shop_leave_logit_penalty": 0.0,
+  "dropout": 0.1,
+  "hand_ar_mixture_eps": 0.5,
+  "max_seq_len": 160,
+  "n_heads": 8,
+  "n_layers": 12,
+  "precision": "fp32",
+  "return_value_mode": "terminal_plus_residual",
+  "win_only_value": false
+}

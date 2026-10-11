@@ -1,0 +1,7 @@
+# Isolate attention dispatch in the wider scorer's overlap failure
+
+The admitted first overlap probe exactly reproduced the failed FP32 coordinate: action 2519's centered preference differs by 0.000020980835, exceeding its unchanged 0.000013376706 allowance. Pooled features and query projections are bitwise identical; the first discrepancy appears in attention. Each original layout repeats exactly, while the float64 copies agree within 7e-15. Preserve the original probe and independently recounted arrays.
+
+Extend only this fixed numerical probe with PyTorch's explicit math scaled-dot-product-attention backend, retaining FP32, the same first failed state and original batch, the same weights, masks, action ordering and reference. Evaluate both layouts and save all intermediate values. Compare against the already specified float64 reference and original dispatch. Do not sweep backends or inspect task outcomes. This tests an implementation correction, without accepting it for scientific evaluation yet.
+
+Keep the same 600-second bound, no training or simulator calls, immutable weights and the original overlap tolerance. A later correction requires a separate bounded consistency check across the complete development action support before admitting scientific prediction results. Preserve the failed scientific evaluation and leave the trained checkpoint, epoch, data, losses and advancement gates unchanged.

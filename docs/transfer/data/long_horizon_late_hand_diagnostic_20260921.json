@@ -1,0 +1,125 @@
+{
+  "created_unix": 1790019829.9201229,
+  "manifest_sha256": "1989ca3cda3e120b1f9f45a9d2ad13828b705525ab35a9e349a61fdcfaa35967",
+  "results_sha256": "b0e4b0356a3eba75dfac945f23a5e01597272fd8b7660d195f28b4fe80c2af94",
+  "paired_games_sha256": "d59506150b6308fbaa0d3a7aa9030aeb362a7996cdcc56f2348e7a61b8cb3fc1",
+  "summaries": {
+    "student": {
+      "game_seeds": 25,
+      "games": 50,
+      "wins": 26,
+      "win_rate": 0.52,
+      "win_rate_cluster_ci95": [
+        0.34,
+        0.680499999999993
+      ],
+      "win_rate_wilson_ci95": null,
+      "mean_final_ante": 7.16,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.98,
+        "2": 0.96,
+        "3": 0.9,
+        "4": 0.84,
+        "5": 0.78,
+        "6": 0.6,
+        "7": 0.58,
+        "8": 0.52
+      }
+    },
+    "late_hand": {
+      "game_seeds": 25,
+      "games": 50,
+      "wins": 28,
+      "win_rate": 0.56,
+      "win_rate_cluster_ci95": [
+        0.38,
+        0.72
+      ],
+      "win_rate_wilson_ci95": null,
+      "mean_final_ante": 7.28,
+      "stalls": 0,
+      "censored": 0,
+      "ante_clear_rates": {
+        "1": 0.98,
+        "2": 0.96,
+        "3": 0.9,
+        "4": 0.84,
+        "5": 0.78,
+        "6": 0.64,
+        "7": 0.62,
+        "8": 0.56
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 25,
+    "games_per_arm": 50,
+    "sampled_or_greedy_delta": 0.04,
+    "paired_ci95": [
+      0.0,
+      0.1
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling"
+  },
+  "by_replica": {
+    "0": {
+      "game_seeds": 25,
+      "games_per_arm": 25,
+      "sampled_or_greedy_delta": 0.04,
+      "paired_ci95": [
+        0.0,
+        0.12
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    },
+    "1": {
+      "game_seeds": 25,
+      "games_per_arm": 25,
+      "sampled_or_greedy_delta": 0.04,
+      "paired_ci95": [
+        -0.08,
+        0.16
+      ],
+      "unit": "game seed; sampling repeats averaged before resampling"
+    }
+  },
+  "rescues": [
+    [
+      0,
+      260021
+    ],
+    [
+      1,
+      260017
+    ],
+    [
+      1,
+      260018
+    ]
+  ],
+  "regressions": [
+    [
+      1,
+      260021
+    ]
+  ],
+  "games_with_changed_actions": 39,
+  "teacher_controlled_steps": 893,
+  "replacements": 384,
+  "replacement_action_types": {
+    "discard_subset -> discard_subset": 27,
+    "play_subset -> play_subset": 314,
+    "discard_subset -> play_subset": 2,
+    "play_subset -> use_consumable_hand_subset": 5,
+    "play_subset -> shop_sell_joker": 2,
+    "use_consumable_hand_subset -> use_consumable_hand_subset": 14,
+    "play_subset -> discard_subset": 20
+  },
+  "shared_prefix_observations_verified": 6339,
+  "elapsed_seconds": 519.2634116660338,
+  "diagnostic_only": true,
+  "learned_improvement": false,
+  "interpretation": "Exploratory late-hand teacher intervention on exposed development, conditional on two fixed GAE replicas. Teacher has privileged simulator access. Prefix equality verifies the unchanged earlier decisions, but subsequent visited states and decisions change. This does not validate a trained improvement or prove that early builds, inputs, or hand-phase decisions alone explain the remaining gap."
+}

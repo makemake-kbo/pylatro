@@ -1,0 +1,19 @@
+{
+  "created_unix": 1790069739.192462,
+  "pid": 89319,
+  "runner_sha256": "a68e9eb77faee31366ce15d3790766faf51fbd06e97e1637b3d47042f6383ba8",
+  "preparation_manifest_sha256": "33ac62f38395b97b27e920b04c7c98a1f13f07d13e367e434cb9c62814c4f131",
+  "intent_sha256": "f8759637c52185b48136243c25bc09a328306d9612ea3489bc5986c44086f14c",
+  "finisher_sha256": "de046fa04d91387929f5b150b1c95e6936433a90539e1842b01baef9a8a2c0d6",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "cpu_threads": 2,
+  "device": "cpu",
+  "batch_size": 1,
+  "temperature": 1,
+  "primary_games": 256,
+  "extra_duplicate_controls": 4,
+  "rng": "SHA256(shop-counterfactual-v1:replica:seed:step:repeat), first 8 bytes big-endian masked to 63 bits; isolated CPU per arm",
+  "maximum_run_seconds": 5400,
+  "maximum_decisions_per_continuation": 4096,
+  "generalization_proven": false
+}

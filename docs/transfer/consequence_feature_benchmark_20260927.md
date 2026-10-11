@@ -1,0 +1,11 @@
+# Frozen-feature and pooled-head benchmark
+
+After the two native label/input audits pass, use the first 32 teacher-play states from the same training-only pilot. Load the exact frozen base checkpoint/runtime on CPU with one Torch thread, set evaluation mode and disable all base gradients. Do not invoke an optimizer or save a new model.
+
+Extract the existing 128-dimensional policy state and contextual hand-card slots, plus the contextual tokens and effective history-aware attention mask needed by the later relational comparison. Assert that the extraction matches features captured from the unchanged agent's original forward path. Preserve original card/Joker positions: the archived embedding explicitly includes hand slots, Joker slots and token positions. Each action proposal has separate selected and retained card masks. The pooled baseline combines their square-root-count-normalized sums, counts and existing state with a two-layer 128-wide MLP and three outputs: log-score, immediate-clear logit, and teacher preference. It does not run the encoder once per proposal.
+
+This benchmark checks one frozen-feature batch, one head forward/backward pass, finite outputs/gradients, grouping equivalence and padded-slot invariance. Verify that all base tensors and head tensors are unchanged and no base gradient exists. Report actual dimensions, trainable parameter count, feature bytes and measured timings. A backward pass without an optimizer is a technical check, not an exploratory training fit or evidence of learning.
+
+The future relational model must use the same features, labels, proposal masks and game split, with comparable trainable parameter count. It can attend to ordered contextual Jokers, hand levels and history rather than receiving only the pooled policy state. Its exact capacity match and the scientific split, normalization, losses, training budget and held-out prediction/retention gates remain to be frozen before fitting. Immediate-score improvement alone never admits policy integration or a generalization claim.
+
+Stop on a failed check and retain artifacts. Cap this serial benchmark at 600 seconds with 30 seconds of supervision grace; observe the actual owner exit before admitting its result. No model updates, second fit, autonomous games or confirmation outcomes.

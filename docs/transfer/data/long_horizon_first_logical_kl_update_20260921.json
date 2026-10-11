@@ -1,0 +1,29 @@
+{
+  "verified_unix": 1790017559.2042391,
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "arm": "legacy_gae",
+  "replica": 1,
+  "global_update": 123,
+  "checkpoint_sha256": "1a4b860404b59295614e219cc0c50af263af2e869bf51574e181d8223d43fabc",
+  "initial_checkpoint_sha256": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+  "update_metadata_sha256": "0f0e83214b79dfd925171fdb27197a46500c790e26868fcbad244adbcc091ebe",
+  "collection_comparison_sha256": "367dc087b88641317acfe2184825537cace41c113da54073ec4a3a504bcebc80",
+  "policy_hash_matches_logged_update": true,
+  "games": 64,
+  "decisions": 9990,
+  "optimizer_examples": 16384,
+  "logical_optimizer_steps": 26,
+  "adam_step_deltas": {
+    "26": 318
+  },
+  "kl_rollback": false,
+  "stop_reason": "none",
+  "maximum_physical_kl": 0.08065874129533768,
+  "maximum_logical_kl": 0.02181511846720241,
+  "final_full_kl": 0.0054146787861100165,
+  "final_full_logical_max": 0.030619280616519973,
+  "collection_seconds": 145.91794295900036,
+  "optimization_seconds": 127.49237091699615,
+  "interpretation": "Real recovered update committed with full matched exposure; no gameplay/generalization gain claimed."
+}

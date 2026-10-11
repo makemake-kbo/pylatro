@@ -1,0 +1,15 @@
+# Diagnose consequence prediction at the decision boundary
+
+The completed dense-supervision fit improves prediction against training constants but fails seven of thirteen policy checks. This diagnostic uses only its admitted saved predictions and targets. It does not change, tune, or qualify the rejected policy and performs no model forward, fitting, simulator query, or new gameplay. The existing development panel is already exposed; all findings are exploratory.
+
+Use every original training and development annotated row. For net gain, include only pairs whose final native gain was actually recorded. Missing gains stay missing. The comparison set therefore uses an oracle observation mask and is not an executable policy: unassessed alternatives might be better. Report excluded rows and original complete-game counts explicitly. Convert predictions back to raw units using the frozen training normalizer.
+
+For each labelled decision, decompose mean squared error exactly into squared error of the decision's mean gain and error of the centered pair deviations. Apply the same decomposition to the training-mean constant. Average decisions equally and reconstruct the already audited total raw MSE. This separates prediction across states from distinguishing alternatives within a state.
+
+On decisions with at least two observed gains and nonconstant true gains, measure unordered pair concordance, best-pair hit probability, and native-gain regret of the predicted maximum. True-gain ties are excluded from concordance and predicted ties count one half. For selection, average uniformly across exactly tied predicted maxima. Compare with uniformly selecting an observed pair; use exact numerical ties, without a selected tolerance. Report regret on this same nontrivial population.
+
+At the unchanged native gain threshold 0.03 (the frozen teacher initializes its best choice to `(0.03, -1)`), report confusion counts for whether the maximum observed gain and maximum predicted gain exceed the threshold. Also report how the true-gain threshold agrees with actual teacher sales, without assuming that it reconstructs all teacher priorities. Separately report decision-balanced error and bias over pairs above versus at/below this threshold. No threshold or calibration sweep is permitted.
+
+Development uncertainty uses 10,000 resamples of all 128 complete source games, seed 1729, including games without eligible rows. Each metric retains its own denominator and zero-denominator draws. Training summaries have no bootstrap. These marginal descriptive intervals are not multiplicity-adjusted and do not establish independent confirmation or win value.
+
+Before reading the finer outputs, pin this plan, the diagnostic source, both admitted parent owners, their completed results, and the frozen teacher source. Check hand-calculated synthetic examples for MSE decomposition, strict threshold, prediction ties, and concordance. During analysis assert full MSE reconstruction and decomposition identities. Any scientific correction must use a new version. Preserve the failed policy screen and all full-goal requirements.

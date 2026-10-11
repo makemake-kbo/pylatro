@@ -1,0 +1,522 @@
+{
+  "created_unix": 1790012864.836596,
+  "scope": "replica0, first matched cohort/globalupdate123, before either GAE optimizer step",
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "games": 64,
+  "decisions": 9863,
+  "trajectory_hashes_verified": 128,
+  "all_nonvalue_arrays_identical": true,
+  "outcomes_and_slots_identical": true,
+  "optimizer_draw_hash_equal": true,
+  "gae_configuration": {
+    "gamma": 1.0,
+    "gae_lambda": 0.97,
+    "rollout_length": 256,
+    "advantage_clip_sigma": 0.0
+  },
+  "manifest_hashes": {
+    "terminal_gae": "c5133ae1ad59aff7a8266ef6d85f3dc1628bac275a040908c6cb375f1c498efc",
+    "legacy_gae": "e03fab845458afeb4e4cc5ec08522b2934f9c13b3c2f89080cb073e2dcda593e"
+  },
+  "raw_advantage_std": {
+    "terminal_gae": 1.4230413436889648,
+    "legacy_gae": 1.5414429903030396
+  },
+  "regions": {
+    "all": {
+      "decisions": 9863,
+      "mean_terminal_value": 4.973496913909912,
+      "mean_legacy_value": 5.84954833984375,
+      "mean_recorded_residual": 0.8760513067245483,
+      "residual_quantiles_05_50_95": [
+        0.4356066703796387,
+        0.9161534309387207,
+        1.1831134796142577
+      ],
+      "normalized_advantage_sign_disagreement": 0.05667646760620501,
+      "normalized_advantage_correlation": 0.9886771187479847,
+      "mean_abs_normalized_advantage_difference": 0.11177335679531097
+    },
+    "ante1_3": {
+      "decisions": 3658,
+      "mean_terminal_value": 3.7077155113220215,
+      "mean_legacy_value": 4.632567882537842,
+      "mean_recorded_residual": 0.924852728843689,
+      "residual_quantiles_05_50_95": [
+        0.6309108018875123,
+        0.9203588962554932,
+        1.236672282218933
+      ],
+      "normalized_advantage_sign_disagreement": 0.05084745762711865,
+      "normalized_advantage_correlation": 0.9920248508157065,
+      "mean_abs_normalized_advantage_difference": 0.10411481559276581
+    },
+    "distance100plus": {
+      "decisions": 4179,
+      "mean_terminal_value": 4.598886489868164,
+      "mean_legacy_value": 5.566861629486084,
+      "mean_recorded_residual": 0.9679752588272095,
+      "residual_quantiles_05_50_95": [
+        0.6937907934188843,
+        0.9735174179077148,
+        1.233356761932373
+      ],
+      "normalized_advantage_sign_disagreement": 0.05384063173007897,
+      "normalized_advantage_correlation": 0.9905576739411651,
+      "mean_abs_normalized_advantage_difference": 0.09040269255638123
+    }
+  },
+  "games_metadata": [
+    {
+      "seed": 310000000,
+      "won": true,
+      "decisions": 219,
+      "terminal_gae_mean_value": 5.598313331604004,
+      "legacy_gae_mean_value": 6.447317123413086
+    },
+    {
+      "seed": 310000001,
+      "won": true,
+      "decisions": 198,
+      "terminal_gae_mean_value": 6.818533420562744,
+      "legacy_gae_mean_value": 7.8711652755737305
+    },
+    {
+      "seed": 310000002,
+      "won": true,
+      "decisions": 234,
+      "terminal_gae_mean_value": 6.4469804763793945,
+      "legacy_gae_mean_value": 7.393839359283447
+    },
+    {
+      "seed": 310000003,
+      "won": false,
+      "decisions": 139,
+      "terminal_gae_mean_value": 2.419020891189575,
+      "legacy_gae_mean_value": 3.03296160697937
+    },
+    {
+      "seed": 310000004,
+      "won": false,
+      "decisions": 150,
+      "terminal_gae_mean_value": 3.546412706375122,
+      "legacy_gae_mean_value": 4.340020179748535
+    },
+    {
+      "seed": 310000005,
+      "won": true,
+      "decisions": 240,
+      "terminal_gae_mean_value": 5.60836935043335,
+      "legacy_gae_mean_value": 6.542313098907471
+    },
+    {
+      "seed": 310000006,
+      "won": false,
+      "decisions": 139,
+      "terminal_gae_mean_value": 2.525841236114502,
+      "legacy_gae_mean_value": 3.229919672012329
+    },
+    {
+      "seed": 310000007,
+      "won": false,
+      "decisions": 81,
+      "terminal_gae_mean_value": 2.460416316986084,
+      "legacy_gae_mean_value": 3.1427764892578125
+    },
+    {
+      "seed": 310000008,
+      "won": false,
+      "decisions": 80,
+      "terminal_gae_mean_value": 2.2094013690948486,
+      "legacy_gae_mean_value": 2.8816590309143066
+    },
+    {
+      "seed": 310000009,
+      "won": true,
+      "decisions": 252,
+      "terminal_gae_mean_value": 5.318111896514893,
+      "legacy_gae_mean_value": 6.1824870109558105
+    },
+    {
+      "seed": 310000010,
+      "won": false,
+      "decisions": 52,
+      "terminal_gae_mean_value": 3.3931448459625244,
+      "legacy_gae_mean_value": 4.2167768478393555
+    },
+    {
+      "seed": 310000011,
+      "won": false,
+      "decisions": 190,
+      "terminal_gae_mean_value": 5.620551586151123,
+      "legacy_gae_mean_value": 6.420904636383057
+    },
+    {
+      "seed": 310000012,
+      "won": false,
+      "decisions": 109,
+      "terminal_gae_mean_value": 3.625180244445801,
+      "legacy_gae_mean_value": 4.472047328948975
+    },
+    {
+      "seed": 310000013,
+      "won": false,
+      "decisions": 129,
+      "terminal_gae_mean_value": 2.5521552562713623,
+      "legacy_gae_mean_value": 3.11545729637146
+    },
+    {
+      "seed": 310000014,
+      "won": true,
+      "decisions": 174,
+      "terminal_gae_mean_value": 6.822229862213135,
+      "legacy_gae_mean_value": 7.816462516784668
+    },
+    {
+      "seed": 310000015,
+      "won": true,
+      "decisions": 202,
+      "terminal_gae_mean_value": 6.121513366699219,
+      "legacy_gae_mean_value": 7.156364440917969
+    },
+    {
+      "seed": 310000016,
+      "won": false,
+      "decisions": 165,
+      "terminal_gae_mean_value": 2.5039215087890625,
+      "legacy_gae_mean_value": 3.069885730743408
+    },
+    {
+      "seed": 310000017,
+      "won": true,
+      "decisions": 201,
+      "terminal_gae_mean_value": 6.391568660736084,
+      "legacy_gae_mean_value": 7.3610076904296875
+    },
+    {
+      "seed": 310000018,
+      "won": false,
+      "decisions": 123,
+      "terminal_gae_mean_value": 3.263869047164917,
+      "legacy_gae_mean_value": 3.995168685913086
+    },
+    {
+      "seed": 310000019,
+      "won": true,
+      "decisions": 202,
+      "terminal_gae_mean_value": 5.932924270629883,
+      "legacy_gae_mean_value": 6.858502388000488
+    },
+    {
+      "seed": 310000020,
+      "won": false,
+      "decisions": 225,
+      "terminal_gae_mean_value": 4.529908180236816,
+      "legacy_gae_mean_value": 5.27605676651001
+    },
+    {
+      "seed": 310000021,
+      "won": true,
+      "decisions": 213,
+      "terminal_gae_mean_value": 4.231444358825684,
+      "legacy_gae_mean_value": 5.0628886222839355
+    },
+    {
+      "seed": 310000022,
+      "won": false,
+      "decisions": 9,
+      "terminal_gae_mean_value": 3.074176549911499,
+      "legacy_gae_mean_value": 3.767638683319092
+    },
+    {
+      "seed": 310000023,
+      "won": true,
+      "decisions": 270,
+      "terminal_gae_mean_value": 4.764459609985352,
+      "legacy_gae_mean_value": 5.630765914916992
+    },
+    {
+      "seed": 310000024,
+      "won": true,
+      "decisions": 219,
+      "terminal_gae_mean_value": 5.863277435302734,
+      "legacy_gae_mean_value": 6.894838809967041
+    },
+    {
+      "seed": 310000025,
+      "won": false,
+      "decisions": 33,
+      "terminal_gae_mean_value": 2.9411423206329346,
+      "legacy_gae_mean_value": 3.6442928314208984
+    },
+    {
+      "seed": 310000026,
+      "won": false,
+      "decisions": 167,
+      "terminal_gae_mean_value": 6.151216506958008,
+      "legacy_gae_mean_value": 7.160824298858643
+    },
+    {
+      "seed": 310000027,
+      "won": true,
+      "decisions": 213,
+      "terminal_gae_mean_value": 6.1994709968566895,
+      "legacy_gae_mean_value": 7.225948810577393
+    },
+    {
+      "seed": 310000028,
+      "won": true,
+      "decisions": 200,
+      "terminal_gae_mean_value": 4.905838966369629,
+      "legacy_gae_mean_value": 5.744413375854492
+    },
+    {
+      "seed": 310000029,
+      "won": false,
+      "decisions": 21,
+      "terminal_gae_mean_value": 2.9499309062957764,
+      "legacy_gae_mean_value": 3.6804213523864746
+    },
+    {
+      "seed": 310000030,
+      "won": false,
+      "decisions": 137,
+      "terminal_gae_mean_value": 2.1204967498779297,
+      "legacy_gae_mean_value": 2.678563356399536
+    },
+    {
+      "seed": 310000031,
+      "won": true,
+      "decisions": 235,
+      "terminal_gae_mean_value": 6.3874053955078125,
+      "legacy_gae_mean_value": 7.4179840087890625
+    },
+    {
+      "seed": 310000032,
+      "won": true,
+      "decisions": 214,
+      "terminal_gae_mean_value": 6.464283466339111,
+      "legacy_gae_mean_value": 7.4082722663879395
+    },
+    {
+      "seed": 310000033,
+      "won": false,
+      "decisions": 87,
+      "terminal_gae_mean_value": 2.25437068939209,
+      "legacy_gae_mean_value": 3.0374033451080322
+    },
+    {
+      "seed": 310000034,
+      "won": false,
+      "decisions": 18,
+      "terminal_gae_mean_value": 3.215895652770996,
+      "legacy_gae_mean_value": 3.944568157196045
+    },
+    {
+      "seed": 310000035,
+      "won": false,
+      "decisions": 87,
+      "terminal_gae_mean_value": 3.310335636138916,
+      "legacy_gae_mean_value": 4.209811210632324
+    },
+    {
+      "seed": 310000036,
+      "won": true,
+      "decisions": 236,
+      "terminal_gae_mean_value": 5.777565002441406,
+      "legacy_gae_mean_value": 6.838110446929932
+    },
+    {
+      "seed": 310000037,
+      "won": false,
+      "decisions": 145,
+      "terminal_gae_mean_value": 2.1627683639526367,
+      "legacy_gae_mean_value": 2.780606985092163
+    },
+    {
+      "seed": 310000038,
+      "won": false,
+      "decisions": 167,
+      "terminal_gae_mean_value": 6.93714714050293,
+      "legacy_gae_mean_value": 7.9983062744140625
+    },
+    {
+      "seed": 310000039,
+      "won": false,
+      "decisions": 156,
+      "terminal_gae_mean_value": 4.763176441192627,
+      "legacy_gae_mean_value": 5.735640048980713
+    },
+    {
+      "seed": 310000040,
+      "won": false,
+      "decisions": 37,
+      "terminal_gae_mean_value": 2.7925729751586914,
+      "legacy_gae_mean_value": 3.5197296142578125
+    },
+    {
+      "seed": 310000041,
+      "won": true,
+      "decisions": 223,
+      "terminal_gae_mean_value": 6.6418304443359375,
+      "legacy_gae_mean_value": 7.654519081115723
+    },
+    {
+      "seed": 310000042,
+      "won": false,
+      "decisions": 169,
+      "terminal_gae_mean_value": 4.451794147491455,
+      "legacy_gae_mean_value": 5.42315149307251
+    },
+    {
+      "seed": 310000043,
+      "won": false,
+      "decisions": 206,
+      "terminal_gae_mean_value": 2.7829344272613525,
+      "legacy_gae_mean_value": 3.408167600631714
+    },
+    {
+      "seed": 310000044,
+      "won": false,
+      "decisions": 98,
+      "terminal_gae_mean_value": 3.940782308578491,
+      "legacy_gae_mean_value": 4.888539791107178
+    },
+    {
+      "seed": 310000045,
+      "won": true,
+      "decisions": 251,
+      "terminal_gae_mean_value": 6.504094123840332,
+      "legacy_gae_mean_value": 7.485264778137207
+    },
+    {
+      "seed": 310000046,
+      "won": true,
+      "decisions": 222,
+      "terminal_gae_mean_value": 7.026453018188477,
+      "legacy_gae_mean_value": 8.030716896057129
+    },
+    {
+      "seed": 310000047,
+      "won": false,
+      "decisions": 78,
+      "terminal_gae_mean_value": 2.937800168991089,
+      "legacy_gae_mean_value": 3.8083460330963135
+    },
+    {
+      "seed": 310000048,
+      "won": true,
+      "decisions": 175,
+      "terminal_gae_mean_value": 4.1118621826171875,
+      "legacy_gae_mean_value": 4.826735019683838
+    },
+    {
+      "seed": 310000049,
+      "won": true,
+      "decisions": 201,
+      "terminal_gae_mean_value": 5.542785167694092,
+      "legacy_gae_mean_value": 6.453895568847656
+    },
+    {
+      "seed": 310000050,
+      "won": false,
+      "decisions": 72,
+      "terminal_gae_mean_value": 2.8372604846954346,
+      "legacy_gae_mean_value": 3.7100977897644043
+    },
+    {
+      "seed": 310000051,
+      "won": true,
+      "decisions": 170,
+      "terminal_gae_mean_value": 6.517247676849365,
+      "legacy_gae_mean_value": 7.493899345397949
+    },
+    {
+      "seed": 310000052,
+      "won": true,
+      "decisions": 193,
+      "terminal_gae_mean_value": 6.974475383758545,
+      "legacy_gae_mean_value": 7.999882221221924
+    },
+    {
+      "seed": 310000053,
+      "won": true,
+      "decisions": 205,
+      "terminal_gae_mean_value": 4.794295787811279,
+      "legacy_gae_mean_value": 5.602089881896973
+    },
+    {
+      "seed": 310000054,
+      "won": false,
+      "decisions": 104,
+      "terminal_gae_mean_value": 2.4386346340179443,
+      "legacy_gae_mean_value": 3.0398974418640137
+    },
+    {
+      "seed": 310000055,
+      "won": true,
+      "decisions": 214,
+      "terminal_gae_mean_value": 7.286700248718262,
+      "legacy_gae_mean_value": 8.406693458557129
+    },
+    {
+      "seed": 310000056,
+      "won": false,
+      "decisions": 86,
+      "terminal_gae_mean_value": 3.1383628845214844,
+      "legacy_gae_mean_value": 3.9766621589660645
+    },
+    {
+      "seed": 310000057,
+      "won": false,
+      "decisions": 18,
+      "terminal_gae_mean_value": 3.1991381645202637,
+      "legacy_gae_mean_value": 3.9154560565948486
+    },
+    {
+      "seed": 310000058,
+      "won": false,
+      "decisions": 174,
+      "terminal_gae_mean_value": 3.7735252380371094,
+      "legacy_gae_mean_value": 4.47017240524292
+    },
+    {
+      "seed": 310000059,
+      "won": false,
+      "decisions": 147,
+      "terminal_gae_mean_value": 3.1704440116882324,
+      "legacy_gae_mean_value": 3.802884578704834
+    },
+    {
+      "seed": 310000060,
+      "won": false,
+      "decisions": 164,
+      "terminal_gae_mean_value": 4.915056228637695,
+      "legacy_gae_mean_value": 5.85281229019165
+    },
+    {
+      "seed": 310000061,
+      "won": false,
+      "decisions": 47,
+      "terminal_gae_mean_value": 2.819183588027954,
+      "legacy_gae_mean_value": 3.5707521438598633
+    },
+    {
+      "seed": 310000062,
+      "won": true,
+      "decisions": 198,
+      "terminal_gae_mean_value": 5.1430792808532715,
+      "legacy_gae_mean_value": 6.0100932121276855
+    },
+    {
+      "seed": 310000063,
+      "won": false,
+      "decisions": 80,
+      "terminal_gae_mean_value": 3.5313057899475098,
+      "legacy_gae_mean_value": 4.434915065765381
+    }
+  ],
+  "interpretation": "The first GAE/value-objective contrast uses identical actions, all saved observations, rewards, log probabilities, slot counters, game outcomes and optimizer draws. Recorded value differences change reconstructed GAE advantages; their signs do not identify good actions. Later optimization also removes residual-value loss, so this diagnostic does not isolate that gradient effect or establish better gameplay. Subsequent on-policy experience may diverge.",
+  "original_analysis_sha256": "f3b4ce47a2e1ffc6ffd7c8fe7c003326d8f5237fa0f3e0daee9bf7079772b8c7"
+}

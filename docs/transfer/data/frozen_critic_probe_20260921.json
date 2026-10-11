@@ -1,0 +1,876 @@
+{
+  "version": 1,
+  "study_source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "checkpoint_sha256": "a8f6420b7b670f62e2adc99bec0a3115dcbdb65d8f1c5837473eb84ee9f07b29",
+  "recipe": {
+    "device": "cpu",
+    "trainable": [
+      "value_head.outcome_proj",
+      "value_head.ante_survival"
+    ],
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "batch_size": 320,
+    "fitting_orders": 2,
+    "stages": [
+      0,
+      25,
+      100,
+      400
+    ],
+    "bootstrap": "5000 whole-game draws within each validation half"
+  },
+  "studies": {
+    "frozen_critic_fit": {
+      "manifest": "eval/long_horizon_generalization_20260921_micro160/analysis/frozen_critic_fit/manifest.json",
+      "manifest_sha256": "3faaca306ea9ce7e92da34e04fe705c3c0a32646ae326d3a3d3dd9d97d9225d1",
+      "result_sha256": "7d24e0beeae480dc5bbb408b93d99adc4a367467d9f10b713a849b02da4a50c6",
+      "script_sha256": "3a5920ea1b2031009556a42f96ad5be629a9964e29e6a46dfe8d6079dd052d24",
+      "post_hoc_reverse_split": false,
+      "training_games": 32,
+      "validation_games": 32,
+      "training_wins": 10,
+      "validation_wins": 17,
+      "curves_averaged_over_two_fitting_orders": [
+        {
+          "update": 0,
+          "training": {
+            "all": {
+              "game_mean_nll": 1.7043486721813679,
+              "game_mean_win_brier": 0.1639485346386209
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.8963249549269676,
+              "game_mean_win_brier": 0.19670014386065304
+            },
+            "opening": {
+              "game_mean_nll": 2.066143896430731,
+              "game_mean_win_brier": 0.2167518548667431
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 1.3025029515847564,
+              "game_mean_win_brier": 0.16603603365365416
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.5901510957628489,
+              "game_mean_win_brier": 0.2536547682248056
+            },
+            "opening": {
+              "game_mean_nll": 1.7561193630099297,
+              "game_mean_win_brier": 0.2876783225219697
+            }
+          }
+        },
+        {
+          "update": 25,
+          "training": {
+            "all": {
+              "game_mean_nll": 1.4886756045743823,
+              "game_mean_win_brier": 0.14031106210313737
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.753126259893179,
+              "game_mean_win_brier": 0.18194153811782598
+            },
+            "opening": {
+              "game_mean_nll": 2.028050921857357,
+              "game_mean_win_brier": 0.216937949298881
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 1.270940019749105,
+              "game_mean_win_brier": 0.17469274491304532
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.6501648472622037,
+              "game_mean_win_brier": 0.2848560482962057
+            },
+            "opening": {
+              "game_mean_nll": 1.7623077873140574,
+              "game_mean_win_brier": 0.29983842314686626
+            }
+          }
+        },
+        {
+          "update": 100,
+          "training": {
+            "all": {
+              "game_mean_nll": 1.2809486931655556,
+              "game_mean_win_brier": 0.12177744130895007
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.5504358625039458,
+              "game_mean_win_brier": 0.15754209511214867
+            },
+            "opening": {
+              "game_mean_nll": 2.0534572741016746,
+              "game_mean_win_brier": 0.2196753538446501
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 1.3693575107026845,
+              "game_mean_win_brier": 0.19514083437388763
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.7215956337749958,
+              "game_mean_win_brier": 0.28753594029694796
+            },
+            "opening": {
+              "game_mean_nll": 1.7460637278854847,
+              "game_mean_win_brier": 0.2863102128030732
+            }
+          }
+        },
+        {
+          "update": 400,
+          "training": {
+            "all": {
+              "game_mean_nll": 0.7696135363075882,
+              "game_mean_win_brier": 0.06352913997397991
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.0732762035913765,
+              "game_mean_win_brier": 0.10471208012313582
+            },
+            "opening": {
+              "game_mean_nll": 2.092637777328491,
+              "game_mean_win_brier": 0.2211588149657473
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 1.7530974263790995,
+              "game_mean_win_brier": 0.21438347088405862
+            },
+            "ante_1_3": {
+              "game_mean_nll": 2.0297490595839918,
+              "game_mean_win_brier": 0.29256099244230427
+            },
+            "opening": {
+              "game_mean_nll": 1.964043840765953,
+              "game_mean_win_brier": 0.3237005702103488
+            }
+          }
+        }
+      ],
+      "validation_changes": {
+        "0": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            }
+          }
+        },
+        "25": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": -0.0315629318356514,
+              "game_cluster_ci95": [
+                -0.10804687807103619,
+                0.039300985261797865
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.008656711259391159,
+              "game_cluster_ci95": [
+                -0.006194194534327835,
+                0.024663773977954394
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.06001375149935484,
+              "game_cluster_ci95": [
+                -0.04378075406420976,
+                0.16109671357553448
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.031201280071400106,
+              "game_cluster_ci95": [
+                0.005678354761039373,
+                0.059218576979765195
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.006188424304127693,
+              "game_cluster_ci95": [
+                -0.059767945250496265,
+                0.06344428081065415
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.012160100624896586,
+              "game_cluster_ci95": [
+                0.0025028910604305565,
+                0.02206643432728014
+              ]
+            }
+          }
+        },
+        "100": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 0.06685455911792815,
+              "game_cluster_ci95": [
+                -0.03789029594627209,
+                0.17434738719020967
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.02910480072023347,
+              "game_cluster_ci95": [
+                0.00019496341992635284,
+                0.06035095553816062
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.13144453801214695,
+              "game_cluster_ci95": [
+                -0.004694033821579053,
+                0.2795123362448065
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.03388117207214236,
+              "game_cluster_ci95": [
+                -0.001212888346344698,
+                0.07089518613647669
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": -0.010055635124444962,
+              "game_cluster_ci95": [
+                -0.101319733238779,
+                0.08641264624893663
+              ]
+            },
+            "win_brier": {
+              "mean_delta": -0.0013681097188964486,
+              "game_cluster_ci95": [
+                -0.008635281107854097,
+                0.006092806518427086
+              ]
+            }
+          }
+        },
+        "400": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 0.4505944747943431,
+              "game_cluster_ci95": [
+                0.1850250611838419,
+                0.7433807303896165
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.048347437230404466,
+              "game_cluster_ci95": [
+                0.0048493019203306184,
+                0.09464503390481695
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.4395979638211429,
+              "game_cluster_ci95": [
+                0.17566726997029036,
+                0.7279706841916775
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.038906224217498675,
+              "game_cluster_ci95": [
+                -0.0038215390006371306,
+                0.08178467068937603
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.2079244777560234,
+              "game_cluster_ci95": [
+                0.0965543388389051,
+                0.31566126677207645
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.03602224768837914,
+              "game_cluster_ci95": [
+                0.010264882557385136,
+                0.06386800304608185
+              ]
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 186.34381933300756
+    },
+    "frozen_critic_reverse": {
+      "manifest": "eval/long_horizon_generalization_20260921_micro160/analysis/frozen_critic_reverse/manifest.json",
+      "manifest_sha256": "4fb3000694dec850bb9384c6acaf218cac851e5b32770f338c3915365f714fa6",
+      "result_sha256": "7c1de68cc309907b8050c2bc2dc485ed3d518b294d850bf2b603c3b75ef0c8fa",
+      "script_sha256": "dbd742e5203cc0f92a21a02397f974667792028586f89a5f53f3255931912fa5",
+      "post_hoc_reverse_split": true,
+      "training_games": 32,
+      "validation_games": 32,
+      "training_wins": 17,
+      "validation_wins": 10,
+      "curves_averaged_over_two_fitting_orders": [
+        {
+          "update": 0,
+          "training": {
+            "all": {
+              "game_mean_nll": 1.3025029515847564,
+              "game_mean_win_brier": 0.16603603365365416
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.5901510957628489,
+              "game_mean_win_brier": 0.2536547682248056
+            },
+            "opening": {
+              "game_mean_nll": 1.7561193630099297,
+              "game_mean_win_brier": 0.2876783225219697
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 1.7043486721813679,
+              "game_mean_win_brier": 0.1639485346386209
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.8963249549269676,
+              "game_mean_win_brier": 0.19670014386065304
+            },
+            "opening": {
+              "game_mean_nll": 2.066143896430731,
+              "game_mean_win_brier": 0.2167518548667431
+            }
+          }
+        },
+        {
+          "update": 25,
+          "training": {
+            "all": {
+              "game_mean_nll": 1.1407514984020963,
+              "game_mean_win_brier": 0.1372226877429057
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.3704433664679527,
+              "game_mean_win_brier": 0.19369234098121524
+            },
+            "opening": {
+              "game_mean_nll": 1.603108729235828,
+              "game_mean_win_brier": 0.24252833356149495
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 1.8848424355965108,
+              "game_mean_win_brier": 0.2334329044970218
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.997593735344708,
+              "game_mean_win_brier": 0.24295589816756546
+            },
+            "opening": {
+              "game_mean_nll": 2.1822764803655446,
+              "game_mean_win_brier": 0.2650047342758626
+            }
+          }
+        },
+        {
+          "update": 100,
+          "training": {
+            "all": {
+              "game_mean_nll": 0.8911002181703225,
+              "game_mean_win_brier": 0.11502432350243907
+            },
+            "ante_1_3": {
+              "game_mean_nll": 1.131196620175615,
+              "game_mean_win_brier": 0.16661835761624388
+            },
+            "opening": {
+              "game_mean_nll": 1.5170751912519336,
+              "game_mean_win_brier": 0.23509054689202458
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 2.192368282820098,
+              "game_mean_win_brier": 0.24988201155792922
+            },
+            "ante_1_3": {
+              "game_mean_nll": 2.2400497375056148,
+              "game_mean_win_brier": 0.2446287499042228
+            },
+            "opening": {
+              "game_mean_nll": 2.4453193554654717,
+              "game_mean_win_brier": 0.2905809663934633
+            }
+          }
+        },
+        {
+          "update": 400,
+          "training": {
+            "all": {
+              "game_mean_nll": 0.6153810269024689,
+              "game_mean_win_brier": 0.07833396464411635
+            },
+            "ante_1_3": {
+              "game_mean_nll": 0.8358386912150308,
+              "game_mean_win_brier": 0.1233237060951069
+            },
+            "opening": {
+              "game_mean_nll": 1.452039594994858,
+              "game_mean_win_brier": 0.2200434064725414
+            }
+          },
+          "validation": {
+            "all": {
+              "game_mean_nll": 3.0824769903556444,
+              "game_mean_win_brier": 0.2871748849574942
+            },
+            "ante_1_3": {
+              "game_mean_nll": 2.9510542328935117,
+              "game_mean_win_brier": 0.2769679466728121
+            },
+            "opening": {
+              "game_mean_nll": 2.736338722752407,
+              "game_mean_win_brier": 0.30452671292005107
+            }
+          }
+        }
+      ],
+      "validation_changes": {
+        "0": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0,
+              "game_cluster_ci95": [
+                0.0,
+                0.0
+              ]
+            }
+          }
+        },
+        "25": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 0.1804937634151429,
+              "game_cluster_ci95": [
+                0.01349693603697233,
+                0.352211967029143
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0694843698584009,
+              "game_cluster_ci95": [
+                0.01846061873729923,
+                0.12007919160969321
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.10126878041774035,
+              "game_cluster_ci95": [
+                -0.06492591310525313,
+                0.27104152993997543
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.04625575430691242,
+              "game_cluster_ci95": [
+                -0.012843972563860006,
+                0.10290935910597901
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.11613258393481374,
+              "game_cluster_ci95": [
+                -0.04439620084594935,
+                0.28250816812505947
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.04825287940911949,
+              "game_cluster_ci95": [
+                -0.016007699706824495,
+                0.10799706518882886
+              ]
+            }
+          }
+        },
+        "100": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 0.48801961063873023,
+              "game_cluster_ci95": [
+                0.08043423610797619,
+                0.9433842104277563
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.0859334769193083,
+              "game_cluster_ci95": [
+                0.026021300984575647,
+                0.14659899863618192
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 0.34372478257864714,
+              "game_cluster_ci95": [
+                -0.05691592302173376,
+                0.8095476657850665
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.047928606043569744,
+              "game_cluster_ci95": [
+                -0.01614767200080678,
+                0.10913374256342648
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.3791754590347409,
+              "game_cluster_ci95": [
+                -0.0073940941481851,
+                0.8204909794381818
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.07382911152672023,
+              "game_cluster_ci95": [
+                -0.009104060078971087,
+                0.1506289574637776
+              ]
+            }
+          }
+        },
+        "400": {
+          "all": {
+            "outcome_nll": {
+              "mean_delta": 1.3781283181742765,
+              "game_cluster_ci95": [
+                0.5979215277940966,
+                2.2343403487422613
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.1232263503188733,
+              "game_cluster_ci95": [
+                0.04749432461321703,
+                0.19793646953985433
+              ]
+            }
+          },
+          "ante_1_3": {
+            "outcome_nll": {
+              "mean_delta": 1.054729277966544,
+              "game_cluster_ci95": [
+                0.31510091303498483,
+                1.9163007226423359
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.08026780281215906,
+              "game_cluster_ci95": [
+                0.0005961890565231447,
+                0.1561122685583541
+              ]
+            }
+          },
+          "opening": {
+            "outcome_nll": {
+              "mean_delta": 0.6701948263216764,
+              "game_cluster_ci95": [
+                0.06613936522044242,
+                1.385098489985102
+              ]
+            },
+            "win_brier": {
+              "mean_delta": 0.08777485805330798,
+              "game_cluster_ci95": [
+                -0.00294632438017288,
+                0.1736465411333483
+              ]
+            }
+          }
+        }
+      },
+      "elapsed_seconds": 3.340304624987766
+    }
+  },
+  "ante_reversal_audit_sha256": "79e8cede0f074dc0a4e496b64efba874866f58f57b52f77bf58baf8f3f417ee2",
+  "ante_reversal_audit": {
+    "source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+    "script_sha256": "dd5a1d914cfb3ca95f2e859e5916700e81a5227525c9b9f9045d970187364bf4",
+    "cohorts": [
+      {
+        "update": 123,
+        "manifest_sha256": "6f150b334c4546597ad3a8de09cf16b2b93a75ae6260844a51b68eec46508b92",
+        "games": 64,
+        "decisions": 9863,
+        "games_with_ante_decrease": 2,
+        "zero_support_rows": 5,
+        "zero_support_sampled_rows_per_epoch": 3,
+        "affected_games": [
+          {
+            "seed": 310000035,
+            "decisions": 87,
+            "ante_decrease_actions": [
+              60
+            ],
+            "zero_support_target_steps": [
+              56,
+              57,
+              58,
+              59,
+              60
+            ],
+            "zero_support_sampled_rows_per_epoch": 3,
+            "outcome": {
+              "seed": 310000035,
+              "won": false,
+              "final_ante": 3,
+              "terminated": true,
+              "truncated": false,
+              "stalled": false,
+              "steps": 87,
+              "cleared_antes": [
+                1,
+                2,
+                3
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "update": 124,
+        "manifest_sha256": "00796fc7508e0879a1af6f9f3bbb39d154bdbf6951108f94c213b5a26a4550ea",
+        "games": 64,
+        "decisions": 10625,
+        "games_with_ante_decrease": 3,
+        "zero_support_rows": 8,
+        "zero_support_sampled_rows_per_epoch": 6,
+        "affected_games": [
+          {
+            "seed": 310000117,
+            "decisions": 169,
+            "ante_decrease_actions": [
+              149
+            ],
+            "zero_support_target_steps": [
+              142,
+              143,
+              144,
+              145,
+              146,
+              147,
+              148,
+              149
+            ],
+            "zero_support_sampled_rows_per_epoch": 6,
+            "outcome": {
+              "seed": 310000117,
+              "won": false,
+              "final_ante": 6,
+              "terminated": true,
+              "truncated": false,
+              "stalled": false,
+              "steps": 169,
+              "cleared_antes": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "update": 125,
+        "manifest_sha256": "5bb8063d061dee8c78c7eb7b674367b50320b1f6118311290868b4fc7985efc3",
+        "games": 64,
+        "decisions": 10455,
+        "games_with_ante_decrease": 4,
+        "zero_support_rows": 0,
+        "zero_support_sampled_rows_per_epoch": 0,
+        "affected_games": []
+      },
+      {
+        "update": 126,
+        "manifest_sha256": "4b0bdd8fafe565fb64c058e5a644b65e7e4a5384b53e381d3f1a2e44d93ce95f",
+        "games": 64,
+        "decisions": 9746,
+        "games_with_ante_decrease": 4,
+        "zero_support_rows": 0,
+        "zero_support_sampled_rows_per_epoch": 0,
+        "affected_games": []
+      },
+      {
+        "update": 127,
+        "manifest_sha256": "741663453513d22f1ee486965d5575227aca837ca2fece2a9354e12794c552c2",
+        "games": 64,
+        "decisions": 10293,
+        "games_with_ante_decrease": 3,
+        "zero_support_rows": 0,
+        "zero_support_sampled_rows_per_epoch": 0,
+        "affected_games": []
+      }
+    ],
+    "recorded_replay": {
+      "seed": 310000035,
+      "steps": 87,
+      "final_ante": 3,
+      "won": false,
+      "gym_and_compiled_runner_agree": true,
+      "ante_decreases": [
+        {
+          "step": 60,
+          "action": 17298,
+          "decoded_action": "DecodedAction(action_type=<ActionType.SHOP_BUY: 'shop_buy'>, index=2, detail=0)",
+          "shop_vouchers": [
+            "v_hieroglyph"
+          ],
+          "ante_before": 4,
+          "ante_after": 3
+        }
+      ]
+    },
+    "isolated_loss": {
+      "current_ante": 4,
+      "final_ante": 3,
+      "target_class": 2,
+      "selected_probability": 0.0,
+      "outcome_nll": 16.11809539794922,
+      "hazard_logit_gradients": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "interpretation": "A lower future death Ante is legal after a voucher decreases Ante. The current categorical head assigns it zero mass. Binary terminal reward/MC targets remain valid. This read-only audit changes no policy, source, or study protocol."
+  },
+  "limitations": [
+    "One 64-game training cohort from one frozen policy; no independent confirmation.",
+    "Reverse split was added after observing the original result and 10/17 win imbalance.",
+    "Two fitting orders are not two independent policy-training replicas.",
+    "Actor and encoder stayed frozen; fitting schedule differs from main PPO.",
+    "Categorical-loss changes include constant zero-support rows caused by legal Ante decreases.",
+    "Main gameplay panels, training recipes, and candidate selection remain unchanged.",
+    "These diagnostics establish neither a cause of the win-rate plateau nor a gameplay gain."
+  ]
+}

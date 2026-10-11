@@ -1,0 +1,317 @@
+{
+  "created_unix": 1790096852.236047,
+  "script_sha256": "832da57e801d498b12b479991902b4cdcd86440eadd536e5ad456ee1523bf4ca",
+  "endpoint": 20,
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "selection_sha256": "0267a19e59bf5701938dd019a230f1a1ea1995e97b9c2531044306aa84faa9d4",
+  "replicas": {
+    "0": {
+      "semantic_recipe_differences": {
+        "return_value_mode": [
+          "terminal_only",
+          "terminal_plus_residual"
+        ],
+        "value_loss_coeff": [
+          0.0,
+          0.25
+        ]
+      },
+      "identical_initial_fields": [
+        "state_dict",
+        "optimizer_state_dict",
+        "rng_states",
+        "update_count",
+        "total_steps",
+        "entropy_coeff",
+        "entropy_signal_ema",
+        "lr",
+        "ppo_active_lr",
+        "reward_config",
+        "reward_fingerprint",
+        "reward_model_version",
+        "tokenizer_version",
+        "tokenizer_semantics",
+        "training_reserved_seeds"
+      ],
+      "initial_weights_optimizer_and_rng_exact": true,
+      "architecture_equal_except_declared_value_mode": true,
+      "models": {
+        "terminal_gae": {
+          "checkpoint_sha256": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+          "agent_config": {
+            "d_model": 384,
+            "n_layers": 12,
+            "n_heads": 8,
+            "d_ff": 1536,
+            "dropout": 0.1,
+            "max_seq_len": 160,
+            "hand_ar_mixture_eps": 0.5,
+            "danger_shop_leave_logit_penalty": 0.0,
+            "win_only_value": true,
+            "return_value_mode": "terminal_only",
+            "precision": "fp32",
+            "action_head_variant": "entity_sale_subset_residual_v1"
+          },
+          "reward_config": {
+            "gamma": 1.0,
+            "objective": "milestone",
+            "milestone_reward_budget": 0.0,
+            "dense_reward_scale": 1.0,
+            "ante1_chip_tempo_bonus": 0.2,
+            "consumable_reward_scale": 1.0,
+            "strategic_event_reward_scale": 1.0,
+            "enable_planet_match_rewards": false,
+            "planet_unmatched_use_penalty_coeff": 0.0,
+            "planet_unmatched_claim_penalty_coeff": 0.0,
+            "enable_score_build_potential": true,
+            "potential_w_blind": 0.5,
+            "potential_w_ante": 2.0,
+            "potential_win_ante": 8,
+            "potential_w_build_quality": 0.88,
+            "potential_w_readiness": 0.4,
+            "potential_w_scaling_option": 0.22,
+            "potential_w_economy": 0.3,
+            "potential_w_tarot_option": 0.0,
+            "potential_w_planet_option": 0.0,
+            "potential_w_seals": 1.25,
+            "potential_w_joker_search": 0.0,
+            "potential_w_standard_pack_search": 0.5,
+            "potential_w_survival_safety": 0.4,
+            "potential_build_cap": 2.0,
+            "potential_readiness_saturation": 1.5
+          }
+        },
+        "legacy_gae": {
+          "checkpoint_sha256": "b432508a4bf9294a48ddac33b99724ff7ea5553249bbecf0fd44c3186bd9bf12",
+          "agent_config": {
+            "d_model": 384,
+            "n_layers": 12,
+            "n_heads": 8,
+            "d_ff": 1536,
+            "dropout": 0.1,
+            "max_seq_len": 160,
+            "hand_ar_mixture_eps": 0.5,
+            "danger_shop_leave_logit_penalty": 0.0,
+            "win_only_value": true,
+            "return_value_mode": "terminal_plus_residual",
+            "precision": "fp32",
+            "action_head_variant": "entity_sale_subset_residual_v1"
+          },
+          "reward_config": {
+            "gamma": 1.0,
+            "objective": "milestone",
+            "milestone_reward_budget": 0.0,
+            "dense_reward_scale": 1.0,
+            "ante1_chip_tempo_bonus": 0.2,
+            "consumable_reward_scale": 1.0,
+            "strategic_event_reward_scale": 1.0,
+            "enable_planet_match_rewards": false,
+            "planet_unmatched_use_penalty_coeff": 0.0,
+            "planet_unmatched_claim_penalty_coeff": 0.0,
+            "enable_score_build_potential": true,
+            "potential_w_blind": 0.5,
+            "potential_w_ante": 2.0,
+            "potential_win_ante": 8,
+            "potential_w_build_quality": 0.88,
+            "potential_w_readiness": 0.4,
+            "potential_w_scaling_option": 0.22,
+            "potential_w_economy": 0.3,
+            "potential_w_tarot_option": 0.0,
+            "potential_w_planet_option": 0.0,
+            "potential_w_seals": 1.25,
+            "potential_w_joker_search": 0.0,
+            "potential_w_standard_pack_search": 0.5,
+            "potential_w_survival_safety": 0.4,
+            "potential_build_cap": 2.0,
+            "potential_readiness_saturation": 1.5
+          }
+        }
+      },
+      "matched_training": {
+        "terminal_gae": {
+          "games": 1280,
+          "decisions": 213789,
+          "optimizer_examples": 327680,
+          "logical_steps_per_active_parameter": 520,
+          "adam_step_deltas": {
+            "520": 314,
+            "0": 4
+          }
+        },
+        "legacy_gae": {
+          "games": 1280,
+          "decisions": 216428,
+          "optimizer_examples": 327680,
+          "logical_steps_per_active_parameter": 520,
+          "adam_step_deltas": {
+            "520": 318
+          }
+        }
+      }
+    },
+    "1": {
+      "semantic_recipe_differences": {
+        "return_value_mode": [
+          "terminal_only",
+          "terminal_plus_residual"
+        ],
+        "value_loss_coeff": [
+          0.0,
+          0.25
+        ]
+      },
+      "identical_initial_fields": [
+        "state_dict",
+        "optimizer_state_dict",
+        "rng_states",
+        "update_count",
+        "total_steps",
+        "entropy_coeff",
+        "entropy_signal_ema",
+        "lr",
+        "ppo_active_lr",
+        "reward_config",
+        "reward_fingerprint",
+        "reward_model_version",
+        "tokenizer_version",
+        "tokenizer_semantics",
+        "training_reserved_seeds"
+      ],
+      "initial_weights_optimizer_and_rng_exact": true,
+      "architecture_equal_except_declared_value_mode": true,
+      "models": {
+        "terminal_gae": {
+          "checkpoint_sha256": "7777a609b45bb4f6e629c47e2b4977358c31f3c0545c28ee942aad3e3ccfdae2",
+          "agent_config": {
+            "d_model": 384,
+            "n_layers": 12,
+            "n_heads": 8,
+            "d_ff": 1536,
+            "dropout": 0.1,
+            "max_seq_len": 160,
+            "hand_ar_mixture_eps": 0.5,
+            "danger_shop_leave_logit_penalty": 0.0,
+            "win_only_value": true,
+            "return_value_mode": "terminal_only",
+            "precision": "fp32",
+            "action_head_variant": "entity_sale_subset_residual_v1"
+          },
+          "reward_config": {
+            "gamma": 1.0,
+            "objective": "milestone",
+            "milestone_reward_budget": 0.0,
+            "dense_reward_scale": 1.0,
+            "ante1_chip_tempo_bonus": 0.2,
+            "consumable_reward_scale": 1.0,
+            "strategic_event_reward_scale": 1.0,
+            "enable_planet_match_rewards": false,
+            "planet_unmatched_use_penalty_coeff": 0.0,
+            "planet_unmatched_claim_penalty_coeff": 0.0,
+            "enable_score_build_potential": true,
+            "potential_w_blind": 0.5,
+            "potential_w_ante": 2.0,
+            "potential_win_ante": 8,
+            "potential_w_build_quality": 0.88,
+            "potential_w_readiness": 0.4,
+            "potential_w_scaling_option": 0.22,
+            "potential_w_economy": 0.3,
+            "potential_w_tarot_option": 0.0,
+            "potential_w_planet_option": 0.0,
+            "potential_w_seals": 1.25,
+            "potential_w_joker_search": 0.0,
+            "potential_w_standard_pack_search": 0.5,
+            "potential_w_survival_safety": 0.4,
+            "potential_build_cap": 2.0,
+            "potential_readiness_saturation": 1.5
+          }
+        },
+        "legacy_gae": {
+          "checkpoint_sha256": "8a1951152d4fcd7f1942d196ce4587aec9dd84ef944e336f44f9a608acc865a9",
+          "agent_config": {
+            "d_model": 384,
+            "n_layers": 12,
+            "n_heads": 8,
+            "d_ff": 1536,
+            "dropout": 0.1,
+            "max_seq_len": 160,
+            "hand_ar_mixture_eps": 0.5,
+            "danger_shop_leave_logit_penalty": 0.0,
+            "win_only_value": true,
+            "return_value_mode": "terminal_plus_residual",
+            "precision": "fp32",
+            "action_head_variant": "entity_sale_subset_residual_v1"
+          },
+          "reward_config": {
+            "gamma": 1.0,
+            "objective": "milestone",
+            "milestone_reward_budget": 0.0,
+            "dense_reward_scale": 1.0,
+            "ante1_chip_tempo_bonus": 0.2,
+            "consumable_reward_scale": 1.0,
+            "strategic_event_reward_scale": 1.0,
+            "enable_planet_match_rewards": false,
+            "planet_unmatched_use_penalty_coeff": 0.0,
+            "planet_unmatched_claim_penalty_coeff": 0.0,
+            "enable_score_build_potential": true,
+            "potential_w_blind": 0.5,
+            "potential_w_ante": 2.0,
+            "potential_win_ante": 8,
+            "potential_w_build_quality": 0.88,
+            "potential_w_readiness": 0.4,
+            "potential_w_scaling_option": 0.22,
+            "potential_w_economy": 0.3,
+            "potential_w_tarot_option": 0.0,
+            "potential_w_planet_option": 0.0,
+            "potential_w_seals": 1.25,
+            "potential_w_joker_search": 0.0,
+            "potential_w_standard_pack_search": 0.5,
+            "potential_w_survival_safety": 0.4,
+            "potential_build_cap": 2.0,
+            "potential_readiness_saturation": 1.5
+          }
+        }
+      },
+      "matched_training": {
+        "terminal_gae": {
+          "games": 1280,
+          "decisions": 205352,
+          "optimizer_examples": 327680,
+          "logical_steps_per_active_parameter": 520,
+          "adam_step_deltas": {
+            "520": 314,
+            "0": 4
+          }
+        },
+        "legacy_gae": {
+          "games": 1280,
+          "decisions": 205252,
+          "optimizer_examples": 327680,
+          "logical_steps_per_active_parameter": 520,
+          "adam_step_deltas": {
+            "520": 318
+          }
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/audit_fresh_credit.py": "16e69714edf8210a7e5dd7ae46a6a032f495e9d4f28bb7ea191bd7f3845bbcb4",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/initial.pt": "e87e68baa9e00d31bae83d1b55ca810026789fd25ea589841ac7222711dd6c96",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed0/checkpoints/ppo_update142.pt": "abf91bb67899e2a23ad51cc3cf47073449566e3ae97ded6b31f9744a8c079bcd",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_gae_seed0_endpoint20_verification.json": "b7163eb7fe07e039862102427393f345f4e371d86517cea498e1c684e413fe26",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/initial.pt": "39158be0fbaf1ecd5b195ce2ed3a077ecc26d224ce38baf6b11bceeb646bb486",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed0/checkpoints/ppo_update142.pt": "b432508a4bf9294a48ddac33b99724ff7ea5553249bbecf0fd44c3186bd9bf12",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/legacy_gae_seed0_endpoint20_verification.json": "5b5dd5706f4342d83d5952cc82c88bda8af9f047b37834d82b5214fa3e198c82",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/initial.pt": "15221b5df75e40a63d92c51eee3fd136795c808cc219db3e38c23f4cecfdf0e1",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_gae_seed1/checkpoints/ppo_update142.pt": "7777a609b45bb4f6e629c47e2b4977358c31f3c0545c28ee942aad3e3ccfdae2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_gae_seed1_endpoint20_verification.json": "145d341af908388ccffb70703d724b9a9f42940e55b3df059139fea58b6083c9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/initial.pt": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/checkpoints/ppo_update142.pt": "8a1951152d4fcd7f1942d196ce4587aec9dd84ef944e336f44f9a608acc865a9",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/legacy_gae_seed1_endpoint20_verification.json": "2f2294b1e37aa6aa6b6f7e9b5853fefdadd6b35c04712d3785d56ef39517b0ec"
+  },
+  "new_games": 0,
+  "confirmation_outcomes_read": false,
+  "generalization_proven": false,
+  "interpretation": "Both fixed replicas have identical starting weights, optimizer and RNG state. The semantic treatment changes return_value_mode and value_loss_coeff together. Both arms use fragment GAE with the same planned training seeds and optimizer exposure. Four residual-head parameter tensors intentionally receive no updates in terminal GAE. This is a value-objective bundle comparison, not an isolated critic-prediction effect. This verification reads no confirmation outcomes and provides no gameplay or architectural improvement evidence."
+}

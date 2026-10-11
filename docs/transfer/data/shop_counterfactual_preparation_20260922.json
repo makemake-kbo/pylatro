@@ -1,0 +1,1649 @@
+{
+  "intent_sha256": "f8759637c52185b48136243c25bc09a328306d9612ea3489bc5986c44086f14c",
+  "states": [
+    {
+      "replica": 0,
+      "seed": 310000005,
+      "step": 16,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.01576239801943302,
+      "leave_log_prob": -8.40185260772705,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000005.npz",
+      "source_sha256": "ae0185c298b71b03798394e8003a3a3fde78fbf4c4e11094a428850388cf6504",
+      "observation_sha256": "e4b9d360cce3e7856b2272d62100b6fa395ad34d300b6d6b110966f7da23d5ef",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000005.pkl",
+      "snapshot_sha256": "d8f4180483cead6609fcdcd8811d75f3eb24ce6ae360d1b1fb77ea67f8f60528",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000005.npz",
+      "observation_file_sha256": "460e2efcf74d513774422df6150ab9c04da57d963101d3c7e9a14ca6209e0ab6",
+      "original_replay_verified": {
+        "complete_game_steps": 240,
+        "restored_suffix_steps": 224,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.2793782949447632,
+          "post_action_observation_sha256": "4e3fe814dd36e8971549c3b1b4410e152cef77634f2f1888a3f748ab785c5674",
+          "dollars": 7.0,
+          "jokers": [
+            "j_crafty",
+            "j_square",
+            "j_stencil"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3073408007621765,
+          "post_action_observation_sha256": "144a558a10aa24d5ce0a4668a8cb7d88342d0877f791a57d9502f2d950ae3a5f",
+          "dollars": 15.0,
+          "jokers": [
+            "j_crafty",
+            "j_square"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 0,
+      "seed": 310000060,
+      "step": 19,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "leave",
+      "buy_log_prob": -3.68557071685791,
+      "leave_log_prob": -0.040609072893857956,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000060.npz",
+      "source_sha256": "ea3e7f0bee4b1356a73b0454279876b624c69c6d0b25f050fc797753205d96d2",
+      "observation_sha256": "bbc41e2e3e24dfc478570618cae3e5435baa0e936ad5615f97738e8d0abf6bf5",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000060.pkl",
+      "snapshot_sha256": "db5f16ac193bcc71ca32405fcca0e229485a708583561858b2cda3f39b61c811",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000060.npz",
+      "observation_file_sha256": "97d86201e76a75d029bce313a9c84932e2638d5f7622c337118ac7f9b222cdbc",
+      "original_replay_verified": {
+        "complete_game_steps": 164,
+        "restored_suffix_steps": 145,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.4467390477657318,
+          "post_action_observation_sha256": "369d6f55824e96601a3376076a1b3ef2999842e19ede4ea00953ffadfbac9d42",
+          "dollars": 18.0,
+          "jokers": [
+            "j_faceless",
+            "j_jolly",
+            "j_photograph"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.43690025806427,
+          "post_action_observation_sha256": "408a844d9b227814f66bc08489e162f8acda91556e74ab16692aa9d7072e1eb9",
+          "dollars": 23.0,
+          "jokers": [
+            "j_faceless",
+            "j_jolly"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000055,
+      "step": 16,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.005884641315788031,
+      "leave_log_prob": -9.673929214477539,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000055.npz",
+      "source_sha256": "81df8863456066dd671cc650f16698972029f4f130580b7c2a58698d93f78ae8",
+      "observation_sha256": "ee7156f1edca476d7558c406863d09d0306b7e99abe018abc731ea91538600f5",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000055.pkl",
+      "snapshot_sha256": "59152b444b2967a63fbf6afa42f65b9d92f7099d7b3451de75055035b33eaaf0",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000055.npz",
+      "observation_file_sha256": "94c48c9ee98c11d5530096ad7608e8879466c6452e3226ff4c34c03b435a62e0",
+      "original_replay_verified": {
+        "complete_game_steps": 214,
+        "restored_suffix_steps": 198,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3784342408180237,
+          "post_action_observation_sha256": "0a335180057e74bf7a0c9ee145f9151e5bf9299dc5c60ad0df2a6fce4e266088",
+          "dollars": 10.0,
+          "jokers": [
+            "j_even_steven",
+            "j_gros_michel",
+            "j_hologram",
+            "j_blackboard"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.29471448063850403,
+          "post_action_observation_sha256": "0024a1902fb66e0cda32107de53a0d940e3568fc94051407cfd67cfa078b23fe",
+          "dollars": 16.0,
+          "jokers": [
+            "j_even_steven",
+            "j_gros_michel",
+            "j_hologram"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000036,
+      "step": 23,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0019295131787657738,
+      "leave_log_prob": -7.281859874725342,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000036.npz",
+      "source_sha256": "fb3519c3dbc5edde9249b404a2beb15ae03e4f15cd6507c55d95ff90a70c116a",
+      "observation_sha256": "5d53eb2f9ef1c1bec23606de25f71b8e490f6ae038e4c3c3021635337f245e14",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000036.pkl",
+      "snapshot_sha256": "7b7639a1def34bc98ac146729e0179dff59454b86af624264f646c499790c1cc",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000036.npz",
+      "observation_file_sha256": "35c3b05de5cfe0ce5966618cd5c658db2480f932ad100cbb473936c07a0eda75",
+      "original_replay_verified": {
+        "complete_game_steps": 236,
+        "restored_suffix_steps": 213,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.4701959192752838,
+          "post_action_observation_sha256": "b9f24e3b8310251c673a080ef4b131da00f18af8a6f7239c2d401dad8eb194af",
+          "dollars": 8.0,
+          "jokers": [
+            "j_egg",
+            "j_mad",
+            "j_red_card",
+            "j_hallucination",
+            "j_green_joker"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.36183881759643555,
+          "post_action_observation_sha256": "4cbe612a086370743e048b02d19f3392ab219c831933dad9cbcc0f79bc3df1fe",
+          "dollars": 12.0,
+          "jokers": [
+            "j_egg",
+            "j_mad",
+            "j_red_card",
+            "j_hallucination"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000031,
+      "step": 20,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0006460025906562805,
+      "leave_log_prob": -9.150773048400879,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000031.npz",
+      "source_sha256": "b23e568e5163948d2e85fad7a0dbeed6ac2baf16e33020e6d5d32eadf158c1f8",
+      "observation_sha256": "ed393a21f6340d880eaaa456dada129398e7ebcfe547e37e654a649d376d0285",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000031.pkl",
+      "snapshot_sha256": "ee770c318964c01de66f333934cae84449bcc34f2f33ed2a5d8ed9b8d2b452df",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000031.npz",
+      "observation_file_sha256": "e29ead9c005e44a577d2dcb8d008e5409b027014165fec91498674848d976b98",
+      "original_replay_verified": {
+        "complete_game_steps": 235,
+        "restored_suffix_steps": 215,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3487747311592102,
+          "post_action_observation_sha256": "429429716af0ffad392a21cd3f8f9005f11cbc59be32c6ac03a5b7dc88a765d4",
+          "dollars": 10.0,
+          "jokers": [
+            "j_wily",
+            "j_photograph",
+            "j_sly",
+            "j_green_joker"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.23557017743587494,
+          "post_action_observation_sha256": "d8cd5573b5dd28bb24fd204ad8c0b26cc66c50a6bf4f0dda09dabb0708253acf",
+          "dollars": 14.0,
+          "jokers": [
+            "j_wily",
+            "j_photograph",
+            "j_sly"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000004,
+      "step": 20,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.08121242374181747,
+      "leave_log_prob": -5.096191883087158,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000004.npz",
+      "source_sha256": "28ab9cbb9cf3f9cab708cc0b5c184d7ffad57d113395c5a1280bdd93ce4f1c40",
+      "observation_sha256": "50c36686851aa1c89011463056693b60a58040bea13164a8588fc3813cb2922e",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000004.pkl",
+      "snapshot_sha256": "6725a16ba051cca263c79f1d8f69c610b8627f63177fbb0f66dfa6e9282ec5ae",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000004.npz",
+      "observation_file_sha256": "e83695f712595a48d497f159d1377be5867c9a1f23f22ac9c52ff72e6e9ed8a1",
+      "original_replay_verified": {
+        "complete_game_steps": 150,
+        "restored_suffix_steps": 130,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3806454837322235,
+          "post_action_observation_sha256": "b678a72c44f6d641da6a22509450a0f1c7c0447ea4b7ffff95dcbc4846a6e73f",
+          "dollars": 4.0,
+          "jokers": [
+            "j_reserved_parking",
+            "j_burglar"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.29086944460868835,
+          "post_action_observation_sha256": "335238cade6d72cb4cfcf3c6889a302da8d1f803a0cf24db15a621924fc38f9c",
+          "dollars": 10.0,
+          "jokers": [
+            "j_reserved_parking"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000041,
+      "step": 17,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "leave",
+      "buy_log_prob": -6.708836555480957,
+      "leave_log_prob": -0.0015591143164783716,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000041.npz",
+      "source_sha256": "d19084e8dc4b77dfe0932aded0d6cf778d9ca318cffd9688a9cff1974982c3e8",
+      "observation_sha256": "f77a696b22f30b972af6acded10d4785da5e5cde4ceac102a8aaf952736aa686",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000041.pkl",
+      "snapshot_sha256": "e57d23785f1fb79eab41667b77d4db4c61e2eaaee53710200bf2dd2eb23059c5",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000041.npz",
+      "observation_file_sha256": "f2c42c15d212c8d2e148fe907539b7d757783f54fde3259a037c6ac42be93be3",
+      "original_replay_verified": {
+        "complete_game_steps": 223,
+        "restored_suffix_steps": 206,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.5551984906196594,
+          "post_action_observation_sha256": "84956a910fb2f45b387ebf332e101854c5bf554c3f85eed4038d18b78c759840",
+          "dollars": 7.0,
+          "jokers": [
+            "j_popcorn",
+            "j_blackboard",
+            "j_cloud_9",
+            "j_ancient"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.4948734641075134,
+          "post_action_observation_sha256": "6e068284f3a86411d80f55e7d05a5960abe084aa8aebcce354d618edb51df85f",
+          "dollars": 15.0,
+          "jokers": [
+            "j_popcorn",
+            "j_blackboard",
+            "j_cloud_9"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000047,
+      "step": 30,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.032213691622018814,
+      "leave_log_prob": -3.5919127464294434,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000047.npz",
+      "source_sha256": "aa5d77674d4af5c63989c56defec8614bbbb38dfc85a1dd2f273cf273a512fec",
+      "observation_sha256": "d8f5bef055d5ecefc0ec1ce1a6b4b938012ed403c0ab68d6cf8619fb5061ffe9",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000047.pkl",
+      "snapshot_sha256": "64630467b0f08218cd94cad6ac13fd5ca5dbc07dfc97ed1c4cf13796c12bedc2",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000047.npz",
+      "observation_file_sha256": "990db9ce0c3029021cbb552ef745c2f84d9c8ab19a5d44caaa41e487f626350c",
+      "original_replay_verified": {
+        "complete_game_steps": 78,
+        "restored_suffix_steps": 48,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.38403987884521484,
+          "post_action_observation_sha256": "8141832aee776aa3ec6e665fb790eb15fb2a47ac1a8837099dd1f0083e1cdfc6",
+          "dollars": 7.0,
+          "jokers": [
+            "j_chaos",
+            "j_lusty_joker",
+            "j_mad"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.2989666163921356,
+          "post_action_observation_sha256": "c7531da5ed4178c55388a4368fb9b419b8994c54cf143ca712dfaa1760c6cbec",
+          "dollars": 11.0,
+          "jokers": [
+            "j_chaos",
+            "j_lusty_joker"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000052,
+      "step": 17,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0018842483405023813,
+      "leave_log_prob": -6.693897724151611,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000052.npz",
+      "source_sha256": "2da9d708a7f8f044c1ed31362cf45a09305331d938fa88610c9af69c79e05c46",
+      "observation_sha256": "83a1d51f12efc9c7f3b998e766a14b4bbb49bab26248dde7c98a726e57ffd319",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000052.pkl",
+      "snapshot_sha256": "87b1251c55910cb052f7ba0df7ec14198c57d0eda3cd685535acf5e8763168d0",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000052.npz",
+      "observation_file_sha256": "91c6abd4b61a404c7ed9ff927990bd5c003eda2b4d6bc0a01761ab184c1d24bc",
+      "original_replay_verified": {
+        "complete_game_steps": 193,
+        "restored_suffix_steps": 176,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.413321852684021,
+          "post_action_observation_sha256": "029960a39620160fef4f7705e374d4f0472e4ec1cdcd18d09bca5f98b15df83b",
+          "dollars": 4.0,
+          "jokers": [
+            "j_blue_joker",
+            "j_baseball",
+            "j_castle",
+            "j_card_sharp"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.2956993877887726,
+          "post_action_observation_sha256": "1ec9ea771212f01164bbccad13747d013f713cb2e827f5dc318aa320b2b59fe2",
+          "dollars": 10.0,
+          "jokers": [
+            "j_blue_joker",
+            "j_baseball",
+            "j_castle"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000007,
+      "step": 12,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.4647625982761383,
+      "leave_log_prob": -7.875034332275391,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000007.npz",
+      "source_sha256": "4088017d38069968730ced41b689a28d6952106ae29c238d35e91a817f39f070",
+      "observation_sha256": "1e904d324fefe55da9daa9d050641e9ceaed9447ca04dd4100ebc95cd6e9c0aa",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000007.pkl",
+      "snapshot_sha256": "6c0a06cc319c3be1f7bb4cc87031b4e05dfda57d8361187dfacbd039dbcb00e8",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000007.npz",
+      "observation_file_sha256": "4d2ba3ad4ca869cd4d2b12f03eebcd6c1647cdec436b7bc5a5d4a3391cb4dc95",
+      "original_replay_verified": {
+        "complete_game_steps": 81,
+        "restored_suffix_steps": 69,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.4013609290122986,
+          "post_action_observation_sha256": "a1bf739e623a914c73c2536921cc2d72076ee2639710f2d633fd1b7e468fc9a6",
+          "dollars": 15.0,
+          "jokers": [
+            "j_popcorn",
+            "j_juggler",
+            "j_odd_todd"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.37817588448524475,
+          "post_action_observation_sha256": "eaa5337a8374ff2164ca2791b390468337cfdd620a401a29c874c6c702022f7c",
+          "dollars": 19.0,
+          "jokers": [
+            "j_popcorn",
+            "j_juggler"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000061,
+      "step": 27,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.05906836688518524,
+      "leave_log_prob": -5.006047248840332,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000061.npz",
+      "source_sha256": "892f9d9dafd43701b89bc14ee0808caa02de70f6df965c74e9e42cc526439819",
+      "observation_sha256": "318f138ec389de0b9a91d60c10992b0d4485bdd4d7fc150be33cca41637a1ff3",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000061.pkl",
+      "snapshot_sha256": "685c41782113481a994399f14b154e03447d134bef92184c58a16378dde9d0f2",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000061.npz",
+      "observation_file_sha256": "9369da90647a6da75a189dc44701753784b1a12f45530e2f2b1bc184bfe945e7",
+      "original_replay_verified": {
+        "complete_game_steps": 47,
+        "restored_suffix_steps": 20,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.31322818994522095,
+          "post_action_observation_sha256": "db5f89e5941eb6409c54b06fbc1141ec71629d5a21fbda4c22cc78f5730b0346",
+          "dollars": 2.0,
+          "jokers": [
+            "j_supernova",
+            "j_crafty",
+            "j_wrathful_joker"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.27133896946907043,
+          "post_action_observation_sha256": "cb259914a9f253754239bd16afd20894be9d9e688bb6a01e88f19a7638b95f21",
+          "dollars": 7.0,
+          "jokers": [
+            "j_supernova",
+            "j_crafty"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000062,
+      "step": 15,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.24880798161029816,
+      "leave_log_prob": -6.701944828033447,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000062.npz",
+      "source_sha256": "b799fe7fb859929c3cd738783df6ec6648cadd355de2b8c6295ed4a564d82f72",
+      "observation_sha256": "29b39bbebdc571fe71a5644229e58eb4c69ffaea079915d1641075f7ae67b1f8",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000062.pkl",
+      "snapshot_sha256": "b20bbc04bb6de3fe23548fbddb88a4ea0cd8794153238ebd12ab48e0b3480035",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000062.npz",
+      "observation_file_sha256": "194809228475e05ae7c860fcdf7879cafd7db22f0b52159ca57dbe216eb18712",
+      "original_replay_verified": {
+        "complete_game_steps": 198,
+        "restored_suffix_steps": 183,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.30839577317237854,
+          "post_action_observation_sha256": "000d209a807f6694fab68cf395b03d594b10b594eb52fec4f0009b938570402d",
+          "dollars": 5.0,
+          "jokers": [
+            "j_mad",
+            "j_square",
+            "j_stencil"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3604535460472107,
+          "post_action_observation_sha256": "674440c43c0cf3aecb71f8b6f8456d66311e46dff86d18eb002f766c2e08cc06",
+          "dollars": 13.0,
+          "jokers": [
+            "j_mad",
+            "j_square"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 0,
+      "seed": 310000010,
+      "step": 24,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.4055013060569763,
+      "leave_log_prob": -3.095292806625366,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000010.npz",
+      "source_sha256": "f8c0658db4b600dbc2dd33779b2a7c53bf8d9e4c18535a9e45d2a9b6303492dd",
+      "observation_sha256": "a991fe31d63f528b43bcb14b7d56d31bec502a2e85707192f26039c52c7483c9",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000010.pkl",
+      "snapshot_sha256": "8de26b1587deeb361e052a4e774a9a8985a6083ddba9b74e7715bb85553df345",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000010.npz",
+      "observation_file_sha256": "875420eec4097d41b8c3250ff6fc622b8e7befef266a8d975b0f9da4ba21987c",
+      "original_replay_verified": {
+        "complete_game_steps": 52,
+        "restored_suffix_steps": 28,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.39792653918266296,
+          "post_action_observation_sha256": "46c6711325ba277f1c5c113cba49b63fa2232139b135e1e3321065e44670f085",
+          "dollars": 10.0,
+          "jokers": [
+            "j_ice_cream",
+            "j_mystic_summit",
+            "j_splash",
+            "j_square"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.33255794644355774,
+          "post_action_observation_sha256": "efb74414077e741c3aaf92c31ee6cf90106fcc42491e8703eced39663398c021",
+          "dollars": 14.0,
+          "jokers": [
+            "j_ice_cream",
+            "j_mystic_summit",
+            "j_splash"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000028,
+      "step": 17,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.010511744767427444,
+      "leave_log_prob": -9.662124633789062,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000028.npz",
+      "source_sha256": "06448f55c8f921997ab75207d7e5ac5e7f26a280092e4680bc5fe99a35877705",
+      "observation_sha256": "54995f52dd1c8900d3adf797c9ab5d9f08918241d4eb695b6f5b54319cf63f97",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000028.pkl",
+      "snapshot_sha256": "13c12c206c2e4ed9f9a3fa693a1172aed0aefbc6321aea099c56321079bef2b1",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000028.npz",
+      "observation_file_sha256": "2692ac4c1cb5137a37e12521eda457600c00c55e39cb1040b574b7eb8c20160c",
+      "original_replay_verified": {
+        "complete_game_steps": 200,
+        "restored_suffix_steps": 183,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.40302950143814087,
+          "post_action_observation_sha256": "da8131212baa69d45f24a88ea3f55e395f9a83bd5019c531b0269e882a5dfabf",
+          "dollars": 9.0,
+          "jokers": [
+            "j_ramen",
+            "j_supernova"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.38145825266838074,
+          "post_action_observation_sha256": "fa260b2207f93ae5be135994d5e0cfe07005303c3d239bc46e3b324bfd7ee435",
+          "dollars": 14.0,
+          "jokers": [
+            "j_ramen"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 0,
+      "seed": 310000003,
+      "step": 23,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "leave",
+      "buy_log_prob": -3.7098450660705566,
+      "leave_log_prob": -0.6586138606071472,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000003.npz",
+      "source_sha256": "f14117794c10ff9ef889aa6f84e37cfafd5b74524805e9600cb4b6389e628871",
+      "observation_sha256": "fad2d4090735a26ecf166423f2f24debee51c54bbd7f436cc6e8e6ebf1f26400",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000003.pkl",
+      "snapshot_sha256": "efd84bd49b29eb95edf3d0aae8fe3311d6e30b3265f4dd012d3ea7843a359c32",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000003.npz",
+      "observation_file_sha256": "c3033f2745aa8cabc78667dd0d259059138d37b00e9c30cb93cba2c52493519f",
+      "original_replay_verified": {
+        "complete_game_steps": 139,
+        "restored_suffix_steps": 116,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3064519464969635,
+          "post_action_observation_sha256": "2b72abed820ff2071255072230d752ada5e2e742f2cf60a9589984ac5dd85496",
+          "dollars": 10.0,
+          "jokers": [
+            "j_misprint",
+            "j_golden",
+            "j_superposition"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.31013232469558716,
+          "post_action_observation_sha256": "2eba4913b91a587c65fc96b01e715a1b3c9da8cfd41b70429d6f60701a7cdf90",
+          "dollars": 14.0,
+          "jokers": [
+            "j_misprint",
+            "j_golden"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 0,
+      "seed": 310000008,
+      "step": 19,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.03557552397251129,
+      "leave_log_prob": -6.761417865753174,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed0/logs/cohorts/update_123/game_310000008.npz",
+      "source_sha256": "e32db993e511c5e564c5bf4deef1ebbd451dac909c7df892d5de7d5263bcc5b9",
+      "observation_sha256": "a42b53d099aecf9b52cb81339596dcf5599e9461973c1b862661c1cde66ccb87",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000008.pkl",
+      "snapshot_sha256": "0d69649e15a2a1413091dd4f2d97e2c5e24c6afd19396ed7f8c83b99e966f4e5",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r0_seed310000008.npz",
+      "observation_file_sha256": "9e3dca183cbd92d6877b53122e7ff23df993f1ac323b82e5dc1ae949097c7b60",
+      "original_replay_verified": {
+        "complete_game_steps": 80,
+        "restored_suffix_steps": 61,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.273499995470047,
+          "post_action_observation_sha256": "18c0b2164451dfe66aeb24d731d60a695dbf53ec5a93157cfe31fc0798bf8e6f",
+          "dollars": 8.0,
+          "jokers": [
+            "j_four_fingers",
+            "j_blackboard",
+            "j_splash"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.2065875083208084,
+          "post_action_observation_sha256": "ba3f9db74a88189dd8d7cfff5f69eb589791e929664c1a66871cb9a6968bd0df",
+          "dollars": 11.0,
+          "jokers": [
+            "j_four_fingers",
+            "j_blackboard"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100058,
+      "step": 24,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0006728306179866195,
+      "leave_log_prob": -7.903616428375244,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100058.npz",
+      "source_sha256": "bb3f9721b7c545201ed9c5e3cb07464ac8e8b097fcb098ef2d094be221d75f9b",
+      "observation_sha256": "93e60e3b8eaf9083138d9cb00347880237934fee21150a020ac5aedbb13e4b3f",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100058.pkl",
+      "snapshot_sha256": "402e8ac21d73c469354dfdfdef7cfab74f1992e99f0d6204568639f73d19cb4d",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100058.npz",
+      "observation_file_sha256": "d14bfba3559b9c3509164f28440a76126dde996f9bf638d44f9eb1cf61b6fa39",
+      "original_replay_verified": {
+        "complete_game_steps": 120,
+        "restored_suffix_steps": 96,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.39668282866477966,
+          "post_action_observation_sha256": "50e27d93fa0070a2e55574ea6bcf3be369a9c810e53fb4755db3a949914e3c40",
+          "dollars": 3.0,
+          "jokers": [
+            "j_cloud_9",
+            "j_banner",
+            "j_half"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.23943448066711426,
+          "post_action_observation_sha256": "6b0b843f3a051aaf748edb5f220a7ebd00537b61538d9cf09207a388e18de090",
+          "dollars": 11.0,
+          "jokers": [
+            "j_cloud_9",
+            "j_banner"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100033,
+      "step": 18,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.005274622701108456,
+      "leave_log_prob": -5.336798667907715,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100033.npz",
+      "source_sha256": "85e0ebf189462698c524df3d6856a821249c05aa0a9e26b0f4d4095cf7879da6",
+      "observation_sha256": "7f77755334f05cad82f033bf0e80183990792af6e17f088e71376fbba037c208",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100033.pkl",
+      "snapshot_sha256": "057d37e1b46de642aaa33f4f01e392c1d5efc1620032eb31093fa090f52ddccd",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100033.npz",
+      "observation_file_sha256": "693b17d1db4dbfee85cc7e710f43b38d31ffe5dea6f4937726072675fb68ff0a",
+      "original_replay_verified": {
+        "complete_game_steps": 142,
+        "restored_suffix_steps": 124,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.23675236105918884,
+          "post_action_observation_sha256": "88f9b0477e101bd0ed36357abc41cae131996f98fbf5e5de44e9908170b5e2ff",
+          "dollars": 11.0,
+          "jokers": [
+            "j_smiley",
+            "j_crafty",
+            "j_even_steven"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.20425811409950256,
+          "post_action_observation_sha256": "3f908d4f18387bdec53cdcada26fbf70ce0423d132937fa9435be83f2babc675",
+          "dollars": 15.0,
+          "jokers": [
+            "j_smiley",
+            "j_crafty"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100026,
+      "step": 11,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0002233741688542068,
+      "leave_log_prob": -8.46731185913086,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100026.npz",
+      "source_sha256": "3927807f8ff72e7e4504580f8a48297bf9e381402f5b66dbb4f64605d7e2909a",
+      "observation_sha256": "8cc5b72d875f250836be0e72a09a95e0c6f0b426dc68b6d1c16166dec150fefd",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100026.pkl",
+      "snapshot_sha256": "e9a376f868a6084b901fc26d2238f8bfa9d47d3e50d24eabb67e1aa948efa07e",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100026.npz",
+      "observation_file_sha256": "dc75d79a5acc3d2834ea32a7891c993e05192ef78b396e674fc0e237374d6c85",
+      "original_replay_verified": {
+        "complete_game_steps": 223,
+        "restored_suffix_steps": 212,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3133181035518646,
+          "post_action_observation_sha256": "3ddb4ea10fc11fab5ca73498ba2c018292beb48458338fdee46c730e975652b4",
+          "dollars": 18.0,
+          "jokers": [
+            "j_raised_fist",
+            "j_jolly",
+            "j_abstract"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3450239598751068,
+          "post_action_observation_sha256": "88d2a561acd44ba653dce0752493dc7e42e1ff50a0858fa5fb656a3805f90446",
+          "dollars": 22.0,
+          "jokers": [
+            "j_raised_fist",
+            "j_jolly"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 1,
+      "seed": 310100017,
+      "step": 16,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.015149995684623718,
+      "leave_log_prob": -4.263527870178223,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100017.npz",
+      "source_sha256": "dd70e7bcb922f0b9e81416bbd487ff2a57598338e43e69ad3e4932e662f541e5",
+      "observation_sha256": "a579e245bf6619e9b22e655eccba84082a4f01e95b13fb7c2a3cee0174ecef1a",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100017.pkl",
+      "snapshot_sha256": "0869516db5aae1e98b632533feba329cbaf2119272c68fa677c33b997a721abd",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100017.npz",
+      "observation_file_sha256": "ba21d5ded10beb42ad08a16f11170aec4f95aed2350e69ee8dfbd28c330a9c68",
+      "original_replay_verified": {
+        "complete_game_steps": 143,
+        "restored_suffix_steps": 127,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.4383115768432617,
+          "post_action_observation_sha256": "9a605dbf33e6a8a860a4b8de501747a6fb740ed29fe10ba6334682f122ee8da4",
+          "dollars": 7.0,
+          "jokers": [
+            "j_wrathful_joker",
+            "j_popcorn",
+            "j_ice_cream",
+            "j_supernova"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3853812515735626,
+          "post_action_observation_sha256": "d4b162384627e278a5bbf3fabbf00ab723a98d239abb7c645bd1eb51057389b2",
+          "dollars": 12.0,
+          "jokers": [
+            "j_wrathful_joker",
+            "j_popcorn",
+            "j_ice_cream"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100031,
+      "step": 16,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.42452430725097656,
+      "leave_log_prob": -8.943062782287598,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100031.npz",
+      "source_sha256": "fa6491e7765b8592520385e8ed41ea04ed5c019d6c8fce4804a23bcb13701f5d",
+      "observation_sha256": "1622f68fdf73a6a155f98afde0490c53779942982f76d722cd7ce684b023599c",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100031.pkl",
+      "snapshot_sha256": "f020982e2661da7549e4c2872e33f89fca6166c845cbb1fa400211ad1a4d2047",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100031.npz",
+      "observation_file_sha256": "906afd55d11405765c14feb28b57566f0c1d8f21c54de1e6eb8c2cd0a7a46e13",
+      "original_replay_verified": {
+        "complete_game_steps": 126,
+        "restored_suffix_steps": 110,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3132948577404022,
+          "post_action_observation_sha256": "ad13d262938c89844d4695f3a06fbad3d0b378d3a581baa7fc82b0d6b402d07f",
+          "dollars": 13.0,
+          "jokers": [
+            "j_mad",
+            "j_scary_face",
+            "j_clever"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.36143845319747925,
+          "post_action_observation_sha256": "5d4ad3bf69dd586a18e274b62e936d5bf6191af846134e200f283e30e90f4610",
+          "dollars": 17.0,
+          "jokers": [
+            "j_mad",
+            "j_scary_face"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 1,
+      "seed": 310100055,
+      "step": 26,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "leave",
+      "buy_log_prob": -6.377654552459717,
+      "leave_log_prob": -0.0026026444975286722,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100055.npz",
+      "source_sha256": "fa7b00adf9f6cc8bad7561d14ece0c63e7f1a020b1468ddf936bce6829ec4985",
+      "observation_sha256": "372e11443db59a7184c1f51a3c2df0df9ddc400b2f641c250c81b44525a091b7",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100055.pkl",
+      "snapshot_sha256": "b6f6605bd7a758bd03d04d8e1cfef72cecc0bbc484bea9e2e2b3d5c5cd2897ed",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100055.npz",
+      "observation_file_sha256": "f35644898db344332531a740be7ea2786820c0e0a80ff5c592825fd622f6f635",
+      "original_replay_verified": {
+        "complete_game_steps": 218,
+        "restored_suffix_steps": 192,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3622906506061554,
+          "post_action_observation_sha256": "df04e5461a131292a2fb9d568632dccd6d90aa3a4c241ecd775167865febe4f1",
+          "dollars": 15.0,
+          "jokers": [
+            "j_space",
+            "j_popcorn",
+            "j_gros_michel",
+            "j_wrathful_joker"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3787936866283417,
+          "post_action_observation_sha256": "332db595d9aadcee9ffee33b032bc43526466b4a6e42fcb198cc436bbef70901",
+          "dollars": 20.0,
+          "jokers": [
+            "j_space",
+            "j_popcorn",
+            "j_gros_michel"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 1,
+      "seed": 310100043,
+      "step": 12,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0002550762437749654,
+      "leave_log_prob": -8.578481674194336,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100043.npz",
+      "source_sha256": "73ba35a604324a48bd2d26ec21f7506a960cd47cd6ca02fbcb02ddf69dfc0fa6",
+      "observation_sha256": "0f69dd5b392b5a67555ed54e2bce7db684be1ec4d8fa7ca4559a03744d5b5cda",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100043.pkl",
+      "snapshot_sha256": "d819e27d967983bfe025085f64ae20a8ef634acd1a79302fec5aa20dc9d7bf50",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100043.npz",
+      "observation_file_sha256": "10b9f9e242b1e63c3ae6b5ac0af93f2f54d47ed03ae2aecdf6129c4cad4c91ec",
+      "original_replay_verified": {
+        "complete_game_steps": 218,
+        "restored_suffix_steps": 206,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3896002769470215,
+          "post_action_observation_sha256": "65a52971c865e9543381460ddf45260f91fac89be7cb6c75c449d0cb24fe24d3",
+          "dollars": 13.0,
+          "jokers": [
+            "j_abstract",
+            "j_scary_face",
+            "j_mail"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.29122865200042725,
+          "post_action_observation_sha256": "c36afa915fa61b22561051926b65dd697db7a4ea4811448330bc9d5375b55959",
+          "dollars": 20.0,
+          "jokers": [
+            "j_abstract",
+            "j_scary_face"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100051,
+      "step": 15,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.002772890031337738,
+      "leave_log_prob": -5.930757999420166,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100051.npz",
+      "source_sha256": "a8914321ee59aca45e92b6f775b96bf980a352aa094061fbaa73a708ccb4e61b",
+      "observation_sha256": "54671de005db249b403b50a01cd11600fff29f1d77338b5c7eb187be44184489",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100051.pkl",
+      "snapshot_sha256": "4c44f402e082363993639f215692ce6eb88599845fc89ae9004129d47d0be63c",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100051.npz",
+      "observation_file_sha256": "0ef2ea4c05676352cc6564def813be83cebef91a12e1c9c483577d18f162debe",
+      "original_replay_verified": {
+        "complete_game_steps": 91,
+        "restored_suffix_steps": 76,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.34642529487609863,
+          "post_action_observation_sha256": "af2337eb957da1566d8d33343c64ee6dc77715e78f893a82fe95047455e60690",
+          "dollars": 12.0,
+          "jokers": [
+            "j_gros_michel",
+            "j_stencil",
+            "j_square"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3993815779685974,
+          "post_action_observation_sha256": "1ef14b8df0aba83ef9bc5590e2281b565a50a56f7f0a7afb5415d62ee5b98cfa",
+          "dollars": 18.0,
+          "jokers": [
+            "j_gros_michel",
+            "j_stencil"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 1,
+      "seed": 310100038,
+      "step": 24,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0006716515636071563,
+      "leave_log_prob": -12.051444053649902,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100038.npz",
+      "source_sha256": "3d4fababf94df70c34a9b14f6824c0179718ce045e612d7bcc17a4b9f930b123",
+      "observation_sha256": "740a1c5a7ecb6f1d58714e1b0aaf6523673b169acf24270d31271011410b691e",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100038.pkl",
+      "snapshot_sha256": "cb019db210b4e751e13dc096ebfefb0bc7e8e0bb98513baa4dd11b24520dbb6a",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100038.npz",
+      "observation_file_sha256": "fc0b2ed3698d4f80dc897004f4aee879bf3f8686bda012b7908035b4252d6762",
+      "original_replay_verified": {
+        "complete_game_steps": 110,
+        "restored_suffix_steps": 86,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3352346420288086,
+          "post_action_observation_sha256": "1744b764aa19e60e7095f479dde5aa254c0eb516133a9aa3ff1e44ad298f83cf",
+          "dollars": 17.0,
+          "jokers": [
+            "j_egg",
+            "j_mail",
+            "j_mad",
+            "j_scary_face"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.2822889983654022,
+          "post_action_observation_sha256": "20361956bd11c2a6fc788e0a30b941186ce1874c58a07f072040525cd51a91fb",
+          "dollars": 21.0,
+          "jokers": [
+            "j_egg",
+            "j_mail",
+            "j_mad"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100032,
+      "step": 17,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.009232310578227043,
+      "leave_log_prob": -10.980607986450195,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100032.npz",
+      "source_sha256": "bfc4ef6a0c713d4cea2d4016c4a0c380ec67c6da5e780c0bf4d3be4184c052c3",
+      "observation_sha256": "894bef2d7fa4ebd6d082b251307c9b11e1f2b0873194ed2f5f7777b84f9dbcba",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100032.pkl",
+      "snapshot_sha256": "3e8ad71ec9e794c280bf9e5c79250cc6fd26a2273376188217b695d1cfb4336e",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100032.npz",
+      "observation_file_sha256": "56fc2aae27a2f2d98b12e0c613e4fd45d6d2d1eaf2dda1d41983f6912be204b4",
+      "original_replay_verified": {
+        "complete_game_steps": 146,
+        "restored_suffix_steps": 129,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.40032529830932617,
+          "post_action_observation_sha256": "7c7ecbe64cbab92897c1552ac7fe73ebd6c9c638250910a551aa39f7f86a31aa",
+          "dollars": 13.0,
+          "jokers": [
+            "j_sly",
+            "j_ride_the_bus",
+            "j_mad",
+            "j_gros_michel",
+            "j_greedy_joker"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.4114321172237396,
+          "post_action_observation_sha256": "dfd2c9ded213eabcb2a453bc54ae7d72fc11662a5630d6d71f140c7459fac511",
+          "dollars": 21.0,
+          "jokers": [
+            "j_sly",
+            "j_ride_the_bus",
+            "j_mad",
+            "j_gros_michel"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 1,
+      "seed": 310100040,
+      "step": 21,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0003888224018737674,
+      "leave_log_prob": -8.750910758972168,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100040.npz",
+      "source_sha256": "279f55307a95f6289494fc803b3c626253ac09e0da02b94075966298212f8d69",
+      "observation_sha256": "ac3abe2b38afb444ef25307ad22c94e89a5da703a20b74997f65538349f379ba",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100040.pkl",
+      "snapshot_sha256": "3f5f494e83579ff11d7ec6359c0b335f642f6c8c67033ea403c2a6a37da6260b",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100040.npz",
+      "observation_file_sha256": "7f98c59696f1567c807a4a315fe61f2553142f291d7eaa9dd7cade853e215a1b",
+      "original_replay_verified": {
+        "complete_game_steps": 222,
+        "restored_suffix_steps": 201,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.38631027936935425,
+          "post_action_observation_sha256": "029e4cdc6ef871cf9e2e4ff993197843fa53a417bd34186a0b3dd4552d053b7b",
+          "dollars": 9.0,
+          "jokers": [
+            "j_hologram",
+            "j_card_sharp",
+            "j_space"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3535770773887634,
+          "post_action_observation_sha256": "6bfe6862e21f38dda4e114d91ea4c9bf06b348179cdf314a447c537ba4a054cd",
+          "dollars": 14.0,
+          "jokers": [
+            "j_hologram",
+            "j_card_sharp"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100041,
+      "step": 11,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "leave",
+      "buy_log_prob": -3.9794576168060303,
+      "leave_log_prob": -0.021628933027386665,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100041.npz",
+      "source_sha256": "95381bf93b9cbcddcf6bb168a04cc003d05e45fefbf23cbcc3eabc5d715df057",
+      "observation_sha256": "4ef439011d01f20a3b3fa08fc6d8bf6c7b9f748c8e4bdfa0043f7aa639beca68",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100041.pkl",
+      "snapshot_sha256": "6224d415955ccf10e9adc199e0b57fc280d9418978a8eee82f2b3eddabdb57fc",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100041.npz",
+      "observation_file_sha256": "1f6ac1e3cf77f900a395ddb0214f8e681cc299a76f6769a83e5bfd8217a70902",
+      "original_replay_verified": {
+        "complete_game_steps": 240,
+        "restored_suffix_steps": 229,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3448391258716583,
+          "post_action_observation_sha256": "53edc69d8325032a4030b1a5918518498d4fe8988e7d00e0c17f242e510c21fa",
+          "dollars": 16.0,
+          "jokers": [
+            "j_smiley",
+            "j_ride_the_bus"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3530411720275879,
+          "post_action_observation_sha256": "dc2aed8f5674118a879cb7bc68701e28212a8a6b0a96ffce70dcb620f48ef13f",
+          "dollars": 22.0,
+          "jokers": [
+            "j_smiley"
+          ]
+        }
+      },
+      "critic_preferred": "leave"
+    },
+    {
+      "replica": 1,
+      "seed": 310100011,
+      "step": 24,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0036158713046461344,
+      "leave_log_prob": -9.452407836914062,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100011.npz",
+      "source_sha256": "546e5b499a60198405de71f488867dfd41e146d9f82dff17ace8a2c548424aa2",
+      "observation_sha256": "e90feba64cd6345d6746a72e51751348b6f635daef575416c132e6324f2f70d9",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100011.pkl",
+      "snapshot_sha256": "bbcc127bfb36d3f1d43a6a15ef2bbce37f4443a9351a733eecef7038a7e24dae",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100011.npz",
+      "observation_file_sha256": "279fc49dfd8166470753ba5dc220f86ab8413e3085a344f724fc83f69a365459",
+      "original_replay_verified": {
+        "complete_game_steps": 132,
+        "restored_suffix_steps": 108,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3031463325023651,
+          "post_action_observation_sha256": "5cedc8d0ba0bd62ad8a963146c97b2c5ccd87337ced09f692e8273c7d8d53324",
+          "dollars": 10.0,
+          "jokers": [
+            "j_gluttenous_joker",
+            "j_drunkard",
+            "j_smiley",
+            "j_blackboard"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.23537078499794006,
+          "post_action_observation_sha256": "80a6b6ea74b63de1fe9aae9c81a4385190714002d6611dfce1271f7a0600d983",
+          "dollars": 16.0,
+          "jokers": [
+            "j_gluttenous_joker",
+            "j_drunkard",
+            "j_smiley"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100020,
+      "step": 16,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0013547113630920649,
+      "leave_log_prob": -7.365330696105957,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100020.npz",
+      "source_sha256": "05c521c7118e83609d632e617de8978b84ebfe2111e479bc823a9a3d9cac2b45",
+      "observation_sha256": "5343fcc79d38c11b105c97df2dbc4bb7f5970aff9d30517989fe2f58b148a4f1",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100020.pkl",
+      "snapshot_sha256": "770ad926b02d61d6d655b5c1b5984e8e7a1ccff42fb9bff079e1f6391dfc7b6c",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100020.npz",
+      "observation_file_sha256": "30883b915d47cac7d8906405fb23818d7f87bed96d50f096e169332fa0905882",
+      "original_replay_verified": {
+        "complete_game_steps": 201,
+        "restored_suffix_steps": 185,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3396108150482178,
+          "post_action_observation_sha256": "b4d587901fbd7806058b00ec2a29e9bb62269cc3b7949293cd3e9000c38f042c",
+          "dollars": 5.0,
+          "jokers": [
+            "j_red_card",
+            "j_clever",
+            "j_fortune_teller",
+            "j_smiley"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.23981468379497528,
+          "post_action_observation_sha256": "10ea1f3b5d26ca52c4e6f25531cd2df245d879daf40850f06e601acfc8c96d39",
+          "dollars": 9.0,
+          "jokers": [
+            "j_red_card",
+            "j_clever",
+            "j_fortune_teller"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100050,
+      "step": 19,
+      "ante": 2,
+      "buy_action": 17297,
+      "leave_action": 17320,
+      "policy_preferred": "leave",
+      "buy_log_prob": -8.342917442321777,
+      "leave_log_prob": -0.8118835687637329,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100050.npz",
+      "source_sha256": "6a101b479cb6e186ef5432008bca4ea0ff800f20ee75f0a737a6dcf2b1b9c9ab",
+      "observation_sha256": "82863528d716252ff42f950446f02b8afd9ede44100d4eb9b7704672d4b96b00",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100050.pkl",
+      "snapshot_sha256": "d6a9b516d96ef396379c07776e6e22ff22e32e702695d11c3c8d1e9b04201c41",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100050.npz",
+      "observation_file_sha256": "22a42dafd0d7dcb2dca8f176e9054699ba329a154679614c489292784683fe74",
+      "original_replay_verified": {
+        "complete_game_steps": 42,
+        "restored_suffix_steps": 23,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3373383581638336,
+          "post_action_observation_sha256": "ddd65f37a8cc259f17c0f0ef227211e7082b430f1ee3435a921096b39db438d5",
+          "dollars": 2.0,
+          "jokers": [
+            "j_droll",
+            "j_drunkard",
+            "j_banner",
+            "j_midas_mask"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.2806071937084198,
+          "post_action_observation_sha256": "871e3c1a2ecfb5c6b2b560ae254194fa8bcfbdec44fd7c6500dc68d4b4dd1db8",
+          "dollars": 9.0,
+          "jokers": [
+            "j_droll",
+            "j_drunkard",
+            "j_banner"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    },
+    {
+      "replica": 1,
+      "seed": 310100052,
+      "step": 15,
+      "ante": 2,
+      "buy_action": 17296,
+      "leave_action": 17320,
+      "policy_preferred": "buy",
+      "buy_log_prob": -0.0006782480049878359,
+      "leave_log_prob": -7.517657279968262,
+      "source_trajectory": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/logs/cohorts/update_123/game_310100052.npz",
+      "source_sha256": "a0b93faa9e14bcda7f3c60a5a007e4ce7df31837484bef4c4bcd77eb871cb6da",
+      "observation_sha256": "db3eff560860254e0bede2cf0d99fd181420d1002aa7d41c6776ce2d145d35ef",
+      "snapshot": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100052.pkl",
+      "snapshot_sha256": "44ec44f20474463398d82c73801f684f4ec65f0ddf0b5cd07df19718c0675239",
+      "observation_file": "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/early_shop_counterfactual/states/r1_seed310100052.npz",
+      "observation_file_sha256": "eb2b4eece10a06e87c444942cf941e8b67d36718c54b757b13021b9ee0844afa",
+      "original_replay_verified": {
+        "complete_game_steps": 61,
+        "restored_suffix_steps": 46,
+        "all_observations_rewards_and_terminal_flags_exact": true
+      },
+      "after_first_action": {
+        "buy": {
+          "predicted_win": 0.3591184914112091,
+          "post_action_observation_sha256": "c963e45af4b3841a2787a6699d7ef4ccfcd0f0ab90671e151538eca2624bfaa4",
+          "dollars": 8.0,
+          "jokers": [
+            "j_scary_face",
+            "j_blue_joker",
+            "j_space"
+          ]
+        },
+        "leave": {
+          "predicted_win": 0.3388238549232483,
+          "post_action_observation_sha256": "2d1ade6e1d6d137a062318804ca6840cc8fdee43d57b44b58a41d2bc60839c35",
+          "dollars": 13.0,
+          "jokers": [
+            "j_scary_face",
+            "j_blue_joker"
+          ]
+        }
+      },
+      "critic_preferred": "buy"
+    }
+  ],
+  "scanned_games": [
+    {
+      "replica": 0,
+      "seed": 310000005,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000060,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000055,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000036,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000031,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000004,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000041,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000047,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000052,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000007,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000061,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000062,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000010,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000057,
+      "selected": false
+    },
+    {
+      "replica": 0,
+      "seed": 310000028,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000003,
+      "selected": true
+    },
+    {
+      "replica": 0,
+      "seed": 310000008,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100058,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100033,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100026,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100017,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100027,
+      "selected": false
+    },
+    {
+      "replica": 1,
+      "seed": 310100031,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100055,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100043,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100051,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100038,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100032,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100040,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100041,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100011,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100020,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100050,
+      "selected": true
+    },
+    {
+      "replica": 1,
+      "seed": 310100052,
+      "selected": true
+    }
+  ],
+  "models_unchanged": {
+    "0": "2e2541b3a55b82e89f7c3bb6d1473fa65b917b0b80d1cf9b8541222b14f08745",
+    "1": "ecc18f0c741a8042ef8751bbb7aa23a5dfc2f515b3173fe86aa348437b8d2da6"
+  },
+  "preparation_seconds": 137.4833957910305,
+  "new_sampled_continuations": 0,
+  "ready_for_runner": true,
+  "generalization_proven": false
+}

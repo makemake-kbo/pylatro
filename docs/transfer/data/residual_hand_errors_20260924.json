@@ -1,0 +1,488 @@
+{
+  "analysis": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/residual_hand_errors_20260924/analysis_v1.json",
+    "sha256": "151d87d7a3f81aa8b88dd86097a6f804c42a8b4d5a4b81305553ae4b68289c43"
+  },
+  "cases": [
+    {
+      "ante": 2,
+      "blind": "The Needle",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            2
+          ],
+          "selected_conditional_probability": 0.9245297908782959,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.029358673840761185,
+          "teacher_conditional_rank": 2,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -3.449697256088257,
+            "learned_energy": -2.6115654706954956,
+            "reference_log_probability": -0.8381317853927612
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            2
+          ],
+          "selected_conditional_probability": 0.8966242074966431,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.039636798202991486,
+          "teacher_conditional_rank": 2,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -3.1188788414001465,
+            "learned_energy": -2.2920930683612823,
+            "reference_log_probability": -0.8267857432365417
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            2
+          ],
+          "selected_conditional_probability": 0.722740113735199,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.2031497359275818,
+          "teacher_conditional_rank": 2,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -1.269106388092041,
+            "learned_energy": -0.9267668724060059,
+            "reference_log_probability": -0.34233951568603516
+          }
+        }
+      },
+      "remaining_target": 800.0,
+      "seed": 850000015,
+      "step": 28,
+      "teacher_action": 5600,
+      "teacher_hand": "Pair",
+      "teacher_score": 1989,
+      "unfrozen_action": 2519,
+      "unfrozen_hand": "Pair",
+      "unfrozen_score": 795
+    },
+    {
+      "ante": 5,
+      "blind": "The Needle",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            1
+          ],
+          "selected_conditional_probability": 0.8982619047164917,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.010190115310251713,
+          "teacher_conditional_rank": 5,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -4.479043483734131,
+            "learned_energy": -0.7025671005249023,
+            "reference_log_probability": -3.7764763832092285
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            1
+          ],
+          "selected_conditional_probability": 0.9318214058876038,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.009776368737220764,
+          "teacher_conditional_rank": 4,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -4.557173013687134,
+            "learned_energy": -0.7702109813690186,
+            "reference_log_probability": -3.786962151527405
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            1
+          ],
+          "selected_conditional_probability": 0.7684173583984375,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.06962591409683228,
+          "teacher_conditional_rank": 3,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -2.401196241378784,
+            "learned_energy": 0.05808830261230469,
+            "reference_log_probability": -2.4592846632003784
+          }
+        }
+      },
+      "remaining_target": 11000.0,
+      "seed": 850000027,
+      "step": 121,
+      "teacher_action": 479,
+      "teacher_hand": "Pair",
+      "teacher_score": 14859,
+      "unfrozen_action": 534,
+      "unfrozen_hand": "Three of a Kind",
+      "unfrozen_score": 5382
+    },
+    {
+      "ante": 5,
+      "blind": "The Needle",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.42129284143447876,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.42129284143447876,
+          "teacher_conditional_rank": 1,
+          "teacher_minus_selected": {
+            "conditional_log_probability": 0.0,
+            "learned_energy": 0.0,
+            "reference_log_probability": 0.0
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.4778377115726471,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.4778377115726471,
+          "teacher_conditional_rank": 1,
+          "teacher_minus_selected": {
+            "conditional_log_probability": 0.0,
+            "learned_energy": 0.0,
+            "reference_log_probability": 0.0
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": true,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.20949062705039978,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.20494507253170013,
+          "teacher_conditional_rank": 2,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -0.021937012672424316,
+            "learned_energy": -0.43286287784576416,
+            "reference_log_probability": 0.41092586517333984
+          }
+        }
+      },
+      "remaining_target": 11000.0,
+      "seed": 850000042,
+      "step": 113,
+      "teacher_action": 534,
+      "teacher_hand": "Pair",
+      "teacher_score": 14364,
+      "unfrozen_action": 5600,
+      "unfrozen_hand": "Three of a Kind",
+      "unfrozen_score": 8510
+    },
+    {
+      "ante": 5,
+      "blind": "Small Blind",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            2
+          ],
+          "selected_conditional_probability": 0.4214329719543457,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.015031152404844761,
+          "teacher_conditional_rank": 13,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -3.333535850048065,
+            "learned_energy": 0.8796605467796326,
+            "reference_log_probability": -4.213196396827698
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            2
+          ],
+          "selected_conditional_probability": 0.44937407970428467,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.017598580569028854,
+          "teacher_conditional_rank": 8,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -3.240037441253662,
+            "learned_energy": 0.7350453734397888,
+            "reference_log_probability": -3.975082576274872
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            2
+          ],
+          "selected_conditional_probability": 0.1850830614566803,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.03563690558075905,
+          "teacher_conditional_rank": 7,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -1.6474229097366333,
+            "learned_energy": 1.3535606861114502,
+            "reference_log_probability": -3.000983715057373
+          }
+        }
+      },
+      "remaining_target": 3217.0,
+      "seed": 850000076,
+      "step": 120,
+      "teacher_action": 3895,
+      "teacher_hand": "Two Pair",
+      "teacher_score": 7893,
+      "unfrozen_action": 2519,
+      "unfrozen_hand": "Pair",
+      "unfrozen_score": 2693
+    },
+    {
+      "ante": 4,
+      "blind": "The Needle",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            1
+          ],
+          "selected_conditional_probability": 0.2099166363477707,
+          "teacher_candidate_ranks": [
+            1
+          ],
+          "teacher_conditional_probability": 0.2099166363477707,
+          "teacher_conditional_rank": 1,
+          "teacher_minus_selected": {
+            "conditional_log_probability": 0.0,
+            "learned_energy": 0.0,
+            "reference_log_probability": 0.0
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [
+            1
+          ],
+          "selected_conditional_probability": 0.23527491092681885,
+          "teacher_candidate_ranks": [
+            1
+          ],
+          "teacher_conditional_probability": 0.23527491092681885,
+          "teacher_conditional_rank": 1,
+          "teacher_minus_selected": {
+            "conditional_log_probability": 0.0,
+            "learned_energy": 0.0,
+            "reference_log_probability": 0.0
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": true,
+          "selected_candidate_ranks": [
+            5
+          ],
+          "selected_conditional_probability": 0.29630762338638306,
+          "teacher_candidate_ranks": [
+            1
+          ],
+          "teacher_conditional_probability": 0.08733732998371124,
+          "teacher_conditional_rank": 4,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -1.2216202020645142,
+            "learned_energy": -2.6656837463378906,
+            "reference_log_probability": 1.4440635442733765
+          }
+        }
+      },
+      "remaining_target": 5000.0,
+      "seed": 850000077,
+      "step": 77,
+      "teacher_action": 5049,
+      "teacher_hand": "Full House",
+      "teacher_score": 24308,
+      "unfrozen_action": 6105,
+      "unfrozen_hand": "Straight",
+      "unfrozen_score": 1280
+    },
+    {
+      "ante": 3,
+      "blind": "Big Blind",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": true,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.17341692745685577,
+          "teacher_candidate_ranks": [
+            2
+          ],
+          "teacher_conditional_probability": 0.07565031945705414,
+          "teacher_conditional_rank": 4,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -0.8295769691467285,
+            "learned_energy": -1.8293333053588867,
+            "reference_log_probability": 0.9997563362121582
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": true,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.17970207333564758,
+          "teacher_candidate_ranks": [
+            2
+          ],
+          "teacher_conditional_probability": 0.07802634686231613,
+          "teacher_conditional_rank": 4,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -0.8342537879943848,
+            "learned_energy": -1.6593307256698608,
+            "reference_log_probability": 0.8250770568847656
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.16147556900978088,
+          "teacher_candidate_ranks": [
+            2
+          ],
+          "teacher_conditional_probability": 0.039207421243190765,
+          "teacher_conditional_rank": 7,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -1.4154877662658691,
+            "learned_energy": -1.3455517292022705,
+            "reference_log_probability": -0.06993579864501953
+          }
+        }
+      },
+      "remaining_target": 887.0,
+      "seed": 850000093,
+      "step": 57,
+      "teacher_action": 3950,
+      "teacher_hand": "Full House",
+      "teacher_score": 2760,
+      "unfrozen_action": 699,
+      "unfrozen_hand": "Three of a Kind",
+      "unfrozen_score": 672
+    },
+    {
+      "ante": 6,
+      "blind": "The Needle",
+      "policy_rankings": {
+        "frozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.24873529374599457,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.24873529374599457,
+          "teacher_conditional_rank": 1,
+          "teacher_minus_selected": {
+            "conditional_log_probability": 0.0,
+            "learned_energy": 0.0,
+            "reference_log_probability": 0.0
+          }
+        },
+        "initial": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.2615693509578705,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.2519058883190155,
+          "teacher_conditional_rank": 2,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -0.0376439094543457,
+            "learned_energy": 0.06342560052871704,
+            "reference_log_probability": -0.10106945037841797
+          }
+        },
+        "unfrozen_encoder": {
+          "correction_reverses_teacher_favoring_pairwise_reference": false,
+          "selected_candidate_ranks": [],
+          "selected_conditional_probability": 0.5184486508369446,
+          "teacher_candidate_ranks": [],
+          "teacher_conditional_probability": 0.17771026492118835,
+          "teacher_conditional_rank": 2,
+          "teacher_minus_selected": {
+            "conditional_log_probability": -1.0706865787506104,
+            "learned_energy": -0.44491147994995117,
+            "reference_log_probability": -0.6257750988006592
+          }
+        }
+      },
+      "remaining_target": 20000.0,
+      "seed": 850000096,
+      "step": 130,
+      "teacher_action": 2904,
+      "teacher_hand": "Pair",
+      "teacher_score": 102316,
+      "unfrozen_action": 4895,
+      "unfrozen_hand": "High Card",
+      "unfrozen_score": 9838
+    }
+  ],
+  "checks_passed": 1937,
+  "created_unix": 1790250710.576938,
+  "first_case_visible_score_arithmetic": [
+    {
+      "action": 2519,
+      "banner_chips": 90,
+      "base_chips": 55,
+      "base_mult": 5,
+      "card_chips": 14,
+      "even_steven_mult": 0,
+      "scoring_ranks": [
+        7,
+        7
+      ],
+      "total_chips": 159,
+      "total_mult": 5,
+      "total_score": 795
+    },
+    {
+      "action": 5600,
+      "banner_chips": 90,
+      "base_chips": 55,
+      "base_mult": 5,
+      "card_chips": 8,
+      "even_steven_mult": 8,
+      "scoring_ranks": [
+        4,
+        4
+      ],
+      "total_chips": 153,
+      "total_mult": 13,
+      "total_score": 1989
+    }
+  ],
+  "generalization_proven": false,
+  "helper": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/residual_hand_errors_20260924/analyze_v1.py",
+    "sha256": "4518685b7688172dcd672adda2df4664558964b9793b3a5ebc1baa3089b26d85"
+  },
+  "limits": [
+    "All seven cases selected because unfrozen mode causes an exposed immediate loss; no population frequency inference",
+    "Pairwise reference/correction decomposition does not show which full policy would win after an ablation",
+    "Visible arithmetic explains this observed first-case score gap; not proof all observations suffice or that hidden stochastic state never matters",
+    "No changes to training, architecture or outcomes; broader generalization remains unproven"
+  ],
+  "maximum_teacher_nll_error": 0.0,
+  "prediction_rows_reproduced": 672,
+  "protocol": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/residual_hand_errors_20260924/protocol_v2.json",
+    "sha256": "922f476aa4f24e1af62b81556b833efc02b45e116971d5da5590ef7b92da8162"
+  },
+  "rankings": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/residual_hand_errors_20260924/rankings_v2/result.json",
+    "sha256": "8fdf31e8dec09dea06b03604a2691c8b652f238851db80063f804b95c52a0c5b"
+  },
+  "states": {
+    "path": "/Users/makemake/Documents/code/python/pylatro/eval/residual_hand_errors_20260924/states_v1/result.json",
+    "sha256": "573c3f42019793e6d6c1f5272e8a50fdb09e0111f64870561cc688c0fb346212"
+  },
+  "status": "complete",
+  "unfrozen_selected_case_counts": {
+    "correction_favors_selected_over_teacher": 5,
+    "correction_reverses_teacher_favoring_reference": 2,
+    "selected_inside_candidates": 4,
+    "teacher_outside_candidates": 5
+  }
+}

@@ -1,0 +1,1091 @@
+{
+  "acceptance": {
+    "all_gates_passed": false,
+    "gates": {
+      "early_vs_ordinary": false,
+      "greedy_vs_base": false,
+      "greedy_vs_ordinary": false,
+      "sampled_vs_base": false,
+      "sampled_vs_ordinary": false
+    }
+  },
+  "actual_exit_receipts": [
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/fit_execution_terminal_v1.json",
+      "sha256": "a9bd45534acd61322d90bcdcd77ad07238efa392970f9253351126f7c717e704"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/fit_audit_terminal_v1.json",
+      "sha256": "7ec97b3912032fa24f26513886198b349f7d4d196a7647d23abd123ed6031b5d"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation_execution_terminal_v1.json",
+      "sha256": "67c1a5da02339976faa862d0dd13135cf43a983c7132ad029d20c7818ae18a38"
+    },
+    {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/independent_results_verification_terminal_v2.json",
+      "sha256": "63740192a9b8af2276aafa396bc14c9c49216cf9bc8f9de795da1994ef7511a1"
+    }
+  ],
+  "comparisons": {
+    "early_hybrid_minus_ordinary_bc": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": false,
+      "control_win_rate": 0.26625,
+      "gain_pp": -0.5625,
+      "paired_95_pp": [
+        -2.9375,
+        1.8125
+      ],
+      "per_replica_gain_pp": [
+        0.375,
+        -1.5
+      ],
+      "seed_clusters": 400,
+      "streams": 2,
+      "treatment_win_rate": 0.260625,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 1600,
+      "unique_treatment_games": 1600
+    },
+    "greedy_ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": true,
+      "control_win_rate": 0.4475,
+      "gain_pp": -2.625,
+      "paired_95_pp": [
+        -7.0,
+        1.875
+      ],
+      "per_replica_gain_pp": [
+        -5.0,
+        -0.25
+      ],
+      "seed_clusters": 400,
+      "streams": 1,
+      "treatment_win_rate": 0.42125,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 400,
+      "unique_treatment_games": 800
+    },
+    "greedy_ranking_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": true,
+      "control_win_rate": 0.4475,
+      "gain_pp": -5.625,
+      "paired_95_pp": [
+        -10.25,
+        -1.0
+      ],
+      "per_replica_gain_pp": [
+        -5.75,
+        -5.5
+      ],
+      "seed_clusters": 400,
+      "streams": 1,
+      "treatment_win_rate": 0.39125,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 400,
+      "unique_treatment_games": 800
+    },
+    "greedy_ranking_minus_ordinary_bc": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": false,
+      "control_win_rate": 0.42125,
+      "gain_pp": -3.0,
+      "paired_95_pp": [
+        -6.5,
+        0.5
+      ],
+      "per_replica_gain_pp": [
+        -0.75,
+        -5.25
+      ],
+      "seed_clusters": 400,
+      "streams": 1,
+      "treatment_win_rate": 0.39125,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 800,
+      "unique_treatment_games": 800
+    },
+    "sampled_ordinary_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": true,
+      "control_win_rate": 0.28,
+      "gain_pp": 2.3125,
+      "paired_95_pp": [
+        -0.875,
+        5.5
+      ],
+      "per_replica_gain_pp": [
+        1.375,
+        3.25
+      ],
+      "seed_clusters": 400,
+      "streams": 2,
+      "treatment_win_rate": 0.303125,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 800,
+      "unique_treatment_games": 1600
+    },
+    "sampled_ranking_minus_base": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": true,
+      "control_win_rate": 0.28,
+      "gain_pp": 3.5,
+      "paired_95_pp": [
+        0.375,
+        6.75
+      ],
+      "per_replica_gain_pp": [
+        4.625,
+        2.375
+      ],
+      "seed_clusters": 400,
+      "streams": 2,
+      "treatment_win_rate": 0.315,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 800,
+      "unique_treatment_games": 1600
+    },
+    "sampled_ranking_minus_ordinary_bc": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 1729,
+      "continuation_replicas": 2,
+      "control_shared_across_replicas": false,
+      "control_win_rate": 0.303125,
+      "gain_pp": 1.1875,
+      "paired_95_pp": [
+        -1.5,
+        3.9375
+      ],
+      "per_replica_gain_pp": [
+        3.25,
+        -0.875
+      ],
+      "seed_clusters": 400,
+      "streams": 2,
+      "treatment_win_rate": 0.315,
+      "uncertainty_unit": "whole seed, all replicas/streams together",
+      "unique_control_games": 1600,
+      "unique_treatment_games": 1600
+    }
+  },
+  "frozen_gates": {
+    "early_hybrid_minus_ordinary": {
+      "lower_95_pp_strictly_above": 0,
+      "positive_both_replicas": true
+    },
+    "greedy_both_controls": {
+      "lower_95_pp_strictly_above": -5
+    },
+    "sampled_both_controls": {
+      "lower_95_pp_strictly_above": 0,
+      "minimum_gain_pp": 5,
+      "positive_both_replicas": true
+    }
+  },
+  "future_workflow": "One exploratory training run per change; independent confirmation only for the final selected candidate.",
+  "generalization_proven": false,
+  "independently_checked_panels": [
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/actions_confirmation_base_greedy.jsonl.gz",
+        "sha256": "506631a4c6c741e5c43870aa7198560b141abcee5b1c8835fcaf8dd92747d865"
+      },
+      "actions": 64470,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 342,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/confirmation_base_greedy/outcomes.jsonl",
+        "sha256": "b26e65f8452f586ddaf99d484b5f0f9499841d5e2374407eb3d129b6123db22f"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 64470
+      },
+      "spec": {
+        "id": "confirmation_base_greedy",
+        "mode": "greedy",
+        "phase": "confirmation",
+        "policy": "base",
+        "replica": null,
+        "sampling_seed": 0
+      },
+      "wins": 179
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_sample0/actions_confirmation_base_sample0.jsonl.gz",
+        "sha256": "24f575dbdb326bcdf492e5ea7b88846810cc6ee004172c3451b23ec1f180739d"
+      },
+      "actions": 60910,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 319,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_sample0/confirmation_base_sample0/outcomes.jsonl",
+        "sha256": "ffa4c8856dff95dd21183f10f41399b4c7d8868521eaa4e18e2b98e79ab0fe53"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 60910
+      },
+      "spec": {
+        "id": "confirmation_base_sample0",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "base",
+        "replica": null,
+        "sampling_seed": 0
+      },
+      "wins": 111
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_sample1/actions_confirmation_base_sample1.jsonl.gz",
+        "sha256": "de26bb71bfc8c30a4084b78b61c8bb3cc14d0f34350feee8ab0b93d5adde2eb0"
+      },
+      "actions": 58409,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 309,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_sample1/confirmation_base_sample1/outcomes.jsonl",
+        "sha256": "686424207f4d1089a9d6cf7de8a6d673940d7264c90a630600f6326eeacef1d2"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 58409
+      },
+      "spec": {
+        "id": "confirmation_base_sample1",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "base",
+        "replica": null,
+        "sampling_seed": 1
+      },
+      "wins": 113
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/actions_confirmation_ordinary_bc_r0_greedy.jsonl.gz",
+        "sha256": "7f22e67bca075e59f92f763542528c1d32970d806f899899fcb98dfca2c4a196"
+      },
+      "actions": 64270,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 345,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/confirmation_ordinary_bc_r0_greedy/outcomes.jsonl",
+        "sha256": "227a65a85efec27631d704d024e48ed3039f0ca4ca165114122ce0ae42d16171"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 64270
+      },
+      "spec": {
+        "id": "confirmation_ordinary_bc_r0_greedy",
+        "mode": "greedy",
+        "phase": "confirmation",
+        "policy": "ordinary_bc",
+        "replica": 0,
+        "sampling_seed": 0
+      },
+      "wins": 159
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_sample0/actions_confirmation_ordinary_bc_r0_sample0.jsonl.gz",
+        "sha256": "fe85633735d1a55af21dc1fdfc10f522df70f12d4e007435e75d5b2054d0b583"
+      },
+      "actions": 59784,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 325,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_sample0/confirmation_ordinary_bc_r0_sample0/outcomes.jsonl",
+        "sha256": "cce8b0a1f9c5ddcdf11a4aa65b27c8125bf2a3f2d53fb1abfa43004ced3d46e1"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 59784
+      },
+      "spec": {
+        "id": "confirmation_ordinary_bc_r0_sample0",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "ordinary_bc",
+        "replica": 0,
+        "sampling_seed": 0
+      },
+      "wins": 117
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_sample1/actions_confirmation_ordinary_bc_r0_sample1.jsonl.gz",
+        "sha256": "1b181b6fa41778fee7fefbb3d0e1ec55310915e540475237111f2ebd2b7e283a"
+      },
+      "actions": 62177,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 328,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_sample1/confirmation_ordinary_bc_r0_sample1/outcomes.jsonl",
+        "sha256": "3b4e7f3fb0732ec0136f2577f05dbcffdf5d707a57c3ca522a761941551e174c"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 62177
+      },
+      "spec": {
+        "id": "confirmation_ordinary_bc_r0_sample1",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "ordinary_bc",
+        "replica": 0,
+        "sampling_seed": 1
+      },
+      "wins": 118
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_greedy/actions_confirmation_counterfactual_ranking_bc_r0_greedy.jsonl.gz",
+        "sha256": "50c3d77aabec5afc459178f5fe7eaa9b7bd87ade04a9c2e8685cb0e396c218e5"
+      },
+      "actions": 60964,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 318,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_greedy/confirmation_counterfactual_ranking_bc_r0_greedy/outcomes.jsonl",
+        "sha256": "f90beb5d3abca56429d2959b402e2a0d73f69936e8571793522721121b302398"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 60964
+      },
+      "spec": {
+        "id": "confirmation_counterfactual_ranking_bc_r0_greedy",
+        "mode": "greedy",
+        "phase": "confirmation",
+        "policy": "counterfactual_ranking_bc",
+        "replica": 0,
+        "sampling_seed": 0
+      },
+      "wins": 156
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_sample0/actions_confirmation_counterfactual_ranking_bc_r0_sample0.jsonl.gz",
+        "sha256": "5b32e6f2cd9957e2f42853e4f9f6dc7ec8d7deec8996477a935ab3011a30a164"
+      },
+      "actions": 60532,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 328,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_sample0/confirmation_counterfactual_ranking_bc_r0_sample0/outcomes.jsonl",
+        "sha256": "873f2e234492910b290ef8cf64084e33845e81e755588191a9c44298e5d205b7"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 60532
+      },
+      "spec": {
+        "id": "confirmation_counterfactual_ranking_bc_r0_sample0",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "counterfactual_ranking_bc",
+        "replica": 0,
+        "sampling_seed": 0
+      },
+      "wins": 133
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_sample1/actions_confirmation_counterfactual_ranking_bc_r0_sample1.jsonl.gz",
+        "sha256": "fcc1d2d10064286b575250cb57565620b20a4bee2aafcbf161c6f3717376d178"
+      },
+      "actions": 59857,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 321,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_sample1/confirmation_counterfactual_ranking_bc_r0_sample1/outcomes.jsonl",
+        "sha256": "135327e9233f6481f21be3e0df3c46732e4b783a711b47446b5aa2f8ea546711"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 59857
+      },
+      "spec": {
+        "id": "confirmation_counterfactual_ranking_bc_r0_sample1",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "counterfactual_ranking_bc",
+        "replica": 0,
+        "sampling_seed": 1
+      },
+      "wins": 128
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_greedy/actions_confirmation_ordinary_bc_r1_greedy.jsonl.gz",
+        "sha256": "82970bb9ff788de4a9dabe49104006de7c7ccf99b3aaa4c1e96895ba38126313"
+      },
+      "actions": 64596,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 337,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_greedy/confirmation_ordinary_bc_r1_greedy/outcomes.jsonl",
+        "sha256": "d055d4eb0597014b72c885c3d84a43a57f08195eb4e34768bb8c67776660fa01"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 64596
+      },
+      "spec": {
+        "id": "confirmation_ordinary_bc_r1_greedy",
+        "mode": "greedy",
+        "phase": "confirmation",
+        "policy": "ordinary_bc",
+        "replica": 1,
+        "sampling_seed": 0
+      },
+      "wins": 178
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_sample0/actions_confirmation_ordinary_bc_r1_sample0.jsonl.gz",
+        "sha256": "86b9b3ac95b1c0327dd0743b7b398b271d10677a456880af73bc5261f1f09b0d"
+      },
+      "actions": 60574,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 321,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_sample0/confirmation_ordinary_bc_r1_sample0/outcomes.jsonl",
+        "sha256": "399491766d3cdaacb53a377da3628ed02512988d1e2f78438a56884a63141228"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 60574
+      },
+      "spec": {
+        "id": "confirmation_ordinary_bc_r1_sample0",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "ordinary_bc",
+        "replica": 1,
+        "sampling_seed": 0
+      },
+      "wins": 128
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_sample1/actions_confirmation_ordinary_bc_r1_sample1.jsonl.gz",
+        "sha256": "f16d46e4e1c10ab5049bd124a569feab61499cebf79cefd9a45a851a0d87a6f3"
+      },
+      "actions": 60819,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 321,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_sample1/confirmation_ordinary_bc_r1_sample1/outcomes.jsonl",
+        "sha256": "738f6e46519b3e98504cab8b8a0ecbeb826754e010221faff1fb36c00bab4026"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 60819
+      },
+      "spec": {
+        "id": "confirmation_ordinary_bc_r1_sample1",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "ordinary_bc",
+        "replica": 1,
+        "sampling_seed": 1
+      },
+      "wins": 122
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_greedy/actions_confirmation_counterfactual_ranking_bc_r1_greedy.jsonl.gz",
+        "sha256": "316d270e3a8a1eff887b2a8a8050dfdc5704cbaeb0c9a13951befc2477365dd8"
+      },
+      "actions": 61629,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 332,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_greedy/confirmation_counterfactual_ranking_bc_r1_greedy/outcomes.jsonl",
+        "sha256": "50f4c6a2f8dcbf116d3b6ea8b276936ef32481ee42ea31f540866a5aacd1ba53"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 61629
+      },
+      "spec": {
+        "id": "confirmation_counterfactual_ranking_bc_r1_greedy",
+        "mode": "greedy",
+        "phase": "confirmation",
+        "policy": "counterfactual_ranking_bc",
+        "replica": 1,
+        "sampling_seed": 0
+      },
+      "wins": 157
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_sample0/actions_confirmation_counterfactual_ranking_bc_r1_sample0.jsonl.gz",
+        "sha256": "5e37145eceb81fba80ce4d1e4e620aa20ae9f690419be3f0fe2a5ff9f47ae124"
+      },
+      "actions": 59478,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 313,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_sample0/confirmation_counterfactual_ranking_bc_r1_sample0/outcomes.jsonl",
+        "sha256": "136b53f3628741dae5d06a9c39524366198e01625eae75fbbbf14d67583292be"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 59478
+      },
+      "spec": {
+        "id": "confirmation_counterfactual_ranking_bc_r1_sample0",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "counterfactual_ranking_bc",
+        "replica": 1,
+        "sampling_seed": 0
+      },
+      "wins": 123
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_sample1/actions_confirmation_counterfactual_ranking_bc_r1_sample1.jsonl.gz",
+        "sha256": "c016758d552cf1c5718cc95cba9b6d108f339c928ed4e310ccf34ec5d0c849b5"
+      },
+      "actions": 57199,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 308,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_sample1/confirmation_counterfactual_ranking_bc_r1_sample1/outcomes.jsonl",
+        "sha256": "d3fb23c8c0036eaca311d4a7ef02f69ed4560e780bedb900151a65ccfda51060"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 57199
+      },
+      "spec": {
+        "id": "confirmation_counterfactual_ranking_bc_r1_sample1",
+        "mode": "sampled",
+        "phase": "confirmation",
+        "policy": "counterfactual_ranking_bc",
+        "replica": 1,
+        "sampling_seed": 1
+      },
+      "wins": 120
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r0_sample0/actions_early_ordinary_bc_r0_sample0.jsonl.gz",
+        "sha256": "c8e931b92113cc671f4d8c0c3ac2493f4902cbb110c815621e4885774dfb9dd7"
+      },
+      "actions": 59151,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 321,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r0_sample0/early_ordinary_bc_r0_sample0/outcomes.jsonl",
+        "sha256": "2ad4b520410fef844241af7ceb781b9aa58255e9914f3a085ff4f9cc4eb15e4b"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 59151
+      },
+      "spec": {
+        "id": "early_ordinary_bc_r0_sample0",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "ordinary_bc",
+        "replica": 0,
+        "sampling_seed": 0
+      },
+      "wins": 109
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r0_sample1/actions_early_ordinary_bc_r0_sample1.jsonl.gz",
+        "sha256": "887a073469214db532f8e6e49c205c0f5eec953a5b9cb5306e02d5aed9530206"
+      },
+      "actions": 58092,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 310,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r0_sample1/early_ordinary_bc_r0_sample1/outcomes.jsonl",
+        "sha256": "db553d79ef850570f52fb98e7a792715bb46fbcffd4b08b4c644f263dfeedb68"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 58092
+      },
+      "spec": {
+        "id": "early_ordinary_bc_r0_sample1",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "ordinary_bc",
+        "replica": 0,
+        "sampling_seed": 1
+      },
+      "wins": 104
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r0_sample0/actions_early_early_hybrid_r0_sample0.jsonl.gz",
+        "sha256": "4e4f02fa8b515c8599e0b2aee346dfb32d516f181585b8401eee60c1e0de3c0c"
+      },
+      "actions": 59194,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 324,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r0_sample0/early_early_hybrid_r0_sample0/outcomes.jsonl",
+        "sha256": "0ba3ef5b010ce9bce9a77d73a44e3e1147f2e2c9669205139708c962eeea2df4"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 36000,
+        "early": 23194
+      },
+      "spec": {
+        "id": "early_early_hybrid_r0_sample0",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "early_hybrid",
+        "replica": 0,
+        "sampling_seed": 0
+      },
+      "wins": 109
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r0_sample1/actions_early_early_hybrid_r0_sample1.jsonl.gz",
+        "sha256": "27fe5d61dfcc5f247e4361ed23f4ec3cf5c794ae8d2253d17e043753d5558c12"
+      },
+      "actions": 57246,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 307,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r0_sample1/early_early_hybrid_r0_sample1/outcomes.jsonl",
+        "sha256": "c0cc9a496c72e398a8c5c7ffb3baa745cdca418d5dd3e6e7f5c06bf4581da43b"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 34491,
+        "early": 22755
+      },
+      "spec": {
+        "id": "early_early_hybrid_r0_sample1",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "early_hybrid",
+        "replica": 0,
+        "sampling_seed": 1
+      },
+      "wins": 107
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r1_sample0/actions_early_ordinary_bc_r1_sample0.jsonl.gz",
+        "sha256": "c450797d5ec0e99a01b133f13276b9890ac1467526820d054b845552c1473a01"
+      },
+      "actions": 57677,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 312,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r1_sample0/early_ordinary_bc_r1_sample0/outcomes.jsonl",
+        "sha256": "304d6b43ed16c2f794f79501f156ed8a7247ab5bfd85038f3bed187bc745da10"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 57677
+      },
+      "spec": {
+        "id": "early_ordinary_bc_r1_sample0",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "ordinary_bc",
+        "replica": 1,
+        "sampling_seed": 0
+      },
+      "wins": 112
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r1_sample1/actions_early_ordinary_bc_r1_sample1.jsonl.gz",
+        "sha256": "cf307737d3521c461240ab092f5f5a937995d969ee35182d1cfaf7f6cdec0d54"
+      },
+      "actions": 58018,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 314,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r1_sample1/early_ordinary_bc_r1_sample1/outcomes.jsonl",
+        "sha256": "36d6c5f79425cd116a2c856f05613740add626614ce2b721c2059875e8bfb986"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 58018
+      },
+      "spec": {
+        "id": "early_ordinary_bc_r1_sample1",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "ordinary_bc",
+        "replica": 1,
+        "sampling_seed": 1
+      },
+      "wins": 101
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r1_sample0/actions_early_early_hybrid_r1_sample0.jsonl.gz",
+        "sha256": "80bd90566a302781a2227e181f8693507e8cc3af0ab09f537a18566fb163d7b6"
+      },
+      "actions": 57065,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 314,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r1_sample0/early_early_hybrid_r1_sample0/outcomes.jsonl",
+        "sha256": "871b3b23b73f769162151c46bcb756f57faaf2c49958ad2879773f03014dda2c"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 33930,
+        "early": 23135
+      },
+      "spec": {
+        "id": "early_early_hybrid_r1_sample0",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "early_hybrid",
+        "replica": 1,
+        "sampling_seed": 0
+      },
+      "wins": 101
+    },
+    {
+      "action_trace": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r1_sample1/actions_early_early_hybrid_r1_sample1.jsonl.gz",
+        "sha256": "567b65a5fbf33f3856e77ff26b9a695477cb44657a88c16d51d18727d5a82fd1"
+      },
+      "actions": 56852,
+      "all_trace_routes_verified": true,
+      "games": 400,
+      "games_crossing_ante4": 302,
+      "games_with_post_switch_ante_decrease": 0,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r1_sample1/early_early_hybrid_r1_sample1/outcomes.jsonl",
+        "sha256": "663cf559201ffbb0742f056a31591a1c7a85cc74344ef2fb50d38c9976e84ed2"
+      },
+      "post_switch_below_cutoff_decisions": 0,
+      "route_counts": {
+        "continuation": 34027,
+        "early": 22825
+      },
+      "spec": {
+        "id": "early_early_hybrid_r1_sample1",
+        "mode": "sampled",
+        "phase": "early",
+        "policy": "early_hybrid",
+        "replica": 1,
+        "sampling_seed": 1
+      },
+      "wins": 100
+    }
+  ],
+  "raw_action_records": 1378963,
+  "raw_counts": [
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_greedy/confirmation_base_greedy/outcomes.jsonl",
+        "sha256": "b26e65f8452f586ddaf99d484b5f0f9499841d5e2374407eb3d129b6123db22f"
+      },
+      "panel": "confirmation_base_greedy",
+      "wins": 179
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_sample0/confirmation_base_sample0/outcomes.jsonl",
+        "sha256": "ffa4c8856dff95dd21183f10f41399b4c7d8868521eaa4e18e2b98e79ab0fe53"
+      },
+      "panel": "confirmation_base_sample0",
+      "wins": 111
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_base_sample1/confirmation_base_sample1/outcomes.jsonl",
+        "sha256": "686424207f4d1089a9d6cf7de8a6d673940d7264c90a630600f6326eeacef1d2"
+      },
+      "panel": "confirmation_base_sample1",
+      "wins": 113
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_greedy/confirmation_ordinary_bc_r0_greedy/outcomes.jsonl",
+        "sha256": "227a65a85efec27631d704d024e48ed3039f0ca4ca165114122ce0ae42d16171"
+      },
+      "panel": "confirmation_ordinary_bc_r0_greedy",
+      "wins": 159
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_sample0/confirmation_ordinary_bc_r0_sample0/outcomes.jsonl",
+        "sha256": "cce8b0a1f9c5ddcdf11a4aa65b27c8125bf2a3f2d53fb1abfa43004ced3d46e1"
+      },
+      "panel": "confirmation_ordinary_bc_r0_sample0",
+      "wins": 117
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r0_sample1/confirmation_ordinary_bc_r0_sample1/outcomes.jsonl",
+        "sha256": "3b4e7f3fb0732ec0136f2577f05dbcffdf5d707a57c3ca522a761941551e174c"
+      },
+      "panel": "confirmation_ordinary_bc_r0_sample1",
+      "wins": 118
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_greedy/confirmation_counterfactual_ranking_bc_r0_greedy/outcomes.jsonl",
+        "sha256": "f90beb5d3abca56429d2959b402e2a0d73f69936e8571793522721121b302398"
+      },
+      "panel": "confirmation_counterfactual_ranking_bc_r0_greedy",
+      "wins": 156
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_sample0/confirmation_counterfactual_ranking_bc_r0_sample0/outcomes.jsonl",
+        "sha256": "873f2e234492910b290ef8cf64084e33845e81e755588191a9c44298e5d205b7"
+      },
+      "panel": "confirmation_counterfactual_ranking_bc_r0_sample0",
+      "wins": 133
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r0_sample1/confirmation_counterfactual_ranking_bc_r0_sample1/outcomes.jsonl",
+        "sha256": "135327e9233f6481f21be3e0df3c46732e4b783a711b47446b5aa2f8ea546711"
+      },
+      "panel": "confirmation_counterfactual_ranking_bc_r0_sample1",
+      "wins": 128
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_greedy/confirmation_ordinary_bc_r1_greedy/outcomes.jsonl",
+        "sha256": "d055d4eb0597014b72c885c3d84a43a57f08195eb4e34768bb8c67776660fa01"
+      },
+      "panel": "confirmation_ordinary_bc_r1_greedy",
+      "wins": 178
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_sample0/confirmation_ordinary_bc_r1_sample0/outcomes.jsonl",
+        "sha256": "399491766d3cdaacb53a377da3628ed02512988d1e2f78438a56884a63141228"
+      },
+      "panel": "confirmation_ordinary_bc_r1_sample0",
+      "wins": 128
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_ordinary_bc_r1_sample1/confirmation_ordinary_bc_r1_sample1/outcomes.jsonl",
+        "sha256": "738f6e46519b3e98504cab8b8a0ecbeb826754e010221faff1fb36c00bab4026"
+      },
+      "panel": "confirmation_ordinary_bc_r1_sample1",
+      "wins": 122
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_greedy/confirmation_counterfactual_ranking_bc_r1_greedy/outcomes.jsonl",
+        "sha256": "50f4c6a2f8dcbf116d3b6ea8b276936ef32481ee42ea31f540866a5aacd1ba53"
+      },
+      "panel": "confirmation_counterfactual_ranking_bc_r1_greedy",
+      "wins": 157
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_sample0/confirmation_counterfactual_ranking_bc_r1_sample0/outcomes.jsonl",
+        "sha256": "136b53f3628741dae5d06a9c39524366198e01625eae75fbbbf14d67583292be"
+      },
+      "panel": "confirmation_counterfactual_ranking_bc_r1_sample0",
+      "wins": 123
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/confirmation_counterfactual_ranking_bc_r1_sample1/confirmation_counterfactual_ranking_bc_r1_sample1/outcomes.jsonl",
+        "sha256": "d3fb23c8c0036eaca311d4a7ef02f69ed4560e780bedb900151a65ccfda51060"
+      },
+      "panel": "confirmation_counterfactual_ranking_bc_r1_sample1",
+      "wins": 120
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r0_sample0/early_ordinary_bc_r0_sample0/outcomes.jsonl",
+        "sha256": "2ad4b520410fef844241af7ceb781b9aa58255e9914f3a085ff4f9cc4eb15e4b"
+      },
+      "panel": "early_ordinary_bc_r0_sample0",
+      "wins": 109
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r0_sample1/early_ordinary_bc_r0_sample1/outcomes.jsonl",
+        "sha256": "db553d79ef850570f52fb98e7a792715bb46fbcffd4b08b4c644f263dfeedb68"
+      },
+      "panel": "early_ordinary_bc_r0_sample1",
+      "wins": 104
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r0_sample0/early_early_hybrid_r0_sample0/outcomes.jsonl",
+        "sha256": "0ba3ef5b010ce9bce9a77d73a44e3e1147f2e2c9669205139708c962eeea2df4"
+      },
+      "panel": "early_early_hybrid_r0_sample0",
+      "wins": 109
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r0_sample1/early_early_hybrid_r0_sample1/outcomes.jsonl",
+        "sha256": "c0cc9a496c72e398a8c5c7ffb3baa745cdca418d5dd3e6e7f5c06bf4581da43b"
+      },
+      "panel": "early_early_hybrid_r0_sample1",
+      "wins": 107
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r1_sample0/early_ordinary_bc_r1_sample0/outcomes.jsonl",
+        "sha256": "304d6b43ed16c2f794f79501f156ed8a7247ab5bfd85038f3bed187bc745da10"
+      },
+      "panel": "early_ordinary_bc_r1_sample0",
+      "wins": 112
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_ordinary_bc_r1_sample1/early_ordinary_bc_r1_sample1/outcomes.jsonl",
+        "sha256": "36d6c5f79425cd116a2c856f05613740add626614ce2b721c2059875e8bfb986"
+      },
+      "panel": "early_ordinary_bc_r1_sample1",
+      "wins": 101
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r1_sample0/early_early_hybrid_r1_sample0/outcomes.jsonl",
+        "sha256": "871b3b23b73f769162151c46bcb756f57faaf2c49958ad2879773f03014dda2c"
+      },
+      "panel": "early_early_hybrid_r1_sample0",
+      "wins": 101
+    },
+    {
+      "games": 400,
+      "outcomes": {
+        "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/evaluation/early_early_hybrid_r1_sample1/early_early_hybrid_r1_sample1/outcomes.jsonl",
+        "sha256": "663cf559201ffbb0742f056a31591a1c7a85cc74344ef2fb50d38c9976e84ed2"
+      },
+      "panel": "early_early_hybrid_r1_sample1",
+      "wins": 100
+    }
+  ],
+  "scope": "Two continuation replicas from one shared pretrained base; all fixed endpoints.",
+  "sources": {
+    "analysis_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/analysis_v1.json",
+      "sha256": "ac51806d65d616fe27d0423d1623b675f43bd83aba117b0bb2417d866fd4ff4e"
+    },
+    "execution_manifest_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/execution_manifest_v1.json",
+      "sha256": "553e6e07c95e903748c1a91b963d57e460f650d3a25a3f8b25a6c69b4796e0e7"
+    },
+    "execution_v1/complete.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/execution_v1/complete.json",
+      "sha256": "3607d6b27355f0fb3b6306d0c60a9ec26a6f666d2dcc38acd25615fa626f90be"
+    },
+    "fit_audit_v1.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/fit_audit_v1.json",
+      "sha256": "9c3f6ddb69f5081a5e43d80e7be62e45299a4474a4a2587fb8027ec6ae1db495"
+    },
+    "independent_results_verification_v2.json": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/independent_results_verification_v2.json",
+      "sha256": "d012c6e4a51e834b1561b67b4f2213770e9bc0e30fc53fec40190611678ef12e"
+    },
+    "publish_results_v2.py": {
+      "path": "/Users/makemake/Documents/code/python/pylatro/eval/counterfactual_ranking_20260926/publish_results_v2.py",
+      "sha256": "984c1e40999e48772cfcabb3fc1e30665820fe4f15b616e8e4c94f7d107c75a3"
+    }
+  },
+  "status": "complete",
+  "unique_autonomous_games": 9200
+}

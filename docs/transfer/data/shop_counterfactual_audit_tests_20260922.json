@@ -1,0 +1,22 @@
+{
+  "verified_unix": 1790070780.936427,
+  "test_count": 3,
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "eval/long_horizon_generalization_20260921_logical_kl/analysis/test_audit_shop_counterfactual.py"
+  ],
+  "test_session_id": 2925,
+  "exit_code": 0,
+  "test_source_sha256": "dbc761280ddd03b915ffc055a3323bff91e6d7a9427d99ef58ed77499cff22e0",
+  "audit_source_sha256": "ef62631dc8d31faf464f6f3a1645e6891f1bd1e3cf0a73f78de6d8743c71bd9e",
+  "coverage": [
+    "Reject wrong terminal win, broken observation chain, wrong forced action and early termination even after trace hash recomputation",
+    "Hand-computed fixed-preference/state-paired statistics and missing/duplicate pair rejection",
+    "Exact replay of a real saved original-game suffix, then rejection of a deliberately incorrect outcome"
+  ],
+  "new_sampled_games": 0,
+  "generalization_proven": false
+}

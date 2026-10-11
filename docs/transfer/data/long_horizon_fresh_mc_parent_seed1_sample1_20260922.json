@@ -1,0 +1,108 @@
+{
+  "created_unix": 1790076356.853334,
+  "script_sha256": "f2748a6e22ec9918702adefc450c6f1c2e9652719a23ccd70521350ec154d5c5",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "selection_sha256": "0267a19e59bf5701938dd019a230f1a1ea1995e97b9c2531044306aa84faa9d4",
+  "replica": 1,
+  "mode": "sample1",
+  "stage": "confirmation",
+  "endpoint": 20,
+  "game_seeds": 400,
+  "panels": {
+    "parent": {
+      "checkpoint_sha256": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+      "summary": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 144,
+        "win_rate": 0.36,
+        "win_rate_cluster_ci95": [
+          0.3125,
+          0.4075
+        ],
+        "win_rate_wilson_ci95": [
+          0.3144979076102711,
+          0.40816553480333195
+        ],
+        "mean_final_ante": 6.255,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.94,
+          "2": 0.8675,
+          "3": 0.805,
+          "4": 0.7325,
+          "5": 0.625,
+          "6": 0.5125,
+          "7": 0.4175,
+          "8": 0.36
+        }
+      }
+    },
+    "mc20": {
+      "checkpoint_sha256": "895007a43441dea28320f69b89c914d20aa690927f236da3492cac60857ba2ff",
+      "summary": {
+        "game_seeds": 400,
+        "games": 400,
+        "wins": 162,
+        "win_rate": 0.405,
+        "win_rate_cluster_ci95": [
+          0.3575,
+          0.4525
+        ],
+        "win_rate_wilson_ci95": [
+          0.3580179525239347,
+          0.4537893833995817
+        ],
+        "mean_final_ante": 6.555,
+        "stalls": 0,
+        "censored": 0,
+        "ante_clear_rates": {
+          "1": 0.955,
+          "2": 0.8975,
+          "3": 0.84,
+          "4": 0.7475,
+          "5": 0.67,
+          "6": 0.565,
+          "7": 0.4775,
+          "8": 0.405
+        }
+      }
+    }
+  },
+  "paired": {
+    "game_seeds": 400,
+    "games_per_arm": 400,
+    "sampled_or_greedy_delta": 0.045,
+    "paired_ci95": [
+      -0.0075,
+      0.0975
+    ],
+    "unit": "game seed; sampling repeats averaged before resampling",
+    "rescued_losses": 66,
+    "new_losses": 48
+  },
+  "additional_mc_training": {
+    "games": 1280,
+    "decisions": 205913,
+    "optimizer_examples": 327680,
+    "logical_steps_per_active_parameter": 520
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/legacy_gae_seed1/initial.pt": "17829a0c33841a5ccd18fbaadf4867645c453530b5c145bb9c11d2b4c8293dd2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample1/manifest.json": "5f283fe5ef634957e4fcdd4ea800b082a8b90a2a65f064f1eb2ddc9d2fb191f6",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update0/baseline_seed1/sample1/outcomes.jsonl": "96d67e6201f8323b91855442464e592759124b376679f71b5add850e3d43ecba",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/terminal_mc_seed1/checkpoints/ppo_update142.pt": "895007a43441dea28320f69b89c914d20aa690927f236da3492cac60857ba2ff",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample1/manifest.json": "4f3ebf505de84977283e99a45c02be69f967570bc432aaa234c7ea778e68748d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/evaluations/confirmation/update20/terminal_mc_seed1/sample1/outcomes.jsonl": "d598d3e18fa9d57bd2c543254a02d55fe84cd1d1109c3c53451090996a36a98a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_logical_kl/analysis/terminal_mc_seed1_endpoint20_verification.json": "f60a3df4ca95eb0cf19974c49a267ffe513265de6c5a59ecba9e2b3142934c8a"
+  },
+  "independent_paired_bootstrap_verified": true,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 1729,
+  "selection_changed": false,
+  "generalization_proven": false,
+  "interpretation": "Interim fixed-panel result: one training replica and one sampling repeat or greedy mode. These 400 confirmation seeds are disjoint from training and development. The MC endpoint was already selected using development data. The pointwise interval is not adjusted for inspecting multiple partial confirmation panels. No early stopping, selection, training, or acceptance criteria change follows this snapshot. The parent received no additional training, so this contrast does not isolate the credit estimator. Both training replicas, both sampling repeats, matched GAE, the greedy guardrail and the reserved learned early-policy intervention remain required before the main verdict.",
+  "paired_games_sha256": "25cd05e04f9cbd09d3ca030028b01e883e6079a6351249a7868a62bc3db88850"
+}

@@ -1,0 +1,35 @@
+{
+  "status": "complete",
+  "pid": 77692,
+  "started_unix": 1790021487.438991,
+  "script_sha256": "992120dbb1637c878f1b7ac247503b9211a9586b215621836898a92d7a488e9e",
+  "study_sha256": "e20c2abbfce8cf04bc5aaee8043ff87b47ed1f383f02231b9dfd34854b19bc91",
+  "source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "replicas": [
+    0,
+    1
+  ],
+  "cohort_update": 123,
+  "device": "cpu",
+  "torch_threads": 1,
+  "batch_size": 16,
+  "wall_limit_seconds": 1800,
+  "gradient_axes": [
+    "raw_mc",
+    "raw_gae",
+    "score",
+    "draw_mc",
+    "draw_gae"
+  ],
+  "selected_rows": "SHOP with current Ante <=3",
+  "split_seed": 64017,
+  "partitions": 1000,
+  "games_per_half": 32,
+  "no_optimizer_or_model_write": true,
+  "teacher_labels": false,
+  "scope": "Macro action-type head only, fixed parent, first matched cohorts, initial unclipped actor objective",
+  "primary": "Disjoint whole-game halves normalize their own whole-game advantages; all early-shop rows",
+  "secondary": "Saved row draw with shared original normalization; gradients before any optimizer step",
+  "limits": "Descriptive within-cohort gradient agreement, not gradient correctness, full-model variance, or fresh performance",
+  "elapsed_seconds": 90.31807589530945
+}

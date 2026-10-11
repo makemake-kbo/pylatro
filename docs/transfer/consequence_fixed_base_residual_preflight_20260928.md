@@ -1,0 +1,11 @@
+# Fixed-base residual loss checks and backward-only preflight
+
+This implements the prerequisite in [the fixed-base proposal](consequence_fixed_base_residual_20260928.md). The cache build must finish with its actual owner exit and both split audits before native loss tests or this preflight run. Native jobs remain serial.
+
+Six focused tests check initial equality to base, detached priors and frozen initial weights, equivalence to the prior loss when both fixed terms are zero, nonzero offsets against an independently transformed table, complete-state microbatch equivalence, the real relational readout's train/eval computation, and rejection of a trainable reference or malformed support. They introduce no optimizer steps or learned parameters.
+
+The preflight reuses the admitted 47,149-state feature/support cache and 3,396-pair mask. It runs backward without stepping on the same first three batches of the original epoch-one order; capture the first two, including the first active survival batch. Initialize the trainable readout identically to the completed survival-ranking control and freeze a deep copy. On all captured legal and padded outputs verify exact initial cancellation, unchanged score/clear outputs, identity gradients through the centered transform, and independently calculated score, clear, full-support CE and survival derivatives. Check saved base values against the admitted packed cache and both state dictionaries against the original checkpoint. The original loss audit supplies the independent float64 formulas; no second fit or duplicate neural backward is an audit.
+
+Keep CPU FP32, one thread, batch 128, cell budget 8,192, the original normalization and all loss weights. Permit 900 seconds per measurement/audit phase plus 30 seconds supervision grace. Project fixed-20 fit cost by measured seconds per padded cell times the unchanged 443,478,075 cells. The fixed fit budget is the larger of 3,600 seconds and three times that projection, rounded up; do not admit it above 21,600 seconds. Freeze that measured budget before one exploratory fit. Do not train from preparation or partial artifacts.
+
+These are implementation and runtime checks. They provide no evidence of prediction transfer, retained clears, autonomous wins or long-horizon generalization. Keep the prior endpoint and all scientific gates.

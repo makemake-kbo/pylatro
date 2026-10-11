@@ -1,0 +1,1432 @@
+{
+  "created_unix": 1790017794.950055,
+  "analysis_script_sha256": "a732888258fb0bc243db1307e83d4e44d4aaf25a83472e8ff2c1d85f42fc0d61",
+  "analysis_source_sha256": "f4dd64e9fd570c5f948c743f6268479ca5672c4d8f082f534666b872e7de86b0",
+  "study_sha256": "d7bb6028ccf0a9b9d3cf4046a51ccd28b2a21499ea7cbeb589a38e43ee19b3dd",
+  "evaluation_source_sha256": "f412db0c19de1d33da4cc00bd8b5e6af5b7008f8e1c9db180c9215060e24c49e",
+  "checkpoint_hashes": {
+    "terminal_mc_seed0": "212a86b7c99146777f594d714acb7b7e1f00ef3f9a162c7b185922e7186a81c4",
+    "terminal_gae_seed0": "0e6e35a404d354ece7be8be51bd75858ff28d87ff4e986688fc5e4434921eced",
+    "parent_seed0": "8496f843758bd3c93912408cf0f9a881e9a0b963e4e88b2855108dc52c13947d",
+    "terminal_mc_seed1": "39ee479e85d347f107f7dde1b4fa58d106f29c0f1eb6fdea9a7daffb8bd6d9f1",
+    "terminal_gae_seed1": "c06b6c4dde2b786940e52d6686dce3abf55614eb09642ee89ce07851a292eedf",
+    "parent_seed1": "ef83cf4557b5de726a07d539c728835f2b6e2423e2385c66a251d7e9088d19b0"
+  },
+  "artifacts": {
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed0/sample0/manifest.json": "4fd22f6a3ed53bf1a2e829595480dd07bbe381451da920b60dadc7068e07acad",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed0/sample0/outcomes.jsonl": "ffc878714a2e3e0debc23bae4199d42291825a54a9fffadf625fa1771d2def2d",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed0/sample0/manifest.json": "91e865ef5d0c3ee8f6da8063488aa6a984d0923379075ae102c8bca9f08e84dd",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed0/sample0/outcomes.jsonl": "c9eed312b04e50c53af8f368c629b99b5ba5a93c8ecce4182124b6c4012a043a",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed0/sample0/manifest.json": "390dad686459a5b2e54ad2ce817d67daf14e3a0164a711430154d802d8e24503",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed0/sample0/outcomes.jsonl": "7f0e7a05cce5f343d01c7e8d7efc3fcc2d26b17beebe788ea02f8a9ec14da330",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed1/sample0/manifest.json": "857ec111bcfb62979ad8726afb894a4cab767a25b005fa68c1d8c4e3321b60ce",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed1/sample0/outcomes.jsonl": "0a5693fac36b89f5f5bc48685f7bcd7c8025f8b816aa6cff9044a01b8aeca0c3",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed1/sample0/manifest.json": "9b7d8d37b357381643b07a0a4b8be51d28bb400c83ded8f2a132ec0f83b11779",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed1/sample0/outcomes.jsonl": "4243d76673c94fc587990351db4f60b51bea2a5d0226e8829a4314955b8af2bc",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed1/sample0/manifest.json": "2025eb14846d1c07083517769b82552b4aeb48c61dc920b283ea7f1e28cb2a34",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed1/sample0/outcomes.jsonl": "7c1ccee5493987145d8a12d76a9f71d7bdafd6df304c8fe8d5f5228324c4ca8c",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed0/greedy/manifest.json": "30430958484cdd11d252ea5c7c3196cebf7ffd5d10152c94fa2e1e83bbab0642",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed0/greedy/outcomes.jsonl": "4d155ff6e31340c0b72d126208fb78cb1849039df8442359f87058a31ea3221e",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed0/greedy/manifest.json": "8d8601e029e97e02aa4104f4e243709f4b60819c4e7ee9133470d81dd05a8ad8",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed0/greedy/outcomes.jsonl": "2cb992c8c186d6b2b7cf85971ebf53bc32291b32bba4b87949e2781e28b0ecf7",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed0/greedy/manifest.json": "1914cc8cbe6d63be0227588eb9762e9c20af0e649927ff6ac19b60cece49f9ba",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed0/greedy/outcomes.jsonl": "26f3a0d7cd4951530166ada3da438d3c0838cad3aaa028c1bb0e3201fe7ec5df",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed1/greedy/manifest.json": "630e0acda25b147384abeccad8bf54e71da8b328bc78dbe3ad0b0fd17ba8febc",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_mc_seed1/greedy/outcomes.jsonl": "e71712cee8b425aa4685984989859a7f94584d1724d5f5123f391fd1406d6313",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed1/greedy/manifest.json": "657b6f95dabc2d528db2e7dab038540393914d83268d348f212dee24e1edc9a2",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update10/terminal_gae_seed1/greedy/outcomes.jsonl": "07a8e1e93b82cc3bd9936233997475ca573b92f12622a7e92aa4f7fc4c96331b",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed1/greedy/manifest.json": "a1f28729c32075c1639b3d673bc7b85ff8b2fe6d69012a0d100debaf76d730a7",
+    "/Users/makemake/Documents/code/python/pylatro/eval/long_horizon_generalization_20260921_micro160/evaluations/development/update0/baseline_seed1/greedy/outcomes.jsonl": "bb67bfc6c21cbd9b2c76d35dd58a975d1cfcc997aac9aa28a33a7cff12604cc4"
+  },
+  "endpoint": 10,
+  "stage": "development",
+  "modes": {
+    "sample0": {
+      "summaries": {
+        "terminal_mc": {
+          "game_seeds": 200,
+          "games": 400,
+          "wins": 143,
+          "win_rate": 0.3575,
+          "win_rate_cluster_ci95": [
+            0.3025,
+            0.4125
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 6.545,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9625,
+            "2": 0.9175,
+            "3": 0.8575,
+            "4": 0.775,
+            "5": 0.665,
+            "6": 0.56,
+            "7": 0.45,
+            "8": 0.3575
+          }
+        },
+        "terminal_gae": {
+          "game_seeds": 200,
+          "games": 400,
+          "wins": 150,
+          "win_rate": 0.375,
+          "win_rate_cluster_ci95": [
+            0.32,
+            0.43
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 6.6025,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9675,
+            "2": 0.915,
+            "3": 0.865,
+            "4": 0.7725,
+            "5": 0.675,
+            "6": 0.58,
+            "7": 0.4525,
+            "8": 0.375
+          }
+        },
+        "parent": {
+          "game_seeds": 200,
+          "games": 400,
+          "wins": 155,
+          "win_rate": 0.3875,
+          "win_rate_cluster_ci95": [
+            0.3325,
+            0.445
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 6.7075,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.9725,
+            "2": 0.9225,
+            "3": 0.88,
+            "4": 0.7875,
+            "5": 0.7,
+            "6": 0.58,
+            "7": 0.4775,
+            "8": 0.3875
+          }
+        }
+      },
+      "by_replica_summaries": {
+        "0": {
+          "terminal_mc": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 72,
+            "win_rate": 0.36,
+            "win_rate_cluster_ci95": [
+              0.295,
+              0.425
+            ],
+            "win_rate_wilson_ci95": [
+              0.2966919730456654,
+              0.42858471833996925
+            ],
+            "mean_final_ante": 6.57,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.965,
+              "2": 0.925,
+              "3": 0.86,
+              "4": 0.785,
+              "5": 0.675,
+              "6": 0.56,
+              "7": 0.44,
+              "8": 0.36
+            }
+          },
+          "terminal_gae": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 79,
+            "win_rate": 0.395,
+            "win_rate_cluster_ci95": [
+              0.325,
+              0.465
+            ],
+            "win_rate_wilson_ci95": [
+              0.32984101013207967,
+              0.46411650840714636
+            ],
+            "mean_final_ante": 6.745,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.965,
+              "2": 0.935,
+              "3": 0.88,
+              "4": 0.815,
+              "5": 0.685,
+              "6": 0.59,
+              "7": 0.48,
+              "8": 0.395
+            }
+          },
+          "parent": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 79,
+            "win_rate": 0.395,
+            "win_rate_cluster_ci95": [
+              0.325,
+              0.46
+            ],
+            "win_rate_wilson_ci95": [
+              0.32984101013207967,
+              0.46411650840714636
+            ],
+            "mean_final_ante": 6.775,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.975,
+              "2": 0.935,
+              "3": 0.885,
+              "4": 0.79,
+              "5": 0.71,
+              "6": 0.59,
+              "7": 0.495,
+              "8": 0.395
+            }
+          }
+        },
+        "1": {
+          "terminal_mc": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 71,
+            "win_rate": 0.355,
+            "win_rate_cluster_ci95": [
+              0.29,
+              0.425
+            ],
+            "win_rate_wilson_ci95": [
+              0.2919862754043116,
+              0.42347886924509565
+            ],
+            "mean_final_ante": 6.52,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.96,
+              "2": 0.91,
+              "3": 0.855,
+              "4": 0.765,
+              "5": 0.655,
+              "6": 0.56,
+              "7": 0.46,
+              "8": 0.355
+            }
+          },
+          "terminal_gae": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 71,
+            "win_rate": 0.355,
+            "win_rate_cluster_ci95": [
+              0.29,
+              0.42
+            ],
+            "win_rate_wilson_ci95": [
+              0.2919862754043116,
+              0.42347886924509565
+            ],
+            "mean_final_ante": 6.46,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.97,
+              "2": 0.895,
+              "3": 0.85,
+              "4": 0.73,
+              "5": 0.665,
+              "6": 0.57,
+              "7": 0.425,
+              "8": 0.355
+            }
+          },
+          "parent": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 76,
+            "win_rate": 0.38,
+            "win_rate_cluster_ci95": [
+              0.31,
+              0.45
+            ],
+            "win_rate_wilson_ci95": [
+              0.31559005848673627,
+              0.44893281984380773
+            ],
+            "mean_final_ante": 6.64,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.97,
+              "2": 0.91,
+              "3": 0.875,
+              "4": 0.785,
+              "5": 0.69,
+              "6": 0.57,
+              "7": 0.46,
+              "8": 0.38
+            }
+          }
+        }
+      },
+      "contrasts": {
+        "terminal_mc_vs_terminal_gae": {
+          "pooled": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": -0.0175,
+            "paired_ci95": [
+              -0.07,
+              0.035
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "by_replica": {
+            "0": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.035,
+              "paired_ci95": [
+                -0.11,
+                0.04
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "1": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.0,
+              "paired_ci95": [
+                -0.075,
+                0.075
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "milestones": {
+            "1": {
+              "candidate_clears": 385,
+              "control_clears": 387,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.005,
+                "paired_ci95": [
+                  -0.0275,
+                  0.0175
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "2": {
+              "candidate_clears": 367,
+              "control_clears": 366,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0025,
+                "paired_ci95": [
+                  -0.0325,
+                  0.035
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "3": {
+              "candidate_clears": 343,
+              "control_clears": 346,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0075,
+                "paired_ci95": [
+                  -0.0475,
+                  0.035
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "4": {
+              "candidate_clears": 310,
+              "control_clears": 309,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0025,
+                "paired_ci95": [
+                  -0.045,
+                  0.05
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "5": {
+              "candidate_clears": 266,
+              "control_clears": 270,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.01,
+                "paired_ci95": [
+                  -0.0675,
+                  0.0475
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "6": {
+              "candidate_clears": 224,
+              "control_clears": 232,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.02,
+                "paired_ci95": [
+                  -0.08,
+                  0.04
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "7": {
+              "candidate_clears": 180,
+              "control_clears": 181,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0025,
+                "paired_ci95": [
+                  -0.0575,
+                  0.0525
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "8": {
+              "candidate_clears": 143,
+              "control_clears": 150,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0175,
+                "paired_ci95": [
+                  -0.07,
+                  0.035
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            }
+          }
+        },
+        "terminal_mc_vs_parent": {
+          "pooled": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": -0.03,
+            "paired_ci95": [
+              -0.0825,
+              0.0225
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "by_replica": {
+            "0": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.035,
+              "paired_ci95": [
+                -0.1,
+                0.03
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "1": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.025,
+              "paired_ci95": [
+                -0.1,
+                0.045
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "milestones": {
+            "1": {
+              "candidate_clears": 385,
+              "control_clears": 389,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.01,
+                "paired_ci95": [
+                  -0.0325,
+                  0.01
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "2": {
+              "candidate_clears": 367,
+              "control_clears": 369,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.005,
+                "paired_ci95": [
+                  -0.035,
+                  0.025
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "3": {
+              "candidate_clears": 343,
+              "control_clears": 352,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0225,
+                "paired_ci95": [
+                  -0.06,
+                  0.015
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "4": {
+              "candidate_clears": 310,
+              "control_clears": 315,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0125,
+                "paired_ci95": [
+                  -0.0575,
+                  0.0325
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "5": {
+              "candidate_clears": 266,
+              "control_clears": 280,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.035,
+                "paired_ci95": [
+                  -0.0875,
+                  0.0175
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "6": {
+              "candidate_clears": 224,
+              "control_clears": 232,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.02,
+                "paired_ci95": [
+                  -0.075,
+                  0.0375
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "7": {
+              "candidate_clears": 180,
+              "control_clears": 191,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0275,
+                "paired_ci95": [
+                  -0.0825,
+                  0.0275
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "8": {
+              "candidate_clears": 143,
+              "control_clears": 155,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.03,
+                "paired_ci95": [
+                  -0.0825,
+                  0.0225
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            }
+          }
+        },
+        "terminal_gae_vs_parent": {
+          "pooled": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": -0.0125,
+            "paired_ci95": [
+              -0.065,
+              0.04
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "by_replica": {
+            "0": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.0,
+              "paired_ci95": [
+                -0.075,
+                0.075
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "1": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.025,
+              "paired_ci95": [
+                -0.105,
+                0.05
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "milestones": {
+            "1": {
+              "candidate_clears": 387,
+              "control_clears": 389,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.005,
+                "paired_ci95": [
+                  -0.025,
+                  0.015
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "2": {
+              "candidate_clears": 366,
+              "control_clears": 369,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0075,
+                "paired_ci95": [
+                  -0.035,
+                  0.02
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "3": {
+              "candidate_clears": 346,
+              "control_clears": 352,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.015,
+                "paired_ci95": [
+                  -0.05,
+                  0.02
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "4": {
+              "candidate_clears": 309,
+              "control_clears": 315,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.015,
+                "paired_ci95": [
+                  -0.06,
+                  0.03
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "5": {
+              "candidate_clears": 270,
+              "control_clears": 280,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.025,
+                "paired_ci95": [
+                  -0.08,
+                  0.0275
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "6": {
+              "candidate_clears": 232,
+              "control_clears": 232,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0,
+                "paired_ci95": [
+                  -0.055,
+                  0.055
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "7": {
+              "candidate_clears": 181,
+              "control_clears": 191,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.025,
+                "paired_ci95": [
+                  -0.0825,
+                  0.03
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "8": {
+              "candidate_clears": 150,
+              "control_clears": 155,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0125,
+                "paired_ci95": [
+                  -0.065,
+                  0.04
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            }
+          }
+        }
+      }
+    },
+    "greedy": {
+      "summaries": {
+        "terminal_mc": {
+          "game_seeds": 200,
+          "games": 400,
+          "wins": 201,
+          "win_rate": 0.5025,
+          "win_rate_cluster_ci95": [
+            0.4425,
+            0.5625
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 7.0925,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.98,
+            "2": 0.92,
+            "3": 0.8975,
+            "4": 0.81,
+            "5": 0.74,
+            "6": 0.665,
+            "7": 0.5775,
+            "8": 0.5025
+          }
+        },
+        "terminal_gae": {
+          "game_seeds": 200,
+          "games": 400,
+          "wins": 202,
+          "win_rate": 0.505,
+          "win_rate_cluster_ci95": [
+            0.4475,
+            0.5625
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 7.23,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.98,
+            "2": 0.94,
+            "3": 0.8975,
+            "4": 0.8525,
+            "5": 0.79,
+            "6": 0.69,
+            "7": 0.5775,
+            "8": 0.505
+          }
+        },
+        "parent": {
+          "game_seeds": 200,
+          "games": 400,
+          "wins": 193,
+          "win_rate": 0.4825,
+          "win_rate_cluster_ci95": [
+            0.425,
+            0.54
+          ],
+          "win_rate_wilson_ci95": null,
+          "mean_final_ante": 6.9225,
+          "stalls": 0,
+          "censored": 0,
+          "ante_clear_rates": {
+            "1": 0.97,
+            "2": 0.91,
+            "3": 0.8875,
+            "4": 0.8,
+            "5": 0.7075,
+            "6": 0.6225,
+            "7": 0.545,
+            "8": 0.4825
+          }
+        }
+      },
+      "by_replica_summaries": {
+        "0": {
+          "terminal_mc": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 100,
+            "win_rate": 0.5,
+            "win_rate_cluster_ci95": [
+              0.43,
+              0.57
+            ],
+            "win_rate_wilson_ci95": [
+              0.43136085960389187,
+              0.5686391403961082
+            ],
+            "mean_final_ante": 7.22,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.98,
+              "2": 0.935,
+              "3": 0.92,
+              "4": 0.84,
+              "5": 0.785,
+              "6": 0.685,
+              "7": 0.575,
+              "8": 0.5
+            }
+          },
+          "terminal_gae": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 107,
+            "win_rate": 0.535,
+            "win_rate_cluster_ci95": [
+              0.465,
+              0.605
+            ],
+            "win_rate_wilson_ci95": [
+              0.4658664687236316,
+              0.6028143584299599
+            ],
+            "mean_final_ante": 7.375,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.99,
+              "2": 0.95,
+              "3": 0.915,
+              "4": 0.865,
+              "5": 0.81,
+              "6": 0.71,
+              "7": 0.6,
+              "8": 0.535
+            }
+          },
+          "parent": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 91,
+            "win_rate": 0.455,
+            "win_rate_cluster_ci95": [
+              0.39,
+              0.52
+            ],
+            "win_rate_wilson_ci95": [
+              0.387482193098835,
+              0.524213886275119
+            ],
+            "mean_final_ante": 6.95,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.965,
+              "2": 0.91,
+              "3": 0.89,
+              "4": 0.81,
+              "5": 0.735,
+              "6": 0.645,
+              "7": 0.545,
+              "8": 0.455
+            }
+          }
+        },
+        "1": {
+          "terminal_mc": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 101,
+            "win_rate": 0.505,
+            "win_rate_cluster_ci95": [
+              0.435,
+              0.575
+            ],
+            "win_rate_wilson_ci95": [
+              0.43627000033527485,
+              0.5735415464009526
+            ],
+            "mean_final_ante": 6.965,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.98,
+              "2": 0.905,
+              "3": 0.875,
+              "4": 0.78,
+              "5": 0.695,
+              "6": 0.645,
+              "7": 0.58,
+              "8": 0.505
+            }
+          },
+          "terminal_gae": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 95,
+            "win_rate": 0.475,
+            "win_rate_cluster_ci95": [
+              0.405,
+              0.545
+            ],
+            "win_rate_wilson_ci95": [
+              0.4069162264657108,
+              0.5440260398531525
+            ],
+            "mean_final_ante": 7.085,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.97,
+              "2": 0.93,
+              "3": 0.88,
+              "4": 0.84,
+              "5": 0.77,
+              "6": 0.67,
+              "7": 0.555,
+              "8": 0.475
+            }
+          },
+          "parent": {
+            "game_seeds": 200,
+            "games": 200,
+            "wins": 102,
+            "win_rate": 0.51,
+            "win_rate_cluster_ci95": [
+              0.44,
+              0.58
+            ],
+            "win_rate_wilson_ci95": [
+              0.44118587678458643,
+              0.5784372166878682
+            ],
+            "mean_final_ante": 6.895,
+            "stalls": 0,
+            "censored": 0,
+            "ante_clear_rates": {
+              "1": 0.975,
+              "2": 0.91,
+              "3": 0.885,
+              "4": 0.79,
+              "5": 0.68,
+              "6": 0.6,
+              "7": 0.545,
+              "8": 0.51
+            }
+          }
+        }
+      },
+      "contrasts": {
+        "terminal_mc_vs_terminal_gae": {
+          "pooled": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": -0.0025,
+            "paired_ci95": [
+              -0.0525,
+              0.0475
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "by_replica": {
+            "0": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.035,
+              "paired_ci95": [
+                -0.105,
+                0.035
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "1": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.03,
+              "paired_ci95": [
+                -0.04,
+                0.1
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "milestones": {
+            "1": {
+              "candidate_clears": 392,
+              "control_clears": 392,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0,
+                "paired_ci95": [
+                  -0.0125,
+                  0.0125
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "2": {
+              "candidate_clears": 368,
+              "control_clears": 376,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.02,
+                "paired_ci95": [
+                  -0.045,
+                  0.005
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "3": {
+              "candidate_clears": 359,
+              "control_clears": 359,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0,
+                "paired_ci95": [
+                  -0.03,
+                  0.03
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "4": {
+              "candidate_clears": 324,
+              "control_clears": 341,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0425,
+                "paired_ci95": [
+                  -0.08,
+                  -0.005
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "5": {
+              "candidate_clears": 296,
+              "control_clears": 316,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.05,
+                "paired_ci95": [
+                  -0.095,
+                  -0.005
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "6": {
+              "candidate_clears": 266,
+              "control_clears": 276,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.025,
+                "paired_ci95": [
+                  -0.075,
+                  0.025
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "7": {
+              "candidate_clears": 231,
+              "control_clears": 231,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0,
+                "paired_ci95": [
+                  -0.0475,
+                  0.0475
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "8": {
+              "candidate_clears": 201,
+              "control_clears": 202,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": -0.0025,
+                "paired_ci95": [
+                  -0.0525,
+                  0.0475
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            }
+          }
+        },
+        "terminal_mc_vs_parent": {
+          "pooled": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.02,
+            "paired_ci95": [
+              -0.0275,
+              0.0675
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "by_replica": {
+            "0": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.045,
+              "paired_ci95": [
+                -0.02,
+                0.11
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "1": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.005,
+              "paired_ci95": [
+                -0.07,
+                0.06
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "milestones": {
+            "1": {
+              "candidate_clears": 392,
+              "control_clears": 388,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.01,
+                "paired_ci95": [
+                  0.0,
+                  0.0225
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "2": {
+              "candidate_clears": 368,
+              "control_clears": 364,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.01,
+                "paired_ci95": [
+                  -0.0175,
+                  0.035
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "3": {
+              "candidate_clears": 359,
+              "control_clears": 355,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.01,
+                "paired_ci95": [
+                  -0.0175,
+                  0.0375
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "4": {
+              "candidate_clears": 324,
+              "control_clears": 320,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.01,
+                "paired_ci95": [
+                  -0.025,
+                  0.045
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "5": {
+              "candidate_clears": 296,
+              "control_clears": 283,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0325,
+                "paired_ci95": [
+                  -0.01,
+                  0.0725
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "6": {
+              "candidate_clears": 266,
+              "control_clears": 249,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0425,
+                "paired_ci95": [
+                  -0.0025,
+                  0.0875
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "7": {
+              "candidate_clears": 231,
+              "control_clears": 218,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0325,
+                "paired_ci95": [
+                  -0.0175,
+                  0.08
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "8": {
+              "candidate_clears": 201,
+              "control_clears": 193,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.02,
+                "paired_ci95": [
+                  -0.0275,
+                  0.0675
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            }
+          }
+        },
+        "terminal_gae_vs_parent": {
+          "pooled": {
+            "game_seeds": 200,
+            "games_per_arm": 400,
+            "sampled_or_greedy_delta": 0.0225,
+            "paired_ci95": [
+              -0.0225,
+              0.0675
+            ],
+            "unit": "game seed; sampling repeats averaged before resampling"
+          },
+          "by_replica": {
+            "0": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": 0.08,
+              "paired_ci95": [
+                0.015,
+                0.14
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            },
+            "1": {
+              "game_seeds": 200,
+              "games_per_arm": 200,
+              "sampled_or_greedy_delta": -0.035,
+              "paired_ci95": [
+                -0.1,
+                0.025
+              ],
+              "unit": "game seed; sampling repeats averaged before resampling"
+            }
+          },
+          "milestones": {
+            "1": {
+              "candidate_clears": 392,
+              "control_clears": 388,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.01,
+                "paired_ci95": [
+                  0.0,
+                  0.0225
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "2": {
+              "candidate_clears": 376,
+              "control_clears": 364,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.03,
+                "paired_ci95": [
+                  0.005,
+                  0.055
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "3": {
+              "candidate_clears": 359,
+              "control_clears": 355,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.01,
+                "paired_ci95": [
+                  -0.0175,
+                  0.0375
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "4": {
+              "candidate_clears": 341,
+              "control_clears": 320,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0525,
+                "paired_ci95": [
+                  0.02,
+                  0.0875
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "5": {
+              "candidate_clears": 316,
+              "control_clears": 283,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0825,
+                "paired_ci95": [
+                  0.04,
+                  0.125
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "6": {
+              "candidate_clears": 276,
+              "control_clears": 249,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0675,
+                "paired_ci95": [
+                  0.02,
+                  0.1125
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "7": {
+              "candidate_clears": 231,
+              "control_clears": 218,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0325,
+                "paired_ci95": [
+                  -0.0125,
+                  0.0775
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            },
+            "8": {
+              "candidate_clears": 202,
+              "control_clears": 193,
+              "paired": {
+                "game_seeds": 200,
+                "games_per_arm": 400,
+                "sampled_or_greedy_delta": 0.0225,
+                "paired_ci95": [
+                  -0.0225,
+                  0.0675
+                ],
+                "unit": "game seed; sampling repeats averaged before resampling"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "game_seed_clusters": 200,
+  "physical_games_per_policy_per_mode": 400,
+  "used_for_selection": false,
+  "generalization_proven": false,
+  "interpretation": "Inherited exposed +10 development, two fixed training replicas averaged within seed before bootstrap. Milestones are unconditional clear rates on each policy's own trajectories, with unadjusted pointwise 95% intervals across eight exploratory thresholds. They do not identify action quality or causally attribute terminal wins to early decisions. No new evaluation games, training, or selection change.",
+  "paired_games_sha256": "27784b4d376e24d52e674ed58575111913df0b68d951fec8c505a7d47752cb8a",
+  "original_analysis_sha256": "ee8e04569abdbe483d78c24e046b9d550c7eee473959bd63d01b045df18c8189"
+}

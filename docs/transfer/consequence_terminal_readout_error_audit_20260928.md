@@ -1,0 +1,7 @@
+# Saved terminal-readout error audit
+
+The single converged readout fails its fixed prediction and overall restricted-choice retention criteria. Before another intervention, inspect the saved 200-state validation outputs and frozen features to distinguish broadly poor transfer from concentrated extrapolation. This is a post-hoc diagnostic; it cannot revise the failed decision, remove observations, tune calibration, refit coefficients or select a clipping threshold.
+
+For every training and validation state, compute terminal BCE, ante-baseline BCE, maximum absolute logit, standardized feature range and distance beyond each training-coordinate range. Report distributions and the fraction of validation excess BCE contributed by the largest 1/5/10 error states. For the ten largest validation BCE states, retain identities, labels, logits, slot-level losses and the five largest signed feature contributions to each action's logit. Reconcile all feature contributions to the saved logits. Also decompose logits into their three-action state mean and within-state deviations, to separate shared state confidence from action ordering. These are accounting decompositions, not alternative calibrated predictions or new policy outputs.
+
+Use only admitted saved arrays and the fixed coefficients. No optimization, simulator, encoder inference, policy or gate change. One bounded serialized analysis, maximum 120 seconds. All rows remain in the original results. No new confidence intervals or advancement criterion.

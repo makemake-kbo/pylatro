@@ -1,0 +1,36 @@
+{
+  "created_unix": 1790017956.067692,
+  "paired_games_sha256": "27784b4d376e24d52e674ed58575111913df0b68d951fec8c505a7d47752cb8a",
+  "candidate": "terminal_gae",
+  "control": "parent",
+  "mode": "greedy",
+  "endpoint": 10,
+  "ante": 5,
+  "replicas": [
+    0,
+    1
+  ],
+  "groups": {
+    "both_clear": {
+      "games": 266,
+      "candidate_wins": 176,
+      "parent_wins": 186
+    },
+    "candidate_only_clear": {
+      "games": 50,
+      "candidate_wins": 26,
+      "parent_wins": 0
+    },
+    "parent_only_clear": {
+      "games": 17,
+      "candidate_wins": 0,
+      "parent_wins": 7
+    },
+    "neither_clear": {
+      "games": 67,
+      "candidate_wins": 0,
+      "parent_wins": 0
+    }
+  },
+  "interpretation": "Descriptive accounting of terminal outcomes conditional on each policy reaching Ante5. These groups are selected after treatment and do not identify a causal later-policy effect; different states/builds may reach the same Ante."
+}

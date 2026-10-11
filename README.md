@@ -324,7 +324,8 @@ aggregate, fine-tune, and track a fixed greedy panel each round:
 
 ```bash
 uv run python tools/dagger.py run \
-  --checkpoint incumbents/ppo_replica1/checkpoint.pt --out runs/dagger_v68 --workers 8
+  --checkpoint incumbents/ppo_replica1/checkpoint.pt --out runs/dagger_v68 --workers 8 \
+  --exclude-seeds runs/*/seeds.json runs/*/historical_integer_exclusions.json
 uv run python tools/dagger.py report --out runs/dagger_v68
 ```
 

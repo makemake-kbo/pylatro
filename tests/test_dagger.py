@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 from dataclasses import asdict, replace
@@ -11,6 +12,7 @@ import pytest
 import torch
 
 from pylatro import load_game_data
+from pylatro_agent import dagger
 from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.checkpoint import save_checkpoint
 from pylatro_agent.constants import NUM_ACTIONS
@@ -25,6 +27,7 @@ from pylatro_agent.dagger import (
     hashed_seeds,
     load_exclusions,
     make_envs,
+    outcome_row,
     play,
     read_shard,
     run,
@@ -223,6 +226,9 @@ def test_beta_one_executes_the_teacher_and_beta_zero_the_student(game_data, voca
         finally:
             envs.close()
         assert outcomes[0]["steps"] == len(decisions) > 0
+        outcome = outcomes[0]
+        expected = TINY.win_ante if outcome["won"] else outcome["final_ante"] - 1
+        assert outcome["antes_cleared"] == expected == len(outcome["cleared_antes"])
         if beta == 1.0:
             assert all(d["by_teacher"] and d["executed"] == d["label"]["action"] for d in decisions)
         else:
@@ -265,6 +271,73 @@ def test_fine_tuning_on_collected_labels_lowers_teacher_nll(tmp_path, game_data,
     assert updates == 25
     assert nll() < before
     assert json.loads((tmp_path / "train.jsonl").read_text().splitlines()[-1])["update"] == 25
+
+
+def test_antes_cleared_counts_only_antes_below_the_final_one():
+    # The env marks an Ante cleared once the player shops after its Big Blind;
+    # losing to that Ante's Boss must not count it.
+    lost = outcome_row(
+        1, {"ante": 3, "won": False, "cleared_antes": [1, 2, 3]}, terminated=True, truncated=False, steps=90, win_ante=8
+    )
+    assert lost["antes_cleared"] == 2 and lost["cleared_antes"] == [1, 2] and not lost["won"]
+    won = outcome_row(2, {"ante": 9, "won": True}, terminated=True, truncated=False, steps=200, win_ante=8)
+    assert won["antes_cleared"] == 8 and won["won"] and won["max_ante"] == 9
+    stalled = outcome_row(3, {"ante": 5, "won": True}, terminated=False, truncated=True, steps=2048, win_ante=8)
+    assert stalled["stalled"] and not stalled["won"] and stalled["antes_cleared"] == 4
+
+
+def test_systematic_teacher_failures_stop_the_round_early_and_keep_their_evidence(
+    tmp_path, monkeypatch, game_data, vocab
+):
+    calls = []
+
+    def failing(env, teacher, view):
+        calls.append(view)
+        return {"action": -1, "seconds": 0.0, "error": "KeyError: 'j_test'", "traceback": "Traceback ..."}
+
+    monkeypatch.setattr(dagger, "teacher_label", failing)
+    monkeypatch.setattr(dagger, "MIN_DECISIONS_FOR_FAILURE_CHECK", 5)
+    with pytest.raises(RuntimeError, match="teacher labels failed"):
+        collect_round(
+            tiny_model(vocab),
+            TINY,
+            [4_242_006, 4_242_007],
+            tmp_path / "round_001" / "collect",
+            round_index=1,
+            device=torch.device("cpu"),
+            data=game_data,
+            vocab=vocab,
+            log=lambda _message: None,
+        )
+    report = json.loads((tmp_path / "round_001" / "collect_failures.json").read_text())
+    # Labels are requested for the whole live batch before decisions are processed.
+    assert report["label_failures"] == report["decisions"] == 5 <= len(calls) <= 5 + TINY.inference_batch
+    assert report["errors"] == {"KeyError: 'j_test'": 5} and report["examples"][0]["traceback"]
+    assert not (tmp_path / "round_001" / "collect" / "manifest.json").exists()
+
+
+def test_run_refuses_a_leftover_stop_file_and_a_concurrent_writer(tmp_path, vocab):
+    start = tiny_checkpoint(tmp_path / "start.pt", vocab)
+    out = tmp_path / "run"
+    out.mkdir()
+    (out / "STOP").touch()
+    with pytest.raises(RuntimeError, match="remove it"):
+        run(start, out, TINY, log=lambda _message: None)
+    (out / "STOP").unlink()
+    with (out / "run.lock").open("a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(RuntimeError, match="Another process"):
+            run(start, out, TINY, log=lambda _message: None)
+
+
+def test_report_works_before_any_panel_and_rejects_other_directories(tmp_path, capsys):
+    import tools.dagger as cli
+
+    with pytest.raises(SystemExit):
+        cli.main(["report", "--out", str(tmp_path)])
+    (tmp_path / "config.json").write_text(json.dumps(TINY.to_json()))
+    cli.main(["report", "--out", str(tmp_path)])
+    assert "# DAgger from V68" in capsys.readouterr().out
 
 
 @pytest.mark.slow

@@ -30,15 +30,18 @@ reaches had never been run with the current action heads.
 ```sh
 .venv/bin/python tools/dagger.py run \
   --checkpoint incumbents/ppo_replica1/checkpoint.pt \
-  --out runs/dagger_v68 --workers 8
+  --out runs/dagger_v68 --workers 8 \
+  --exclude-seeds runs/*/seeds.json runs/*/historical_integer_exclusions.json
 ```
 
 Defaults: 8 rounds × 512 games, 1,000 panel seeds, 1,000 updates of 256 rows
 per round at lr 3e-5 (100-update warmup, then constant). The student samples
 during collection, and the teacher sees the full engine state. Training
 uses CUDA, then MPS, then CPU. Collection and panel inference use the same
-device unless `--collection-device` is set. Every option is listed in
-`tools/dagger.py run --help`.
+device unless `--collection-device` is set. Up to `--inference-batch` games
+(default 256) share one forward pass. Each step waits for all of their V68
+labels, and label times are heavy-tailed, so large batches keep the workers
+busy. Every option is listed in `tools/dagger.py run --help`.
 
 Rough cost on the M-series Mac, from earlier runs:
 
@@ -52,14 +55,22 @@ That is roughly 10 hours for the default 8 rounds.
 
 **Resume** by re-running the same command; unspecified flags take the run
 directory's saved values. Finished collections, checkpoints and panels are
-reused, and an interrupted collection replays its seeds from the start. Only
-`rounds`, `workers`, `device`, `collection_device`, `inference_batch` and
-`eval_every` may change on resume; anything else is rejected. `touch
-runs/dagger_v68/STOP` stops after the current stage; delete it before resuming. `--rounds 12` on resume
-extends the run.
+reused, and an interrupted collection replays its seeds from the start.
+Only `rounds`, `workers`, `device`, `collection_device`, `inference_batch`,
+`eval_every` and `panel_modes` may change on resume; anything else is
+rejected. `--rounds 12` on resume extends the run. A lock file prevents two
+processes from writing the same run directory.
 
-**Report:** `tools/dagger.py report --out runs/dagger_v68` prints
-`report.md`. TensorBoard scalars are in `runs/dagger_v68/tensorboard`
+`touch runs/dagger_v68/STOP` stops after the current stage. The next `run`
+refuses to start until you delete it.
+
+If V68 fails on more than 1% of decisions, the round stops early. The error
+counts and tracebacks are written to `round_NNN/collect_failures.json`, which
+a later resume does not delete.
+
+**Report:** `tools/dagger.py report --out runs/dagger_v68` rebuilds the
+learning curve from the round directories, so it also works while a run is
+in progress. TensorBoard scalars are in `runs/dagger_v68/tensorboard`
 (`train/nll`, `collect/greedy_agreement`, `panel_greedy/win_rate`, …).
 
 ## Reading the results
@@ -72,17 +83,24 @@ extends the run.
   much the mixture is carrying the games.
 - **Panel rows** are the result. The win-rate delta and its paired 95%
   interval are against round 0 on the same seeds. Mean antes cleared is a
-  lower-variance companion metric. With 1,000 seeds the paired interval is
-  roughly ±3 points, so judge the trend across rounds rather than any single
-  row.
+  lower-variance companion metric: every Ante below the one a game ended in,
+  or all of them for a win. It deliberately ignores the env's
+  `cleared_antes`, which marks an Ante as soon as the player shops after its
+  Big Blind. With 1,000 seeds the paired interval is roughly ±3 points, so
+  judge the trend across rounds rather than any single row.
+- Each panel summary records its device, batch size, step cap and rules. The
+  report warns when a round's conditions differ from round 0's.
 
 ## Choices and caveats
 
 - **Teacher view.** `full` (default) is V68 exactly as measured. It sees exact
   scoring randomness, face-down card identities and Joker order under Amber
   Acorn, which the student cannot. `--teacher-view public` labels the
-  student's own public projection instead, a slightly weaker but
-  information-matched teacher.
+  student's own public projection instead, an information-matched teacher of
+  unmeasured strength. In review probes on V68 games, the two views disagreed
+  on about 2% of all labels and 5–12% of hand plays. The differences were
+  driven by scoring randomness such as Misprint, so `full` labels put a floor
+  under the student's achievable NLL on those decisions.
 - **No teacher-corpus mixing.** `current_1000`/`current_4000` were recorded
   with privileged observations: the true draw order is encoded positionally
   and masks are full-information. Mixing them with public-v2 states would

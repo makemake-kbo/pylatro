@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from pylatro_agent.dagger import DaggerConfig, load_exclusions, read_json, render_report, run  # noqa: E402
+from pylatro_agent.dagger import DaggerConfig, build_curve, load_exclusions, read_json, render_report, run  # noqa: E402
 
 
 def default_device():
@@ -67,8 +67,11 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     if args.command == "report":
+        if not (args.out / "config.json").exists():
+            raise SystemExit(f"{args.out} is not a DAgger run directory")
+        # Rebuilt from the round files, so it works mid-run and before the first panel finishes.
         config = DaggerConfig.from_json(read_json(args.out / "config.json"))
-        print(render_report(read_json(args.out / "learning_curve.json"), config), end="")
+        print(render_report(build_curve(args.out, config), config), end="")
         return
     saved = args.out / "config.json"
     base = DaggerConfig.from_json(read_json(saved)) if saved.exists() else DaggerConfig(device=default_device())

@@ -16,10 +16,12 @@ never weight or select imitation labels.
 from __future__ import annotations
 
 import copy
+import fcntl
 import hashlib
 import json
 import os
 import time
+import traceback
 from collections import Counter
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -49,10 +51,15 @@ STUDENT_ACTIONS = ("sample", "greedy")
 PANEL_MODES = ("greedy", "sample")
 # Fields that may change when resuming an existing run directory. Everything
 # else defines the experiment and must match the saved configuration.
-RESUMABLE_FIELDS = frozenset({"rounds", "workers", "device", "collection_device", "inference_batch", "eval_every"})
+RESUMABLE_FIELDS = frozenset(
+    {"rounds", "workers", "device", "collection_device", "inference_batch", "eval_every", "panel_modes"}
+)
 # Teacher failures are recorded and skipped, but a run that loses more than
-# this fraction of labels in a round is broken, not unlucky.
+# this fraction of labels in a round is broken, not unlucky. The check starts
+# once enough decisions make the fraction meaningful, so a systematic failure
+# stops a round early instead of after hours of collection.
 MAX_LABEL_FAILURE_FRACTION = 0.01
+MIN_DECISIONS_FOR_FAILURE_CHECK = 2000
 
 
 @dataclass(frozen=True)
@@ -85,7 +92,10 @@ class DaggerConfig:
     shard_rows: int = 2048
     pool_shards: int = 8
     workers: int = 8
-    inference_batch: int = 64
+    # Live games per inference batch. Collection waits for every label in a
+    # batch, and V68 label times are heavy-tailed, so large batches keep the
+    # workers busy.
+    inference_batch: int = 256
     max_episode_steps: int = 2048
     deck_key: str = "b_blue"
     stake: int = 1
@@ -258,7 +268,12 @@ def teacher_label(env, teacher, view):
         with addressable_hand(state):
             action = int(teacher.select_action(state, runner.sub_phase, mask, round_score=runner.round_score))
     except Exception as exc:  # One failed label must not end a long collection round.
-        return {"action": -1, "seconds": time.perf_counter() - started, "error": f"{type(exc).__name__}: {exc}"}
+        return {
+            "action": -1,
+            "seconds": time.perf_counter() - started,
+            "error": f"{type(exc).__name__}: {exc}",
+            "traceback": traceback.format_exc(),
+        }
     seconds = time.perf_counter() - started
     if not (0 <= action < NUM_ACTIONS and mask[action]):
         return {"action": -1, "seconds": seconds, "error": f"illegal teacher action {action}"}
@@ -412,23 +427,38 @@ def play(model, envs, seeds, config, *, device, mode, beta=0.0, rng=None, teache
             obs, terminated, truncated, info, _seconds = results[seed]
             if terminated or truncated:
                 del live[seed]
-                cleared = [int(a) for a in info.get("cleared_antes", [])]
-                outcomes[seed] = {
-                    "seed": int(seed),
-                    "won": bool(terminated and info.get("won")),
-                    "final_ante": int(info["ante"]),
-                    "max_ante": int(info["ante"]),
-                    "cleared_antes": cleared,
-                    "antes_cleared": len(cleared),
-                    "steps": steps[seed],
-                    "stalled": bool(truncated),
-                }
+                outcomes[seed] = outcome_row(
+                    seed, info, terminated=terminated, truncated=truncated, steps=steps[seed], win_ante=config.win_ante
+                )
                 if on_decision is not None:
                     on_decision(seed, steps[seed], None, outcome=outcomes[seed])
                 start()
             else:
                 live[seed] = obs
     return [outcomes[seed] for seed in seeds]
+
+
+def outcome_row(seed, info, *, terminated, truncated, steps, win_ante):
+    """Per-game outcome with antes cleared derived from the final Ante.
+
+    The env's ``cleared_antes`` marks an Ante as soon as the player shops
+    with the Boss on deck, i.e. after the Big Blind, before the Boss is
+    fought. Every Ante below the final one was cleared, and a win clears
+    all of them.
+    """
+    won = bool(terminated and info.get("won"))
+    final_ante = int(info["ante"])
+    cleared = win_ante if won else max(final_ante - 1, 0)
+    return {
+        "seed": int(seed),
+        "won": won,
+        "final_ante": final_ante,
+        "max_ante": final_ante,
+        "cleared_antes": list(range(1, cleared + 1)),
+        "antes_cleared": cleared,
+        "steps": steps,
+        "stalled": bool(truncated),
+    }
 
 
 def seed_torch(seed):
@@ -506,10 +536,9 @@ def outcome_target(outcome):
 class ShardPool:
     """Sample rows from the aggregate while holding at most ``pool_shards`` shards in memory.
 
-    Each refill draws shards without replacement, with probability
-    proportional to their row counts, and the pool is consumed in a random
-    order. Rows are therefore sampled uniformly from the aggregate in
-    expectation, without loading every round at once.
+    Each refill draws shards uniformly without replacement and consumes all
+    of their rows in a random order, so every row has the same chance of
+    entering a pool, without loading every round at once.
     """
 
     def __init__(self, shards, outcomes, *, pool_shards, rng):
@@ -523,7 +552,7 @@ class ShardPool:
         self.pool, self.order, self.cursor = None, None, 0
 
     def _refill(self):
-        chosen = self.rng.choice(len(self.paths), size=self.pool_shards, replace=False, p=self.rows / self.rows.sum())
+        chosen = self.rng.choice(len(self.paths), size=self.pool_shards, replace=False)
         loaded = [read_shard(self.paths[i]) for i in sorted(chosen)]
         self.pool = {key: np.concatenate([shard[key] for shard in loaded]) for key in loaded[0]}
         targets = [self.targets[int(seed)] for seed in self.pool["seed"]]
@@ -549,7 +578,12 @@ class ShardPool:
 
 
 def collect_round(model, config, seeds, directory, *, round_index, device, data, vocab, log=print):
-    """Play one round of student games and save every labelled decision."""
+    """Play one round of student games and save every labelled decision.
+
+    Label failures are summarized beside ``directory`` in
+    ``collect_failures.json``, which survives the discard of an incomplete
+    collection.
+    """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=False)
     beta = config.beta(round_index)
@@ -557,6 +591,7 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
     seed_torch(config.seed * 1_000_003 + round_index)
     started = time.monotonic()
     buffer, shards, failures = [], [], []
+    errors = Counter()
     stats = Counter()
     families = {}
     teacher_seconds = 0.0
@@ -568,6 +603,23 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
             rows, buffer = buffer[: config.shard_rows], buffer[config.shard_rows :]
             shards.append(write_shard(directory / f"shard_{len(shards):05d}.npz", rows))
 
+    def check_failures():
+        if stats["label_failures"] > MAX_LABEL_FAILURE_FRACTION * max(stats["decisions"], 1):
+            atomic_json(
+                directory.parent / "collect_failures.json",
+                {
+                    "round": round_index,
+                    "decisions": stats["decisions"],
+                    "label_failures": stats["label_failures"],
+                    "errors": dict(errors.most_common()),
+                    "examples": failures,
+                },
+            )
+            raise RuntimeError(
+                f"{stats['label_failures']} of {stats['decisions']} teacher labels failed; "
+                f"see {directory.parent / 'collect_failures.json'}"
+            )
+
     def on_decision(seed, step, obs, *, outcome=None, label=None, **decision):
         nonlocal teacher_seconds
         if outcome is not None:
@@ -577,8 +629,11 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
         teacher_seconds += label["seconds"]
         if label["action"] < 0:
             stats["label_failures"] += 1
+            errors[label["error"]] += 1
             if len(failures) < 20:
-                failures.append({"seed": int(seed), "step": int(step), "error": label["error"]})
+                failures.append({key: label.get(key) for key in ("error", "traceback")} | {"seed": seed, "step": step})
+            if stats["decisions"] >= MIN_DECISIONS_FOR_FAILURE_CHECK:
+                check_failures()
             return
         action = label["action"]
         if not obs["action_mask"][action]:
@@ -586,6 +641,8 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
             raise RuntimeError(
                 f"Teacher label {action} is illegal in the recorded observation (seed {seed}, step {step})"
             )
+        if not np.isfinite(decision["teacher_logp"]) or decision["teacher_logp"] < -1e7:
+            raise RuntimeError(f"Teacher label {action} is unreachable under the student's grammar (seed {seed})")
         family = decode_action(action).action_type.value
         counts = families.setdefault(family, Counter())
         counts["labels"] += 1
@@ -625,8 +682,7 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
     finally:
         envs.close()
     flush(force=True)
-    if stats["label_failures"] > MAX_LABEL_FAILURE_FRACTION * max(stats["decisions"], 1):
-        raise RuntimeError(f"{stats['label_failures']} of {stats['decisions']} teacher labels failed: {failures[:3]}")
+    check_failures()
     labelled = stats["decisions"] - stats["label_failures"]
     manifest = {
         "status": "complete",
@@ -640,7 +696,7 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
         "decisions": stats["decisions"],
         "labelled": labelled,
         "label_failures": stats["label_failures"],
-        "label_failure_examples": failures,
+        "label_failure_examples": [{k: v for k, v in f.items() if k != "traceback"} for f in failures],
         "executed_by_teacher": stats["executed_by_teacher"],
         # Agreement and NLL of the pre-update student on the states it visited.
         "greedy_agreement": stats["greedy_agreement"] / max(labelled, 1),
@@ -737,6 +793,20 @@ def train_round(model, optimizer, pool, config, device, *, completed_updates, lo
 # Evaluation panel
 
 
+def panel_conditions(config, mode, device):
+    """Settings that can change panel play; paired rows should share them with round 0."""
+    return {
+        "mode": mode,
+        "device": str(device),
+        "inference_batch": config.inference_batch,
+        "max_episode_steps": config.max_episode_steps,
+        "temperature": 1.0 if mode == "greedy" else config.temperature,
+        "deck_key": config.deck_key,
+        "stake": config.stake,
+        "win_ante": config.win_ante,
+    }
+
+
 def evaluate_panel(model, config, seeds, *, mode, device, data, vocab):
     seed_torch(config.seed * 1_000_003 + 999_983)
     envs = make_envs(config, data, vocab)
@@ -784,7 +854,11 @@ def _resolve_config(out, config):
         return config
     saved = read_json(path)
     requested = config.to_json()
-    changed = sorted(key for key in requested if key not in RESUMABLE_FIELDS and saved.get(key) != requested[key])
+    # Fields added after a run began compare against their defaults.
+    defaults = DaggerConfig().to_json()
+    changed = sorted(
+        key for key in requested if key not in RESUMABLE_FIELDS and saved.get(key, defaults[key]) != requested[key]
+    )
     if changed:
         raise ValueError(f"Run directory {out} was created with different settings: {changed}")
     atomic_json(path, requested)
@@ -800,15 +874,19 @@ def _save_round_checkpoint(path, model, optimizer, reward, metadata):
             "agent_config": asdict(model.config),
             **reward_checkpoint_metadata(reward),
             "observation_mode": OBSERVATION_INTERPRETATION,
-            "optimizer_state_dict": optimizer.state_dict(),
+            # Not PPO's optimizer_state_dict: this AdamW state belongs to DAgger fitting.
+            "dagger_optimizer_state_dict": optimizer.state_dict(),
             "dagger": metadata,
         },
     )
     os.replace(temporary, path)
 
 
-def _stop_requested(out):
-    return (Path(out) / "STOP").exists()
+def _stop_requested(out, log=None):
+    stop = Path(out) / "STOP"
+    if stop.exists() and log is not None:
+        log(f"Stopping: {stop} is present; remove it and re-run to resume")
+    return stop.exists()
 
 
 def _evaluate_round(out, index, checkpoint, config, panel, *, data, vocab, device, log):
@@ -829,7 +907,13 @@ def _evaluate_round(out, index, checkpoint, config, panel, *, data, vocab, devic
                 stream.write(json.dumps(row) + "\n")
         baseline = None if index == 0 else read_jsonl(round_dir(out, 0) / f"panel_{mode}.jsonl")
         summary = panel_summary(rows, baseline)
-        summary.update(round=index, mode=mode, checkpoint=str(checkpoint), elapsed_seconds=time.monotonic() - started)
+        summary.update(
+            round=index,
+            mode=mode,
+            checkpoint=str(checkpoint),
+            conditions=panel_conditions(config, mode, device),
+            elapsed_seconds=time.monotonic() - started,
+        )
         atomic_json(summary_path, summary)
         log(
             f"round {index} panel {mode}: {summary['wins']}/{summary['games']} wins "
@@ -855,14 +939,25 @@ def aggregate(out, through_round):
 
 def run(start_checkpoint, out, config, *, exclusions=(), log=print):
     """Run or resume a DAgger experiment in ``out``; return the learning curve."""
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    if _stop_requested(out):
+        raise RuntimeError(f"{out / 'STOP'} is present; remove it to resume")
+    with (out / "run.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f"Another process is running in {out}") from None
+        return _run(start_checkpoint, out, config, exclusions=exclusions, log=log)
+
+
+def _run(start_checkpoint, out, config, *, exclusions, log):
     from torch.utils.tensorboard import SummaryWriter
 
     from pylatro import load_game_data
 
     from .vocab import build_vocab
 
-    out = Path(out)
-    out.mkdir(parents=True, exist_ok=True)
     config = _resolve_config(out, config)
     start_checkpoint = Path(start_checkpoint).resolve()
     start_hash = sha256(start_checkpoint)
@@ -892,14 +987,14 @@ def run(start_checkpoint, out, config, *, exclusions=(), log=print):
             if index == 0 or index % config.eval_every == 0 or index == config.rounds:
                 evaluate(index)
                 _write_curve(out, config, writer)
-            if _stop_requested(out):
+            if _stop_requested(out, log):
                 return _write_curve(out, config, writer)
         if last < config.rounds:
             model, reward, payload = load_policy(checkpoints[last], vocab, device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
             completed_updates = 0
             if last:
-                optimizer.load_state_dict(payload["optimizer_state_dict"])
+                optimizer.load_state_dict(payload["dagger_optimizer_state_dict"])
                 completed_updates = payload["dagger"]["completed_updates"]
             for index in range(last + 1, config.rounds + 1):
                 directory = round_dir(out, index)
@@ -924,10 +1019,11 @@ def run(start_checkpoint, out, config, *, exclusions=(), log=print):
                         writer.add_scalar(f"collect/{key}", manifest[key], index)
                     if manifest["teacher_nll"] is not None:
                         writer.add_scalar("collect/teacher_nll", manifest["teacher_nll"], index)
-                if _stop_requested(out):
+                if _stop_requested(out, log):
                     return _write_curve(out, config, writer)
+                # Optimizer moments live on the training device throughout;
+                # load_state_dict already placed restored ones there.
                 model.to(device)
-                optimizer_to(optimizer, device)
                 shards, outcomes = aggregate(out, index)
                 pool = ShardPool(
                     shards, outcomes, pool_shards=config.pool_shards, rng=np.random.default_rng([config.seed, index, 7])
@@ -964,16 +1060,9 @@ def run(start_checkpoint, out, config, *, exclusions=(), log=print):
                 if index % config.eval_every == 0 or index == config.rounds:
                     evaluate(index)
                 _write_curve(out, config, writer)
-                if _stop_requested(out):
+                if _stop_requested(out, log):
                     break
         return _write_curve(out, config, writer)
-
-
-def optimizer_to(optimizer, device):
-    for state in optimizer.state.values():
-        for key, value in state.items():
-            if torch.is_tensor(value):
-                state[key] = value.to(device)
 
 
 def _discard(directory):
@@ -983,10 +1072,10 @@ def _discard(directory):
     shutil.rmtree(directory)
 
 
-def _write_curve(out, config, writer=None):
-    out = Path(out)
+def build_curve(out, config):
+    """Learning-curve rows from the round directories; reads files only."""
     curve = []
-    for directory in sorted(out.glob("round_[0-9][0-9][0-9]")):
+    for directory in sorted(Path(out).glob("round_[0-9][0-9][0-9]")):
         index = int(directory.name.split("_")[1])
         row = {"round": index, "beta": config.beta(index) if index else None}
         manifest_path = directory / "collect" / "manifest.json"
@@ -1015,6 +1104,7 @@ def _write_curve(out, config, writer=None):
                     key: summary[key]
                     for key in ("games", "wins", "win_rate", "win_rate_wilson_ci95", "mean_antes_cleared", "stalls")
                 }
+                entry["conditions"] = summary.get("conditions")
                 if "vs_round_0" in summary:
                     paired = summary["vs_round_0"]
                     entry["win_rate_delta"] = paired["sampled_or_greedy_delta"]
@@ -1022,10 +1112,20 @@ def _write_curve(out, config, writer=None):
                     entry["antes_cleared_delta"] = paired["antes_cleared_delta"]
                     entry["antes_cleared_delta_ci95"] = paired["antes_cleared_paired_ci95"]
                 row[f"panel_{mode}"] = entry
-                if writer is not None:
-                    writer.add_scalar(f"panel_{mode}/win_rate", entry["win_rate"], index)
-                    writer.add_scalar(f"panel_{mode}/mean_antes_cleared", entry["mean_antes_cleared"], index)
         curve.append(row)
+    return curve
+
+
+def _write_curve(out, config, writer=None):
+    out = Path(out)
+    curve = build_curve(out, config)
+    if writer is not None:
+        for row in curve:
+            for mode in config.panel_modes:
+                entry = row.get(f"panel_{mode}")
+                if entry is not None:
+                    writer.add_scalar(f"panel_{mode}/win_rate", entry["win_rate"], row["round"])
+                    writer.add_scalar(f"panel_{mode}/mean_antes_cleared", entry["mean_antes_cleared"], row["round"])
     atomic_json(out / "learning_curve.json", curve)
     (out / "report.md").write_text(render_report(curve, config))
     return curve
@@ -1072,6 +1172,20 @@ def render_report(curve, config):
                 f"| {row['round']} | {beta} | {entry['wins']}/{entry['games']} | {_percent(entry['win_rate'])} "
                 f"| {wins} | {entry['mean_antes_cleared']:.2f} | {antes} | {entry['stalls']} |"
             )
+        baseline = next((row[f"panel_{mode}"] for row in curve if row["round"] == 0 and f"panel_{mode}" in row), None)
+        differing = [
+            str(row["round"])
+            for row in curve
+            if baseline is not None
+            and f"panel_{mode}" in row
+            and row[f"panel_{mode}"].get("conditions") != baseline.get("conditions")
+        ]
+        if differing:
+            lines += [
+                "",
+                f"Warning: rounds {', '.join(differing)} ran this panel under different conditions "
+                "(device, batch, step cap or rules) than round 0; compare them with care.",
+            ]
         lines.append("")
     lines += [
         "## Collection",

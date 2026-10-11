@@ -317,6 +317,20 @@ for the fixed-Ante-8 archive/milestone recipe.
 
 Checkpoints saved to `checkpoints/ppo/`. TensorBoard logs in `runs/ppo/`.
 
+#### DAgger from V68
+
+Iteratively label the states the student reaches with the V68 teacher,
+aggregate, fine-tune, and track a fixed greedy panel each round:
+
+```bash
+uv run python tools/dagger.py run \
+  --checkpoint incumbents/ppo_replica1/checkpoint.pt --out runs/dagger_v68 --workers 8
+uv run python tools/dagger.py report --out runs/dagger_v68
+```
+
+Re-running `run` resumes. See [docs/dagger.md](docs/dagger.md) for the method,
+costs, and how to read the learning curve.
+
 #### Monitoring
 
 ```bash

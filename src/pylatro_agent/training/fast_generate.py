@@ -366,6 +366,14 @@ def _run_game_fast_no_obs(
     return runner.max_ante, runner.won
 
 
+def _deck_options(options: dict[str, Any], seed: int) -> dict[str, Any]:
+    """Resolve a tuple of decks to one deck per episode, cycled by seed."""
+    decks = options.get("deck_key", "b_red")
+    if isinstance(decks, str):
+        return options
+    return {**options, "deck_key": decks[seed % len(decks)]}
+
+
 def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
     seed_start, min_ante, gamma, keep_below_ratio, win_ante, reward_config, *reservation = args
     excluded_seeds = frozenset(reservation[0] if reservation else ())
@@ -374,8 +382,8 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
     tokenizer = Tokenizer(vocab=vocab)
     options = dict(reservation[1]) if len(reservation) > 1 else {}
     agent = HeuristicAgent(
-        shop_policy=options.pop("shop_policy", "legacy"),
-        grow_scalers=options.pop("grow_scalers", False),
+        shop_policy=options.pop("shop_policy", "search"),
+        grow_scalers=options.pop("grow_scalers", True),
     )
     records: list[dict[str, Any]] = []
     seed = seed_start
@@ -391,7 +399,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
             continue
 
         if min_ante > 2:
-            max_ante, won = _run_game_fast_no_obs(seed, data, agent, win_ante, **options)
+            max_ante, won = _run_game_fast_no_obs(seed, data, agent, win_ante, **_deck_options(options, seed))
             with _shared_total_attempted.get_lock():
                 _shared_total_attempted.value += 1
             seed += 1
@@ -424,7 +432,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 gamma,
                 win_ante,
                 reward_config,
-                **options,
+                **_deck_options(options, seed - 1),
             )
             with _shared_busy.get_lock():
                 _shared_busy.value -= 1
@@ -448,7 +456,7 @@ def _generate_games_worker(args: tuple) -> list[dict[str, Any]]:
                 gamma,
                 win_ante,
                 reward_config,
-                **options,
+                **_deck_options(options, seed),
             )
             with _shared_busy.get_lock():
                 _shared_busy.value -= 1
@@ -628,10 +636,10 @@ def generate_training_data(
     reward_config: RewardConfig | None = None,
     excluded_seeds: tuple[int, ...] = (),
     *,
-    deck_key: str = "b_red",
+    deck_key: str | tuple[str, ...] = "b_red",
     stake: int = 1,
-    shop_policy: str = "legacy",
-    grow_scalers: bool = False,
+    shop_policy: str = "search",
+    grow_scalers: bool = True,
     blind_rollout: str | None = None,
     blind_confirm_early: bool = False,
 ) -> list[dict[str, Any]]:

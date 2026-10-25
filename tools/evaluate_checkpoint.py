@@ -26,7 +26,7 @@ from pylatro_agent.transfer import (
     source_hashes,
     write_json,
 )
-from pylatro_agent.vocab import build_vocab
+from pylatro_agent.vocab import DECK_TO_ID, build_vocab
 
 
 def main():
@@ -40,7 +40,7 @@ def main():
     parser.add_argument("--games", type=int, default=None, help="Optional prefix of selected panel")
     parser.add_argument("--sampling-seed", type=int, default=0)
     parser.add_argument("--mode", choices=["greedy", "sampled"], default="sampled")
-    parser.add_argument("--deck", choices=["b_blue", "b_red"], default="b_blue")
+    parser.add_argument("--deck", choices=sorted(DECK_TO_ID), default="b_blue")
     parser.add_argument("--hand-ar-mixture-eps", type=float, default=None, help="Explicit checkpoint config override")
     parser.add_argument("--device", default=None)
     parser.add_argument("--eval-device", default=None)

@@ -20,6 +20,7 @@ from .constants import (
     CONSUMABLE_MAX,
     CONSUMABLE_START,
     DECK_MAX,
+    DECK_SCALAR_INDEX,
     DECK_START,
     ECONOMY_SCALAR_START,
     HAND_CANDIDATE_MAX,
@@ -41,6 +42,7 @@ from .constants import (
     POKER_HAND_NAMES,
     SHOP_MAX,
     SHOP_START,
+    STAKE_SCALAR_INDEX,
     TOKEN_DIM,
     VOUCHER_MAX,
     VOUCHER_START,
@@ -50,7 +52,7 @@ from .constants import (
 from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
 from .joker_features import JOKER_FEATURE_START, encode_joker_features
 from .strategy_context import compute_suit_target_utilities
-from .vocab import EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
+from .vocab import DECK_TO_ID, EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
 
 def _hypergeom_at_least_one(population: int, successes: int, draws: int) -> float:
@@ -289,6 +291,8 @@ class Tokenizer:
         # until a play has happened.
         scalars[ORDER_OBJECTIVE_SCALAR_INDEX] = 1.0 if order_objective_money else 0.0
         scalars[ORDER_DOLLARS_SCALAR_INDEX] = sign_log(float(order_dollars_gained))
+        scalars[DECK_SCALAR_INDEX] = float(DECK_TO_ID.get(state.deck_key, 0))
+        scalars[STAKE_SCALAR_INDEX] = float(state.stake)
 
         # Expose costs and opportunity costs, not a handcrafted reroll policy.
         # Interest is the engine's current cash-only entitlement; future Joker

@@ -585,6 +585,7 @@ def train_ppo(
                 sil_coeff_now=sil_coeff_now,
                 return_path_replay=return_path_replay,
                 grad_diagnostics_due=sil_grad_diagnostics_due,
+                critic_only=update_count < config.critic_warmup_updates,
             )
 
             optimization_seconds = time.perf_counter() - optimization_started

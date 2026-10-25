@@ -92,6 +92,12 @@ class SupervisedConfig:
     seed: int = 0
     deck_key: str = "b_red"
     stake: int = 1
+    # Teacher heuristic. V68 (search shop + scaler growth) wins ~75%; the legacy
+    # shop policy wins ~7% and must not be the default imitation target.
+    teacher_shop_policy: str = "search"
+    teacher_grow_scalers: bool = True
+    # Optional teacher deck mix, cycled by seed; overrides deck_key for data generation.
+    teacher_decks: tuple[str, ...] = ()
 
 
 def _action_type_dataset_stats(records: Sequence[dict[str, Any]]) -> dict[str, Counter]:
@@ -167,8 +173,10 @@ def train_supervised(
             win_ante=config.win_ante,
             reward_config=active_reward_config,
             excluded_seeds=config.excluded_seeds,
-            deck_key=config.deck_key,
+            deck_key=config.teacher_decks or config.deck_key,
             stake=config.stake,
+            shop_policy=config.teacher_shop_policy,
+            grow_scalers=config.teacher_grow_scalers,
         )
         t_gen_elapsed = time.monotonic() - t_gen_start
         logger.info("Generated %d training records in %.1fs", len(records), t_gen_elapsed)

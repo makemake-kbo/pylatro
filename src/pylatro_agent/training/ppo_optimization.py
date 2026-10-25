@@ -332,6 +332,7 @@ def _run_ppo_update(
     return_path_replay=None,
     search_guidance=None,
     step_guard=None,
+    critic_only: bool = False,
 ) -> _UpdateStats:
     """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
 
@@ -350,6 +351,14 @@ def _run_ppo_update(
     abandoned halfway through.
     """
     model.eval()
+    # Critic warmup: fit only the value head against the frozen actor, so a
+    # freshly initialized critic cannot push noisy advantages into the policy.
+    value_params = (
+        [p for n, p in _unwrap_model(model).named_parameters() if n.startswith("value_head.")]
+        if critic_only else []
+    )
+    if critic_only:
+        sil_buffer = return_path_replay = search_guidance = None
     model_value_mode = getattr(
         getattr(_unwrap_model(model), "config", None), "return_value_mode", "terminal_plus_residual"
     )
@@ -547,7 +556,10 @@ def _run_ppo_update(
             total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
             if config.collection_mode == "complete_cohort" and not torch.isfinite(total_loss):
                 raise RuntimeError("Non-finite complete-cohort PPO loss")
-            total_loss.backward()
+            if critic_only:
+                _accumulate_critic_grads_into_value_head(weighted_critic_loss, value_params)
+            else:
+                total_loss.backward()
 
             # Step every accum_steps micro-batches (or on last batch). This is
             # a logical optimizer-group boundary: PPO and SIL share this single

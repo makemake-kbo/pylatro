@@ -610,7 +610,7 @@ def test_generation_chunks_do_not_repeat_episode_seeds(monkeypatch, blind_rollou
     assert [record["seed"] for record in records] == [1, 2, 3]
     assert all(
         options == {"deck_key": "b_blue", "stake": 1, "shop_policy": "search",
-                    "grow_scalers": False, "blind_rollout": blind_rollout, "blind_confirm_early": confirm_early}
+                    "grow_scalers": True, "blind_rollout": blind_rollout, "blind_confirm_early": confirm_early}
         for _, options in calls
     )
 

@@ -1134,3 +1134,60 @@ def test_on_policy_advantage_diagnostics_populated() -> None:
     assert stats.on_policy_return_means
     assert stats.on_policy_fractions[0] == 1.0
     assert stats.on_policy_positive_advantage_fractions[0] == pytest.approx(0.5)
+
+
+class _TinyHeadedPpoModel(_TinyAuxPpoModel):
+    """Tiny model whose critic parameters live under ``value_head`` like BalatroAgent."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        hazard_logits = self.hazard_logits
+        del self.hazard_logits
+        self.value_head = torch.nn.Module()
+        self.value_head.hazard_logits = hazard_logits
+        self.value_head.value = torch.nn.Parameter(torch.tensor([0.3]))
+
+    def action_distribution(self, tokens, token_types, scalars, attention_mask, action_mask, temperature=1.0):
+        batch = action_mask.shape[0]
+        logits = self.logits.unsqueeze(0).expand(batch, -1)
+        values = self.value_head.value.expand(batch)
+        hazards = self.value_head.hazard_logits.sigmoid().unsqueeze(0).expand(batch, -1)
+        outcomes = hazard_outcome_probabilities(hazards, scalars[:, 2], scalars[:, 22])
+        return _TinyPpoDistribution(logits, action_mask, temperature), {
+            "expected_return": values,
+            "expected_score": values,
+            "return_residual": values,
+            "terminal_value": torch.zeros_like(values),
+            "ante_survival": hazards,
+            "outcome_probabilities": outcomes,
+            "win_prob": outcomes[:, -1],
+        }
+
+
+@pytest.mark.parametrize("critic_only", [True, False])
+def test_critic_warmup_updates_only_the_value_head(critic_only: bool) -> None:
+    torch.manual_seed(0)
+    model = _TinyHeadedPpoModel()
+    optimizer = _make_policy_optimizer(model.parameters(), lr=0.05)
+    before = {name: p.detach().clone() for name, p in model.named_parameters()}
+    buffer = _make_auxiliary_mask_buffer()
+    buffer.advantages[:11] = np.linspace(-1.0, 1.0, 11, dtype=np.float32)
+    buffer.returns[:11] = 1.0
+    np.random.seed(12345)
+    _run_ppo_update(
+        model=model,
+        optimizer=optimizer,
+        buffer=buffer,
+        entropy_coeff=0.0,
+        config=PPOConfig(ppo_epochs=1, mini_batch_size=11, clip_epsilon=0.2, entropy_coeff=0.0,
+                         value_loss_coeff=1.0, outcome_loss_coeff=1.0, max_grad_norm=100.0,
+                         target_kl=None, rollout_temperature=1.0),
+        accum_steps=1,
+        effective_batch_size=11,
+        device=torch.device("cpu"),
+        use_pin_memory=False,
+        critic_only=critic_only,
+    )
+    changed = {name for name, p in model.named_parameters() if not torch.equal(p.detach(), before[name])}
+    assert {"value_head.value", "value_head.hazard_logits"} <= changed
+    assert ("logits" in changed) is not critic_only

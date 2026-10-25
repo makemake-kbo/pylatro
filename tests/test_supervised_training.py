@@ -323,6 +323,9 @@ class TestDataGeneration:
             vocab=vocab,
             min_ante=1,
             num_workers=1,
+            # Timing bound was calibrated on the cheap legacy teacher; V68 search is ~50x slower by design.
+            shop_policy="legacy",
+            grow_scalers=False,
         )
         elapsed = time.monotonic() - t0
         # The build/readiness/survival potential is on by default and is a

@@ -139,6 +139,8 @@ class PPOConfig:
     training_excluded_seeds: list[int] | None = None
     # Autoregressive hand/discard mixture weight; 0 selects candidate-only support.
     hand_ar_mixture_eps: float = 0.1
+    # Initial updates that train only the value head with the actor frozen.
+    critic_warmup_updates: int = 0
     # Optional run identity: all three fields required together and matched on strict resume.
     ppo_run_uuid: str | None = None
     ppo_source_sha256: str | None = None

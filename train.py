@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--games", type=int, default=1000, help="Heuristic games for supervised (default: 1000)")
     parser.add_argument("--epochs", type=int, default=5, help="Supervised epochs (default: 5)")
     parser.add_argument(
-        "--action-head-variant", choices=ACTION_HEAD_VARIANTS, default="legacy_v1",
+        "--action-head-variant", choices=ACTION_HEAD_VARIANTS, default="entity_sale_subset_residual_v1",
         help=(
             "Action architecture; must match pretrained/resume checkpoint metadata. "
             "Subset variants require a positive AR mixture."
@@ -81,6 +81,15 @@ def main():
     parser.add_argument("--steps", type=int, default=1_000_000, help="PPO total timesteps (default: 1000000)")
     parser.add_argument("--envs", type=int, default=8, help="Parallel envs for PPO (default: 8)")
     parser.add_argument("--stake", type=int, default=1, help="Supervised data-generation stake")
+    parser.add_argument("--teacher-shop-policy", choices=["search", "rollout", "legacy"], default="search",
+                        help="Heuristic teacher shop policy for supervised data (default: search, i.e. V68)")
+    parser.add_argument("--no-teacher-grow-scalers", dest="teacher_grow_scalers", action="store_false",
+                        help="Disable V68 scaler growth in the supervised teacher")
+    parser.add_argument("--critic-warmup-updates", type=int, default=None,
+                        help="PPO updates that train only the value head with the actor frozen "
+                             "(default: 20 with --pretrained/--actor-transfer, else 0)")
+    parser.add_argument("--teacher-decks", type=lambda v: tuple(v.split(",")), default=(),
+                        help="Comma-separated decks cycled by seed for supervised data (overrides --deck)")
     parser.add_argument("--deck", dest="deck_key", default="b_red",
                         help="Training/evaluation deck key (use b_blue for the 5k HF dataset)")
     parser.add_argument("--archive-return", action="store_true",
@@ -830,6 +839,9 @@ def main():
         return SupervisedConfig(
             deck_key=args.deck_key,
             stake=args.stake,
+            teacher_shop_policy=args.teacher_shop_policy,
+            teacher_grow_scalers=args.teacher_grow_scalers,
+            teacher_decks=args.teacher_decks,
             num_games=args.games,
             batch_size=args.batch,
             lr=args.lr,
@@ -882,6 +894,15 @@ def main():
         # --updates N overrides --steps and is converted internally to
         # N * envs * rollout_length timesteps via PPOConfig.total_updates.
         ppo_eps = args.hand_ar_mixture_eps if args.hand_ar_mixture_eps is not None else 0.1
+        source = args.pretrained or args.actor_transfer
+        if args.hand_ar_mixture_eps is None and source:
+            # Keep the hand mixture the source policy was trained with. Switching
+            # 0.5 -> 0.1 at load halved greedy wins before any PPO update.
+            from pylatro_agent.checkpoint import load_checkpoint_payload
+
+            source_config = load_checkpoint_payload(source, "cpu").get("agent_config") or {}
+            ppo_eps = float(source_config.get("hand_ar_mixture_eps", ppo_eps))
+            logging.getLogger(__name__).info("PPO hand_ar_mixture_eps=%.3f inherited from %s", ppo_eps, source)
         train_ppo(
             PPOConfig(
                 archive_config=ArchiveConfig(
@@ -942,6 +963,9 @@ def main():
                 eval_regression_patience=args.eval_regression_patience,
                 eval_device=args.eval_device,
                 hand_ar_mixture_eps=ppo_eps,
+                critic_warmup_updates=(
+                    args.critic_warmup_updates if args.critic_warmup_updates is not None else (20 if source else 0)
+                ),
                 ppo_run_uuid=args.ppo_run_uuid,
                 ppo_source_sha256=args.ppo_source_sha256,
                 ppo_recipe_id=args.ppo_recipe_id,

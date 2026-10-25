@@ -13,7 +13,9 @@ from .constants import (
     CONSUMABLE_MAX,
     CONSUMABLE_START,
     CURRENT_ANTE_SCALAR_INDEX,
+    DECK_EMBEDDING_SIZE,
     DECK_MAX,
+    DECK_SCALAR_INDEX,
     DECK_START,
     ECONOMY_SCALAR_DIM,
     ECONOMY_SCALAR_START,
@@ -37,6 +39,8 @@ from .constants import (
     OBJ_START,
     SHOP_MAX,
     SHOP_START,
+    STAKE_EMBEDDING_SIZE,
+    STAKE_SCALAR_INDEX,
     VOUCHER_MAX,
     VOUCHER_START,
     WIN_ANTE_SCALAR_INDEX,
@@ -68,6 +72,12 @@ class MetaEmbedding(nn.Module):
         self.economy_proj = nn.Linear(ECONOMY_SCALAR_DIM, d_model, bias=False)
         self.ante_emb = nn.Embedding(12, d_model)
         self.win_ante_emb = nn.Embedding(12, d_model)
+        # Run context on the ante token. Zero-initialized so v13 behavior is
+        # an exact starting point and transfer from older actors stays neutral.
+        self.deck_emb = nn.Embedding(DECK_EMBEDDING_SIZE, d_model)
+        self.stake_emb = nn.Embedding(STAKE_EMBEDDING_SIZE, d_model)
+        nn.init.zeros_(self.deck_emb.weight)
+        nn.init.zeros_(self.stake_emb.weight)
         self.blind_type_emb = nn.Embedding(4, d_model)
         self.boss_emb = nn.Embedding(35, d_model)  # 35 = fixed cap on boss vocab
         self.target_proj = nn.Linear(4, d_model)
@@ -105,6 +115,10 @@ class MetaEmbedding(nn.Module):
         current_ante = scalars[:, CURRENT_ANTE_SCALAR_INDEX].long().clamp(0, 11)
         win_ante = scalars[:, WIN_ANTE_SCALAR_INDEX].long().clamp(1, 11)
         out[:, 2] = self.ante_emb(current_ante) + self.win_ante_emb(win_ante)
+        if scalars.shape[1] > STAKE_SCALAR_INDEX:
+            deck = scalars[:, DECK_SCALAR_INDEX].long().clamp(0, DECK_EMBEDDING_SIZE - 1)
+            stake = scalars[:, STAKE_SCALAR_INDEX].long().clamp(0, STAKE_EMBEDDING_SIZE - 1)
+            out[:, 2] = out[:, 2] + self.deck_emb(deck) + self.stake_emb(stake)
         # Blind type + boss from token
         # meta token packs blind_type*100 + boss_id (see tokenizer._encode_meta)
         bt = tokens[:, 3, 0] // 100

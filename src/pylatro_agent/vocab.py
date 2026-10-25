@@ -66,6 +66,13 @@ SEAL_TO_ID = {"Red": 1, "Blue": 2, "Gold": 3, "Purple": 4}
 
 CONSUMABLE_SET_TO_ID = {"Tarot": 1, "Planet": 2, "Spectral": 3}
 
+# Fixed so deck ids stay stable across data-loading order; 0 = unknown.
+DECK_TO_ID = {
+    "b_red": 1, "b_blue": 2, "b_yellow": 3, "b_green": 4, "b_black": 5, "b_magic": 6,
+    "b_nebula": 7, "b_ghost": 8, "b_abandoned": 9, "b_checkered": 10, "b_zodiac": 11,
+    "b_painted": 12, "b_anaglyph": 13, "b_plasma": 14, "b_erratic": 15, "b_challenge": 16,
+}
+
 
 def build_vocab(data: GameData) -> Vocab:
     """Build vocabulary ID mappings from GameData."""

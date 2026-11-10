@@ -6,6 +6,7 @@ from enum import StrEnum
 from itertools import count
 from typing import Any, ClassVar
 
+from ._helpers import has_joker as _has_joker
 from ._state_copy import copy_state_object
 from .data import GameData  # noqa: TC001
 from .rng import PseudorandomState
@@ -336,7 +337,6 @@ class RunState(_FastStateCopy):
     blind_prepped: bool = False
     eye_hands: dict[str, bool] = field(default_factory=dict)
     mouth_only_hand: str | bool = False
-    _joker_name_cache: tuple[tuple[str, ...], frozenset[str]] | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.pseudorandom = PseudorandomState(self.seed)
@@ -347,24 +347,8 @@ class RunState(_FastStateCopy):
             for rank in ("Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King")
         }
 
-    def has_joker(self, name: str) -> bool:
-        # joker_keys is mutated in place, so the cache must key on the actual
-        # contents. Comparing identity + length is not enough: selling one joker
-        # and gaining another leaves the same list at the same length.
-        cache = getattr(self, "_joker_name_cache", None)
-        keys = tuple(
-            key for index, key in enumerate(self.joker_keys)
-            if index >= len(self.jokers) or not (
-                self.jokers[index].debuff
-                or (self.jokers[index].perishable and self.jokers[index].perish_tally == 0)
-            )
-        )
-        if cache is None or cache[0] != keys:
-            names = frozenset(self.data.centers[k]["name"] for k in keys)
-            self._joker_name_cache = (keys, names)
-        else:
-            names = cache[1]
-        return name in names
+    # Compiled with the engine; see _helpers.has_joker for the semantics.
+    has_joker = _has_joker
 
     def calculate_reroll_cost(self, skip_increment: bool = False) -> None:
         if self.current_round.free_rerolls < 0:

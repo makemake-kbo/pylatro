@@ -7,6 +7,32 @@ if TYPE_CHECKING:
     from .models import RunState
 
 
+def has_joker(state: RunState, name: str) -> bool:
+    """True when an active joker called ``name`` is owned.
+
+    Debuffed jokers and perishable jokers that ran out of rounds do not count.
+    ``joker_keys`` is index-aligned with ``jokers`` but may be longer, so keys
+    past the instance list count as active. This runs for every card during
+    scoring (Pareidolia, Smeared Joker, Four Fingers...), so it scans the few
+    jokers directly instead of building and validating a cache key.
+    """
+    jokers = state.jokers
+    count = len(jokers)
+    centers = state.data.centers
+    index = 0
+    for key in state.joker_keys:
+        if index < count:
+            joker = jokers[index]
+            index += 1
+            if joker.debuff or (joker.perishable and joker.perish_tally == 0):
+                continue
+        else:
+            index += 1
+        if centers[key]["name"] == name:
+            return True
+    return False
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 

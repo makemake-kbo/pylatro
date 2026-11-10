@@ -22,6 +22,8 @@ from math import floor as _floor
 from math import pi
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from ._state_copy import copy_state_object
+
 try:
     import cython
 except ImportError:  # pragma: no cover - dependency-free core install without Cython
@@ -175,6 +177,9 @@ class PseudorandomState:
 
     def __post_init__(self) -> None:
         self.hashed_seed = pseudohash(self.seed)
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> PseudorandomState:
+        return copy_state_object(self, memo)
 
     def pseudoseed(self, key: str, predict_seed: str | None = None) -> float:
         """Return the next seed value for a named RNG channel (``key``).

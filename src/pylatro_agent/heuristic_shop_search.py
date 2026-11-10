@@ -6,7 +6,9 @@ joker portfolios, including editions, conditional effects and replacements.
 
 from __future__ import annotations
 
+import json
 import math
+import os
 from copy import deepcopy
 from hashlib import blake2b
 
@@ -17,10 +19,25 @@ from pylatro.flow import _debuff_card, _sort_hand
 from pylatro.instances import add_joker, create_consumable_instance, remove_joker
 from pylatro.rng import PseudorandomState
 from pylatro.runtime import consumable_limit, joker_limit, sell_joker
+from pylatro.shop import reroll_shop
 from pylatro.scoring import _level_up_hand
 
-from .constants import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS
+from .constants import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS, NUM_ACTIONS
 from .constants import ActionRange as AR
+from .heuristic_simulation import copy_for_scoring
+
+
+# Experiment switches, set through PYLATRO_SHOP_OPTS (JSON). Empty means the
+# unmodified V68 shop.
+OPTS = json.loads(os.environ.get("PYLATRO_SHOP_OPTS", "{}"))
+BAN = frozenset(OPTS.get("ban", ()))
+
+# Every joker projected_growth can change; with none owned there is nothing to project.
+GROWTH_JOKERS = frozenset((
+    "j_constellation", "j_hologram", "j_green_joker", "j_ride_the_bus", "j_trousers", "j_red_card",
+    "j_flash", "j_square", "j_runner", "j_castle", "j_wee", "j_supernova", "j_space", "j_burnt",
+    "j_fortune_teller", "j_ice_cream", "j_popcorn",
+))
 
 
 class ShopSearch:
@@ -88,9 +105,11 @@ class ShopSearch:
         It is a purchase valuation, never a survival forecast.
         """
         rounds = min(8, max(0, (8 - state.round_resets.ante) * 3))
-        if not rounds:
+        if not rounds or not any(joker.center_key in GROWTH_JOKERS for joker in state.jokers):
             return None
-        trial = deepcopy(state, {id(state.data): state.data})
+        # The projection is only ever scored, never played on: copy what a
+        # scoring probe could touch instead of the whole run.
+        trial = copy_for_scoring(state)
         main = agent._get_main_hand_type(state)
         changed = False
         for joker in trial.jokers:
@@ -131,13 +150,15 @@ class ShopSearch:
         return trial if changed else None
 
     @staticmethod
-    def target(state, agent):
+    def target(state, agent, blind_on_deck=None):
         # There are another shop and payout after each ordinary blind. Budget
         # against the next blind; known boss counters are planned separately.
-        blind_key = state.round_resets.blind_choices.get(state.blind_on_deck or "", "")
+        if blind_on_deck is None:
+            blind_on_deck = state.blind_on_deck
+        blind_key = state.round_resets.blind_choices.get(blind_on_deck or "", "")
         blind = state.data.blinds.get(blind_key, state.round_resets.blind or {})
         target = int(get_blind_amount(state.round_resets.ante, min(state.stake, 3)) * blind.get("mult", 1))
-        if state.blind_on_deck == "Boss" and any(
+        if blind_on_deck == "Boss" and any(
             j.center_key == "j_chicot" or (j.center_key == "j_luchador" and not j.eternal)
             for j in state.jokers
         ):
@@ -358,10 +379,8 @@ class ShopSearch:
             for j in state.jokers
         ):
             return False
-        boss_state = deepcopy(state, {id(state.data): state.data})
-        boss_state.blind_on_deck = "Boss"
         boss_score, _ = self.output(state, agent, boss=True)
-        boss_ratio = boss_score * self.round_hands(state, boss=True) / max(1, self.target(boss_state, agent))
+        boss_ratio = boss_score * self.round_hands(state, boss=True) / max(1, self.target(state, agent, "Boss"))
         if boss_ratio >= 1.15:
             return False
         ordinary_score, _ = self.output(state, agent)
@@ -392,6 +411,8 @@ class ShopSearch:
             _, skipped = self.purchase_output(trial, agent)
             best = (skipped - value, AR.PACK_SKIP)
         for index, card in enumerate(state.pack.cards):
+            if card.center_key in BAN:
+                continue
             claim = AR.PACK_CLAIM_START + index
             slots = [None] if mask[claim] else [
                 i for i in range(min(len(state.jokers), MAX_JOKER_SLOTS))
@@ -414,6 +435,133 @@ class ShopSearch:
                     action = claim if slot is None else AR.SHOP_SELL_JOKER_START + slot
                     best = (gain, action)
         return best[1]
+
+    def _best_purchase(self, state, mask, agent, items, best, ctx):
+        """Best planet purchase or joker purchase/replacement as (gain, action)."""
+        dollars = state.dollars
+        ante = state.round_resets.ante
+        boss_reserve = ctx['boss_reserve']
+        base_value = ctx['base_value']
+        safe = ctx['safe']
+        baseline = ctx['baseline']
+        forecast_hands = ctx['forecast_hands']
+        target = ctx['target']
+        before_boss = ctx['before_boss']
+        base_income = ctx['base_income']
+        safety_factor = ctx['safety_factor']
+        for i, item in enumerate(items):
+            center = state.data.centers[item.center_key]
+            fool_planet = (
+                center.get("name") == "The Fool"
+                and state.data.centers.get(state.last_tarot_planet, {}).get("set") == "Planet"
+            )
+            if center.get("set") == "Planet" or fool_planet:
+                action = AR.SHOP_BUY_START + i
+                if mask[action] and dollars - item.cost >= boss_reserve:
+                    trial = deepcopy(state, {id(state.data): state.data})
+                    trial.dollars -= item.cost
+                    used = use_consumable(trial, create_consumable_instance(trial, item.center_key))
+                    if fool_planet and used.created_consumables:
+                        use_consumable(trial, len(trial.consumables) - 1)
+                    _, value = self.purchase_output(trial, agent)
+                    gain = value - base_value - (0.04 if safe else 0.012) * item.cost
+                    if gain > best[0]:
+                        best = (gain, action)
+                continue
+            if center.get("set") != "Joker":
+                continue
+            if item.center_key in BAN:
+                continue
+            replace = (
+                [None]
+                if len(state.jokers) < joker_limit(state) or (item.edition and item.edition.get("negative"))
+                else [j for j in range(min(len(state.jokers), MAX_JOKER_SLOTS)) if not state.jokers[j].eternal]
+            )
+            for slot in replace:
+                proceeds = 0 if slot is None else state.jokers[slot].sell_cost
+                if dollars + proceeds - item.cost < boss_reserve:
+                    continue
+                trial = deepcopy(state, {id(state.data): state.data})
+                if slot is not None:
+                    remove_joker(trial, trial.jokers[slot])
+                # Selling a Negative joker also removes its extra slot.
+                if len(trial.jokers) >= joker_limit(trial) and not (item.edition and item.edition.get("negative")):
+                    continue
+                trial.dollars += proceeds - item.cost
+                add_joker(trial, item.center_key, edition=item.edition)
+                trial_score, value = self.purchase_output(trial, agent)
+                trial_hands = self.round_hands(trial, boss=before_boss)
+                trial_target = self.target(trial, agent)
+                if (
+                    baseline * forecast_hands < target
+                    and trial_score * trial_hands / trial_target <= baseline * forecast_hands / target * 1.02
+                    and item.center_key != "j_riff_raff"
+                ):
+                    # A future-only investment cannot solve an immediate
+                    # scoring shortage. Keep the cash for a usable upgrade.
+                    continue
+                if (
+                    trial_score / trial_target < baseline / target
+                    and trial_score * max(1, trial_hands - 1) < trial_target * 1.1
+                ):
+                    continue
+                trial_income = self.income_value(trial) if safe else 0
+                if trial_income > base_income and trial_score * max(1, trial_hands - 1) < trial_target * safety_factor:
+                    trial_income = base_income
+                price_penalty = (OPTS.get("buy_price", 0.03) if safe else 0.012) * max(0, item.cost - proceeds)
+                # Spending below maximum interest costs future buying power.
+                if safe and ante < 7:
+                    price_penalty += OPTS.get("buy_interest", 0.004) * max(0, min(dollars, 25) - max(0, trial.dollars)) * (8 - ante)
+                gain = value - base_value + trial_income - base_income - price_penalty
+                action = AR.SHOP_BUY_START + i if slot is None else AR.SHOP_SELL_JOKER_START + slot
+                if mask[action] and gain > best[0]:
+                    best = (gain, action)
+        return best
+
+    @staticmethod
+    def shop_mask(state):
+        """Buy/reroll/sell/leave legality for a hypothetical shop state."""
+        import numpy as np
+
+        mask = np.zeros(NUM_ACTIONS, dtype=np.int8)
+        items = list(state.shop.cards) + list(state.shop.vouchers) + list(state.shop.boosters)
+        for i, item in enumerate(items):
+            if item.cost > state.dollars:
+                continue
+            if item.card_type == "Joker":
+                if len(state.jokers) < joker_limit(state) or (item.edition and item.edition.get("negative")):
+                    mask[AR.SHOP_BUY_START + i] = 1
+            elif item.card_type in ("Tarot", "Planet", "Spectral"):
+                if len(state.consumables) < consumable_limit(state):
+                    mask[AR.SHOP_BUY_START + i] = 1
+            else:
+                mask[AR.SHOP_BUY_START + i] = 1
+        if state.current_round.reroll_cost <= state.dollars:
+            mask[AR.SHOP_REROLL] = 1
+        for i, joker in enumerate(state.jokers[:MAX_JOKER_SLOTS]):
+            if not joker.eternal:
+                mask[AR.SHOP_SELL_JOKER_START + i] = 1
+        mask[AR.SHOP_LEAVE] = 1
+        return mask
+
+    def reroll_value(self, state, agent, ctx, samples):
+        """Expected best-purchase gain of a freshly rerolled stock.
+
+        A chance node: each sample rerolls a copy with an independent RNG
+        stream and scores the best planet/joker purchase with the same
+        evaluator the real shop uses. Gains are net of purchase prices.
+        """
+        total = 0.0
+        tag = f"{state.round_resets.ante}_{state.current_round.reroll_cost_increase}"
+        for sample in range(samples):
+            trial = deepcopy(state, {id(state.data): state.data})
+            trial.pseudorandom = PseudorandomState(f"EV_REROLL_{tag}_{sample}")
+            reroll_shop(trial)
+            items = list(trial.shop.cards) + list(trial.shop.vouchers) + list(trial.shop.boosters)
+            best = self._best_purchase(trial, self.shop_mask(trial), agent, items, (0.0, -1), ctx)
+            if best[1] >= 0:
+                total += best[0]
+        return total / samples
 
     def select(self, state, mask, agent):
         dollars = state.dollars
@@ -460,7 +608,7 @@ class ShopSearch:
         safety_factor = 1.3 if len(state.jokers) < 2 or ante >= 5 else 1.1
         safe = baseline * max(1, forecast_hands - 1) >= target * safety_factor
         base_income = self.income_value(state) if safe else 0
-        reserve = min(state.interest_cap, 25) if ante < 7 else (10 if ante == 7 else 0)
+        reserve = min(state.interest_cap, OPTS.get("reserve", 25)) if ante < 7 else (10 if ante == 7 else 0)
         self.last_decision = {
             "forecast_total": round(baseline * forecast_hands),
             "target": target,
@@ -470,7 +618,7 @@ class ShopSearch:
         boss_reserve = 0
         if can_reroll_boss(state) and boss_risk:
             boss_reserve = 10
-        best = (0.03, -1)
+        best = (OPTS.get("thr", 0.03), -1)
         if owned & {"j_stencil", "j_campfire"}:
             for slot in range(min(len(state.jokers), MAX_JOKER_SLOTS)):
                 action = AR.SHOP_SELL_JOKER_START + slot
@@ -490,71 +638,13 @@ class ShopSearch:
                         gain = max(gain, math.log(trial_capacity / (baseline * forecast_hands / target)))
                 if trial_score >= baseline and gain > best[0]:
                     best = (gain, action)
-        for i, item in enumerate(items):
-            center = state.data.centers[item.center_key]
-            fool_planet = (
-                center.get("name") == "The Fool"
-                and state.data.centers.get(state.last_tarot_planet, {}).get("set") == "Planet"
-            )
-            if center.get("set") == "Planet" or fool_planet:
-                action = AR.SHOP_BUY_START + i
-                if mask[action] and dollars - item.cost >= boss_reserve:
-                    trial = deepcopy(state, {id(state.data): state.data})
-                    trial.dollars -= item.cost
-                    used = use_consumable(trial, create_consumable_instance(trial, item.center_key))
-                    if fool_planet and used.created_consumables:
-                        use_consumable(trial, len(trial.consumables) - 1)
-                    _, value = self.purchase_output(trial, agent)
-                    gain = value - base_value - (0.04 if safe else 0.012) * item.cost
-                    if gain > best[0]:
-                        best = (gain, action)
-                continue
-            if center.get("set") != "Joker":
-                continue
-            replace = (
-                [None]
-                if len(state.jokers) < joker_limit(state) or (item.edition and item.edition.get("negative"))
-                else [j for j in range(min(len(state.jokers), MAX_JOKER_SLOTS)) if not state.jokers[j].eternal]
-            )
-            for slot in replace:
-                proceeds = 0 if slot is None else state.jokers[slot].sell_cost
-                if dollars + proceeds - item.cost < boss_reserve:
-                    continue
-                trial = deepcopy(state, {id(state.data): state.data})
-                if slot is not None:
-                    remove_joker(trial, trial.jokers[slot])
-                # Selling a Negative joker also removes its extra slot.
-                if len(trial.jokers) >= joker_limit(trial) and not (item.edition and item.edition.get("negative")):
-                    continue
-                trial.dollars += proceeds - item.cost
-                add_joker(trial, item.center_key, edition=item.edition)
-                trial_score, value = self.purchase_output(trial, agent)
-                trial_hands = self.round_hands(trial, boss=before_boss)
-                trial_target = self.target(trial, agent)
-                if (
-                    baseline * forecast_hands < target
-                    and trial_score * trial_hands / trial_target <= baseline * forecast_hands / target * 1.02
-                    and item.center_key != "j_riff_raff"
-                ):
-                    # A future-only investment cannot solve an immediate
-                    # scoring shortage. Keep the cash for a usable upgrade.
-                    continue
-                if (
-                    trial_score / trial_target < baseline / target
-                    and trial_score * max(1, trial_hands - 1) < trial_target * 1.1
-                ):
-                    continue
-                trial_income = self.income_value(trial) if safe else 0
-                if trial_income > base_income and trial_score * max(1, trial_hands - 1) < trial_target * safety_factor:
-                    trial_income = base_income
-                price_penalty = (0.03 if safe else 0.012) * max(0, item.cost - proceeds)
-                # Spending below maximum interest costs future buying power.
-                if safe and ante < 7:
-                    price_penalty += 0.004 * max(0, min(dollars, 25) - max(0, trial.dollars)) * (8 - ante)
-                gain = value - base_value + trial_income - base_income - price_penalty
-                action = AR.SHOP_BUY_START + i if slot is None else AR.SHOP_SELL_JOKER_START + slot
-                if mask[action] and gain > best[0]:
-                    best = (gain, action)
+        best = self._best_purchase(
+            state, mask, agent, items, best, ctx=dict(
+                boss_reserve=boss_reserve, base_value=base_value, safe=safe, baseline=baseline,
+                forecast_hands=forecast_hands, target=target, before_boss=before_boss,
+                base_income=base_income, safety_factor=safety_factor,
+            ),
+        )
         if best[1] >= 0:
             return best[1]
         # Empty inventory space for cash or a useful planet before buying packs.
@@ -610,10 +700,32 @@ class ShopSearch:
                     return action
         reroll = state.current_round.reroll_cost
         reroll_buffer = 0 if ante >= 8 and before_boss and not safe else 5
-        if (
+        old_rule = bool(
             mask[AR.SHOP_REROLL]
             and dollars - reroll >= max(reserve if safe else reroll_buffer, boss_reserve + reroll_buffer)
-            and state.current_round.reroll_cost_increase < 5
-        ):
+            and state.current_round.reroll_cost_increase < OPTS.get("cap", 5)
+        )
+        mode = OPTS.get("reroll", "old")
+        if mode == "old" or ante < OPTS.get("min_ante", 0):
+            return AR.SHOP_REROLL if old_rule else AR.SHOP_LEAVE
+        if not mask[AR.SHOP_REROLL] or state.current_round.reroll_cost_increase >= OPTS.get("max_increase", 5):
+            return AR.SHOP_LEAVE
+        if dollars - reroll < boss_reserve + OPTS.get("floor", 0):
+            return AR.SHOP_LEAVE
+        if mode == "and" and not old_rule:
+            return AR.SHOP_LEAVE
+        ctx = dict(
+            boss_reserve=boss_reserve, base_value=base_value, safe=safe, baseline=baseline,
+            forecast_hands=forecast_hands, target=target, before_boss=before_boss,
+            base_income=base_income, safety_factor=safety_factor,
+        )
+        ev = self.reroll_value(state, agent, ctx, OPTS.get("samples", 6))
+        penalty = (OPTS.get("price", 0.03) if safe else 0.012) * reroll
+        if ante >= OPTS.get("late_ante", 99):
+            penalty = OPTS.get("late_price", 0.0) * reroll
+        if safe and ante < 7:
+            penalty += OPTS.get("interest", 0.004) * max(0, min(dollars, 25) - max(0, dollars - reroll)) * (8 - ante)
+        self.last_decision = dict(self.last_decision or {}, reroll_ev=round(ev, 4), reroll_penalty=round(penalty, 4))
+        if ev - penalty > OPTS.get("threshold", 0.0) or (mode == "or" and old_rule):
             return AR.SHOP_REROLL
         return AR.SHOP_LEAVE

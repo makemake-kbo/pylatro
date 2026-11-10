@@ -923,3 +923,33 @@ def test_projected_levels_change_purchase_value_but_not_immediate_capacity(joker
     projected_now, future_value = search.output(state, agent)
     assert projected_now == now
     assert future_value > immediate_value
+
+
+@pytest.mark.parametrize("deck_state", ["Small", "Big", "Boss"])
+def test_target_for_another_blind_matches_a_copy_set_to_that_blind(deck_state):
+    state = create_run_state("target_for_blind", deck_key="b_blue")
+    state.round_resets.ante = 6
+    state.blind_on_deck = deck_state
+    state.round_resets.blind_choices["Boss"] = "bl_wall"
+    add_joker(state, "j_luchador")
+    agent = HeuristicAgent()
+    for blind in ("Small", "Big", "Boss"):
+        as_copy = deepcopy(state, {id(state.data): state.data})
+        as_copy.blind_on_deck = blind
+        assert ShopSearch.target(state, agent, blind) == ShopSearch.target(as_copy, agent)
+    assert state.blind_on_deck == deck_state
+
+
+def test_projection_needs_a_growing_joker_and_leaves_the_live_run_untouched():
+    state = create_run_state("projection_gate", deck_key="b_blue")
+    state.round_resets.ante = 2
+    add_joker(state, "j_half")
+    agent = HeuristicAgent(shop_policy="search")
+    assert ShopSearch.projected_growth(state, agent) is None
+    add_joker(state, "j_green_joker")
+    before = pickle.dumps(state)
+    projected = ShopSearch.projected_growth(state, agent)
+    assert projected is not None and projected is not state
+    assert projected.jokers[1].mult > state.jokers[1].mult
+    assert projected.jokers[1] is not state.jokers[1]
+    assert pickle.dumps(state) == before

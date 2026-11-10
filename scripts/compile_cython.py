@@ -36,6 +36,7 @@ AGENT_MODULES: list[str] = [
     "tokenizer",
     "heuristic",
     "hand_candidates",
+    "heuristic_simulation",
     "training.fast_runner",
 ]
 

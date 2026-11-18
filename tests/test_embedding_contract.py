@@ -61,7 +61,9 @@ def test_hand_cards_and_candidates_share_one_slot_row(layer: ContentEmbeddingLay
     empty = torch.zeros(1, 1, TOKEN_DIM, dtype=torch.long)
     with torch.no_grad():
         reference = layer.hand_candidate_emb(candidate)[0, 0] - layer.hand_candidate_emb(empty)[0, 0]
-    assert torch.allclose(reference, layer.hand_slot_emb.weight[slot + 1], atol=1e-5)
+    # The first listed card also carries the first discard-order vector (v18).
+    order = layer.hand_candidate_emb.card_order_emb.weight[0]
+    assert torch.allclose(reference, layer.hand_slot_emb.weight[slot + 1] + order, atol=1e-5)
 
 
 def test_cards_outside_the_hand_never_use_a_hand_slot_row(layer: ContentEmbeddingLayer) -> None:

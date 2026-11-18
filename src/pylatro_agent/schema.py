@@ -10,8 +10,10 @@ agent or engine. Keep it free of imports and runtime initialization.
 # v14 appends deck id and stake scalars so one policy can condition on the run setup.
 # v15 puts engine-exact guaranteed chips and remaining-blind coverage on play candidates.
 # v16 lists play candidates best-score first and adds padded variants of the best cores.
-TOKENIZER_VERSION = 17
-TOKENIZER_SEMANTICS = "v17_plan_discards"
+# v17 adds discard candidates that keep a draw plan, with the redraw's completion odds.
+# v18 replaces them with discard intents: the policy picks a plan and a count, code the cards.
+TOKENIZER_VERSION = 18
+TOKENIZER_SEMANTICS = "v18_discard_intents"
 
 # Historical semantics retained only for the explicit actor-transfer path.
 ACTOR_TRANSFER_SCHEMAS = {
@@ -21,5 +23,6 @@ ACTOR_TRANSFER_SCHEMAS = {
     14: "v14_deck_stake_context",
     15: "v15_exact_play_scores",
     16: "v16_padded_play_candidates",
+    17: "v17_plan_discards",
     TOKENIZER_VERSION: TOKENIZER_SEMANTICS,
 }

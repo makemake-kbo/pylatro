@@ -427,8 +427,10 @@ class HandCandidateEmbedding(nn.Module):
         self.coverage_proj = nn.Linear(1, d_model)
         self.rank_slot_emb = nn.Embedding(HAND_CANDIDATE_MAX + 1, d_model)
         self.forced_proj = nn.Linear(1, d_model)
-        self.plan_kind_emb = nn.Embedding(5, d_model)
-        self.plan_chance_proj = nn.Linear(1, d_model)
+        self.plan_kind_emb = nn.Embedding(6, d_model)
+        self.plan_chance_proj = nn.Linear(5, d_model)
+        # A discard intent lists its cards in the order they leave the hand.
+        self.card_order_emb = nn.Embedding(5, d_model)
         self.hand_slot_emb = hand_slot_emb
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -440,11 +442,12 @@ class HandCandidateEmbedding(nn.Module):
         coverage = _log_scaled(tokens[:, :, 4].float().unsqueeze(-1), 4.0)
         rank_slot = tokens[:, :, 10].clamp(0, HAND_CANDIDATE_MAX)
         forced = tokens[:, :, 11].float().unsqueeze(-1)
-        plan_kind = tokens[:, :, 12].clamp(0, 4)
-        plan_chance = tokens[:, :, 13].float().unsqueeze(-1) / 100.0
+        plan_kind = tokens[:, :, 12].clamp(0, 5)
+        plan_chance = tokens[:, :, 13:18].float() / 100.0
         card_slots = tokens[:, :, 5:10].clamp(0, MAX_HAND_SIZE)
         # Sum only real card references; 0 is padding, not a card.
-        slot_embed = (self.hand_slot_emb(card_slots) * (card_slots > 0).unsqueeze(-1)).sum(dim=-2)
+        cards = self.hand_slot_emb(card_slots) + self.card_order_emb.weight
+        slot_embed = (cards * (card_slots > 0).unsqueeze(-1)).sum(dim=-2)
         return (
             self.kind_emb(kind)
             + self.hand_type_emb(hand_type)

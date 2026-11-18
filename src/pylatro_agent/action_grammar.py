@@ -232,6 +232,8 @@ class ActionGrammarOutput:
     shop_sell_consumable_logits: torch.Tensor  # (B, MAX_CONSUMABLE_SLOTS)
     pack_claim_logits: torch.Tensor  # (B, MAX_PACK_CARDS)
     hand_subset_energies: torch.Tensor | None = None  # (B, 2, atomic hand subsets), versioned variants only
+    # (B, HAND_CANDIDATE_MAX, 5): how many of a discard intent's cards to discard (v18).
+    candidate_discard_count_logits: torch.Tensor | None = None
 
 
 class ActionGrammarHead(nn.Module):
@@ -293,6 +295,7 @@ class ActionGrammarHead(nn.Module):
         self.pack_claim_head = nn.Linear(d_model, 1)
         self.candidate_play_head = nn.Linear(d_model, 1)
         self.candidate_discard_head = nn.Linear(d_model, 1)
+        self.candidate_discard_count_head = nn.Linear(d_model, 5)
         if action_head_variant in (
             "pooled_sale_residual_v1", "entity_sale_residual_v1", "entity_sale_subset_residual_v1",
         ):
@@ -401,6 +404,7 @@ class ActionGrammarHead(nn.Module):
                 self.subset_residual.score_available(state, hand_ctx, hand_present)
                 if hasattr(self, "subset_residual") else None
             ),
+            candidate_discard_count_logits=self.candidate_discard_count_head(candidate_tokens),
         )
 
     @staticmethod
@@ -862,6 +866,8 @@ class ActionGrammarDistribution:
         and map to an action that is legal in the current action_mask. Sampler
         and log_prob both consume this so they agree on the support.
         """
+        if not is_play and self.output.candidate_discard_count_logits is not None:
+            return self._discard_intent_distribution()
         cand_logits = self._t(self.output.candidate_play_logits if is_play else self.output.candidate_discard_logits)
         active = cand_logits > -1e7
 
@@ -870,6 +876,37 @@ class ActionGrammarDistribution:
         in_mask = self.action_mask.gather(1, mapped_clamped).bool() & (mapped_actions >= 0)
         valid = active & in_mask
         return cand_logits, valid, mapped_actions
+
+    def _discard_intent_distribution(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Discard intents x counts, flattened to (B, HAND_CANDIDATE_MAX * 5) proposals (v18).
+
+        An intent token lists its cards in discard order; proposal (slot, k)
+        discards the first k. Its log-probability is the intent's logit plus
+        log p(k | intent), normalized over the legal counts, so the softmax over
+        all proposals is p(intent) * p(k | intent). Prefixes that are illegal
+        (they omit a forced card, or run past the listed cards) are excluded.
+        """
+        plan_logits = self._t(self.output.candidate_discard_logits)
+        count_logits = self._t(self.output.candidate_discard_count_logits)
+        actions = self._discard_intent_actions()
+        batch, slots, counts = actions.shape
+        legal = self.action_mask.gather(1, actions.clamp(0, NUM_ACTIONS - 1).view(batch, -1)).view(actions.shape)
+        valid = legal.bool() & (actions >= 0) & (plan_logits > -1e7).unsqueeze(-1)
+        joint = plan_logits.unsqueeze(-1) + _masked_log_softmax(count_logits, valid)
+        return joint.reshape(batch, slots * counts), valid.reshape(batch, slots * counts), actions.reshape(batch, -1)
+
+    def _discard_intent_actions(self) -> torch.Tensor:
+        """(B, HAND_CANDIDATE_MAX, 5): the discard action of each intent's first k cards, or -1."""
+        if self.tokens is None:
+            return torch.full((self.batch_size, HAND_CANDIDATE_MAX, 5), -1, dtype=torch.long, device=self.device)
+        card_vals = self.tokens[:, HAND_CANDIDATE_START : HAND_CANDIDATE_START + HAND_CANDIDATE_MAX, 5:10].long()
+        active = card_vals > 0
+        bits = _slot_bits(self.device)[(card_vals - 1).clamp(0, MAX_HAND_SIZE - 1)]
+        bits = torch.where(active, bits, torch.zeros_like(bits)).cumsum(dim=-1)
+        subset_idx = _bit_to_hand_subset(self.device)[bits.clamp(0, _BIT_TABLE_SIZE - 1)]
+        valid = active & (subset_idx >= 0)
+        actions = int(ActionRange.DISCARD_SUBSET_START) + subset_idx.clamp_min(0)
+        return torch.where(valid, actions, torch.full_like(actions, -1))
 
     def _candidate_slot_to_action(self, *, is_play: bool) -> torch.Tensor:
         """Map every candidate slot to its flat action ID (or -1 if unreachable).

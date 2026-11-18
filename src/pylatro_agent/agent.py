@@ -196,6 +196,8 @@ class BalatroAgent(nn.Module):
             }
             if grammar_output.hand_subset_energies is not None:
                 raw["hand_subset_energies"] = grammar_output.hand_subset_energies
+            if grammar_output.candidate_discard_count_logits is not None:
+                raw["candidate_discard_count_logits"] = grammar_output.candidate_discard_count_logits
             return raw, value_dict
         return (
             ActionGrammarDistribution(

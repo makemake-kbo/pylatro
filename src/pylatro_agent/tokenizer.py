@@ -49,7 +49,7 @@ from .constants import (
     SubPhase,
     TokenType,
 )
-from .discard_plans import plan_discards
+from .discard_plans import discard_intents
 from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
 from .joker_features import JOKER_FEATURE_START, encode_joker_features
 from .play_score import exact_play_candidates
@@ -397,23 +397,19 @@ class Tokenizer:
             attn_mask[pos + i] = 1
 
         if sub_phase == SubPhase.CHOOSE_ACTION:
-            structural_plays, discard_candidates = generate_hand_candidates(state)
+            structural_plays, _ = generate_hand_candidates(state)
             # Play candidates carry what the engine says they bank, measured
             # against the chips still needed, and are listed best first (v16).
             # The generator's own estimate only proposes hands by structure.
             scored_plays = exact_play_candidates(state, structural_plays, MAX_PLAY_CANDIDATES)
             play_candidates = [candidate for candidate, _ in scored_plays]
             play_scores = [score for _, score in scored_plays]
-            # Plan discards (v17) come first: everything outside a suit, rank
-            # group, Straight window or kept play, with the chance the redraw
-            # completes that plan. The worst-card discards fill the rest.
-            plans = {
-                candidate.indices: (candidate, kind, chance)
-                for candidate, kind, chance in plan_discards(state, play_candidates)
-            }
-            discards = [candidate for candidate, _, _ in plans.values()]
-            discards += [candidate for candidate in discard_candidates if candidate.indices not in plans]
-            all_candidates = play_candidates + discards[:MAX_DISCARD_CANDIDATES]
+            # Discard intents (v18): a suit, rank group, Straight window, kept
+            # play or Purple seals, with the cards in the order they leave the
+            # hand. The policy picks an intent and how many of its cards go.
+            intents = discard_intents(state, play_candidates)[:MAX_DISCARD_CANDIDATES]
+            all_candidates = play_candidates + [candidate for candidate, _, _ in intents]
+            no_plan = (0, (0.0,) * 5)
             chips_needed = max(blind_target - round_score_f, 1.0)
             for rank_slot, candidate in enumerate(all_candidates[:HAND_CANDIDATE_MAX]):
                 pos = HAND_CANDIDATE_START + rank_slot
@@ -425,7 +421,7 @@ class Tokenizer:
                     state,
                     play_scores[rank_slot] if rank_slot < len(play_scores) else None,
                     chips_needed,
-                    plans.get(candidate.indices, (None, 0, 0.0))[1:] if candidate.kind == "discard" else (0, 0.0),
+                    intents[rank_slot - len(play_candidates)][1:] if candidate.kind == "discard" else no_plan,
                 )
                 token_types[pos] = TokenType.HAND_CANDIDATE
                 attn_mask[pos] = 1
@@ -705,7 +701,7 @@ class Tokenizer:
         state: RunState,
         play_score: int | None,
         chips_needed: float,
-        plan: tuple[int, float],
+        plan: tuple,
     ) -> None:
         tokens[pos, 0] = 1 if candidate.kind == "play" else 2
         tokens[pos, 1] = HAND_NAME_TO_ID.get(candidate.hand_name, 0)
@@ -722,6 +718,9 @@ class Tokenizer:
             tokens[pos, 5 + i] = candidate.indices[i] + 1 if i < len(candidate.indices) else 0
         tokens[pos, 10] = rank_slot + 1
         tokens[pos, 11] = sum(1 for idx in candidate.indices if state.hand_cards[idx].forced_selection)
-        # Columns 12/13 (v17): a plan discard's PlanKind and the percent chance its redraw completes the plan.
+        # Columns 12-17 (v18): a discard intent's PlanKind, then the percent chance
+        # that discarding its first k cards completes the plan, k = 1..5. Columns
+        # 5-9 list the intent's cards in discard order, not sorted.
         tokens[pos, 12] = int(plan[0])
-        tokens[pos, 13] = round(plan[1] * 100.0)
+        for i in range(5):
+            tokens[pos, 13 + i] = round(plan[1][i] * 100.0)

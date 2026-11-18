@@ -1,13 +1,15 @@
-"""Discards that keep a draw plan, with the chance the redraw completes it.
+"""Discard intents: what a discard keeps, and the chance the redraw completes it.
 
-A discard usually throws away everything outside a plan: a suit chasing a
-Flush, a rank group chasing more of a kind, four ranks of a Straight window,
-or a strong play kept for later. The worst-card discard candidates rarely
-list such a complement, so the hand head had to build it card by card.
+A discard usually throws away cards outside a plan: a suit chasing a Flush, a
+rank group chasing more of a kind, four ranks of a Straight window, a strong
+play kept for later, or Purple-seal cards discarded for their Tarot. The
+policy picks the plan and how many cards go; code picks which cards (the
+least useful outside the plan), so model capacity is not spent on drawing
+odds or card bookkeeping.
 
-Each plan discard names the hand it chases and carries the exact chance that
-the redraw completes it, from the draw pile's composition. The composition is
-public (the game's deck view shows it); the order is not used.
+Each intent carries the exact chance that the redraw completes its plan, from
+the draw pile's composition. The composition is public (the game's deck view
+shows it); the order is not used.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ class PlanKind(IntEnum):
     RANK = 2
     STRAIGHT = 3
     KEEP_PLAY = 4
+    PURPLE = 5  # discard Purple-seal cards for their Tarot
 
 
 def hit_chance(outs: int, pool: int, draws: int, need: int) -> float:
@@ -99,36 +102,60 @@ def _plans(
     return plans
 
 
-def plan_discards(
+def discard_intents(
     state: RunState, plays: Sequence[HandCandidate]
-) -> list[tuple[HandCandidate, PlanKind, float]]:
-    """Discards of everything outside each plan, most likely to complete first.
+) -> list[tuple[HandCandidate, PlanKind, tuple[float, ...]]]:
+    """Discard intents: a plan and the order its cards leave the hand (v18).
 
-    A complement larger than five cards discards its five least useful cards.
-    Forced cards ride along as every discard must include them; Blue-seal
-    cards are kept. Kept-play discards come last with a chance of 0, as they
-    complete nothing.
+    The policy picks an intent and a count k; the discard is the first k cards
+    of the intent's list. The list holds the forced cards first (every discard
+    must include them), then, for the Purple-seal intent, the Purple-seal cards,
+    then the cards outside the plan from least to most useful, five at most.
+    Blue-seal cards stay. ``chances[k - 1]`` is the chance that a k-card discard
+    completes the plan (0 for kept plays and Purple seals, which complete
+    nothing). Intents that could complete something come first, most likely
+    first, then Purple seals, then kept plays.
     """
     if state.current_round.discards_left <= 0:
         return []
     hand = state.hand_cards[:MAX_HAND_SIZE]
-    forced = {i for i, card in enumerate(hand) if card.forced_selection}
+    forced = [i for i, card in enumerate(hand) if card.forced_selection]
     if len(forced) > MAX_DISCARD_SIZE:
         return []
     keep_scores = _card_keep_scores(state, state.hand_cards)
-    best: dict[tuple[int, ...], tuple[float, int, HandCandidate, PlanKind]] = {}
-    for order, (kept, kind, chased, outs, need) in enumerate(_plans(state, plays)):
+    pile = len(state.draw_pile)
+
+    def order(kept: frozenset[int], lead: Sequence[int] = ()) -> tuple[int, ...]:
+        skip = set(kept) | set(forced) | set(lead)
         rest = sorted(
-            (i for i in range(len(hand)) if i not in kept and i not in forced and hand[i].seal != "Blue"),
-            key=lambda i: keep_scores[i],
+            (i for i in range(len(hand)) if i not in skip and hand[i].seal != "Blue"), key=lambda i: keep_scores[i]
         )
-        indices = tuple(sorted(forced | set(rest[: MAX_DISCARD_SIZE - len(forced)])))
-        if not rest or not indices:
-            continue
-        chance = 0.0
-        if outs is not None:
-            chance = hit_chance(len(outs), len(state.draw_pile), _redraw_count(state, len(indices)), need)
-        if indices not in best or (chance, -order) > (best[indices][0], -best[indices][1]):
-            best[indices] = (chance, order, HandCandidate(kind="discard", indices=indices, hand_name=chased), kind)
-    ranked = sorted(best.values(), key=lambda entry: (entry[3] == PlanKind.KEEP_PLAY, -entry[0], entry[1]))
-    return [(candidate, kind, chance) for chance, _, candidate, kind in ranked]
+        return tuple([*forced, *lead, *rest][:MAX_DISCARD_SIZE])
+
+    def chances(cards: tuple[int, ...], outs: list[PlayingCard] | None, need: int) -> tuple[float, ...]:
+        return tuple(
+            hit_chance(len(outs), pile, _redraw_count(state, k), need)
+            if outs is not None and len(forced) <= k <= len(cards)
+            else 0.0
+            for k in range(1, MAX_DISCARD_SIZE + 1)
+        )
+
+    best: dict[tuple[int, ...], tuple[int, float, int, HandCandidate, PlanKind, tuple[float, ...]]] = {}
+
+    def add(cards: tuple[int, ...], kind: PlanKind, chased: str, odds: tuple[float, ...], order_: int) -> None:
+        if len(cards) <= len(forced):
+            return  # nothing to choose beyond the forced cards
+        group = 2 if kind == PlanKind.KEEP_PLAY else 1 if kind == PlanKind.PURPLE else 0
+        key = (group, -max(odds), order_)
+        if cards not in best or key < best[cards][:3]:
+            best[cards] = (*key, HandCandidate(kind="discard", indices=cards, hand_name=chased), kind, odds)
+
+    for order_, (kept, kind, chased, outs, need) in enumerate(_plans(state, plays)):
+        cards = order(kept)
+        add(cards, kind, chased, chances(cards, outs, need), order_)
+    purple = sorted(
+        (i for i, card in enumerate(hand) if card.seal == "Purple" and i not in forced), key=lambda i: keep_scores[i]
+    )
+    if purple:
+        add(order(frozenset(), purple), PlanKind.PURPLE, "", (0.0,) * MAX_DISCARD_SIZE, -1)
+    return [(candidate, kind, odds) for *_, candidate, kind, odds in sorted(best.values(), key=lambda e: e[:3])]

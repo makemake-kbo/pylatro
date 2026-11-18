@@ -20,6 +20,7 @@ from .constants import (
     JOKER_TARGET_CONSUMABLE_NAMES,
     MAX_CONSUMABLE_HAND_TARGETS,
     MAX_CONSUMABLE_SLOTS,
+    MAX_HAND_SIZE,
     MAX_JOKER_SLOTS,
     ActionRange,
     SubPhase,
@@ -477,10 +478,13 @@ class HeuristicAgent:
                     padded = tuple(sorted((*forced_tuple, kicker)))
                     if padded not in candidates:
                         candidates.append(padded)
+        # Hands can outgrow the action space; only the first MAX_HAND_SIZE cards can be played.
+        # (No negative indexing: this module compiles with wraparound off.)
+        candidates = [indices for indices in candidates if indices and max(indices) < MAX_HAND_SIZE]
         if candidates:
             result = set(max(candidates, key=lambda indices: self._estimate_hand_score(state, indices)))
         else:
-            result = set(legacy)
+            result = set(legacy) if legacy and max(legacy) < MAX_HAND_SIZE else set()
         self._hand_cache_key = key
         self._hand_cache_val = result
         return set(result)

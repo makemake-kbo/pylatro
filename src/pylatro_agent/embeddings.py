@@ -51,6 +51,16 @@ if TYPE_CHECKING:
     from .vocab import Vocab
 
 
+# Every numeric field is brought to roughly unit scale before its projection.
+# A default-initialized Linear(1, d) has O(1) weights, so a raw input of 50-250
+# (hand chips, candidate score, Joker counter) outweighs the categorical
+# embeddings it is summed with by that same factor. Measured on teacher games,
+# that left Joker identity at ~8% of its token and made candidate/hand-level
+# tokens so large that twelve residual layers could not rewrite them.
+def _log_scaled(value: torch.Tensor, scale: float) -> torch.Tensor:
+    return torch.log1p(value.clamp_min(0.0)) / scale
+
+
 class ObjEmbedding(nn.Module):
     def __init__(self, d_model: int):
         super().__init__()
@@ -111,7 +121,7 @@ class MetaEmbedding(nn.Module):
             if scalars.shape[1] >= economy_end else scalars.new_zeros((batch, ECONOMY_SCALAR_DIM))
         )
         out[:, 0] = self.money_proj(scalars[:, 0:1]) + self.economy_proj(economy_context)
-        out[:, 1] = self.interest_proj(scalars[:, 1:2])
+        out[:, 1] = self.interest_proj(scalars[:, 1:2] / 25.0)
         current_ante = scalars[:, CURRENT_ANTE_SCALAR_INDEX].long().clamp(0, 11)
         win_ante = scalars[:, WIN_ANTE_SCALAR_INDEX].long().clamp(1, 11)
         out[:, 2] = self.ante_emb(current_ante) + self.win_ante_emb(win_ante)
@@ -154,9 +164,9 @@ class MetaEmbedding(nn.Module):
             + self.strategy_proj(strategy_context)
             + self.harness_order_proj(harness_order_context)
         )
-        out[:, 5] = self.hands_proj(scalars[:, 4:5])
-        out[:, 6] = self.discards_proj(scalars[:, 5:6])
-        out[:, 7] = self.handsize_proj(scalars[:, 6:7])
+        out[:, 5] = self.hands_proj(scalars[:, 4:5] / 4.0)
+        out[:, 6] = self.discards_proj(scalars[:, 5:6] / 4.0)
+        out[:, 7] = self.handsize_proj(scalars[:, 6:7] / 8.0)
         out[:, 8] = self.phase_emb(scalars[:, 7].long().clamp(0, 3))
         return out
 
@@ -184,7 +194,12 @@ class DeckCardEmbedding(nn.Module):
         ed = tokens[:, :, 3].clamp(0, self.edition_emb.num_embeddings - 1)
         seal = tokens[:, :, 4].clamp(0, self.seal_emb.num_embeddings - 1)
         loc = tokens[:, :, 5].clamp(0, 3)
-        slot = tokens[:, :, 11].clamp(0, self.hand_slot_emb.num_embeddings - 1)
+        # Row 0 is "not a hand card"; hand card i uses row i + 1, the same row
+        # candidate tokens use to reference it. (Sharing the tokenizer's
+        # 0-based slot directly pointed each candidate at the neighbouring
+        # card and aliased hand slot 0 with every draw/discard/history card.)
+        slot = torch.where(loc == 0, tokens[:, :, 11] + 1, torch.zeros_like(loc))
+        slot = slot.clamp(0, self.hand_slot_emb.num_embeddings - 1)
 
         h = (
             self.rank_emb(rank)
@@ -230,14 +245,14 @@ class JokerEmbedding(nn.Module):
         jid = tokens[:, :, 0].clamp(0, self.id_emb.num_embeddings - 1)
         rar = tokens[:, :, 1].clamp(0, 4)
         ed = tokens[:, :, 2].clamp(0, self.edition_emb.num_embeddings - 1)
-        sell = tokens[:, :, 3].float().unsqueeze(-1)
-        counter = tokens[:, :, 4].float().unsqueeze(-1)
+        sell = tokens[:, :, 3].float().unsqueeze(-1) / 10.0
+        counter = _log_scaled(tokens[:, :, 4].float().unsqueeze(-1), 3.0)
         slot = tokens[:, :, 5].clamp(0, 7)
         eternal = tokens[:, :, 6].clamp(0, 1)
         perishable = tokens[:, :, 7].clamp(0, 1)
         rental = tokens[:, :, 8].clamp(0, 1)
         debuff = tokens[:, :, 9].clamp(0, 1)
-        perish_tally = tokens[:, :, 10].float().unsqueeze(-1)
+        perish_tally = tokens[:, :, 10].float().unsqueeze(-1) / 5.0
 
         return (
             self.id_emb(jid)
@@ -281,17 +296,25 @@ class ConsumableEmbedding(nn.Module):
 
 
 class ShopEmbedding(nn.Module):
-    def __init__(self, vocab: Vocab, d_model: int):
+    def __init__(
+        self,
+        vocab: Vocab,
+        d_model: int,
+        *,
+        joker_id_emb: nn.Embedding,
+        consumable_id_emb: nn.Embedding,
+        voucher_id_emb: nn.Embedding,
+    ):
         super().__init__()
-        # Reuse joker/consumable/voucher/booster embeddings via a max-vocab embedding
-        max_vocab = max(
-            vocab.joker_vocab_size,
-            vocab.consumable_vocab_size,
-            vocab.voucher_vocab_size,
-            vocab.booster_vocab_size,
-            2,
-        )
-        self.item_emb = nn.Embedding(max_vocab, d_model)
+        # An offered Joker, consumable or voucher is the same entity as an
+        # owned one, so it uses the owned identity table: what the trunk learns
+        # about a Joker in play carries over to the decision to buy it. The four
+        # id spaces are unrelated; only boosters and untyped items keep a
+        # private table.
+        self.joker_id_emb = joker_id_emb
+        self.consumable_id_emb = consumable_id_emb
+        self.voucher_id_emb = voucher_id_emb
+        self.item_emb = nn.Embedding(max(vocab.booster_vocab_size, 2), d_model)
         self.type_emb = nn.Embedding(6, d_model)
         self.price_proj = nn.Linear(1, d_model)
         self.edition_emb = nn.Embedding(vocab.edition_size, d_model)
@@ -309,10 +332,17 @@ class ShopEmbedding(nn.Module):
         nn.init.zeros_(self.rank_emb.weight)
         nn.init.zeros_(self.suit_emb.weight)
 
+    def _item_identity(self, item_ids: torch.Tensor, item_types: torch.Tensor) -> torch.Tensor:
+        identity = self.item_emb(item_ids.clamp(0, self.item_emb.num_embeddings - 1))
+        # Tokenizer item types: 1 Joker, 2 consumable, 3 voucher, 4 booster, 5 playing card.
+        for item_type, table in ((1, self.joker_id_emb), (2, self.consumable_id_emb), (3, self.voucher_id_emb)):
+            owned = table(item_ids.clamp(0, table.num_embeddings - 1))
+            identity = torch.where((item_types == item_type).unsqueeze(-1), owned, identity)
+        return identity
+
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        iid = tokens[:, :, 0].clamp(0, self.item_emb.num_embeddings - 1)
         itype = tokens[:, :, 1].clamp(0, 5)
-        price = tokens[:, :, 2].float().unsqueeze(-1)
+        price = tokens[:, :, 2].float().unsqueeze(-1) / 10.0
         ed = tokens[:, :, 3].clamp(0, self.edition_emb.num_embeddings - 1)
         slot = tokens[:, :, 4].clamp(0, 9)
         seal = tokens[:, :, 5].clamp(0, self.seal_emb.num_embeddings - 1)
@@ -322,7 +352,7 @@ class ShopEmbedding(nn.Module):
         rank = tokens[:, :, 9].clamp(0, self.rank_emb.num_embeddings - 1)
         suit = tokens[:, :, 10].clamp(0, self.suit_emb.num_embeddings - 1)
         return (
-            self.item_emb(iid)
+            self._item_identity(tokens[:, :, 0], itype)
             + self.type_emb(itype)
             + self.price_proj(price)
             + self.edition_emb(ed)
@@ -373,9 +403,9 @@ class HandLevelEmbedding(nn.Module):
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         hand_type = tokens[:, :, 0].clamp(0, 12)
         level = tokens[:, :, 1].clamp(0, 15)
-        chips = tokens[:, :, 2].float().unsqueeze(-1)
-        mult = tokens[:, :, 3].float().unsqueeze(-1)
-        played = tokens[:, :, 4].float().unsqueeze(-1)
+        chips = _log_scaled(tokens[:, :, 2].float().unsqueeze(-1), 5.0)
+        mult = _log_scaled(tokens[:, :, 3].float().unsqueeze(-1), 3.0)
+        played = _log_scaled(tokens[:, :, 4].float().unsqueeze(-1), 3.0)
         visible = tokens[:, :, 5].clamp(0, 1)
         return (
             self.hand_type_emb(hand_type)
@@ -403,12 +433,14 @@ class HandCandidateEmbedding(nn.Module):
         kind = tokens[:, :, 0].clamp(0, 2)
         hand_type = tokens[:, :, 1].clamp(0, 12)
         size = tokens[:, :, 2].clamp(0, 5)
-        score = tokens[:, :, 3].float().unsqueeze(-1)
-        coverage = tokens[:, :, 4].float().unsqueeze(-1)
+        # Tokenized as sign_log(score) * 10 in [-255, 255] and blind ratio * 10 in [0, 255].
+        score = tokens[:, :, 3].float().unsqueeze(-1) / 100.0
+        coverage = _log_scaled(tokens[:, :, 4].float().unsqueeze(-1), 4.0)
         rank_slot = tokens[:, :, 10].clamp(0, HAND_CANDIDATE_MAX)
         forced = tokens[:, :, 11].float().unsqueeze(-1)
         card_slots = tokens[:, :, 5:10].clamp(0, MAX_HAND_SIZE)
-        slot_embed = self.hand_slot_emb(card_slots).sum(dim=-2)
+        # Sum only real card references; 0 is padding, not a card.
+        slot_embed = (self.hand_slot_emb(card_slots) * (card_slots > 0).unsqueeze(-1)).sum(dim=-2)
         return (
             self.kind_emb(kind)
             + self.hand_type_emb(hand_type)
@@ -519,7 +551,13 @@ class ContentEmbeddingLayer(nn.Module):
         self.joker_emb = JokerEmbedding(vocab, d_model)
         self.voucher_emb = VoucherEmbedding(vocab, d_model)
         self.consumable_emb = ConsumableEmbedding(vocab, d_model)
-        self.shop_emb = ShopEmbedding(vocab, d_model)
+        self.shop_emb = ShopEmbedding(
+            vocab,
+            d_model,
+            joker_id_emb=self.joker_emb.id_emb,
+            consumable_id_emb=self.consumable_emb.id_emb,
+            voucher_id_emb=self.voucher_emb.emb,
+        )
         self.blind_select_emb = BlindSelectEmbedding(vocab, d_model)
         self.hand_level_emb = HandLevelEmbedding(d_model)
         self.hand_candidate_emb = HandCandidateEmbedding(d_model, hand_slot_emb=self.hand_slot_emb)

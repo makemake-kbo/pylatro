@@ -132,6 +132,9 @@ def test_skipped_blind_rotates_window_without_a_play_event() -> None:
 
 
 def test_history_padding_is_inert_and_real_history_reaches_shared_heads() -> None:
+    # A tiny random model occasionally (~1-2% of initializations) moves a value
+    # output by less than allclose's tolerance; pin the initialization.
+    torch.manual_seed(0)
     data = load_game_data()
     vocab = build_vocab(data)
     model = BalatroAgent(

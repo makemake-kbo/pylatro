@@ -7,7 +7,7 @@ from pylatro import get_poker_hand_info
 from pylatro.runtime import sell_joker
 from pylatro.scoring import RANK_TO_NOMINAL
 
-from .constants import MAX_JOKER_SLOTS, ActionRange
+from .constants import MAX_HAND_SIZE, MAX_JOKER_SLOTS, ActionRange
 from .heuristic_simulation import copy_for_scoring
 from .subset_actions import subset_index
 
@@ -23,7 +23,7 @@ def burnt_discard(agent, state, mask):
         return None
     main = agent._get_main_hand_type(state)
     eligible = [
-        i for i, card in enumerate(state.hand_cards)
+        i for i, card in enumerate(state.hand_cards[:MAX_HAND_SIZE])
         if not card.forced_selection and card.seal != "Blue" and card.center_key != "m_steel"
     ]
     probe = copy_for_scoring(state)
@@ -48,7 +48,8 @@ def burnt_discard(agent, state, mask):
 def pad_scoring_hand(agent, state, mask, play):
     """Redraw more cards without sacrificing the selected hand's score."""
     best = (agent._estimate_hand_score(state, play), len(play), play)
-    optional = [i for i in range(len(state.hand_cards)) if i not in play]
+    # Only the first MAX_HAND_SIZE cards have play actions (hands can grow past it).
+    optional = [i for i in range(min(len(state.hand_cards), MAX_HAND_SIZE)) if i not in play]
     for count in range(1, min(5 - len(play), len(optional)) + 1):
         for extra in combinations(optional, count):
             padded = tuple(sorted((*play, *extra)))

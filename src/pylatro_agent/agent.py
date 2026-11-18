@@ -14,7 +14,11 @@ from .constants import (
     CURRENT_ANTE_SCALAR_INDEX,
     HISTORY_ROUNDS,
     HISTORY_START,
+    JOKER_MAX,
+    JOKER_START,
     MAX_SEQ_LEN,
+    MAX_SHOP_ITEMS,
+    SHOP_START,
     WIN_ANTE_SCALAR_INDEX,
 )
 from .embeddings import ContentEmbeddingLayer
@@ -94,6 +98,14 @@ class BalatroAgent(nn.Module):
             return_value_mode=config.return_value_mode,
         )
 
+        # Predicts the teacher's shop-search verdict for each Joker and shop
+        # token (see shop_gain_targets.py). It is a training signal that makes
+        # the trunk represent what an item is worth to this build; the policy
+        # heads do not read its output.
+        self.shop_gain_heads = nn.ModuleDict(
+            {region: nn.Sequential(nn.Linear(d, 128), nn.GELU(), nn.Linear(128, 2)) for region in ("joker", "shop")}
+        )
+
     def forward(
         self,
         tokens: torch.Tensor,
@@ -152,6 +164,13 @@ class BalatroAgent(nn.Module):
                 attention_mask,
                 current_antes=scalars[:, CURRENT_ANTE_SCALAR_INDEX],
                 win_antes=scalars[:, WIN_ANTE_SCALAR_INDEX],
+            )
+            value_dict["shop_gain_prediction"] = torch.cat(
+                (
+                    self.shop_gain_heads["joker"](x[:, JOKER_START : JOKER_START + JOKER_MAX]),
+                    self.shop_gain_heads["shop"](x[:, SHOP_START : SHOP_START + MAX_SHOP_ITEMS]),
+                ),
+                dim=1,
             )
         if critic_only:
             return {}, value_dict

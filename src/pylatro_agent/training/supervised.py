@@ -30,6 +30,7 @@ from ..reward import (
     outcome_value,
     reward_checkpoint_metadata,
 )
+from ..shop_gain_targets import SHOP_GAIN_SLOTS, shop_gain_loss
 from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..value_head import outcome_nll, return_huber_loss
 from ..vocab import build_vocab
@@ -56,6 +57,9 @@ class SupervisedConfig:
     max_epochs: int = 10
     value_loss_coeff: float = 0.5
     outcome_loss_coeff: float = 0.10
+    # Weight of the shop-gain prediction loss (teacher search results as
+    # targets). Records without search targets contribute nothing.
+    shop_gain_loss_coeff: float = 1.0
     action_entropy_coeff: float = 0.001
     num_workers: int = 0  # 0 = auto-detect (all available cores)
     min_ante: int = 1  # Phase 5: was 5; hard outcome filtering creates survivorship bias
@@ -251,6 +255,7 @@ def train_supervised(
         epoch_loss = torch.zeros((), device=device)
         epoch_action_loss = torch.zeros((), device=device)
         epoch_value_loss = torch.zeros((), device=device)
+        epoch_gain_loss = torch.zeros((), device=device)
         epoch_action_correct = torch.zeros((), device=device)
         epoch_count = 0
 
@@ -333,8 +338,20 @@ def train_supervised(
                     / terminal_denominator
                 )
 
+            gain_loss = shop_gain_loss(
+                value_dict["shop_gain_prediction"],
+                batch["shop_gain_targets"],
+                batch["shop_gain_mask"],
+                batch["token_types"],
+            )
+
             entropy_bonus = dist.entropy().mean()
-            loss = action_loss + critic_loss - config.action_entropy_coeff * entropy_bonus
+            loss = (
+                action_loss
+                + critic_loss
+                + config.shop_gain_loss_coeff * gain_loss
+                - config.action_entropy_coeff * entropy_bonus
+            )
 
             optimizer.zero_grad()
             loss.backward()
@@ -359,6 +376,7 @@ def train_supervised(
                 epoch_loss += loss.detach() * len(batch_records)
                 epoch_action_loss += action_loss.detach() * len(batch_records)
                 epoch_value_loss += critic_loss.detach() * len(batch_records)
+                epoch_gain_loss += gain_loss.detach() * len(batch_records)
                 epoch_action_correct += correct.detach()
             epoch_count += len(batch_records)
 
@@ -369,6 +387,7 @@ def train_supervised(
                 writer.add_scalar("train/loss", loss, global_step)
                 writer.add_scalar("train/action_loss", action_loss, global_step)
                 writer.add_scalar("train/value_loss", critic_loss, global_step)
+                writer.add_scalar("train/shop_gain_loss", gain_loss, global_step)
                 writer.add_scalar("train/accuracy", batch_acc, global_step)
                 writer.add_scalar("train/grad_norm", grad_norm, global_step)
                 writer.add_scalar("train/lr", update_lr, global_step)
@@ -388,10 +407,20 @@ def train_supervised(
                 writer.add_scalar("train/unreachable_label_fraction", unreachable_label_fraction, global_step)
 
             global_step += 1
+            if device.type == "mps" and global_step % 50 == 0:
+                # Batches vary in shape, and the MPS allocator caches a buffer per size:
+                # unflushed, it grew to 43 GB on a 4,800-game run and pushed a 48 GB Mac
+                # into swap (one epoch went from 1.5 to 9 hours). Right after an epoch's
+                # checkpoint it doubles within a few steps, so the flush is frequent.
+                torch.mps.empty_cache()
+                if global_step % 1000 == 0:
+                    logger.info("step %d: MPS driver memory %.1f GB",
+                                global_step, torch.mps.driver_allocated_memory() / 2**30)
 
         avg_loss = (epoch_loss / max(epoch_count, 1)).item()
         avg_action_loss = (epoch_action_loss / max(epoch_count, 1)).item()
         avg_value_loss = (epoch_value_loss / max(epoch_count, 1)).item()
+        avg_gain_loss = (epoch_gain_loss / max(epoch_count, 1)).item()
         accuracy = (epoch_action_correct / max(epoch_count, 1)).item()
 
         writer.add_scalar("epoch/loss", avg_loss, epoch + 1)
@@ -402,7 +431,7 @@ def train_supervised(
         logger.info(
             f"Epoch {epoch + 1}/{config.max_epochs}: "
             f"loss={avg_loss:.4f}, action_loss={avg_action_loss:.4f}, "
-            f"value_loss={avg_value_loss:.4f}, accuracy={accuracy:.4f}"
+            f"value_loss={avg_value_loss:.4f}, shop_gain_loss={avg_gain_loss:.4f}, accuracy={accuracy:.4f}"
         )
 
         save_model = model.module if isinstance(model, nn.DataParallel) else model
@@ -419,6 +448,8 @@ def train_supervised(
             },
         )
         tmp_path.rename(ckpt_path)
+        if device.type == "mps":
+            torch.mps.empty_cache()
 
     writer.close()
     return model
@@ -468,6 +499,13 @@ def _collate_batch(records: list[dict], device: torch.device, config: Supervised
             [float(r.get("terminal_outcome_mask", 1.0)) for r in records],
             dtype=torch.float32,
             device=device,
+        ),
+        "shop_gain_targets": torch.tensor(
+            np.array([r.get("shop_gain_targets") or [np.nan] * SHOP_GAIN_SLOTS for r in records], dtype=np.float32),
+            device=device,
+        ),
+        "shop_gain_mask": torch.tensor(
+            [float(r.get("shop_gain_mask", 0.0)) for r in records], dtype=torch.float32, device=device
         ),
         "bc_weight": torch.tensor(bc_weights, dtype=torch.float32, device=device),
     }

@@ -51,6 +51,7 @@ from .constants import (
 )
 from .hand_candidates import HAND_NAME_TO_ID, HandCandidate, generate_hand_candidates
 from .joker_features import JOKER_FEATURE_START, encode_joker_features
+from .play_score import exact_play_candidates
 from .strategy_context import compute_suit_target_utilities
 from .vocab import DECK_TO_ID, EDITION_TO_ID, RANK_TO_ID, SEAL_TO_ID, SUIT_TO_ID, Vocab
 
@@ -395,10 +396,15 @@ class Tokenizer:
             attn_mask[pos + i] = 1
 
         if sub_phase == SubPhase.CHOOSE_ACTION:
-            play_candidates, discard_candidates = generate_hand_candidates(state)
-            all_candidates = list(play_candidates[:MAX_PLAY_CANDIDATES]) + list(
-                discard_candidates[:MAX_DISCARD_CANDIDATES]
-            )
+            structural_plays, discard_candidates = generate_hand_candidates(state)
+            # Play candidates carry what the engine says they bank, measured
+            # against the chips still needed, and are listed best first (v16).
+            # The generator's own estimate only proposes hands by structure.
+            scored_plays = exact_play_candidates(state, structural_plays, MAX_PLAY_CANDIDATES)
+            play_candidates = [candidate for candidate, _ in scored_plays]
+            play_scores = [score for _, score in scored_plays]
+            all_candidates = play_candidates + list(discard_candidates[:MAX_DISCARD_CANDIDATES])
+            chips_needed = max(blind_target - round_score_f, 1.0)
             for rank_slot, candidate in enumerate(all_candidates[:HAND_CANDIDATE_MAX]):
                 pos = HAND_CANDIDATE_START + rank_slot
                 self._encode_hand_candidate(
@@ -407,7 +413,8 @@ class Tokenizer:
                     candidate,
                     rank_slot,
                     state,
-                    round_score,
+                    play_scores[rank_slot] if rank_slot < len(play_scores) else None,
+                    chips_needed,
                 )
                 token_types[pos] = TokenType.HAND_CANDIDATE
                 attn_mask[pos] = 1
@@ -685,17 +692,20 @@ class Tokenizer:
         candidate: HandCandidate,
         rank_slot: int,
         state: RunState,
-        round_score: int,
+        play_score: int | None,
+        chips_needed: float,
     ) -> None:
         tokens[pos, 0] = 1 if candidate.kind == "play" else 2
         tokens[pos, 1] = HAND_NAME_TO_ID.get(candidate.hand_name, 0)
         tokens[pos, 2] = len(candidate.indices)
-        # Columns 3/4 are part of the tokenizer-v6 checkpoint contract.  Keep
-        # their historical projected-score / blind-coverage meanings in every
-        # ante; changing a field's semantics without changing its shape still
-        # sends pretrained embedding projections out of distribution.
-        tokens[pos, 3] = int(min(max(sign_log(candidate.estimated_score) * 10.0, -255.0), 255.0))
-        tokens[pos, 4] = int(min(max(candidate.blind_ratio * 10.0, 0.0), 255.0))
+        # Columns 3/4: a play's guaranteed chips and the share of the remaining
+        # blind they cover (v15). Discards keep the generator's draw estimate.
+        if play_score is None:
+            score, coverage = candidate.estimated_score, candidate.blind_ratio
+        else:
+            score, coverage = float(play_score), float(play_score) / chips_needed
+        tokens[pos, 3] = int(min(max(sign_log(score) * 10.0, -255.0), 255.0))
+        tokens[pos, 4] = int(min(max(coverage * 10.0, 0.0), 255.0))
         for i in range(5):
             tokens[pos, 5 + i] = candidate.indices[i] + 1 if i < len(candidate.indices) else 0
         tokens[pos, 10] = rank_slot + 1

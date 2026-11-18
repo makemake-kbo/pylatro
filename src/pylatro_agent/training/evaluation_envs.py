@@ -29,11 +29,17 @@ class _Environments:
         self.compact_observations = compact_observations
         self.kwargs = kwargs
         self.environment_class = self.kwargs.pop("environment_class", BalatroEnv)
+        # With several decks, a game's deck is fixed by its seed, so a panel
+        # replays the same deck for the same seed in every evaluation.
+        self.deck_keys = tuple(self.kwargs.pop("deck_keys", ()))
         self.envs = {}
         self.retained_public_states = []
 
     def reset(self, seed):
-        env = self.environment_class(seed=seed, **self.kwargs)
+        kwargs = self.kwargs
+        if self.deck_keys:
+            kwargs = {**kwargs, "deck_key": self.deck_keys[seed % len(self.deck_keys)]}
+        env = self.environment_class(seed=seed, **kwargs)
         self.envs[seed] = env
         obs, _ = env.reset(seed=seed)
         return (_pack_observation(obs) if self.compact_observations else obs), str(env._sub_phase)

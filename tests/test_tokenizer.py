@@ -27,6 +27,7 @@ from pylatro_agent.constants import (
     TokenType,
 )
 from pylatro_agent.hand_candidates import generate_hand_candidates
+from pylatro_agent.play_score import neutral_play_scores
 from pylatro_agent.tokenizer import (
     Tokenizer,
     _hypergeom_at_least_one,
@@ -309,14 +310,16 @@ def test_hand_candidates_emitted_in_choose_action(run_state, vocab):
         assert obs.attention_mask[i] == 1
 
 
-def test_ante_one_play_candidates_preserve_v6_score_and_coverage_semantics(run_state, vocab):
+def test_ante_one_play_candidates_carry_engine_score_and_remaining_coverage(run_state, vocab):
     tok = Tokenizer(vocab=vocab)
     obs = tok.tokenize(run_state, SubPhase.CHOOSE_ACTION, round_score=40)
     play_candidates, _ = generate_hand_candidates(run_state)
-    candidate = play_candidates[0]
+    score = neutral_play_scores(run_state, [play_candidates[0].indices])[0]
+    chips_needed = tok._blind_target(run_state) - 40
 
-    assert obs.tokens[HAND_CANDIDATE_START, 3] == int(sign_log(candidate.estimated_score) * 10.0)
-    assert obs.tokens[HAND_CANDIDATE_START, 4] == int(min(candidate.blind_ratio * 10.0, 255.0))
+    assert score > 0
+    assert obs.tokens[HAND_CANDIDATE_START, 3] == int(sign_log(score) * 10.0)
+    assert obs.tokens[HAND_CANDIDATE_START, 4] == int(min(score / chips_needed * 10.0, 255.0))
 
 
 def test_hand_candidates_not_emitted_in_other_phases(run_state, vocab):

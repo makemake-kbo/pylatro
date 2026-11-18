@@ -17,7 +17,8 @@ from dataclasses import fields
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+# Appended, so PYTHONPATH (e.g. a build of another tokenizer) still decides what loads, here and in workers.
+sys.path.append(str(ROOT / "src"))
 
 from pylatro_agent.dagger import DaggerConfig, build_curve, load_exclusions, read_json, render_report, run  # noqa: E402
 

@@ -148,3 +148,24 @@ def test_supervised_uses_parquet_without_generation(tmp_path, monkeypatch):
         AgentConfig(d_model=16, n_layers=1, n_heads=2, d_ff=32), data=data,
     )
     assert (tmp_path / 'checkpoints/supervised_epoch1.pt').is_file()
+
+
+def test_shuffled_batches_mix_row_groups(tmp_path):
+    """One game per row group: a minibatch must not come from one or two games."""
+    for game in range(48):
+        records = sample_records(50)
+        for record in records:
+            record["seed"] = game
+        save_records(records, tmp_path / f"game_{game}.parquet", reward_config=DEFAULT_REWARD_CONFIG)
+    loaded = load_records(tmp_path, reward_config=DEFAULT_REWARD_CONFIG)
+    np.random.seed(0)
+    order = loaded.shuffled_indices(pool_groups=16)
+    assert sorted(order) == list(range(2400))
+    batches = [order[start:start + 64] for start in range(0, 2400, 64)]
+    games_per_batch = [len({int(loaded[i]["seed"]) for i in batch}) for batch in batches]
+    assert min(games_per_batch) >= 12
+    # A pool is decoded once and stays cached while it is consumed.
+    assert len(loaded._cache) <= 32
+    # Every pool draws from exactly ``pool_groups`` games, so reads stay local.
+    pool_rows = 16 * 50
+    assert all(len({int(i) // 50 for i in order[start:start + pool_rows]}) == 16 for start in range(0, 2400, pool_rows))

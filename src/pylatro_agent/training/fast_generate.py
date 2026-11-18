@@ -32,6 +32,7 @@ from ..joker_layout import OrderObjective
 from ..reward import RewardConfig, default_reward
 from ..risk import estimate_clear_risk
 from ..shop_eval import capture_build_features
+from ..shop_gain_targets import SHOP_GAIN_SLOTS, shop_gain_targets
 from ..strategic_events import derive_strategic_event
 from ..survival import terminal_outcome_class, validate_critic_win_ante
 from ..tokenizer import Tokenizer
@@ -226,6 +227,8 @@ def _run_game_single_pass(
 
         current_obs = obs
         current_prev_info = prev_info
+        # After select_action so the search's portfolio cache is already warm.
+        gain_targets = shop_gain_targets(agent, runner.state, runner.sub_phase, mask)
 
         # These fields describe the chosen action in the state it was selected
         # from. A purchase/play can remove or reorder those cards immediately.
@@ -311,7 +314,11 @@ def _run_game_single_pass(
 
         records.append({"obs": current_obs, "action": action, "reward": float(reward),
                         "seed": seed, "tokenizer_version": TOKENIZER_VERSION,
-                        "reward_snapshot_version": 3})
+                        "reward_snapshot_version": 3,
+                        "shop_gain_targets": (
+                            [math.nan] * SHOP_GAIN_SLOTS if gain_targets is None else gain_targets.tolist()
+                        ),
+                        "shop_gain_mask": 0.0 if gain_targets is None else 1.0})
 
         if terminated:
             break

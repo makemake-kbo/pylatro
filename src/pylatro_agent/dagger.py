@@ -36,6 +36,7 @@ from .heuristic import HeuristicAgent
 from .public_runtime import addressable_hand
 from .public_state import OBSERVATION_INTERPRETATION, public_mask, simulation_state
 from .reward import reward_checkpoint_metadata
+from .shop_gain_targets import SHOP_GAIN_SLOTS, shop_gain_loss, shop_gain_targets
 from .survival import terminal_outcome_class
 from .training.evaluation_envs import EvaluationEnvs, _Environments
 from .training.ppo_observations import _OBSERVATION_SPEC, _obs_dicts_to_batch
@@ -89,6 +90,8 @@ class DaggerConfig:
     warmup_updates: int = 100
     max_grad_norm: float = 1.0
     outcome_loss_coeff: float = 0.1
+    # Weight of the shop-gain prediction loss on the teacher's search results.
+    shop_gain_loss_coeff: float = 1.0
     shard_rows: int = 2048
     pool_shards: int = 8
     workers: int = 8
@@ -97,6 +100,8 @@ class DaggerConfig:
     # workers busy.
     inference_batch: int = 256
     max_episode_steps: int = 2048
+    # One deck, or a comma-separated list; with a list, game ``seed`` plays
+    # deck ``seed % len(list)`` in collection and on the panel alike.
     deck_key: str = "b_blue"
     stake: int = 1
     win_ante: int = 8
@@ -124,6 +129,8 @@ class DaggerConfig:
             raise ValueError("outcome_loss_coeff and warmup_updates must be nonnegative; eval_every positive")
         if self.shard_rows < 1 or self.pool_shards < 1 or self.workers < 0 or self.inference_batch < 1:
             raise ValueError("Invalid shard, pool, worker or inference batch size")
+        if not all(self.deck_key.split(",")):
+            raise ValueError("deck_key must be a deck key or a comma-separated list of deck keys")
 
     def beta(self, round_index):
         return self.beta_initial * self.beta_decay ** (round_index - 1)
@@ -267,6 +274,9 @@ def teacher_label(env, teacher, view):
         # Bound card-slot proposals to the action vocabulary for oversized hands.
         with addressable_hand(state):
             action = int(teacher.select_action(state, runner.sub_phase, mask, round_score=runner.round_score))
+        # The search's verdict on every Joker and shop item in this state, for
+        # the student to predict; None outside the shop.
+        gains = shop_gain_targets(teacher, state, runner.sub_phase, mask)
     except Exception as exc:  # One failed label must not end a long collection round.
         return {
             "action": -1,
@@ -277,7 +287,7 @@ def teacher_label(env, teacher, view):
     seconds = time.perf_counter() - started
     if not (0 <= action < NUM_ACTIONS and mask[action]):
         return {"action": -1, "seconds": seconds, "error": f"illegal teacher action {action}"}
-    return {"action": action, "seconds": seconds}
+    return {"action": action, "seconds": seconds, "shop_gain_targets": gains}
 
 
 def _dagger_teacher(self, requests):
@@ -336,11 +346,12 @@ class DaggerEnvs(EvaluationEnvs):
 
 
 def make_envs(config, data, vocab):
+    decks = config.deck_key.split(",")
     return DaggerEnvs(
         config.workers,
         data=data,
         vocab=vocab,
-        deck_key=config.deck_key,
+        **({"deck_key": decks[0]} if len(decks) == 1 else {"deck_keys": tuple(decks)}),
         stake=config.stake,
         win_ante=config.win_ante,
         max_steps=config.max_episode_steps,
@@ -479,7 +490,16 @@ ROW_FIELDS = {
     "by_teacher": bool,
     "seed": np.int64,
     "step": np.int32,
+    "shop_gain_targets": np.float32,
+    "shop_gain_mask": np.float32,
 }
+
+
+def gain_row_fields(gains):
+    """Shard fields for a label's shop-gain targets; NaN and mask 0 when the search did not run."""
+    if gains is None:
+        return {"shop_gain_targets": np.full(SHOP_GAIN_SLOTS, np.nan, np.float32), "shop_gain_mask": 0.0}
+    return {"shop_gain_targets": np.asarray(gains, np.float32), "shop_gain_mask": 1.0}
 
 
 def compact_observation(obs):
@@ -521,6 +541,8 @@ def collate(arrays, device):
             value = arrays[key]
         batch[key] = torch.as_tensor(value).to(device=device, dtype=dtype)
     batch["labels"] = torch.as_tensor(arrays["label"], device=device, dtype=torch.long)
+    batch["shop_gain_targets"] = torch.as_tensor(arrays["shop_gain_targets"], device=device, dtype=torch.float32)
+    batch["shop_gain_mask"] = torch.as_tensor(arrays["shop_gain_mask"], device=device, dtype=torch.float32)
     batch["outcome_class"] = torch.as_tensor(arrays["outcome_class"], device=device, dtype=torch.long)
     batch["outcome_mask"] = torch.as_tensor(arrays["outcome_mask"], device=device, dtype=torch.float32)
     return batch
@@ -661,6 +683,7 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
                 "by_teacher": decision["by_teacher"],
                 "seed": int(seed),
                 "step": int(step),
+                **gain_row_fields(label.get("shop_gain_targets")),
             }
         )
         flush()
@@ -735,7 +758,7 @@ def collect_round(model, config, seeds, directory, *, round_index, device, data,
 # Fine-tuning
 
 
-def dagger_loss(model, batch, outcome_loss_coeff):
+def dagger_loss(model, batch, outcome_loss_coeff, shop_gain_loss_coeff):
     observations = {key: batch[key] for key in _OBSERVATION_SPEC}
     dist, values = _grammar_distribution(model, observations)
     logp = dist.log_prob(batch["labels"])
@@ -743,8 +766,12 @@ def dagger_loss(model, batch, outcome_loss_coeff):
         raise RuntimeError("A teacher label is unreachable under the student's action grammar")
     nll = -logp.mean()
     outcome = outcome_nll(values["outcome_probabilities"], batch["outcome_class"], batch["outcome_mask"])
-    loss = nll + outcome_loss_coeff * outcome
-    return loss, {"nll": float(nll.detach()), "outcome_nll": float(outcome.detach())}
+    gain = shop_gain_loss(
+        values["shop_gain_prediction"], batch["shop_gain_targets"], batch["shop_gain_mask"], batch["token_types"]
+    )
+    loss = nll + outcome_loss_coeff * outcome + shop_gain_loss_coeff * gain
+    metrics = {"nll": float(nll.detach()), "outcome_nll": float(outcome.detach()), "shop_gain": float(gain.detach())}
+    return loss, metrics
 
 
 def train_round(model, optimizer, pool, config, device, *, completed_updates, log_path, writer=None):
@@ -768,12 +795,16 @@ def train_round(model, optimizer, pool, config, device, *, completed_updates, lo
                 part = {key: value[start : start + micro] for key, value in arrays.items()}
                 weight = len(part["label"]) / config.batch_size
                 with torch.enable_grad():
-                    loss, metrics = dagger_loss(model, collate(part, device), config.outcome_loss_coeff)
+                    loss, metrics = dagger_loss(
+                        model, collate(part, device), config.outcome_loss_coeff, config.shop_gain_loss_coeff
+                    )
                     (loss * weight).backward()
                 for key, value in metrics.items():
                     totals[key] += value * weight
             norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm, error_if_nonfinite=True)
             optimizer.step()
+            if str(device).startswith("mps") and completed_updates % 100 == 0:
+                torch.mps.empty_cache()  # cached buffers per batch shape otherwise fill unified memory
             if completed_updates % 10 == 0 or update + 1 == config.updates_per_round:
                 row = {
                     "update": completed_updates,
@@ -784,7 +815,7 @@ def train_round(model, optimizer, pool, config, device, *, completed_updates, lo
                 }
                 stream.write(json.dumps(row) + "\n")
                 if writer is not None:
-                    for key in ("nll", "outcome_nll", "grad_norm", "lr"):
+                    for key in ("nll", "outcome_nll", "shop_gain", "grad_norm", "lr"):
                         writer.add_scalar(f"train/{key}", row[key], completed_updates)
     return completed_updates
 

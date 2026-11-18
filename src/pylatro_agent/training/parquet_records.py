@@ -25,7 +25,10 @@ def _arrow():
 
 
 class ParquetRecords(Sequence):
-    """Read a file or dataset directory, caching at most two decoded row groups.
+    """Read a file or dataset directory, caching a bounded number of decoded row groups.
+
+    Two groups are cached for sequential access; ``shuffled_indices`` raises that
+    to two shuffle pools so a training epoch still decodes each group once.
 
     Returned observations have their original NumPy shapes/dtypes. The published
     dataset's ``step`` column is retained for replay provenance. Metadata is embedded in new
@@ -44,6 +47,7 @@ class ParquetRecords(Sequence):
         self._groups = []
         self._ends = []
         self._cache: OrderedDict[int, list[dict[str, Any]]] = OrderedDict()
+        self._cache_groups = 2
         expected_schema = None
         total = 0
         for file_path in paths:
@@ -105,7 +109,7 @@ class ParquetRecords(Sequence):
                     "obs": {key: values[i] for key, values in arrays.items()}}
                    for i in range(len(table))]
         self._cache[index] = records
-        if len(self._cache) > 2:
+        while len(self._cache) > self._cache_groups:
             self._cache.popitem(last=False)
         return records
 
@@ -125,12 +129,24 @@ class ParquetRecords(Sequence):
         for group in range(len(self._groups)):
             yield from self._group(group)
 
-    def shuffled_indices(self) -> np.ndarray:
-        """Shuffle groups and decisions within groups, retaining read locality."""
+    def shuffled_indices(self, pool_groups: int = 128) -> np.ndarray:
+        """Shuffle decisions across pools of ``pool_groups`` row groups.
+
+        Generated datasets store one game per row group. Shuffling only inside a
+        group fills each minibatch from one or two games, so its decisions share
+        a deck, a Joker lineup and an outcome. Pools mix many games per batch
+        while keeping reads local: two pools of decoded groups stay cached.
+        """
+        pool_groups = max(int(pool_groups), 1)
+        self._cache_groups = max(self._cache_groups, 2 * pool_groups)
+        order = np.random.permutation(len(self._groups))
         pieces = []
-        for group in np.random.permutation(len(self._groups)):
-            start = self._ends[group - 1] if group else 0
-            pieces.append(start + np.random.permutation(self._ends[group] - start))
+        for offset in range(0, len(order), pool_groups):
+            pool = np.concatenate([
+                np.arange(self._ends[group - 1] if group else 0, self._ends[group])
+                for group in order[offset:offset + pool_groups]
+            ])
+            pieces.append(np.random.permutation(pool))
         return np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
 
 

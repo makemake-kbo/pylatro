@@ -15,7 +15,7 @@ from pylatro import load_game_data
 from pylatro_agent import dagger
 from pylatro_agent.agent import AgentConfig, BalatroAgent
 from pylatro_agent.checkpoint import save_checkpoint
-from pylatro_agent.constants import NUM_ACTIONS
+from pylatro_agent.constants import NUM_ACTIONS, SubPhase
 from pylatro_agent.dagger import (
     DaggerConfig,
     SeedPlan,
@@ -37,6 +37,7 @@ from pylatro_agent.dagger import (
 )
 from pylatro_agent.heuristic import HeuristicAgent
 from pylatro_agent.reward import RewardConfig, reward_checkpoint_metadata
+from pylatro_agent.shop_gain_targets import SHOP_GAIN_SLOTS
 from pylatro_agent.training.public_training import PublicTrainingEnv
 from pylatro_agent.vocab import build_vocab
 
@@ -148,6 +149,8 @@ def test_teacher_label_is_legal_deterministic_and_leaves_the_game_unchanged(view
         again = teacher_label(env, HeuristicAgent(shop_policy="search", grow_scalers=True), view)
         assert env.runner.snapshot().payload == before
         assert label["action"] == again["action"] and "error" not in label
+        in_shop = env.runner.sub_phase == SubPhase.SHOP
+        assert (label["shop_gain_targets"] is not None) == in_shop
         assert obs["action_mask"][label["action"]]
         obs, _, terminal, truncated, _ = env.step(int(rng.choice(np.flatnonzero(obs["action_mask"]))))
         if terminal or truncated:
@@ -172,6 +175,7 @@ def test_shards_round_trip_and_pool_joins_outcomes(tmp_path, game_data, vocab):
                 by_teacher=False,
                 seed=seed,
                 step=step,
+                **dagger.gain_row_fields(None if step % 2 else np.arange(SHOP_GAIN_SLOTS) / 10),
             )
         )
         originals.append(obs)
@@ -186,6 +190,9 @@ def test_shards_round_trip_and_pool_joins_outcomes(tmp_path, game_data, vocab):
             np.testing.assert_array_equal(batch[key][i].numpy(), originals[i][key])
         np.testing.assert_array_equal(batch["action_mask"][i].numpy(), originals[i]["action_mask"])
     assert batch["action_mask"].shape[1] == NUM_ACTIONS
+    assert batch["shop_gain_mask"].tolist() == [1.0, 0.0] * 3
+    assert torch.allclose(batch["shop_gain_targets"][0], torch.arange(SHOP_GAIN_SLOTS) / 10)
+    assert torch.isnan(batch["shop_gain_targets"][1]).all()
     outcomes = {
         11: {"won": True, "final_ante": 2, "stalled": False},
         12: {"won": False, "final_ante": 3, "stalled": True},
@@ -198,6 +205,26 @@ def test_shards_round_trip_and_pool_joins_outcomes(tmp_path, game_data, vocab):
     won = drawn["seed"] == 11
     assert (drawn["outcome_class"][won] == 8).all() and (drawn["outcome_mask"][won] == 1).all()
     assert (drawn["outcome_mask"][~won] == 0).all()
+
+
+def test_a_deck_list_assigns_each_seed_its_deck(game_data, vocab):
+    decks = ("b_red", "b_blue", "b_black")
+    config = replace(TINY, deck_key=",".join(decks))
+    envs = make_envs(config, game_data, vocab)
+    try:
+        for seed in (4_242_010, 4_242_011, 4_242_012, 4_242_013):
+            envs.reset(seed)
+            assert envs.local.envs[seed].runner.state.deck_key == decks[seed % 3]
+    finally:
+        envs.close()
+    single = make_envs(TINY, game_data, vocab)
+    try:
+        single.reset(4_242_010)
+        assert single.local.envs[4_242_010].runner.state.deck_key == TINY.deck_key
+    finally:
+        single.close()
+    with pytest.raises(ValueError):
+        DaggerConfig(deck_key="b_red,,b_blue")
 
 
 def test_beta_one_executes_the_teacher_and_beta_zero_the_student(game_data, vocab):
@@ -260,7 +287,7 @@ def test_fine_tuning_on_collected_labels_lowers_teacher_nll(tmp_path, game_data,
         pool = ShardPool(shards, outcomes, pool_shards=len(shards), rng=np.random.default_rng(0))
         batch = collate(pool.next_batch(manifest["labelled"]), "cpu")
         with torch.no_grad():
-            return dagger_loss(model, batch, 0.0)[1]["nll"]
+            return dagger_loss(model, batch, 0.0, 0.0)[1]["nll"]
 
     before = nll()
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr)

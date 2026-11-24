@@ -184,6 +184,9 @@ class DeckCardEmbedding(nn.Module):
         self.location_emb = nn.Embedding(4, d_model)
         self.hand_slot_emb = hand_slot_emb
         self.card_state_proj = nn.Linear(4, d_model, bias=False)
+        # v20: which of this round's Joker targets the card hits (Mail-In, Idol, Ancient, Castle bits).
+        self.target_emb = nn.Embedding(16, d_model)
+        nn.init.zeros_(self.target_emb.weight)
         self.proj = nn.Linear(d_model, d_model)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -209,6 +212,7 @@ class DeckCardEmbedding(nn.Module):
             + self.seal_emb(seal)
             + self.location_emb(loc)
             + self.hand_slot_emb(slot)
+            + self.target_emb(tokens[:, :, 12].clamp(0, 15))
             + self.card_state_proj(torch.stack(
                 (tokens[:, :, 6].float(), tokens[:, :, 7].float(),
                  tokens[:, :, 8].float() / 31.0, tokens[:, :, 10].float()),

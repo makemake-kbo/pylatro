@@ -295,8 +295,14 @@ class HeuristicAgent:
     _hand_cache_key: tuple
     _hand_cache_val: set[int]
 
-    def __init__(self, *, shop_policy: str = "legacy", grow_scalers: bool = False) -> None:
+    def __init__(self, *, shop_policy: str = "legacy", grow_scalers: bool = False, fixes: str | None = None) -> None:
+        import os
+
         self._grow_scalers = grow_scalers
+        # Round-target fixes (v20). Runner commitment is opt-in: it lost on paired seeds (z -1.1).
+        # PYLATRO_TEACHER_FIXES selects them for paired A/B arms.
+        spec = fixes if fixes is not None else os.environ.get("PYLATRO_TEACHER_FIXES", "rebate,castle")
+        self._fixes = frozenset(f for f in spec.split(",") if f and f != "none")
         self._shop_policy = shop_policy
         self._shop_search = None
         self._hand_cache_key = ()
@@ -697,7 +703,7 @@ class HeuristicAgent:
                 runner_live = ht == "Straight" and any(
                     joker.center_key == "j_runner"
                     and not joker.debuff
-                    and self._owned_scaling_progress(state, joker) >= 30
+                    and ("runner" in self._fixes or self._owned_scaling_progress(state, joker) >= 30)
                     for joker in state.jokers
                 )
                 repeated_draw_hand = ht in {"Straight", "Flush"} and level >= 2 and played >= 6
@@ -829,6 +835,8 @@ class HeuristicAgent:
             action = self._blind_select(state, action_mask)
         elif sub_phase == SubPhase.CHOOSE_ACTION:
             action = self._choose_action(state, action_mask)
+            if ActionRange.DISCARD_SUBSET_START <= action <= ActionRange.DISCARD_SUBSET_END:
+                action = self._income_topup(state, action_mask, action)
         elif sub_phase == SubPhase.SHOP:
             action = self._shop(state, action_mask)
         elif sub_phase == SubPhase.BOOSTER_PACK:
@@ -1297,6 +1305,10 @@ class HeuristicAgent:
                 est_score = square_score
                 best_play_cards = [hand[i] for i in best_play]
                 best_hand_quality_now = self._quick_hand_quality(state, best_play_cards)
+
+        # Hands can outgrow the action space; drop cards no play action can address.
+        if best_play and max(best_play) >= MAX_HAND_SIZE:
+            best_play = tuple(i for i in best_play if i < MAX_HAND_SIZE)
 
         best_planet_score = -1
         best_planet_action = None
@@ -2508,9 +2520,37 @@ class HeuristicAgent:
             else ""
         )
 
+        mail_id = (
+            int(state.current_round.mail_card.get("id", 0) or 0)
+            if "rebate" in self._fixes and "j_mail" in joker_keys
+            else 0
+        )
+        castle_suit = (
+            state.current_round.castle_card.get("suit", "")
+            if "castle" in self._fixes and "j_castle" in joker_keys
+            else ""
+        )
+        straight_window: frozenset[int] = frozenset()
+        if "runner" in self._fixes and main_type == "Straight":
+            straight_window = self._best_straight_window(hand)
+        window_taken: set[int] = set()
+
         keep_scores: list[float] = []
         for i, card in enumerate(hand):
             score = nominals[i] * 0.1
+            if mail_id and RANK_TO_ID.get(card.rank) == mail_id and not card.debuff:
+                # Mail-In Rebate pays for this discard; a paired copy still mostly earns its keep.
+                score -= 20.0 if rank_counts[card.rank] == 1 else 5.0
+            if castle_suit and card.suit == castle_suit and not card.debuff:
+                score -= 8.0  # Castle gains chips permanently for this discard
+            if straight_window:
+                rid = RANK_TO_ID.get(card.rank, 0)
+                in_window = rid in straight_window or (rid == 14 and 1 in straight_window)
+                if in_window and rid not in window_taken:
+                    window_taken.add(rid)
+                    score += 35.0  # one copy of each rank the Straight needs
+                else:
+                    score -= 6.0
 
             if card.suit == preferred_suit:
                 score += 18.0
@@ -2615,6 +2655,54 @@ class HeuristicAgent:
 
         ranked = sorted(range(len(hand)), key=lambda idx: keep_scores[idx])
         return set(ranked[:max_discard])
+
+    def _best_straight_window(self, hand: list[PlayingCard]) -> frozenset[int]:
+        """Rank ids of the 5-rank window the hand covers best (Ace counts low too)."""
+        ids = {RANK_TO_ID.get(c.rank, 0) for c in hand if not c.debuff}
+        if 14 in ids:
+            ids.add(1)
+        best, best_cov = frozenset(), 0
+        for low in range(1, 11):
+            window = frozenset(range(low, low + 5))
+            cov = len(window & ids)
+            if cov > best_cov or (cov == best_cov and cov):
+                best, best_cov = window, cov
+        return best if best_cov >= 3 else frozenset()
+
+    def _income_topup(self, state: RunState, mask: np.ndarray, action: int) -> int:
+        """Add free Mail-In Rebate / Castle cards to a discard that has room.
+
+        Only cards the keep ranking already treats as expendable are added, so a pair or a draw
+        the discard was protecting stays in hand.
+        """
+        keys = {j.center_key for j in state.jokers if not j.debuff}
+        want_mail = "rebate" in self._fixes and "j_mail" in keys
+        want_castle = "castle" in self._fixes and "j_castle" in keys
+        if not (want_mail or want_castle):
+            return action
+        chosen = set(subset_indices(action - ActionRange.DISCARD_SUBSET_START))
+        if len(chosen) >= 5:
+            return action
+        hand = state.hand_cards
+        mail_id = int(state.current_round.mail_card.get("id", 0) or 0) if want_mail else 0
+        castle_suit = state.current_round.castle_card.get("suit", "") if want_castle else ""
+        expendable = self._find_worst_cards(state, hand, max_discard=min(5, len(hand)))
+        extra = [
+            i for i in sorted(expendable)
+            # Hands can outgrow the action space; only the first MAX_HAND_SIZE slots are addressable.
+            if i < MAX_HAND_SIZE and i not in chosen and not hand[i].debuff and not hand[i].forced_selection
+            and hand[i].seal != "Blue" and hand[i].center_key != "m_steel"
+            and ((mail_id and RANK_TO_ID.get(hand[i].rank) == mail_id) or (castle_suit and hand[i].suit == castle_suit))
+        ]
+        # Rebate cards pay money; take them before Castle cards.
+        extra.sort(key=lambda i: 0 if mail_id and RANK_TO_ID.get(hand[i].rank) == mail_id else 1)
+        for i in extra:
+            if len(chosen) >= 5:
+                break
+            trial = tuple(sorted(chosen | {i}))
+            if self._discard_mask_ok(state, mask, trial):
+                chosen.add(i)
+        return ActionRange.DISCARD_SUBSET_START + subset_index(tuple(sorted(chosen)))
 
     def _boss_debuff_suit(self, state: RunState) -> str | None:
         boss_key = state.round_resets.blind_choices.get("Boss", "")

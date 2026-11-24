@@ -55,7 +55,7 @@ def test_every_teacher_sale_is_the_best_positive_sell_target(data) -> None:
         action = teacher.select_action(runner.state, runner.sub_phase, mask, round_score=runner.round_score)
         targets = shop_gain_targets(teacher, runner.state, runner.sub_phase, mask)
         assert (targets is None) == (runner.sub_phase != SubPhase.SHOP)
-        if AR.SHOP_SELL_JOKER_START <= action < AR.SHOP_SELL_JOKER_START + JOKER_MAX:
+        if targets is not None and AR.SHOP_SELL_JOKER_START <= action < AR.SHOP_SELL_JOKER_START + JOKER_MAX:
             sell = np.where(np.isnan(targets[:JOKER_MAX]), -np.inf, targets[:JOKER_MAX])
             assert int(sell.argmax()) == action - AR.SHOP_SELL_JOKER_START
             assert sell.max() > 0.03

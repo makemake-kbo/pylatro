@@ -700,7 +700,9 @@ def test_unscaled_runner_does_not_redirect_planet_plan() -> None:
     state = create_run_state("unscaled_runner_plan", data=data)
     add_joker(state, "j_runner")
 
-    assert HeuristicAgent()._get_main_hand_type(state) == "Pair"
+    assert HeuristicAgent(fixes="none")._get_main_hand_type(state) == "Pair"
+    # v20: an owned Runner commits the plan to Straights so it can actually scale.
+    assert HeuristicAgent(fixes="runner")._get_main_hand_type(state) == "Straight"
 
 
 def test_scaled_runner_can_commit_to_straight_plan() -> None:

@@ -12,8 +12,9 @@ agent or engine. Keep it free of imports and runtime initialization.
 # v16 lists play candidates best-score first and adds padded variants of the best cores.
 # v17 adds discard candidates that keep a draw plan, with the redraw's completion odds.
 # v18 replaces them with discard intents: the policy picks a plan and a count, code the cards.
-TOKENIZER_VERSION = 18
-TOKENIZER_SEMANTICS = "v18_discard_intents"
+# v20 adds per-card Joker round targets (Mail-In rank, Idol card, Ancient/Castle suit) as a bitmask.
+TOKENIZER_VERSION = 20
+TOKENIZER_SEMANTICS = "v20_round_targets"
 
 # Historical semantics retained only for the explicit actor-transfer path.
 ACTOR_TRANSFER_SCHEMAS = {

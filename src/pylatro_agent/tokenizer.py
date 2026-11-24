@@ -321,6 +321,15 @@ class Tokenizer:
         draw_pile = state.draw_pile
         discard_pile = state.discard_pile
         card_idx = 0
+        # v20: this round's Joker targets, per card (col 12 bitmask; only for owned Jokers):
+        # 1 Mail-In Rebate rank, 2 The Idol rank+suit, 4 Ancient Joker suit, 8 Castle suit.
+        owned = {j.center_key for j in state.jokers}
+        cr = state.current_round
+        mail_rank = cr.mail_card.get("rank") if "j_mail" in owned else None
+        idol = (cr.idol_card.get("rank"), cr.idol_card.get("suit")) if "j_idol" in owned else None
+        ancient_suit = cr.ancient_card.get("suit") if "j_ancient" in owned else None
+        castle_suit = cr.castle_card.get("suit") if "j_castle" in owned else None
+        any_target = mail_rank is not None or idol is not None or ancient_suit is not None or castle_suit is not None
         for loc, pile in ((0, hand_cards), (1, draw_pile), (2, discard_pile)):
             for ci, card in enumerate(pile):
                 if card_idx >= DECK_MAX:
@@ -342,6 +351,13 @@ class Tokenizer:
                 tokens[p, 8] = min(card.perma_bonus // 5, 31)
                 tokens[p, 10] = card.forced_selection
                 tokens[p, 11] = ci if loc == 0 else 0
+                if any_target and not card.face_down:
+                    tokens[p, 12] = (
+                        (1 if card.rank == mail_rank else 0)
+                        | (2 if idol is not None and card.rank == idol[0] and card.suit == idol[1] else 0)
+                        | (4 if card.suit == ancient_suit else 0)
+                        | (8 if card.suit == castle_suit else 0)
+                    )
                 token_types[p] = TokenType.DECK
                 attn_mask[p] = 1
                 card_idx += 1

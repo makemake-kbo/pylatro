@@ -255,6 +255,17 @@ def train_ppo(
             use_multi_gpu,
         )
 
+    reference_model = None
+    if config.ref_kl_coeff > 0:
+        import copy
+
+        from .ppo_policy import _unwrap_model as _unwrap
+
+        reference_model = copy.deepcopy(_unwrap(model)).eval()
+        if config.ref_checkpoint:
+            load_actor_transfer(reference_model, config.ref_checkpoint, device)
+        reference_model.requires_grad_(False)
+        logger.info("KL anchor to %s: coeff %.4f", config.ref_checkpoint or "the initial policy", config.ref_kl_coeff)
     optimizer = _make_policy_optimizer(model.parameters(), config.lr)
     if resume_state is not None:
         active_lr = _restore_policy_optimizer_state(
@@ -488,7 +499,7 @@ def train_ppo(
                 model.to(eval_device), data, vocab, config.eval_games, eval_device,
                 max_no_progress_steps=config.max_no_progress_steps, win_ante=config.win_ante,
                 temperature=config.rollout_temperature, stake=config.stake, seeds=config.eval_seeds,
-                deck_key=config.deck_key, eval_batch_size=config.eval_batch_size,
+                deck_key=config.deck_key.split(",")[0], eval_batch_size=config.eval_batch_size,
                 eval_workers=config.eval_workers, eval_cpu_threads=config.eval_cpu_threads,
                 reward_config=config.reward_config,
                 results_path=Path(config.log_dir) / "eval_outcomes.jsonl", writer=writer,
@@ -586,6 +597,7 @@ def train_ppo(
                 return_path_replay=return_path_replay,
                 grad_diagnostics_due=sil_grad_diagnostics_due,
                 critic_only=update_count < config.critic_warmup_updates,
+                reference_model=reference_model,
             )
 
             optimization_seconds = time.perf_counter() - optimization_started
@@ -860,6 +872,7 @@ def train_ppo(
                     f"entropy_coeff={entropy_coeff:.5f}, "
                     f"clip_fraction={mean_clip_fraction:.4f}, "
                     f"approx_kl={mean_approx_kl:.5f}, "
+                    f"ref_kl={weighted_mean(update_stats.ref_kls):.5f}, "
                     f"valid_actions={mean_valid_action_count:.1f}, "
                     f"ep_reward_mean={recent_reward_mean:.3f}, "
                     f"ep_length_mean={recent_length_mean:.1f}, "

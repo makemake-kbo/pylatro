@@ -95,6 +95,7 @@ class _UpdateStats:
     action_type_entropies: list[float] = field(default_factory=list)
     clip_fracs: list[float] = field(default_factory=list)
     approx_kls: list[float] = field(default_factory=list)
+    ref_kls: list[float] = field(default_factory=list)
     logical_approx_kls: list[float] = field(default_factory=list)
     valid_action_counts: list[float] = field(default_factory=list)
     valid_action_type_counts: list[float] = field(default_factory=list)
@@ -333,6 +334,7 @@ def _run_ppo_update(
     search_guidance=None,
     step_guard=None,
     critic_only: bool = False,
+    reference_model: nn.Module | None = None,
 ) -> _UpdateStats:
     """Run `config.ppo_epochs` passes over the buffer and apply PPO updates.
 
@@ -507,6 +509,15 @@ def _run_ppo_update(
                 * advantages
             )
             policy_loss = -torch.min(surr1, surr2).mean()
+            ref_kl = policy_loss.new_zeros(())
+            if reference_model is not None:
+                with torch.no_grad():
+                    ref_dist, _ = _grammar_distribution(
+                        reference_model, batch, temperature=_policy_temperature_for_scalars(batch["scalars"], config)
+                    )
+                    ref_log_probs = ref_dist.log_prob(batch["actions"])
+                log_r = (ref_log_probs - new_log_probs).clamp(-20.0, 20.0)
+                ref_kl = (log_r.exp() - 1.0 - log_r).mean()
 
             # Legacy composed values fit a bootstrapped residual. The explicit
             # terminal-only mode has a single proper outcome objective: do not
@@ -552,7 +563,7 @@ def _run_ppo_update(
 
             policy_objective_loss = policy_loss - entropy_coeff * (
                 normalized_entropy + config.action_type_entropy_scale * normalized_action_type_entropy
-            )
+            ) + config.ref_kl_coeff * ref_kl
             total_loss = policy_objective_loss * loss_weight + weighted_critic_loss
             if config.collection_mode == "complete_cohort" and not torch.isfinite(total_loss):
                 raise RuntimeError("Non-finite complete-cohort PPO loss")
@@ -593,6 +604,7 @@ def _run_ppo_update(
                 metrics = {
                     "clip_fracs": ((ratio - 1.0).abs() > effective_clip_epsilon).float().mean(),
                     "approx_kls": ((ratio - 1.0) - log_ratio).mean(),
+                    "ref_kls": ref_kl.detach(),
                     "valid_action_counts": valid_action_counts.float().mean(),
                     "valid_action_type_counts": valid_action_type_count_mean,
                     "on_policy_advantage_means": advantages.mean(),

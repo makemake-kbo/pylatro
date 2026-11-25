@@ -70,6 +70,8 @@ def _make_vectorized_envs(
     """Create a gymnasium VectorEnv (async for multiprocess, sync for single-process)."""
     import gymnasium
 
+    # A comma-separated deck_key spreads decks across environments (env i plays decks[i % n]).
+    decks = deck_key.split(",")
     env_fns = [
         partial(
             BalatroEnv,
@@ -85,7 +87,7 @@ def _make_vectorized_envs(
             archive_config=archive_config,
             archive_index=i,
             excluded_seeds=excluded_seeds,
-            deck_key=deck_key,
+            deck_key=decks[i % len(decks)],
         )
         for i in range(num_envs)
     ]

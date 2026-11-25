@@ -175,6 +175,11 @@ class PPOConfig:
     sil_decay_fraction: float = 1.0
     # Updates between actor-gradient ratio/cosine diagnostics; no adaptive control.
     sil_grad_diagnostics_interval: int = 10
+    # KL(pi || frozen initial policy) on rollout actions (k3 estimator) keeps PPO near
+    # the behaviour-cloned start while its fresh gains are small; 0 disables.
+    ref_kl_coeff: float = 0.0
+    # Checkpoint whose actor is the anchor; None anchors to the policy at the start of this leg.
+    ref_checkpoint: str | None = None
 
 
 def _ppo_run_provenance(config: PPOConfig) -> dict[str, str] | None:
